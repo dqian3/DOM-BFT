@@ -137,9 +137,9 @@ rules_foreign_cc_dependencies()
 http_archive(
     name = "openssl",
     build_file = "//third_party/openssl:BUILD.bazel",
-    sha256 = "23011a5cc78e53d0dc98dfa608c51e72bcd350aa57df74c5d5574ba4ffb62e74",
-    strip_prefix = "openssl-OpenSSL_1_1_1d",
-    urls = ["https://github.com/openssl/openssl/archive/OpenSSL_1_1_1d.tar.gz"],
+    sha256 = "14c826f07c7e433706fb5c69fa9e25dab95684844b4c962a2cf1bf183eb4690e",
+    strip_prefix = "openssl-3.2.0",
+    urls = ["https://www.openssl.org/source/openssl-3.2.0.tar.gz"],
 )
 
 http_archive(
