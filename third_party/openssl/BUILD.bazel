@@ -8,6 +8,7 @@ filegroup(
 
 configure_make(
     name = "openssl",
+    configure_in_place = True,
     configure_command = "config",
     configure_options = [
         "no-shared",
