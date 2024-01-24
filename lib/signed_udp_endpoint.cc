@@ -1,7 +1,7 @@
 #include "lib/signed_udp_endpoint.h"
 
 SignedUDPEndpoint::SignedUDPEndpoint(const std::string& ip, const int port,
-                                     const bool isMasterReceiver, EVP_PKEY* key)
+                                     EVP_PKEY* key, const bool isMasterReceiver)
     : UDPEndpoint(ip, port, isMasterReceiver)
 {
   // TODO setup openSSL context
@@ -16,7 +16,7 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address& dstAddr,
 {
   // TODO call SendMsgTo after encapsulating msg in MessageHeader and SignedMessage Header
 
-
+  return 0;
 }
 
 int SignedUDPEndpoint::SignAndSendProtoMsg(const Address& dstAddr,

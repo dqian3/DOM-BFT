@@ -7,8 +7,8 @@
 class SignedUDPEndpoint : public UDPEndpoint {
 
  public:
-  SignedUDPEndpoint(const std::string& ip = "", const int port = -1,
-                    const bool isMasterReceiver = false, EVP_PKEY *key);
+  SignedUDPEndpoint(const std::string& ip, const int port, EVP_PKEY *key,
+                    const bool isMasterReceiver = false);
   ~SignedUDPEndpoint();
 
   int SignAndSendMsgTo(const Address& dstAddr,

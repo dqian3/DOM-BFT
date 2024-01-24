@@ -16,16 +16,15 @@
 
 /**
  * When the message has been serialized and is about to be sent by the
- * endpoint, MessageHeader is prepended to the head of message (refer
- * to SendMsgTo in udp_socket_endpoint.h), which describes the type of 
- * message and its length. In this way, when the receiver endpoint receives the
- * message, it can know the type and length of the proto message, then it can
- * choose the proper way to deserialize it.
+ * endpoint, MessageHeader is prepended to the head of message which 
+ * describes the type of message and its length. In this way, when the 
+ * receiver endpoint receives themessage, it can know the type and length
+ * of the proto message, then it can choose the proper way to deserialize it.
  */
 struct MessageHeader {
   char msgType;
   uint32_t msgLen;
-  MessageHeader(const uint32_t l, const char t) : msgLen(l), msgType(t)  {}
+  MessageHeader(const uint32_t l, const char t) : msgType(t), msgLen(l)  {}
 };
 
 /**

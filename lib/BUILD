@@ -1,13 +1,11 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
-
 cc_library(
     name = "common_struct",
     srcs = ["common_struct.h"],
     hdrs = ["common_struct.h"],
     visibility = ["//visibility:public"],
 )
-
 
 cc_library(
     name = "address",
@@ -38,8 +36,8 @@ cc_library(
 
 cc_library(
     name = "endpoint",
-    srcs = ["endpoint.cc"],
-    hdrs = ["endpoint.h"],
+    srcs = ["endpoint.cc", "udp_endpoint.cc", "signed_udp_endpoint.cc", "ipc_endpoint.cc"],
+    hdrs = ["endpoint.h", "udp_endpoint.h", "signed_udp_endpoint.h", "ipc_endpoint.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",
@@ -54,27 +52,13 @@ cc_library(
 )
 
 
-cc_library(
-    name = "udp_socket_endpoint",
-    srcs = ["udp_socket_endpoint.cc"],
-    hdrs = ["udp_socket_endpoint.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":address",
-        ":endpoint",
-        "@com_github_enki_libev//:libev",
-        "@com_google_protobuf//:protobuf",
-        "@openssl//:openssl",
-    ],
-)
-
 
 cc_library(
     name = "utils",
     srcs = ["utils.cc"],
     hdrs = ["utils.h"],
     deps = [
-        ":udp_socket_endpoint",
+        ":endpoint",
         "@com_github_gflags_gflags//:gflags",
         "@com_github_google_glog//:glog",
         "@openssl//:openssl",

@@ -1,13 +1,13 @@
 #include "lib/address.h"
 #include "address.h"
 
-Address::Address() : ip_(""), port_(-1), mac_(""), ipc_(ipc) 
+Address::Address() : ip_(""), port_(-1), mac_(""), ipc_("") 
 {
     bzero(&addr_, sizeof(addr_));
 }
 
 Address::Address(const std::string& ip, const int port)
-    : ip_(ip), port_(port), mac_(""), ipc_(ipc) 
+    : ip_(ip), port_(port), mac_(""), ipc_("") 
 {
     bzero(&addr_, sizeof(addr_));
     addr_.sin_family = AF_INET;

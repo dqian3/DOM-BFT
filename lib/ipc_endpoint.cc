@@ -83,7 +83,7 @@ bool IPCEndpoint::UnRegisterMsgHandler(MessageHandler* msgHdl) {
 }
 
 bool IPCEndpoint::isMsgHandlerRegistered(MessageHandler* msgHdl) {
-  return (UDPMsgHandler*)msgHdl == msgHandler_;
+  return (IPCMsgHandler*)msgHdl == msgHandler_;
 }
 
 void IPCEndpoint::UnRegisterAllMsgHandlers() {

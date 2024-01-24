@@ -9,7 +9,7 @@ class UDPEndpoint : public Endpoint {
   struct UDPMsgHandler* msgHandler_;
 
  public:
-  UDPEndpoint(const std::string& ip = "", const int port = -1,
+  UDPEndpoint(const std::string& ip, const int port,
                     const bool isMasterReceiver = false);
   ~UDPEndpoint();
 
