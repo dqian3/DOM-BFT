@@ -1,38 +1,17 @@
-#include "lib/udp_endpoint.h"
+#include "lib/ipc_endpoint.h"
 
-UDPEndpoint::UDPEndpoint(const std::string& ip, const int port,
-                                     const bool isMasterReceiver)
-    : Endpoint(isMasterReceiver), addr_(sip, sport), msgHandler_(NULL) 
+IPCEndpoint::IPCEndpoint(const std::string& ipc_addr,
+                        const bool isMasterReceiver)
+    : Endpoint("", 0, isMasterReceiver), msgHandler_(NULL) 
 {
-  fd_ = socket(PF_INET, SOCK_DGRAM, 0);
-  if (fd_ < 0) {
-    LOG(ERROR) << "Receiver Fd fail ";
-    return;
-  }
-  // Set Non-Blocking
-  int status = fcntl(fd_, F_SETFL, fcntl(fd_, F_GETFL, 0) | O_NONBLOCK);
-  if (status < 0) {
-    LOG(ERROR) << " Set NonBlocking Fail";
-  }
-  if (ip == "" || port < 0) {
-    return;
-  }
-  struct sockaddr_in addr;
-  bzero(&addr, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = inet_addr(ip.c_str());
-  // Bind socket to Address
-  int bindRet = bind(fd_, (struct sockaddr*)&addr, sizeof(addr));
-  if (bindRet != 0) {
-    LOG(ERROR) << "bind error\t" << bindRet << "\t port=" << port;
-    return;
-  }
+  // TODO: setup ipc datagram socket
+
 }
 
-UDPEndpoint::~UDPEndpoint() {}
+IPCEndpoint::~IPCEndpoint() {}
 
-int UDPEndpoint::SendMsgTo(const Address& dstAddr,
+// This is basically the same as UDP
+int IPCEndpoint::SendMsgTo(const Address& dstAddr,
                 const char* msg,
                 u_int32_t msgLen,
                 char msgType) 
@@ -57,7 +36,7 @@ int UDPEndpoint::SendMsgTo(const Address& dstAddr,
   return ret;
 }
 
-int UDPEndpoint::SendProtoMsgTo(const Address& dstAddr,
+int IPCEndpoint::SendProtoMsgTo(const Address& dstAddr,
                 const google::protobuf::Message& msg,
                 char msgType) 
 {
@@ -70,8 +49,8 @@ int UDPEndpoint::SendProtoMsgTo(const Address& dstAddr,
 }
 
 
-bool UDPEndpoint::RegisterMsgHandler(MessageHandler* msgHdl) {
-  UDPMsgHandler* udpMsgHdl = (UDPMsgHandler*)msgHdl;
+bool IPCEndpoint::RegisterMsgHandler(MessageHandler* msgHdl) {
+  IPCMsgHandler* ipcMsgHdl = (IPCMsgHandler*)msgHdl;
   if (evLoop_ == NULL) {
     LOG(ERROR) << "No evLoop!";
     return false;
@@ -81,14 +60,14 @@ bool UDPEndpoint::RegisterMsgHandler(MessageHandler* msgHdl) {
     return false;
   }
 
-  msgHandler_ = udpMsgHdl;
-  ev_io_set(udpMsgHdl->evWatcher_, fd_, EV_READ);
-  ev_io_start(evLoop_, udpMsgHdl->evWatcher_);
+  msgHandler_ = ipcMsgHdl;
+  ev_io_set(ipcMsgHdl->evWatcher_, fd_, EV_READ);
+  ev_io_start(evLoop_, ipcMsgHdl->evWatcher_);
 
   return true;
 }
 
-bool UDPEndpoint::UnRegisterMsgHandler(MessageHandler* msgHdl) {
+bool IPCEndpoint::UnRegisterMsgHandler(MessageHandler* msgHdl) {
   UDPMsgHandler* udpMsgHdl = (UDPMsgHandler*)msgHdl;
   if (evLoop_ == NULL) {
     LOG(ERROR) << "No evLoop!";
@@ -103,11 +82,11 @@ bool UDPEndpoint::UnRegisterMsgHandler(MessageHandler* msgHdl) {
   return true;
 }
 
-bool UDPEndpoint::isMsgHandlerRegistered(MessageHandler* msgHdl) {
+bool IPCEndpoint::isMsgHandlerRegistered(MessageHandler* msgHdl) {
   return (UDPMsgHandler*)msgHdl == msgHandler_;
 }
 
-void UDPEndpoint::UnRegisterAllMsgHandlers() {
+void IPCEndpoint::UnRegisterAllMsgHandlers() {
   ev_io_stop(evLoop_, msgHandler_->evWatcher_);
   msgHandler_ = NULL;
 }

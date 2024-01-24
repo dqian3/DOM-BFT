@@ -72,4 +72,9 @@ struct UDPMsgHandler : MessageHandler {
   ~UDPMsgHandler() {}
 };
 
+
+struct IPCMsgHandler : MessageHandler {
+  // TODO
+  ~IPCMsgHandler() {}
+};
 #endif
