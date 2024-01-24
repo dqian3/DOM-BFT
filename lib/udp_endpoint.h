@@ -1,17 +1,17 @@
-#ifndef UDP_SOCKET_SENDER_H
-#define UDP_SOCKET_SENDER_H
+#ifndef UDP_ENDPOINT_H
+#define UDP_ENDPOINT_H
 
 #include "lib/endpoint.h"
 
-class UDPSocketEndpoint : public Endpoint {
+class UDPEndpoint : public Endpoint {
  private:
   /* data */
   struct UDPMsgHandler* msgHandler_;
 
  public:
-  UDPSocketEndpoint(const std::string& ip = "", const int port = -1,
+  UDPEndpoint(const std::string& ip = "", const int port = -1,
                     const bool isMasterReceiver = false);
-  ~UDPSocketEndpoint();
+  ~UDPEndpoint();
 
   int SendMsgTo(const Address& dstAddr, const google::protobuf::Message& msg,
                 const char msgType) override;

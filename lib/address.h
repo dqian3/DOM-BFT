@@ -8,7 +8,7 @@
 #include <cstring>
 #include <string>
 
-#define UDP_BUFFER_SIZE (512)
+#define UDP_BUFFER_SIZE (1024)
 
 /**
  * The address of an endpoint is encapsulate as the Address Class.
