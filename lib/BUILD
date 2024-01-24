@@ -1,29 +1,11 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
-cc_library(
-    name = "zipfian",
-    srcs = ["zipfian.h"],
-    hdrs = ["zipfian.h"],
-    visibility = ["//visibility:public"],
-)
-
-
-cc_library(
-    name = "common_type",
-    srcs = ["common_type.h"],
-    hdrs = ["common_type.h"],
-    visibility = ["//visibility:public"],
-)
-
 
 cc_library(
     name = "common_struct",
     srcs = ["common_struct.h"],
     hdrs = ["common_struct.h"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":common_type",
-    ],
 )
 
 
@@ -41,7 +23,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":address",
-        ":common_type",
     ],
 )
 
@@ -52,7 +33,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":address",
-        ":common_type",
     ],
 )
 
@@ -72,8 +52,6 @@ cc_library(
         "@openssl//:openssl",
     ],
 )
-
-
 
 
 cc_library(
@@ -97,8 +75,6 @@ cc_library(
     hdrs = ["utils.h"],
     deps = [
         ":udp_socket_endpoint",
-        "@com_github_cameron314_concurrentqueue//:concurrentqueue",
-        "@com_github_preshing_junction//:libjunction",
         "@com_github_gflags_gflags//:gflags",
         "@com_github_google_glog//:glog",
         "@openssl//:openssl",

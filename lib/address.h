@@ -1,5 +1,5 @@
-#ifndef NEZHA_ADDRESS
-#define NEZHA_ADDRESS
+#ifndef ADDRESS_H
+#define ADDRESS_H
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>

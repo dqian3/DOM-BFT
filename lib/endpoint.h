@@ -1,5 +1,5 @@
-#ifndef NEZHA_ENDPOINT_H
-#define NEZHA_ENDPOINT_H
+#ifndef ENDPOINT_H
+#define ENDPOINT_H
 
 #include <arpa/inet.h>
 #include <ev.h>

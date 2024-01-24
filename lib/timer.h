@@ -1,5 +1,5 @@
-#ifndef NEZHA_TIMER_
-#define NEZHA_TIMER_
+#ifndef TIMER_H
+#define TIMER_H
 
 #include <arpa/inet.h>
 #include <ev.h>
@@ -11,7 +11,6 @@
 #include <set>
 #include <string>
 #include "lib/address.h"
-#include "lib/common_type.h"
 
 /**
  * Timer is an encapsulation of libev-based message handler (i.e.

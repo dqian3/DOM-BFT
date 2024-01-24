@@ -1,5 +1,5 @@
-#ifndef NEZHA_UDP_SOCKET_SENDER_H
-#define NEZHA_UDP_SOCKET_SENDER_H
+#ifndef UDP_SOCKET_SENDER_H
+#define UDP_SOCKET_SENDER_H
 
 #include "lib/endpoint.h"
 

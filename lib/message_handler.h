@@ -1,6 +1,6 @@
 
-#ifndef NEZHA_MESSAGE_HANDLER_H
-#define NEZHA_MESSAGE_HANDLER_H
+#ifndef MESSAGE_HANDLER_H
+#define MESSAGE_HANDLER_H
 
 #include <arpa/inet.h>
 #include <ev.h>
@@ -12,7 +12,6 @@
 #include <set>
 #include <string>
 #include "lib/address.h"
-#include "lib/common_type.h"
 
 /**
  * MessageHandler is an encapsulation of libev-based message handler (i.e.
