@@ -9,35 +9,34 @@
 #include <string>
 #include <vector>
 
+
+#define SIGNED_FLAG
+
 // TODO what about padding on the msgType? Might want to check that.
 
 /**
- * When the proto message has been serialized and is about to be sent by the
- * endpoint, MessageHeader is prepended to the head of the proto message (refer
- * to SendMsgTo in udp_socket_endpoint.h), which describes the type of proto
+ * When the message has been serialized and is about to be sent by the
+ * endpoint, MessageHeader is prepended to the head of message (refer
+ * to SendMsgTo in udp_socket_endpoint.h), which describes the type of 
  * message and its length. In this way, when the receiver endpoint receives the
  * message, it can know the type and length of the proto message, then it can
  * choose the proper way to deserialize it.
  */
 struct MessageHeader {
-  uint32_t msgLen;
   char msgType;
+  uint32_t msgLen;
   MessageHeader(const uint32_t l, const char t) : msgLen(l), msgType(t)  {}
 };
 
 /**
- * Similar to the MessageHeader, a header sent prepended to the serialized 
- * proto message. However, we include a sigLen field that indicates the
- * len of a signature, which comes after the protobuf. The signature also
- * includes the msgType.
+ * Encapsulated within a message header, dataLen is the length of the encoded
+ * proto message, sigLen is the len of the signature. This header is present
+ * depending on msgType above
  */
 struct SignedMessageHeader {
-  uint32_t msgLen;
+  uint32_t dataLen;
   uint32_t sigLen;
-
-  char msgType; // Included in signature!
-  SignedMessageHeader(const uint32_t ml, const uint32_t sl, const char t) 
-    : msgLen(ml), sigLen(sl), msgType(t)  {}
+  SignedMessageHeader(const uint32_t dl, const uint32_t sl) : dataLen(dl), sigLen(sl)  {}
 };
 
 

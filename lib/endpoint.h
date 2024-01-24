@@ -53,8 +53,9 @@ class Endpoint {
   /** Send the message to the specific destination. The method needs to know the
    * message type (3rd parameter) and include such information in the buffer */
   virtual int SendMsgTo(const Address& dstAddr,
-                        const google::protobuf::Message& msg,
-                        const char msgType) = 0;
+                        const char* msg,
+                        u_int32_t msgLen,
+                        char msgType) = 0;
 
   /** An endpoint potentially can have multiple message handlers registered, but
    * our UDPSocketEndpoint implementation only supports at most one
@@ -68,7 +69,7 @@ class Endpoint {
   /** Return true if the timer is successfully registered, otherwise (e.g. it
    * has been registered before and has not been unreigstered), return false */
   bool RegisterTimer(Timer* timer);
-  /** Return true if the timer is successfully registered, otherwise (e.g. the
+  /** Return true if the timer is successfully unregistered, otherwise (e.g. the
    * timer has not been registered before), return false */
   bool UnRegisterTimer(Timer* timer);
   /** Check whether the timer has been registered */

@@ -1,8 +1,9 @@
-#include "lib/udp_socket_endpoint.h"
+#include "lib/udp_endpoint.h"
 
-UDPSocketEndpoint::UDPSocketEndpoint(const std::string& ip, const int port,
+UDPEndpoint::UDPEndpoint(const std::string& ip, const int port,
                                      const bool isMasterReceiver)
-    : Endpoint(ip, port, isMasterReceiver), msgHandler_(NULL) {
+    : Endpoint(ip, port, isMasterReceiver), msgHandler_(NULL) 
+{
   fd_ = socket(PF_INET, SOCK_DGRAM, 0);
   if (fd_ < 0) {
     LOG(ERROR) << "Receiver Fd fail ";
@@ -29,37 +30,47 @@ UDPSocketEndpoint::UDPSocketEndpoint(const std::string& ip, const int port,
   }
 }
 
-UDPSocketEndpoint::~UDPSocketEndpoint() {}
+UDPEndpoint::~UDPEndpoint() {}
 
-int UDPSocketEndpoint::SendMsgTo(const Address& dstAddr,
-                                 const google::protobuf::Message& msg,
-                                 char msgType) {
+int UDPEndpoint::SendMsgTo(const Address& dstAddr,
+                const char* msg,
+                u_int32_t msgLen,
+                char msgType) 
+{
   char buffer[UDP_BUFFER_SIZE];
   MessageHeader* msgHdr = (MessageHeader*)(void*)buffer;
   msgHdr->msgType = msgType;
-  std::string serializedString = msg.SerializeAsString();
-  msgHdr->msgLen = serializedString.length();
-  if (serializedString.length() + sizeof(MessageHeader) > UDP_BUFFER_SIZE) {
+  msgHdr->msgLen = msgLen;
+  if (msgLen + sizeof(MessageHeader) > UDP_BUFFER_SIZE) {
     LOG(ERROR) << "Msg too large " << (uint32_t)msgType
-               << "\t length=" << serializedString.length();
+               << "\t length=" << msgLen;
     return -1;
   }
-  if (msgHdr->msgLen > 0) {
-    // Serialization succeed
-    // Prepend MesageHeader to the serialized string
-    memcpy(buffer + sizeof(MessageHeader), serializedString.c_str(),
-           msgHdr->msgLen);
-    int ret = sendto(fd_, buffer, msgHdr->msgLen + sizeof(MessageHeader), 0,
-                     (struct sockaddr*)(&(dstAddr.addr_)), sizeof(sockaddr_in));
-    if (ret < 0) {
-      VLOG(1) << pthread_self() << "\tSend Fail ret =" << ret;
-    }
-    return ret;
+  
+  memcpy(buffer + sizeof(MessageHeader), msg,
+          msgHdr->msgLen);
+  int ret = sendto(fd_, buffer, msgHdr->msgLen + sizeof(MessageHeader), 0,
+                    (struct sockaddr*)(&(dstAddr.addr_)), sizeof(sockaddr_in));
+  if (ret < 0) {
+    VLOG(1) << pthread_self() << "\tSend Fail ret =" << ret;
+  }
+  return ret;
+}
+
+int UDPEndpoint::SendProtoMsgTo(const Address& dstAddr,
+                const google::protobuf::Message& msg,
+                char msgType) 
+{
+  std::string serializedString = msg.SerializeAsString();
+  uint32_t msgLen = serializedString.length();
+  if (msgLen > 0) {
+    SendMsgTo(dstAddr, serializedString.c_str(), msgLen, msgType);
   }
   return -1;
 }
 
-bool UDPSocketEndpoint::RegisterMsgHandler(MessageHandler* msgHdl) {
+
+bool UDPEndpoint::RegisterMsgHandler(MessageHandler* msgHdl) {
   UDPMsgHandler* udpMsgHdl = (UDPMsgHandler*)msgHdl;
   if (evLoop_ == NULL) {
     LOG(ERROR) << "No evLoop!";
@@ -77,7 +88,7 @@ bool UDPSocketEndpoint::RegisterMsgHandler(MessageHandler* msgHdl) {
   return true;
 }
 
-bool UDPSocketEndpoint::UnRegisterMsgHandler(MessageHandler* msgHdl) {
+bool UDPEndpoint::UnRegisterMsgHandler(MessageHandler* msgHdl) {
   UDPMsgHandler* udpMsgHdl = (UDPMsgHandler*)msgHdl;
   if (evLoop_ == NULL) {
     LOG(ERROR) << "No evLoop!";
@@ -92,11 +103,11 @@ bool UDPSocketEndpoint::UnRegisterMsgHandler(MessageHandler* msgHdl) {
   return true;
 }
 
-bool UDPSocketEndpoint::isMsgHandlerRegistered(MessageHandler* msgHdl) {
+bool UDPEndpoint::isMsgHandlerRegistered(MessageHandler* msgHdl) {
   return (UDPMsgHandler*)msgHdl == msgHandler_;
 }
 
-void UDPSocketEndpoint::UnRegisterAllMsgHandlers() {
+void UDPEndpoint::UnRegisterAllMsgHandlers() {
   ev_io_stop(evLoop_, msgHandler_->evWatcher_);
   msgHandler_ = NULL;
 }
