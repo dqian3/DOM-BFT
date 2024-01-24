@@ -32,6 +32,7 @@ struct MessageHeader {
  * proto message, sigLen is the len of the signature. This header is present
  * depending on msgType above
  */
+// TODO just add msgType to the top, so no need for encapsulation
 struct SignedMessageHeader {
   uint32_t dataLen;
   uint32_t sigLen;

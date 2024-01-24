@@ -10,7 +10,7 @@ IPCEndpoint::IPCEndpoint(const std::string& ipc_addr,
 
 IPCEndpoint::~IPCEndpoint() {}
 
-// This is basically the same as UDP
+// This is basically the same as UDP, could be consolidated...
 int IPCEndpoint::SendMsgTo(const Address& dstAddr,
                 const char* msg,
                 u_int32_t msgLen,

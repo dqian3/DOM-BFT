@@ -43,13 +43,14 @@ int main(int argc, char *argv[])
     * signature. Length is returned in slen */
     if(1 != EVP_DigestSignFinal(mdctx, NULL, &slen)) goto err;
 
-    printf("Digest Sign Final Size %ld initial\n", slen);
+    printf("Digest Sign Initial Size %ld\n", slen);
 
     /* Allocate memory for the signature based on size in slen */
     if(!(sig = (unsigned char *)OPENSSL_malloc(sizeof(unsigned char) * (slen)))) goto err;
     /* Obtain the signature */
     if(1 != EVP_DigestSignFinal(mdctx, sig, &slen)) goto err;
-    
+    printf("Digest Sign Final Size %ld\n", slen);
+
     /* Success */
     ret = 1;
     
