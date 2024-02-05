@@ -31,27 +31,30 @@
  * the endpoint it has attached to.
  */
 
-typedef std::function<void(void*, void*)> TimerFunc;
+typedef std::function<void(void *, void *)> TimerFunc;
 
-struct Timer {
-  std::function<void(void*, void*)> timerFunc_;
-  void* context_;
-  void* attachedEndpoint_;
-  struct ev_timer* evTimer_;
+struct Timer
+{
+    std::function<void(void *, void *)> timerFunc_;
+    void *context_;
+    void *attachedEndpoint_;
+    struct ev_timer *evTimer_;
 
-  Timer(TimerFunc timerf, uint32_t periodMs = 1, void* ctx = NULL,
-        void* aep = NULL)
-      : timerFunc_(timerf), context_(ctx), attachedEndpoint_(aep) {
-    evTimer_ = new ev_timer();
-    evTimer_->data = (void*)this;
-    evTimer_->repeat = periodMs * 1e-3;
-    ev_init(evTimer_,
-            [](struct ev_loop* loop, struct ev_timer* w, int revents) {
-              Timer* t = (Timer*)(w->data);
-              t->timerFunc_(t->context_, t->attachedEndpoint_);
-            });
-  }
-  ~Timer() { delete evTimer_; }
+    Timer(TimerFunc timerf, uint32_t periodMs = 1, void *ctx = NULL,
+          void *aep = NULL)
+        : timerFunc_(timerf), context_(ctx), attachedEndpoint_(aep)
+    {
+        evTimer_ = new ev_timer();
+        evTimer_->data = (void *)this;
+        evTimer_->repeat = periodMs * 1e-3;
+        ev_init(evTimer_,
+                [](struct ev_loop *loop, struct ev_timer *w, int revents)
+                {
+                    Timer *t = (Timer *)(w->data);
+                    t->timerFunc_(t->context_, t->attachedEndpoint_);
+                });
+    }
+    ~Timer() { delete evTimer_; }
 };
 
 #endif

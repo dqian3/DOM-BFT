@@ -47,7 +47,7 @@ int IPCEndpoint::SendMsgTo(const std::string &dstAddr,
     };
 
     fd_ = socket(AF_UNIX, SOCK_DGRAM, 0);
-    strcpy(addr.sun_path, dstAddr.c_str()); 
+    strcpy(addr.sun_path, dstAddr.c_str());
 
     int ret = sendto(fd_, buffer, msgHdr->msgLen + sizeof(MessageHeader), 0,
                      (struct sockaddr *)(&(addr)), sizeof(sockaddr_in));

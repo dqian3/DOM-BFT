@@ -27,7 +27,7 @@
  * message handlers;
  * (3) Conduct periodical actions according to (pre-registered)
  * customized timer functions.
- * 
+ *
  * For convenience, usually we'll define some sendMsgTo function for sending
  * messages by reusing the same (bound) socket
  */

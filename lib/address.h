@@ -12,22 +12,24 @@
  * Encapsualted IP addresses
  */
 
-class Address {
- public:
-  std::string ip_;
-  int port_;
-  struct sockaddr_in addr_;
+class Address
+{
+public:
+    std::string ip_;
+    int port_;
+    struct sockaddr_in addr_;
 
-  Address();
-  Address(const Address& addr)
-      : ip_(addr.ip_), port_(addr.port_) {
-    memcpy(&addr_, &(addr.addr_), sizeof(struct sockaddr_in));
-  }
-  Address(const std::string& ip, const int port);
-  ~Address();
+    Address();
+    Address(const Address &addr)
+        : ip_(addr.ip_), port_(addr.port_)
+    {
+        memcpy(&addr_, &(addr.addr_), sizeof(struct sockaddr_in));
+    }
+    Address(const std::string &ip, const int port);
+    ~Address();
 
-  std::string GetIPAsString();
-  int GetPortAsInt();
+    std::string GetIPAsString();
+    int GetPortAsInt();
 };
 
 #endif

@@ -35,27 +35,32 @@
  * Para-4: void* points to the (optional) context that is needed by the callback
  * function(i.e., MessageHandlerFunc)
  */
-typedef std::function<void(MessageHeader*, char*, Address*, void*)>
+typedef std::function<void(MessageHeader *, char *, Address *, void *)>
     MessageHandlerFunc;
 
-struct MessageHandler {
-  MessageHandlerFunc msgHandler_;
-  void* context_;
-  Address sender_;
-  struct ev_io* evWatcher_;
-  MessageHandler(MessageHandlerFunc msghdl, void* ctx = NULL)
-      : msgHandler_(msghdl), context_(ctx) {
-    evWatcher_ = new ev_io();
-    evWatcher_->data = (void*)this;
-  }
-  ~MessageHandler() { delete evWatcher_; }
+struct MessageHandler
+{
+    MessageHandlerFunc msgHandler_;
+    void *context_;
+    Address sender_;
+    struct ev_io *evWatcher_;
+    MessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
+        : msgHandler_(msghdl), context_(ctx)
+    {
+        evWatcher_ = new ev_io();
+        evWatcher_->data = (void *)this;
+    }
+    ~MessageHandler() { delete evWatcher_; }
 };
 
-struct UDPMsgHandler : MessageHandler {
-  char buffer_[UDP_BUFFER_SIZE];
-  UDPMsgHandler(MessageHandlerFunc msghdl, void* ctx = NULL)
-      : MessageHandler(msghdl, ctx) {
-    ev_init(evWatcher_, [](struct ev_loop* loop, struct ev_io* w, int revents) {
+struct UDPMsgHandler : MessageHandler
+{
+    char buffer_[UDP_BUFFER_SIZE];
+    UDPMsgHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
+        : MessageHandler(msghdl, ctx)
+    {
+        ev_init(evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents)
+                {
       UDPMsgHandler* m = (UDPMsgHandler*)(w->data);
       socklen_t sockLen = sizeof(struct sockaddr_in);
       int msgLen = recvfrom(w->fd, m->buffer_, UDP_BUFFER_SIZE, 0,
@@ -66,15 +71,14 @@ struct UDPMsgHandler : MessageHandler {
           m->msgHandler_(msgHeader, m->buffer_ + sizeof(MessageHeader),
                          &(m->sender_), m->context_);
         }
-      }
-    });
-  }
-  ~UDPMsgHandler() {}
+      } });
+    }
+    ~UDPMsgHandler() {}
 };
 
-
-struct IPCMsgHandler : MessageHandler {
-  // TODO
-  ~IPCMsgHandler() {}
+struct IPCMsgHandler : MessageHandler
+{
+    // TODO
+    ~IPCMsgHandler() {}
 };
 #endif

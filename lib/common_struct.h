@@ -11,7 +11,6 @@
 
 #define SIGNED_FLAG
 
-
 #define UDP_BUFFER_SIZE (1024)
 #define IPC_BUFFER_SIZE (1024)
 
@@ -19,15 +18,16 @@
 
 /**
  * When the message has been serialized and is about to be sent by the
- * endpoint, MessageHeader is prepended to the head of message which 
- * describes the type of message and its length. In this way, when the 
+ * endpoint, MessageHeader is prepended to the head of message which
+ * describes the type of message and its length. In this way, when the
  * receiver endpoint receives themessage, it can know the type and length
  * of the proto message, then it can choose the proper way to deserialize it.
  */
-struct MessageHeader {
-  char msgType;
-  uint32_t msgLen;
-  MessageHeader(const uint32_t l, const char t) : msgType(t), msgLen(l)  {}
+struct MessageHeader
+{
+    char msgType;
+    uint32_t msgLen;
+    MessageHeader(const uint32_t l, const char t) : msgType(t), msgLen(l) {}
 };
 
 /**
@@ -36,11 +36,11 @@ struct MessageHeader {
  * depending on msgType above
  */
 // TODO just add msgType to the top, so no need for encapsulation
-struct SignedMessageHeader {
-  uint32_t dataLen;
-  uint32_t sigLen;
-  SignedMessageHeader(const uint32_t dl, const uint32_t sl) : dataLen(dl), sigLen(sl)  {}
+struct SignedMessageHeader
+{
+    uint32_t dataLen;
+    uint32_t sigLen;
+    SignedMessageHeader(const uint32_t dl, const uint32_t sl) : dataLen(dl), sigLen(sl) {}
 };
-
 
 #endif
