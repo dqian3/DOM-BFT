@@ -59,26 +59,51 @@ struct UDPMsgHandler : MessageHandler
     UDPMsgHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
         : MessageHandler(msghdl, ctx)
     {
-        ev_init(evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents)
+        ev_init(evWatcher_, [] (struct ev_loop *loop, struct ev_io *w, int revents) 
+        {
+            UDPMsgHandler* m = (UDPMsgHandler*)(w->data);
+            socklen_t sockLen = sizeof(struct sockaddr_in);
+            int msgLen = recvfrom(w->fd, m->buffer_, UDP_BUFFER_SIZE, 0,
+                                    (struct sockaddr*)(&(m->sender_.addr_)), &sockLen);
+            if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) 
+            {
+                MessageHeader* msgHeader = (MessageHeader*)(void*)(m->buffer_);
+                if (msgHeader->msgLen + sizeof(MessageHeader) >= (uint32_t)msgLen) 
                 {
-      UDPMsgHandler* m = (UDPMsgHandler*)(w->data);
-      socklen_t sockLen = sizeof(struct sockaddr_in);
-      int msgLen = recvfrom(w->fd, m->buffer_, UDP_BUFFER_SIZE, 0,
-                            (struct sockaddr*)(&(m->sender_.addr_)), &sockLen);
-      if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) {
-        MessageHeader* msgHeader = (MessageHeader*)(void*)(m->buffer_);
-        if (msgHeader->msgLen + sizeof(MessageHeader) >= (uint32_t)msgLen) {
-          m->msgHandler_(msgHeader, m->buffer_ + sizeof(MessageHeader),
-                         &(m->sender_), m->context_);
-        }
-      } });
+                    m->msgHandler_(msgHeader, m->buffer_ + sizeof(MessageHeader),
+                                    &(m->sender_), m->context_);
+                }
+            } 
+        });
     }
     ~UDPMsgHandler() {}
 };
 
 struct IPCMsgHandler : MessageHandler
 {
-    // TODO
+    char buffer_[IPC_BUFFER_SIZE];
+    IPCMsgHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
+        : MessageHandler(msghdl, ctx)
+    {
+        ev_init(evWatcher_, [] (struct ev_loop *loop, struct ev_io *w, int revents) 
+        {
+            IPCMsgHandler* m = (IPCMsgHandler*)(w->data);
+
+            // We shouldn't need the IPC sender address, our IPC is 1 to 1
+            // TODO, we should make this the case if not, and add support for IPC in Address if so
+            int msgLen = recv(w->fd, m->buffer_, IPC_BUFFER_SIZE, 0);
+
+            if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) 
+            {
+                MessageHeader* msgHeader = (MessageHeader*)(void*)(m->buffer_);
+                if (msgHeader->msgLen + sizeof(MessageHeader) >= (uint32_t)msgLen) 
+                {
+                    m->msgHandler_(msgHeader, m->buffer_ + sizeof(MessageHeader),
+                                    nullptr, m->context_);
+                }
+            } 
+        });
+    }
     ~IPCMsgHandler() {}
 };
 #endif
