@@ -9,8 +9,11 @@
 #include <string>
 #include <vector>
 
-
 #define SIGNED_FLAG
+
+
+#define UDP_BUFFER_SIZE (1024)
+#define IPC_BUFFER_SIZE (1024)
 
 // TODO what about padding on the msgType? Might want to check that.
 

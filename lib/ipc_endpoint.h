@@ -11,7 +11,7 @@ class IPCEndpoint : public Endpoint {
   struct IPCMsgHandler* msgHandler_;
 
  public:
-  IPCEndpoint(const std::string& ipc_addr, const bool isMasterReceiver);
+  IPCEndpoint(const std::string& ipcAddr, const bool isMasterReceiver);
   ~IPCEndpoint();
 
   int SendMsgTo(const std::string& dstAddr,
@@ -19,7 +19,7 @@ class IPCEndpoint : public Endpoint {
                 u_int32_t msgLen,
                 char msgType);
 
-  int SendProtoMsgTo(const Address& dstAddr, 
+  int SendProtoMsgTo(const std::string& dstAddr, 
                 const google::protobuf::Message& msg,
                 const char msgType);
 

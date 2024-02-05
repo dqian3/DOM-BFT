@@ -3,8 +3,6 @@
 
 #include "lib/endpoint.h"
 
-#define UDP_BUFFER_SIZE (1024)
-
 class UDPEndpoint : public Endpoint {
  protected:
   /* data */
