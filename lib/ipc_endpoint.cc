@@ -1,22 +1,33 @@
 #include "lib/ipc_endpoint.h"
 
+#include <sys/un.h>
+
 IPCEndpoint::IPCEndpoint(const std::string& ipc_addr,
                         const bool isMasterReceiver)
-    : Endpoint("", 0, isMasterReceiver), msgHandler_(NULL) 
+    : Endpoint(isMasterReceiver), msgHandler_(NULL) 
 {
-  // TODO: setup ipc datagram socket
+  struct sockaddr_un addr = {
+      .sun_family = AF_UNIX,
+  };
 
+  fd_ = socket(AF_UNIX, SOCK_DGRAM, 0);
+  strcpy(addr.sun_path, ipc_addr); 
+  unlink(addr.sun_path);
+
+  int len = strlen(addr.sun_path) + sizeof(addr.sun_family);
+
+  bind(fd_, (struct sockaddr *)&addr, len);
 }
 
 IPCEndpoint::~IPCEndpoint() {}
 
 // This is basically the same as UDP, could be consolidated...
-int IPCEndpoint::SendMsgTo(const Address& dstAddr,
+int IPCEndpoint::SendMsgTo(const std::string& dstAddr,
                 const char* msg,
                 u_int32_t msgLen,
                 char msgType) 
 {
-  char buffer[UDP_BUFFER_SIZE];
+  char buffer[IPC_BUFFER_SIZE];
   MessageHeader* msgHdr = (MessageHeader*)(void*)buffer;
   msgHdr->msgType = msgType;
   msgHdr->msgLen = msgLen;

@@ -1,8 +1,7 @@
 #include "lib/endpoint.h"
 
-Endpoint::Endpoint(const std::string& sip, const int sport,
-                   const bool isMasterReceiver)
-    : addr_(sip, sport) {
+Endpoint::Endpoint(const bool isMasterReceiver)
+{
   evLoop_ = isMasterReceiver ? ev_default_loop() : ev_loop_new();
   if (!evLoop_) {
     LOG(ERROR) << "Event Loop error";

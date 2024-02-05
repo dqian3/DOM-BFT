@@ -3,6 +3,8 @@
 
 #include "lib/endpoint.h"
 
+#define IPC_BUFFER_SIZE (1024)
+
 class IPCEndpoint : public Endpoint {
  protected:
   /* data */
@@ -12,10 +14,10 @@ class IPCEndpoint : public Endpoint {
   IPCEndpoint(const std::string& ipc_addr, const bool isMasterReceiver);
   ~IPCEndpoint();
 
-  int SendMsgTo(const Address& dstAddr,
+  int SendMsgTo(const std::string& dstAddr,
                 const char* msg,
                 u_int32_t msgLen,
-                char msgType) override;
+                char msgType);
 
   int SendProtoMsgTo(const Address& dstAddr, 
                 const google::protobuf::Message& msg,

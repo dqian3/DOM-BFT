@@ -2,7 +2,7 @@
 
 UDPEndpoint::UDPEndpoint(const std::string& ip, const int port,
                                      const bool isMasterReceiver)
-    : Endpoint(ip, port, isMasterReceiver), msgHandler_(NULL) 
+    : Endpoint(isMasterReceiver), msgHandler_(NULL) 
 {
   fd_ = socket(PF_INET, SOCK_DGRAM, 0);
   if (fd_ < 0) {

@@ -3,6 +3,8 @@
 
 #include "lib/endpoint.h"
 
+#define UDP_BUFFER_SIZE (1024)
+
 class UDPEndpoint : public Endpoint {
  protected:
   /* data */
@@ -16,7 +18,7 @@ class UDPEndpoint : public Endpoint {
   int SendMsgTo(const Address& dstAddr,
                 const char* msg,
                 u_int32_t msgLen,
-                char msgType) override;
+                char msgType);
 
   int SendProtoMsgTo(const Address& dstAddr, 
                 const google::protobuf::Message& msg,
