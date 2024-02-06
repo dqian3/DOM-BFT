@@ -106,4 +106,7 @@ struct IPCMsgHandler : MessageHandler
     }
     ~IPCMsgHandler() {}
 };
+
+// TODO define a nice SignedUDPHandler that verifies signatures
+
 #endif

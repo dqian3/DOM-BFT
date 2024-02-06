@@ -3,7 +3,7 @@
 #define MAX_SIG_LEN 256
 
 SignedUDPEndpoint::SignedUDPEndpoint(const std::string &ip, const int port,
-                                     EVP_PKEY *key, const bool isMasterReceiver)
+                                     EVP_PKEY *key, const bool isMasterReceiver=false)
     : UDPEndpoint(ip, port, isMasterReceiver), key_(key)
 {
 }
