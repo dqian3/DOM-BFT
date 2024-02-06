@@ -16,6 +16,7 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
                                         char msgType)
 {
     char buffer[sizeof(SignedMessageHeader) + msgLen + MAX_SIG_LEN];
+    unsigned char *data = (unsigned char *)&buffer[sizeof(SignedMessageHeader)];
     unsigned char *sig = (unsigned char *)&buffer[sizeof(SignedMessageHeader) + msgLen];
     size_t sigLen = 0;
 
@@ -23,8 +24,7 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
 
     // TODO Lot of copying here...
     hdr->dataLen = msgLen;
-    hdr->sigLen = sigLen;
-    memcpy(buffer, msg, msgLen);
+    memcpy(data, msg, msgLen);
 
     // Write signature after msg
     EVP_MD_CTX *mdctx = NULL;
@@ -33,8 +33,15 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
     // Use SHA256 as digest to sign
     if (1 != EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, key_))
         return -1;
-    if (1 != EVP_DigestSignUpdate(mdctx, msg, strlen(msg)))
+    if (1 != EVP_DigestSignUpdate(mdctx, data, hdr->dataLen))
         return -1;
+
+
+    if(1 != EVP_DigestSignFinal(mdctx, NULL, &sigLen)) {
+        LOG(ERROR) << "Failed to calculate signature length!\n";
+        return -1;
+    }
+    hdr->sigLen = sigLen;
 
     if (1 != EVP_DigestSignFinal(mdctx, sig, &sigLen))
     {
@@ -42,7 +49,9 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
         return -1;
     }
 
-    return SendMsgTo(dstAddr, buffer, sigLen, msgType);
+
+
+    return SendMsgTo(dstAddr, buffer, sigLen + msgLen + sizeof(SignedMessageHeader), msgType);
 }
 
 int SignedUDPEndpoint::SignAndSendProtoMsg(const Address &dstAddr,

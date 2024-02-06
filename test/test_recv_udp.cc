@@ -32,6 +32,7 @@ bool verify(void *body, size_t bodyLen, const unsigned char *sig, size_t sigLen,
         return true;
     }
     else {
+        LOG(ERROR) << "signature did not verify :(";
         return false;
     }
 }
@@ -52,7 +53,10 @@ int main(int argc, char *argv[])
 
     MessageHandlerFunc func = [pubkey](MessageHeader *hdr, void *body, Address *sender, void *context)
     {
+        printf("%d %d\n", hdr->msgLen, hdr->msgType);
+
         SignedMessageHeader *shdr = (SignedMessageHeader *)body;
+        printf("%d %d\n", shdr->dataLen, shdr->sigLen);
 
         // TODO checks
         void *data = body + sizeof(SignedMessageHeader);
@@ -63,12 +67,14 @@ int main(int argc, char *argv[])
             printf("%s\n", data);
         }
         else {
-            printf("Failed to verify!");
+            printf("Failed to verify!\n");
         }
 
     };
-    MessageHandler handler(func, nullptr);
+    UDPMsgHandler handler(func, nullptr);
     ep.RegisterMsgHandler(&handler);
+
+    printf("Entering event loop\n");
 
     ep.LoopRun();
     printf("Done loop run!\n");

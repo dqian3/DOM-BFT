@@ -13,9 +13,10 @@ int main(int argc, char *argv[])
     EVP_PKEY* key = NULL;
     PEM_read_bio_PrivateKey(bo, &key, 0, 0 );
 
-    if(key == NULL)
+    if(key == NULL) {
         LOG(ERROR) << "Unable to load private key!";
         return 1;
+    }
     
 
     SignedUDPEndpoint udpEndpoint("127.0.0.1", 8000, key);
@@ -23,7 +24,7 @@ int main(int argc, char *argv[])
     // Send timer
     Timer t = Timer([] (void *data, void *endpoint) {
         SignedUDPEndpoint *ep = (SignedUDPEndpoint *) endpoint;
-        ep->SendMsgTo(Address("127.0.0.1", 9000), "Test", 5, 2);
+        ep->SignAndSendMsgTo(Address("127.0.0.1", 9000), "Test", 5, 2);
     }, 1000);
 
     udpEndpoint.RegisterTimer(&t);
