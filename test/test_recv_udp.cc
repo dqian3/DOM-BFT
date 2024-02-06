@@ -10,7 +10,6 @@
 bool verify(void *body, size_t bodyLen, const unsigned char *sig, size_t sigLen, EVP_PKEY *pubkey)
 {
     EVP_MD_CTX *mdctx = NULL;
-    int ret = 0;
 
     /* Create the Message Digest Context */
     if (!(mdctx = EVP_MD_CTX_create())) {
@@ -44,9 +43,10 @@ int main(int argc, char *argv[])
     EVP_PKEY *pubkey = NULL;
     PEM_read_bio_PUBKEY(bo, &pubkey, 0, 0);
 
-    if (pubkey == NULL)
+    if (pubkey == NULL) {
         LOG(ERROR) << "Unable to load public key!";
-    return 1;
+        return 1;
+    }
 
     UDPEndpoint ep("127.0.0.1", 9000);
 
@@ -67,6 +67,9 @@ int main(int argc, char *argv[])
         }
 
     };
+    MessageHandler handler(func, nullptr);
+    ep.RegisterMsgHandler(&handler);
 
-    ep.RegisterMsgHandler(MessageHandler(func, nullptr))
+    ep.LoopRun();
+    printf("Done loop run!\n");
 }

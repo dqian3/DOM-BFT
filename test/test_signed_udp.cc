@@ -27,4 +27,6 @@ int main(int argc, char *argv[])
     }, 1000);
 
     udpEndpoint.RegisterTimer(&t);
+    udpEndpoint.LoopRun();
+
 }
