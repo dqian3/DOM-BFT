@@ -1,14 +1,21 @@
-#include <yaml-cpp/yaml.h>
+// C++ Standard Libs
 #include <fstream>
+#include <thread>
+
+// Third party libs
+#include <yaml-cpp/yaml.h>
+
+// Own libraries
 #include "lib/utils.h"
 #include "lib/endpoint.h"
-#include "proto/nezha_proto.pb.h"
+#include "lib/signed_udp_endpoint.h"
+
+#include "proto/dombft_proto.pb.h"
+
 #include "proxy_config.h"
-#include <thread>
 
 namespace dombft
 {
-    using namespace dombft::proto;
 
     /**
      * Refer to proxy_run.cc, the runnable program only needs to instantiate a
@@ -57,7 +64,7 @@ namespace dombft
         /** Each ForwardRequestsTd thread uses a udp sockety in forwardEps_, based on
          * its id, to multicast requests to replicas
          */
-        Endpoint *forwardEps_;
+        std::vector<SignedUDPEndpoint *> forwardEps_;
 
         /** CalculateLatencyBoundTd updates latencyBound_ and concurrently
          * ForwardRequestsTds read it and included in request messages */
@@ -67,8 +74,8 @@ namespace dombft
          * details in ``Adapative Latency Bound`` para of Sec 4 of our paper */
         uint32_t maxOWD_;
 
-        int numReplicas_;
-        int f_; /** replicaNum_ =2f_+1 */
+        int numReceivers_;
+        std::vector<Address> receiverAddrs_;
 
         /** Just used to collect logs, can be deleted in the release version*/
         struct Log
@@ -114,35 +121,6 @@ namespace dombft
             }
         };
         ConcurrentQueue<Log> logQu_;
-
-        /** Vector of replica's addresses
-         * Since replicas can have multiple receiver shards, we use a two-dimensional
-         * vector.
-         *
-         * replicaAddrs_[i] records the addresses of replica-i, which can receive
-         * requests replicaAddrs_[i][j] is the address of the jth receiver shard of
-         * replica-i.
-         */
-        std::vector<std::vector<struct sockaddr_in *>> replicaAddrs_;
-
-        /**
-         * After ForwardRequestTd receives client request, it records the address of
-         * the client, so that later the correspoinding CheckQuorumTd can know which
-         * address should recieve the commit reply.
-         */
-        ConcurrentMap<uint32_t, struct sockaddr_in *> clientAddrs_;
-
-        /**
-         * As an optimization, proxies also mantain a cache to record the commit reply
-         * messages for those already-commited requests. In this way, when clients
-         * retry the request which has already been committed, the proxy can direct
-         * resend the reply, instead of adding additional burden to the replicas
-         */
-
-        std::vector<std::unordered_map<uint64_t, Reply *>> committedReplyMap_;
-
-        std::vector<ConcurrentMap<uint64_t, uint64_t>> sendTimeMap_;
-
         std::vector<ConcurrentMap<uint64_t, Log *>> logMap_;
 
     public:

@@ -1,5 +1,4 @@
 #include "lib/address.h"
-#include "address.h"
 
 Address::Address() : ip_(""), port_(-1)
 {

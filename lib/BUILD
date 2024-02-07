@@ -8,6 +8,14 @@ cc_library(
 )
 
 cc_library(
+    name = "common_type",
+    srcs = ["common_type.h"],
+    hdrs = ["common_type.h"],
+    visibility = ["//visibility:public"],
+)
+
+
+cc_library(
     name = "address",
     srcs = ["address.cc"],
     hdrs = ["address.h"],
@@ -61,6 +69,8 @@ cc_library(
         ":endpoint",
         "@com_github_gflags_gflags//:gflags",
         "@com_github_google_glog//:glog",
+        "@com_github_cameron314_concurrentqueue//:concurrentqueue",
+        "@com_github_preshing_junction//:libjunction",
         "@openssl//:openssl",
     ],
     visibility = ["//visibility:public"],

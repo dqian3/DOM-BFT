@@ -11,16 +11,17 @@ cc_library(
     srcs = ["proxy.cc"],
     hdrs = ["proxy.h"],
     deps = [
-        "//proto:nezha_cc_proto",
+        "//proto:dombft_cc_proto",
         "//lib:utils",
         "//lib:address",
-        "@concurrentqueue//:concurrentqueue"
+        "//lib:endpoint",
+        "//lib:common_type",
         ":proxy_config",
     ],
 )
 
 cc_binary(
-    name = "nezha_proxy",
+    name = "dombft_proxy",
     srcs = ["proxy_run.cc"],
     deps = [
         ":proxy_class",

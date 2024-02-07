@@ -20,7 +20,7 @@
  * When the message has been serialized and is about to be sent by the
  * endpoint, MessageHeader is prepended to the head of message which
  * describes the type of message and its length. In this way, when the
- * receiver endpoint receives themessage, it can know the type and length
+ * receiver endpoint receives the message, it can know the type and length
  * of the proto message, then it can choose the proper way to deserialize it.
  */
 struct MessageHeader

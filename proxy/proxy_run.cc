@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) {
     google::InitGoogleLogging(argv[0]);
     FLAGS_logtostderr = 1;
     signal(SIGINT, Terminate);
-    proxy = new nezha::Proxy(FLAGS_config);
+    proxy = new dombft::Proxy(FLAGS_config);
     proxy->Run();
     delete proxy;
 }

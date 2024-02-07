@@ -1,6 +1,8 @@
 #include "proxy/proxy.h"
 
-#include "signed_udp_endpoint.h"
+#include <openssl/pem.h>
+
+#include "lib/common_type.h"
 
 namespace dombft
 {
@@ -42,7 +44,6 @@ namespace dombft
         {
             delete kv.second;
         }
-
 
         // for (uint32_t i = 0; i < committedReplyMap_.size(); i++) {
         //   ConcurrentMap<uint64_t, Reply*>& committedReply = committedReplyMap_[i];
@@ -101,138 +102,126 @@ namespace dombft
 
     void Proxy::RecvMeasurementsTd()
     {
-        int recvlen = 0;
-        char buffer[UDP_BUFFER_SIZE];
-        MessageHeader *msgHdr = (MessageHeader *)(void *)buffer;
+        std::vector<uint32_t> replicaOWDs;
 
-        struct sockaddr_in recvAddr;
-        socklen_t sockLen = sizeof(recvAddr);
 
-        MeasurementReply reply;
-        uint32_t replyNum = 0;
-        uint64_t startTime, endTime;
-
-        while (running_)
+        MessageHandlerFunc handleMeasurementReply = [this, replicaOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
         {
-            if ((recvlen = recvfrom(forwardFds_[, buffer, UDP_BUFFER_SIZE, 0,
-                                    (struct sockaddr *)(&recvAddr), &sockLen)) > 0)
-            {
-                if ((uint32_t)recvlen < sizeof(MessageHeader) ||
-                    (uint32_t)recvlen < msgHdr->msgLen + sizeof(MessageHeader))
-                {
-                    continue;
-                }
+            MeasurementReply reply;
 
-                if (reply.ParseFromArray(buffer + sizeof(MessageHeader),
-                                         msgHdr->msgLen))
+            if (reply.ParseFromArray(body))
+            {
+                if (reply.owd() > 0)
                 {
-                    if (reply.owd() > 0)
+                    VLOG(1) << "replica=" << reply.replica_id << "\towd=" << reply.owd();
+
+                    // TODO actually calculate something here?
+                    replicaOWDs[reply.replica_id()] = reply.owd();
+                    // Update latency bound
+                    uint32_t estimatedOWD = 0;
+                    for (uint32_t i = 0; i < replicaOWDs.size(); i++)
                     {
-                        VLOG(1) << "replica=" << reply.replica_id << "\towd=" << owdSample.second;
-                        replicaOWDs[owdSample.first] = owdSample.second;
-                        // Update latency bound
-                        uint32_t estimatedOWD = 0;
-                        for (uint32_t i = 0; i < replicaOWDs.size(); i++)
+                        if (estimatedOWD < replicaOWDs[i])
                         {
-                            if (estimatedOWD < replicaOWDs[i])
-                            {
-                                estimatedOWD = replicaOWDs[i];
-                            }
+                            estimatedOWD = replicaOWDs[i];
                         }
-                        if (estimatedOWD > maxOWD_)
-                        {
-                            estimatedOWD = maxOWD_;
-                        }
-                        latencyBound_.store(estimatedOWD);
-                        VLOG(1) << "Update bound " << latencyBound_;
                     }
+                    if (estimatedOWD > maxOWD_)
+                    {
+                        estimatedOWD = maxOWD_;
+                    }
+                    latencyBound_.store(estimatedOWD);
+                    VLOG(1) << "Update bound " << latencyBound_;
                 }
             }
-        }
+        };
+
+        /* Checks every 10ms to see if we are done*/
+        auto checkEnd = [] (void *ctx, void *receiverEP)
+        {
+            if (((Proxy *)ctx)->running_ == false)
+            {
+                ((Endpoint *)receiverEP)->LoopBreak();
+            }
+        };
+
+        MessageHandler handler(handleMeasurementReply);
+        Timer monitor(checkEnd, 10, this);
+
+        measurmentEp->RegisterMsgHandler(&handler);
+        measurmentEp->RegisterTimer(&monitor);
     }
 
-    void Proxy::ForwardRequestsTd(const int id)
+    void Proxy::ForwardRequestsTd(const int thread_id)
     {
-        ConcurrentMap<uint64_t, Log *> &logs = logMap_[id];
-        char buffer[UDP_BUFFER_SIZE];
-        MessageHeader *msgHdr = (MessageHeader *)(void *)buffer;
-        int sz = -1;
-        struct sockaddr_in receiverAddr;
-        socklen_t len = sizeof(receiverAddr);
-        Request request;
-        uint32_t forwardCnt = 0;
-        uint64_t startTime, endTime;
+        // TODO add this logging back
+        // ConcurrentMap<uint64_t, Log *> &logs = logMap_[id];
+        // uint32_t forwardCnt = 0;
+        // uint64_t startTime, endTime;
 
-        while (running_)
+        MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender, void *context)
         {
-            if ((sz = recvfrom(requestReceiveFds_[id], buffer, UDP_BUFFER_SIZE, 0,
-                               (struct sockaddr *)&receiverAddr, &len)) > 0)
+            ClientRequest inReq; // Client request we get
+            DOMRequest outReq;   // Outgoing request that we attach a deadline to
+
+            if (hdr->msgType == MessageType::CLIENT_REQUEST &&
+                inReq.ParseFromArray(body, hdr->msgLen))
             {
-                if ((uint32_t)sz < sizeof(MessageHeader) ||
-                    (uint32_t)sz < msgHdr->msgLen + sizeof(MessageHeader))
+
+                outReq.set_deadline(GetMicrosecondTimestamp() + latencyBound_);
+                outReq.set_proxy_id(proxyConfig_.proxyId);
+
+                // TODO set these properly
+                outReq.set_deadline_set_size(numReceivers_);
+                outReq.set_late(false);
+
+                for (int i = 0; i < numReceivers_; i++)
                 {
-                    continue;
+                    forwardEps_[thread_id]->SignAndSendProtoMsg(receiverAddrs_[i], outReq, MessageType::DOM_REQUEST);
                 }
-                if (msgHdr->msgType == MessageType::CLIENT_REQUEST &&
-                    request.ParseFromArray(buffer + sizeof(MessageHeader),
-                                           msgHdr->msgLen))
-                {
-                    uint64_t reqKey = CONCAT_UINT32(request.clientid(), request.reqid());
-                    request.set_bound(latencyBound_);
-                    request.set_proxyid(proxyIds_[id]);
-                    request.set_sendtime(GetMicrosecondTimestamp());
 
-                    std::string msg = request.SerializeAsString();
-                    msgHdr->msgType = MessageType::CLIENT_REQUEST;
-                    msgHdr->msgLen = msg.length();
-                    memcpy(buffer + sizeof(MessageHeader), msg.c_str(), msg.length());
-                    if (clientAddrs_.get(request.clientid()) == NULL)
-                    {
-                        struct sockaddr_in *addr = new sockaddr_in(receiverAddr);
-                        clientAddrs_.assign(request.clientid(), addr);
-                    }
+                // Log* litem = new Log();
+                // litem->clientId_ = request.clientid();
+                // litem->reqId_ = request.reqid();
+                // litem->clientTime_ = request.clienttime();
+                // litem->proxyTime_ = request.sendtime();
+                // litem->deadline_ = request.sendtime() + request.bound();
+                // logs.assign(reqKey, litem);
+                // litem->proxyEndProcessTime_ = GetMicrosecondTimestamp();
+                // LOG(INFO) << "id=" << id << "\t"
+                //           << "cid=" << request.clientid() << "\t" << request.reqid();
 
-                    // Send to every replica
-                    for (int i = 0; i < replicaNum_; i++)
-                    {
-                        // uint32_t generateProxyId = (uint32_t)(proxyIds_[id] >> 32u);
-                        // struct sockaddr_in* replicaAddr =
-                        //     replicaAddrs_[i][generateProxyId % replicaAddrs_[i].size()];
-                        struct sockaddr_in *replicaAddr =
-                            replicaAddrs_[i][proxyIds_[id] % replicaAddrs_[i].size()];
-
-                        sendto(forwardFds_[id], buffer,
-                               msgHdr->msgLen + sizeof(MessageHeader), 0,
-                               (struct sockaddr *)replicaAddr, sizeof(sockaddr_in));
-                    }
-                    // Log* litem = new Log();
-                    // litem->clientId_ = request.clientid();
-                    // litem->reqId_ = request.reqid();
-                    // litem->clientTime_ = request.clienttime();
-                    // litem->proxyTime_ = request.sendtime();
-                    // litem->deadline_ = request.sendtime() + request.bound();
-                    // logs.assign(reqKey, litem);
-                    // litem->proxyEndProcessTime_ = GetMicrosecondTimestamp();
-                    // LOG(INFO) << "id=" << id << "\t"
-                    //           << "cid=" << request.clientid() << "\t" << request.reqid();
-
-                    // forwardCnt++;
-                    // if (forwardCnt == 1) {
-                    //   startTime = GetMicrosecondTimestamp();
-                    // } else if (forwardCnt % 100 == 0) {
-                    //   endTime = GetMicrosecondTimestamp();
-                    //   float rate = 100 / ((endTime - startTime) * 1e-6);
-                    //   LOG(INFO) << "Forward-Id=" << id << "\t"
-                    //             << "count =" << forwardCnt << "\t"
-                    //             << "rate=" << rate << " req/sec"
-                    //             << "\t"
-                    //             << "req is <" << request.clientid() << ","
-                    //             << request.reqid() << ">";
-                    //   startTime = endTime;
-                    // }
-                }
+                // forwardCnt++;
+                // if (forwardCnt == 1) {
+                //   startTime = GetMicrosecondTimestamp();
+                // } else if (forwardCnt % 100 == 0) {
+                //   endTime = GetMicrosecondTimestamp();
+                //   float rate = 100 / ((endTime - startTime) * 1e-6);
+                //   LOG(INFO) << "Forward-Id=" << id << "\t"
+                //             << "count =" << forwardCnt << "\t"
+                //             << "rate=" << rate << " req/sec"
+                //             << "\t"
+                //             << "req is <" << request.clientid() << ","
+                //             << request.reqid() << ">";
+                //   startTime = endTime;
+                // }
             }
-        }
+        };
+
+        /* Checks every 10ms to see if we are done*/
+        auto checkEnd = [] (void *ctx, void *receiverEP)
+        {
+            if (((Proxy *)ctx)->running_ == false)
+            {
+                ((Endpoint *)receiverEP)->LoopBreak();
+            }
+        };
+
+        MessageHandler handler(handleClientRequest);
+        Timer monitor(checkEnd, 10, this);
+
+        forwardEps_[thread_id]->RegisterMsgHandler(&handler);
+        forwardEps_[thread_id]->RegisterTimer(&monitor);
     }
 
     void Proxy::CreateContext()
@@ -240,37 +229,32 @@ namespace dombft
         running_ = true;
         int numShards = proxyConfig_.proxyNumShards;
         uint32_t proxyId = proxyConfig_.proxyId;
-        latencyBound_ = proxyConfig_.replicaInitialOwd;
-        maxOWD_ = proxyConfig_.proxyMaxOwd;
+        latencyBound_ = proxyConfig_.initialOwd;
+        maxOWD_ = proxyConfig_.maxOwd;
 
         logMap_.resize(numShards);
 
-        for (int i = 0; i < numShards; i++) {
-            forwardFds_[i] = SignedUDPEndpoint(proxyConfig_.proxyIp,
-                                            proxyConfig_.proxyReplyPortBase + i);
-            requestReceiveFds_[i] = CreateSocketFd(
-                proxyConfig_.proxyIp, proxyConfig_.proxyRequestPortBase + i);
-            replyFds_[i] = CreateSocketFd("", -1);
-            proxyIds_[i] = ((proxyIds_[i] << 32) | (uint32_t)i);
-        }
-
-
-
-        numReplicas_ = proxyConfig_.replicaIps.size();
-        f_ = numReplicas_ / 3;
-
-        for (int i = 0; i < numReplicas_; i++)
+        for (int i = 0; i < numShards; i++)
         {
-            std::string replicaIP = proxyConfig_.replicaIps[i];
-            for (int j = 0; j < proxyConfig_.replicaReceiverShards; j++)
-            {
-                struct sockaddr_in *addr = new sockaddr_in();
-                bzero(addr, sizeof(struct sockaddr_in));
-                addr->sin_family = AF_INET;
-                addr->sin_port = htons(proxyConfig_.replicaReceiverPort + j);
-                addr->sin_addr.s_addr = inet_addr(replicaIP.c_str());
-                replicaAddrs_[i].push_back(addr);
-            }
+            BIO *bo = BIO_new_file((proxyConfig_.clientPubKeyPrefix + "-" + std::to_string(i)).c_str(), "r");
+            EVP_PKEY *pubkey = NULL;
+            PEM_read_bio_PUBKEY(bo, &pubkey, 0, 0);
+            BIO_free(bo);
+
+            forwardEps_[i] = new SignedUDPEndpoint(proxyConfig_.proxyIp,
+                                                   proxyConfig_.proxyForwardPortBase + i,
+                                                   pubkey);
+        }
+        measurmentEp = new UDPEndpoint(
+            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurmentPort);
+
+        numReceivers_ = proxyConfig_.receiverIps.size();
+
+        for (int i = 0; i < numReceivers_; i++)
+        {
+            std::string receiverIp = proxyConfig_.receiverIps[i];
+            // TODO handle sharding for receivers
+            receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPort));
         }
     }
 

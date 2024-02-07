@@ -20,6 +20,8 @@ UDPEndpoint::UDPEndpoint(const std::string &ip, const int port,
     {
         return;
     }
+
+    bound_ = true;
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -79,6 +81,11 @@ int UDPEndpoint::SendProtoMsgTo(const Address &dstAddr,
 bool UDPEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
 {
     UDPMsgHandler *udpMsgHdl = (UDPMsgHandler *)msgHdl;
+    if (!bound_)
+    {
+        LOG(ERROR) << "Endpoint is not bound!";
+        return false;
+    }
     if (evLoop_ == NULL)
     {
         LOG(ERROR) << "No evLoop!";

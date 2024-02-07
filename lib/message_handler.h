@@ -34,6 +34,7 @@
  * Para-3: Address* is the address of the sender
  * Para-4: void* points to the (optional) context that is needed by the callback
  * function(i.e., MessageHandlerFunc)
+ * TODO (do we even need this if we can just use closures?)
  */
 typedef std::function<void(MessageHeader *, char *, Address *, void *)>
     MessageHandlerFunc;

@@ -8,6 +8,8 @@ class UDPEndpoint : public Endpoint
 protected:
     /* data */
     struct UDPMsgHandler *msgHandler_;
+    bool bound_ = false;
+
 
 public:
     UDPEndpoint(const std::string &ip, const int port,
@@ -23,10 +25,10 @@ public:
                        const google::protobuf::Message &msg,
                        const char msgType);
 
-    bool RegisterMsgHandler(MessageHandler *msgHdl) override;
-    bool UnRegisterMsgHandler(MessageHandler *msgHdl) override;
-    bool isMsgHandlerRegistered(MessageHandler *msgHdl) override;
-    void UnRegisterAllMsgHandlers() override;
+    virtual bool RegisterMsgHandler(MessageHandler *msgHdl) override;
+    virtual bool UnRegisterMsgHandler(MessageHandler *msgHdl) override;
+    virtual bool isMsgHandlerRegistered(MessageHandler *msgHdl) override;
+    virtual void UnRegisterAllMsgHandlers() override;
 };
 
 #endif
