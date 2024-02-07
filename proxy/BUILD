@@ -14,6 +14,7 @@ cc_library(
         "//proto:nezha_cc_proto",
         "//lib:utils",
         "//lib:address",
+        "@concurrentqueue//:concurrentqueue"
         ":proxy_config",
     ],
 )
