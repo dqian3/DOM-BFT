@@ -45,17 +45,8 @@ namespace dombft
             delete kv.second;
         }
 
-        // for (uint32_t i = 0; i < committedReplyMap_.size(); i++) {
-        //   ConcurrentMap<uint64_t, Reply*>& committedReply = committedReplyMap_[i];
-        //   ConcurrentMap<uint64_t, Reply*>::Iterator iter(committedReply);
-        //   while (iter.isValid()) {
-        //     Reply* reply = iter.getValue();
-        //     if (reply) {
-        //       delete reply;
-        //     }
-        //     iter.next();
-        //   }
-        // }
+        // TODO Cleanup more
+
     }
 
     void Proxy::LaunchThreads()
@@ -74,6 +65,8 @@ namespace dombft
         // threadPool_[key] = new std::thread(&Proxy::LogTd, this);
     }
 
+
+    // TODO fix this
     void Proxy::LogTd()
     {
         Log litem;
@@ -103,7 +96,6 @@ namespace dombft
     void Proxy::RecvMeasurementsTd()
     {
         std::vector<uint32_t> replicaOWDs;
-
 
         MessageHandlerFunc handleMeasurementReply = [this, &replicaOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
         {
@@ -137,7 +129,7 @@ namespace dombft
         };
 
         /* Checks every 10ms to see if we are done*/
-        auto checkEnd = [] (void *ctx, void *receiverEP)
+        auto checkEnd = [](void *ctx, void *receiverEP)
         {
             if (((Proxy *)ctx)->running_ == false)
             {
@@ -148,8 +140,10 @@ namespace dombft
         MessageHandler handler(handleMeasurementReply);
         Timer monitor(checkEnd, 10, this);
 
-        measurmentEp->RegisterMsgHandler(&handler);
-        measurmentEp->RegisterTimer(&monitor);
+        measurmentEp_->RegisterMsgHandler(&handler);
+        measurmentEp_->RegisterTimer(&monitor);
+
+        measurmentEp_->LoopRun();
     }
 
     void Proxy::ForwardRequestsTd(const int thread_id)
@@ -209,7 +203,7 @@ namespace dombft
         };
 
         /* Checks every 10ms to see if we are done*/
-        auto checkEnd = [] (void *ctx, void *receiverEP)
+        auto checkEnd = [](void *ctx, void *receiverEP)
         {
             if (((Proxy *)ctx)->running_ == false)
             {
@@ -222,6 +216,8 @@ namespace dombft
 
         forwardEps_[thread_id]->RegisterMsgHandler(&handler);
         forwardEps_[thread_id]->RegisterTimer(&monitor);
+
+        forwardEps_[thread_id]->LoopRun();
     }
 
     void Proxy::CreateContext()
@@ -240,11 +236,11 @@ namespace dombft
             PEM_read_bio_PUBKEY(bo, &pubkey, 0, 0);
             BIO_free(bo);
 
-            forwardEps_[i] = new SignedUDPEndpoint(proxyConfig_.proxyIp,
-                                                   proxyConfig_.proxyForwardPortBase + i,
-                                                   pubkey);
+            forwardEps_.push_back(new SignedUDPEndpoint(proxyConfig_.proxyIp,
+                                                        proxyConfig_.proxyForwardPortBase + i,
+                                                        pubkey));
         }
-        measurmentEp = new UDPEndpoint(
+        measurmentEp_ = new UDPEndpoint(
             proxyConfig_.proxyIp, proxyConfig_.proxyMeasurmentPort);
 
         numReceivers_ = proxyConfig_.receiverIps.size();

@@ -56,12 +56,12 @@ namespace dombft
         /** Flag to Run/Terminate threads */
         std::atomic<bool> running_;
 
-        /** Each CheckQuorumTd thread uses the socket fd in replyFds_, based on its
+        /** Each CheckQuorumTd thread uses a udp socket inside measurementEp_, based on its
          * id, to send reply to clients
          */
-        Endpoint *measurmentEp;
+        Endpoint *measurmentEp_;
 
-        /** Each ForwardRequestsTd thread uses a udp sockety in forwardEps_, based on
+        /** Each ForwardRequestsTd thread uses a udp socket in forwardEps_, based on
          * its id, to multicast requests to replicas
          */
         std::vector<SignedUDPEndpoint *> forwardEps_;

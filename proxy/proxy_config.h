@@ -21,7 +21,7 @@ struct ProxyConfig
     std::vector<std::string> receiverIps;
     int receiverPort;
     int receiverShards;
-    std::string receiverHMACPrefix;
+    std::string receiverHmacPrefix;
 
     // Clients
     int numClients;
@@ -55,7 +55,7 @@ struct ProxyConfig
             key = "receiverPort";
             receiverPort = config[key].as<int>();
             key = "receiverHmacPrefix";
-            receiverHMACPrefix = config[key].as<std::string>();
+            receiverHmacPrefix = config[key].as<std::string>();
 
             key = "proxyId";
             proxyId = config[key].as<int>();

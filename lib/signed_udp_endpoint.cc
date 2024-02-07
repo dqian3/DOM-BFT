@@ -15,15 +15,14 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
                                         u_int32_t msgLen,
                                         char msgType)
 {
-    char buffer[sizeof(SignedMessageHeader) + msgLen + MAX_SIG_LEN];
-    unsigned char *data = (unsigned char *)&buffer[sizeof(SignedMessageHeader)];
-    unsigned char *sig = (unsigned char *)&buffer[sizeof(SignedMessageHeader) + msgLen];
+    char buffer[sizeof(MessageHeader) + sizeof(SignedMessageHeader) + msgLen + MAX_SIG_LEN];
     size_t sigLen = 0;
 
-    SignedMessageHeader *hdr = (SignedMessageHeader *)buffer;
+    MessageHeader *hdr = (MessageHeader *) buffer;
+    SignedMessageHeader *shdr = (SignedMessageHeader *)(hdr + 1);
+    unsigned char *data = (unsigned char *)(shdr + 1);
+    unsigned char *sig = data + msgLen;
 
-    // TODO Lot of copying here...
-    hdr->dataLen = msgLen;
     memcpy(data, msg, msgLen);
 
     // Write signature after msg
@@ -33,15 +32,15 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
     // Use SHA256 as digest to sign
     if (1 != EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, key_))
         return -1;
-    if (1 != EVP_DigestSignUpdate(mdctx, data, hdr->dataLen))
+    if (1 != EVP_DigestSignUpdate(mdctx, data, msgLen))
         return -1;
-
 
     if(1 != EVP_DigestSignFinal(mdctx, NULL, &sigLen)) {
         LOG(ERROR) << "Failed to calculate signature length!\n";
         return -1;
     }
-    hdr->sigLen = sigLen;
+    shdr->sigLen = sigLen;
+    hdr->msgLen = sizeof(SignedMessageHeader) + msgLen + sigLen;
 
     if (1 != EVP_DigestSignFinal(mdctx, sig, &sigLen))
     {
@@ -49,9 +48,14 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
         return -1;
     }
 
+    int ret = sendto(fd_, buffer, hdr->msgLen + sizeof(MessageHeader), 0,
+                     (struct sockaddr *)(&(dstAddr.addr_)), sizeof(sockaddr_in));
+    if (ret < 0)
+    {
+        VLOG(1) << pthread_self() << "\tSend Fail ret =" << ret;
+    }
+    return ret;
 
-
-    return SendMsgTo(dstAddr, buffer, sigLen + msgLen + sizeof(SignedMessageHeader), msgType);
 }
 
 int SignedUDPEndpoint::SignAndSendProtoMsg(const Address &dstAddr,

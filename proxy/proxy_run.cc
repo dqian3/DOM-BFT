@@ -1,5 +1,5 @@
 #include "proxy/proxy.h"
-DEFINE_string(config, "nezhav2/config/nezha-proxy-config-0.yaml", "The config file for the proxy");
+DEFINE_string(config, "configs/proxy.yaml", "The config file for the proxy");
 
 dombft::Proxy* proxy = NULL;
 void Terminate(int para) {

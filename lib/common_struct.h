@@ -31,16 +31,13 @@ struct MessageHeader
 };
 
 /**
- * Encapsulated within a message header, dataLen is the length of the encoded
- * proto message, sigLen is the len of the signature. This header is present
- * depending on msgType above
+ * Encapsulated within a message header, sigLen is the len of the signature. 
+ * The start of the signature can be found with msgLen - sigLen
  */
-// TODO just add msgType to the top, so no need for encapsulation
 struct SignedMessageHeader
 {
-    uint32_t dataLen;
     uint32_t sigLen;
-    SignedMessageHeader(const uint32_t dl, const uint32_t sl) : dataLen(dl), sigLen(sl) {}
+    SignedMessageHeader(const uint32_t sl): sigLen(sl) {}
 };
 
 #endif

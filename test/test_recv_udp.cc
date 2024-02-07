@@ -56,13 +56,15 @@ int main(int argc, char *argv[])
         printf("%d %d\n", hdr->msgLen, hdr->msgType);
 
         SignedMessageHeader *shdr = (SignedMessageHeader *)body;
-        printf("%d %d\n", shdr->dataLen, shdr->sigLen);
+        uint32_t dataLen = hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader);
+
+        printf("%d %d\n", dataLen, shdr->sigLen);
 
         // TODO checks
         void *data = body + sizeof(SignedMessageHeader);
-        unsigned char *sig = (unsigned char *)(body + sizeof(SignedMessageHeader) + shdr->dataLen);
+        unsigned char *sig = (unsigned char *)(data + dataLen);
 
-        if (verify(data, shdr->dataLen, sig, shdr->sigLen, pubkey)) {
+        if (verify(data, dataLen, sig, shdr->sigLen, pubkey)) {
             printf("Verified!\n");
             printf("%s\n", data);
         }
