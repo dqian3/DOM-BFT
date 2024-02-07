@@ -1,26 +1,23 @@
 syntax = "proto3";
-package nezha.proto;
+package dombft.proto;
 
+message ClientRequest {
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+    uint64 send_time = 3;
+    bool is_write = 4;
 
-message Request {
-    uint64 sendtime = 1;
-    uint32 bound=2;
-    uint32 clientid = 3;
-    uint32 reqid = 4;
-    bytes command=5;
-    uint64 proxyid = 6;
-    uint32 key = 7;
-    bool iswrite = 8;
+    bytes req_data = 5;
 }
 
-message RequestBodyMsg {
-    uint64 deadline = 1;
-    uint64 reqkey = 2;
-    uint64 proxyid = 3;
-    bytes command = 4;
-    uint32 key = 5;
-    bool iswrite = 6;
+message DOMRequest {
+    uint64  deadline = 1;
+    uint32  proxy_id = 2;
+    bool    late = 3
+    uint32  deadline_set_size = 4
+    bytes   client_req = 5; // Bytes of Client Request + Signature
 }
+
 message TimeStats {
     uint64 clienttime = 1;
     uint64 proxytime = 2;
@@ -29,19 +26,18 @@ message TimeStats {
     uint64 slowreplytime= 5;
     uint64 deadline = 6;
 }
+
 message Reply {
-    uint32 clientid = 1;
-    uint32 reqid = 2;
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+
+    // Tentative global ordering
     uint32 view = 3;
-    uint32 replicaid = 4;
-    bytes hash = 5;
+    uint32 seq = 4
+
+    uint32 replica_id = 5;
+    bool fast = 6
     bytes result = 6;
-    uint32 replytype = 7;
-    uint32 owd = 8;
-    uint32 maxsyncedlogid = 9; // This is the largest syncedlogid of my synced logs
-    uint32 logid = 10; // only set by the leader, it is the log id of the entry replied
-    bool iswrite = 11;
-    uint32 opkey = 12;
 }
 
 message IndexSync {
