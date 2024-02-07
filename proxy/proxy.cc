@@ -105,15 +105,15 @@ namespace dombft
         std::vector<uint32_t> replicaOWDs;
 
 
-        MessageHandlerFunc handleMeasurementReply = [this, replicaOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
+        MessageHandlerFunc handleMeasurementReply = [this, &replicaOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
         {
             MeasurementReply reply;
 
-            if (reply.ParseFromArray(body))
+            if (reply.ParseFromArray(body, hdr->msgLen))
             {
                 if (reply.owd() > 0)
                 {
-                    VLOG(1) << "replica=" << reply.replica_id << "\towd=" << reply.owd();
+                    VLOG(1) << "replica=" << reply.replica_id() << "\towd=" << reply.owd();
 
                     // TODO actually calculate something here?
                     replicaOWDs[reply.replica_id()] = reply.owd();
@@ -228,7 +228,6 @@ namespace dombft
     {
         running_ = true;
         int numShards = proxyConfig_.proxyNumShards;
-        uint32_t proxyId = proxyConfig_.proxyId;
         latencyBound_ = proxyConfig_.initialOwd;
         maxOWD_ = proxyConfig_.maxOwd;
 

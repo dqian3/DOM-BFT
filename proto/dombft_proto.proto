@@ -12,15 +12,16 @@ message ClientRequest {
 
 message DOMRequest {
     uint64  deadline = 1;
-    uint32  proxy_id = 2;
-    bool    late = 3;
-    uint32  deadline_set_size = 4;
-    bytes   client_req = 5; // Bytes of Client Request + Signature
+    uint64  send_time = 2;
+    uint32  proxy_id = 3;
+    bool    late = 4;
+    uint32  deadline_set_size = 5;
+    bytes   client_req = 6; // Bytes of Client Request + Signature
 }
 
 message MeasurementReply {
     uint32 replica_id = 1;
-    uint32 deadline = 2;
+    uint32 owd = 2;
 }    
 
 message Reply {
