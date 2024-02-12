@@ -4,22 +4,26 @@
 #include <string>
 #include <vector>
 
-struct ClientConfig
+struct ReceiverConfig
 {
-    int clientId;
-    std::string clientIp;
-    std::string clientKey;
+    // Own Config
+    int receiverId;
+    std::string receiverIp;
+    int receiverPort;
+    std::string receiverKey;
 
-    int clientPort;
-    int proxyPortBase;
+    // Proxy
+    int numProxies;
+    std::string proxyPubKeyPrefix;
 
-    // double writeRatio;
-    // int requestRetryTimeoutUs;
+    // Communication to replicas
+    bool ipcReplica = false;
+    std::string ipcName = "";
 
-    bool useProxy;
-    std::vector<std::string> proxyIps;
-
+    // Set of replicaIps to forward to if not over ipc, NOT all replicas
+    // TODO for now we just configure this statically, in the future it perhaps should be dynamic
     std::vector<std::string> replicaIps;
+    int replicaPort;
 
     // Parses yaml file configFilename and fills in fields of ProxyConfig
     // accordingly. Returns an error message or "" if there are no errors.
@@ -39,33 +43,25 @@ struct ClientConfig
         std::string key; // Keep track of current key for better error messages
         try
         {
-            key = "clientId";
-            clientId = config[key].as<int>();
-            key = "clientIp";
-            clientIp = config[key].as<std::string>();
-            key = "clientKey";
-            clientKey = config[key].as<std::string>();
+            key = "receiverId";
+            receiverId = config[key].as<int>();
+            key = "receiverIp";
+            receiverIp = config[key].as<std::string>(); 
+            key = "receiverPort";
+            receiverPort = config[key].as<int>();
+            key = "receiverKey";
+            receiverKey = config[key].as<std::string>();
 
-            key = "clientPort";
-            clientPort = config[key].as<int>();
-            key = "proxyPortBase";
-            proxyPortBase = config[key].as<int>();
+            key = "numProxies";
+            numProxies = config[key].as<int>();
+            key = "proxyPubKeyPrefix";
+            proxyPubKeyPrefix = config[key].as<std::string>();
 
-
-            // key = "writeRatio";
-            // writeRatio = config[key].as<double>();
-            // key = "requestRetryTimeoutUs";
-            // requestRetryTimeoutUs = config[key].as<int>();
-
-            // key = "requestRetryTimeoutUs";
-            // requestRetryTimeoutUs = config[key].as<int>();
-
-            key = "useProxy";
-            useProxy = config[key].as<bool>();
-
-            for (uint32_t i = 0; i < config[key].size(); i++)
-            {
-                proxyIps.push_back(config[key][i].as<std::string>());
+            key = "ipcReplica";
+            if (config[key]) {
+                ipcReplica = config[key].as<bool>();
+                key = "ipcName";
+                ipcName = config[key].as<std::string>();
             }
 
             key = "replicaIps";
@@ -73,7 +69,6 @@ struct ClientConfig
             {
                 replicaIps.push_back(config[key][i].as<std::string>());
             }
-
 
             return "";
         }

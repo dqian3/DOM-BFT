@@ -58,7 +58,7 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
 
 }
 
-int SignedUDPEndpoint::SignAndSendProtoMsg(const Address &dstAddr,
+int SignedUDPEndpoint::SignAndSendProtoMsgTo(const Address &dstAddr,
                                            const google::protobuf::Message &msg,
                                            char msgType)
 {

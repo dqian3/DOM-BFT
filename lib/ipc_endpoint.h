@@ -1,5 +1,5 @@
-#ifndef UDP_ENDPOINT_H
-#define UDP_ENDPOINT_H
+#ifndef IPC_ENDPOINT_H 
+#define IPC_ENDPOINT_H
 
 #include "lib/endpoint.h"
 

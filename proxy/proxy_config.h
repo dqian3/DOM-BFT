@@ -12,6 +12,7 @@ struct ProxyConfig
     int proxyNumShards;
     int proxyForwardPortBase;
     int proxyMeasurmentPort;
+    std::string proxyKey;
 
     // Measurement settings
     uint32_t initialOwd;
@@ -54,8 +55,8 @@ struct ProxyConfig
             receiverShards = config[key].as<int>();
             key = "receiverPort";
             receiverPort = config[key].as<int>();
-            key = "receiverHmacPrefix";
-            receiverHmacPrefix = config[key].as<std::string>();
+            // key = "receiverHmacPrefix";
+            // receiverHmacPrefix = config[key].as<std::string>();
 
             key = "proxyId";
             proxyId = config[key].as<int>();
@@ -67,6 +68,8 @@ struct ProxyConfig
             proxyForwardPortBase = config[key].as<int>();
             key = "proxyMeasurmentPort";
             proxyMeasurmentPort = config[key].as<int>();
+            key = "proxyKey";
+            proxyKey = config[key].as<std::string>();
 
             key = "initialOwd";
             initialOwd = config[key].as<uint32_t>();

@@ -1,0 +1,19 @@
+# Proxy Info
+clientId: 1
+clientIp: "127.0.0.6"
+clientKey: keys/client.pem
+
+clientPort: 33000
+
+# Receiver Info
+replicaIps:
+  - "127.0.0.1"
+  - "127.0.0.2"
+  - "127.0.0.3"
+  - "127.0.0.4"
+
+useProxy: true
+proxyPortBase: 31000
+proxyIPs:
+  - "127.0.0.5"
+

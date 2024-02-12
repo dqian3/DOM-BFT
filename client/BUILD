@@ -14,13 +14,15 @@ cc_library(
     hdrs = ["client.h"],
     deps = [
         "//proto:dombft_cc_proto",
+        "//lib:common_type",
+        "//lib:endpoint",
         "//lib:utils",
         ":client_config",
     ],
 )
 
 cc_binary(
-    name = "nezha_client",
+    name = "dombft_client",
     srcs = ["client_run.cc"],
     deps = [
         ":client_class",

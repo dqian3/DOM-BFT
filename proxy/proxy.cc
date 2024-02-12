@@ -16,7 +16,42 @@ namespace dombft
             LOG(ERROR) << "Error parsing proxy config: " << error << "Exiting.";
             exit(1);
         }
-        CreateContext();
+        running_ = true;
+        
+        int numShards = proxyConfig_.proxyNumShards;
+        latencyBound_ = proxyConfig_.initialOwd;
+        maxOWD_ = proxyConfig_.maxOwd;
+
+        logMap_.resize(numShards);
+
+        BIO *bo = BIO_new_file(proxyConfig_.proxyKey.c_str(), "r");
+        EVP_PKEY *key = NULL;
+        PEM_read_bio_PrivateKey(bo, &key, 0, 0 );
+        BIO_free(bo);
+
+
+        if(key == NULL) {
+            LOG(ERROR) << "Unable to load private key!";
+            exit(1);
+        }
+
+        for (int i = 0; i < numShards; i++)
+        {
+            forwardEps_.push_back(new SignedUDPEndpoint(proxyConfig_.proxyIp,
+                                                        proxyConfig_.proxyForwardPortBase + i,
+                                                        key));
+        }
+        measurmentEp_ = new UDPEndpoint(
+            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurmentPort);
+
+        numReceivers_ = proxyConfig_.receiverIps.size();
+
+        for (int i = 0; i < numReceivers_; i++)
+        {
+            std::string receiverIp = proxyConfig_.receiverIps[i];
+            // TODO handle sharding for receivers
+            receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPort));
+        }
     }
 
     void Proxy::Terminate()
@@ -105,10 +140,10 @@ namespace dombft
             {
                 if (reply.owd() > 0)
                 {
-                    VLOG(1) << "replica=" << reply.replica_id() << "\towd=" << reply.owd();
+                    VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd(); 
 
                     // TODO actually calculate something here?
-                    replicaOWDs[reply.replica_id()] = reply.owd();
+                    replicaOWDs[reply.receiver_id()] = reply.owd();
                     // Update latency bound
                     uint32_t estimatedOWD = 0;
                     for (uint32_t i = 0; i < replicaOWDs.size(); i++)
@@ -158,10 +193,14 @@ namespace dombft
             ClientRequest inReq; // Client request we get
             DOMRequest outReq;   // Outgoing request that we attach a deadline to
 
-            if (hdr->msgType == MessageType::CLIENT_REQUEST &&
-                inReq.ParseFromArray(body, hdr->msgLen))
+            if (hdr->msgType == MessageType::CLIENT_REQUEST)
             {
-
+                // TODO verify and handle signed header better
+                if (!inReq.ParseFromArray(body + sizeof(SignedMessageHeader), hdr->msgLen)) {
+                    LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                    return;
+                }
+                
                 outReq.set_deadline(GetMicrosecondTimestamp() + latencyBound_);
                 outReq.set_proxy_id(proxyConfig_.proxyId);
 
@@ -169,9 +208,11 @@ namespace dombft
                 outReq.set_deadline_set_size(numReceivers_);
                 outReq.set_late(false);
 
+                outReq.set_client_req(body, hdr->msgLen);
+
                 for (int i = 0; i < numReceivers_; i++)
                 {
-                    forwardEps_[thread_id]->SignAndSendProtoMsg(receiverAddrs_[i], outReq, MessageType::DOM_REQUEST);
+                    forwardEps_[thread_id]->SignAndSendProtoMsgTo(receiverAddrs_[i], outReq, MessageType::DOM_REQUEST);
                 }
 
                 // Log* litem = new Log();
@@ -220,37 +261,5 @@ namespace dombft
         forwardEps_[thread_id]->LoopRun();
     }
 
-    void Proxy::CreateContext()
-    {
-        running_ = true;
-        int numShards = proxyConfig_.proxyNumShards;
-        latencyBound_ = proxyConfig_.initialOwd;
-        maxOWD_ = proxyConfig_.maxOwd;
-
-        logMap_.resize(numShards);
-
-        for (int i = 0; i < numShards; i++)
-        {
-            BIO *bo = BIO_new_file((proxyConfig_.clientPubKeyPrefix + "-" + std::to_string(i)).c_str(), "r");
-            EVP_PKEY *pubkey = NULL;
-            PEM_read_bio_PUBKEY(bo, &pubkey, 0, 0);
-            BIO_free(bo);
-
-            forwardEps_.push_back(new SignedUDPEndpoint(proxyConfig_.proxyIp,
-                                                        proxyConfig_.proxyForwardPortBase + i,
-                                                        pubkey));
-        }
-        measurmentEp_ = new UDPEndpoint(
-            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurmentPort);
-
-        numReceivers_ = proxyConfig_.receiverIps.size();
-
-        for (int i = 0; i < numReceivers_; i++)
-        {
-            std::string receiverIp = proxyConfig_.receiverIps[i];
-            // TODO handle sharding for receivers
-            receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPort));
-        }
-    }
 
 } // namespace dombft

@@ -20,7 +20,7 @@ message DOMRequest {
 }
 
 message MeasurementReply {
-    uint32 replica_id = 1;
+    uint32 receiver_id = 1;
     uint32 owd = 2;
 }    
 

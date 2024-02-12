@@ -50,9 +50,6 @@ namespace dombft
          * in the release version */
         void LogTd();
 
-        /** Create/Initialize all the necessary variables */
-        void CreateContext();
-
         /** Flag to Run/Terminate threads */
         std::atomic<bool> running_;
 

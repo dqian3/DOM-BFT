@@ -1,0 +1,22 @@
+# Proxy Info
+proxyId: 1
+proxyIp: "127.0.0.5"
+proxyNumShards: 1
+proxyForwardPortBase: 31000
+proxyMeasurmentPort: 32000
+proxyKey: keys/proxy.pem
+
+# Receiver Info
+receiverIps:
+  - "127.0.0.1"
+  - "127.0.0.2"
+  - "127.0.0.3"
+  - "127.0.0.4"
+receiverShards: 1 # The number of threads to receive threads
+receiverPort: 33000 # The port is exposed to client/proxy and is used to receive client/proxy requests.
+
+initialOwd: 80 # The initial one-way delay (usecs) between replicas and proxies
+maxOwd: 200
+
+numClients: 2
+clientPubKeyPrefix: ""

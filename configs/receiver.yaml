@@ -1,0 +1,15 @@
+# Receiver Info
+receiverId: 1
+receiverIp: "127.0.0.1"
+receiverKey: keys/receiver.pem
+receiverPort: 33000
+
+# Proxy info
+numProxies: 1
+proxyPubKeyPrefix: ""
+
+# Ips of replica this receiever forwards to, NOT all replicas.
+replicaIps:
+  - "127.0.0.1"
+
+replicaPort: 34000

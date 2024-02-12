@@ -20,7 +20,7 @@ public:
                          u_int32_t msgLen,
                          char msgType);
 
-    int SignAndSendProtoMsg(const Address &dstAddr,
+    int SignAndSendProtoMsgTo(const Address &dstAddr,
                             const google::protobuf::Message &msg,
                             char msgType);
 };
