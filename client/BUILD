@@ -13,13 +13,11 @@ cc_library(
     srcs = ["client.cc"],
     hdrs = ["client.h"],
     deps = [
-        "//proto:nezha_cc_proto",
-        "//lib:zipfian",
+        "//proto:dombft_cc_proto",
         "//lib:utils",
         ":client_config",
     ],
 )
-
 
 cc_binary(
     name = "nezha_client",
