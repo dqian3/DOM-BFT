@@ -4,14 +4,10 @@
 
 #include <arpa/inet.h>
 #include <ev.h>
-#include <fcntl.h>
-#include <glog/logging.h>
-#include <google/protobuf/message.h>
 #include <netinet/in.h>
 #include <functional>
-#include <set>
-#include <string>
 #include "lib/address.h"
+#include "lib/common_struct.h"
 
 /**
  * MessageHandler is an encapsulation of libev-based message handler (i.e.
@@ -51,13 +47,12 @@ struct MessageHandler
         evWatcher_ = new ev_io();
         evWatcher_->data = (void *)this;
     }
+
+    // Pure virtual, since this class shouldn't be used by itself
+    // See .cc for details.
     virtual ~MessageHandler() = 0;
 };
 
-// Even though this was pure virtual above, we need define it here to cleanup ev_io
-// We need to make it pure virtual because it segfaults if it is initialized by itself
-// which took me a few hours to figure out -Dan
-MessageHandler::~MessageHandler() {delete evWatcher_;}
 
 
 struct UDPMsgHandler : MessageHandler

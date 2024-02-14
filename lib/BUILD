@@ -24,11 +24,13 @@ cc_library(
 
 cc_library(
     name = "message_handler",
-    srcs = ["message_handler.h"],
+    srcs = ["message_handler.cc"],
     hdrs = ["message_handler.h"],
     visibility = ["//visibility:public"],
     deps = [
+        "@com_github_enki_libev//:libev",
         ":address",
+        ":common_struct",
     ],
 )
 
