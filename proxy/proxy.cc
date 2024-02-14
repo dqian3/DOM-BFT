@@ -29,7 +29,6 @@ namespace dombft
         PEM_read_bio_PrivateKey(bo, &key, 0, 0 );
         BIO_free(bo);
 
-
         if(key == NULL) {
             LOG(ERROR) << "Unable to load private key!";
             exit(1);
@@ -39,17 +38,15 @@ namespace dombft
         {
             forwardEps_.push_back(new SignedUDPEndpoint(proxyConfig_.proxyIp,
                                                         proxyConfig_.proxyForwardPortBase + i,
-                                                        key));
+                                                        key, false));
         }
         measurmentEp_ = new UDPEndpoint(
             proxyConfig_.proxyIp, proxyConfig_.proxyMeasurmentPort);
 
         numReceivers_ = proxyConfig_.receiverIps.size();
-
         for (int i = 0; i < numReceivers_; i++)
         {
             std::string receiverIp = proxyConfig_.receiverIps[i];
-            // TODO handle sharding for receivers
             receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPort));
         }
     }
@@ -63,8 +60,9 @@ namespace dombft
     void Proxy::Run()
     {
         running_ = true;
+        
         LaunchThreads();
-        for (auto &kv : threadPool_)
+        for (auto &kv : threads_)
         {
             LOG(INFO) << "Join " << kv.first;
             kv.second->join();
@@ -75,7 +73,7 @@ namespace dombft
 
     Proxy::~Proxy()
     {
-        for (auto &kv : threadPool_)
+        for (auto &kv : threads_)
         {
             delete kv.second;
         }
@@ -88,45 +86,16 @@ namespace dombft
     {
         int shardNum = proxyConfig_.proxyNumShards;
 
-        threadPool_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
+        threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
 
         for (int i = 0; i < shardNum; i++)
         {
             std::string key = "ForwardRequestsTd-" + std::to_string(i);
-            threadPool_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
-        }
-
-        // std::string key = "LogTd";
-        // threadPool_[key] = new std::thread(&Proxy::LogTd, this);
-    }
-
-
-    // TODO fix this
-    void Proxy::LogTd()
-    {
-        Log litem;
-        std::ofstream ofs("Proxy-Stats-" + std::to_string(proxyConfig_.proxyId) +
-                          ".csv");
-        ofs << "ReplicaId,ClientId,RequestId,ClientTime,ProxyTime,"
-               "ProxyEndProcessTime,RecvTime,Deadline,"
-               "FastReplyTime,"
-               "SlowReplyTime,"
-               "ProxyRecvTime,CommitType"
-            << std::endl;
-        uint32_t logCnt = 0;
-        while (running_)
-        {
-            if (logQu_.try_dequeue(litem))
-            {
-                ofs << litem.ToString() << std::endl;
-                logCnt++;
-                if (logCnt % 10000 == 0)
-                {
-                    ofs.flush();
-                }
-            }
+            threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
         }
     }
+
+
 
     void Proxy::RecvMeasurementsTd()
     {
@@ -172,7 +141,7 @@ namespace dombft
             }
         };
 
-        MessageHandler handler(handleMeasurementReply);
+        UDPMsgHandler handler(handleMeasurementReply);
         Timer monitor(checkEnd, 10, this);
 
         measurmentEp_->RegisterMsgHandler(&handler);
@@ -183,15 +152,12 @@ namespace dombft
 
     void Proxy::ForwardRequestsTd(const int thread_id)
     {
-        // TODO add this logging back
-        // ConcurrentMap<uint64_t, Log *> &logs = logMap_[id];
-        // uint32_t forwardCnt = 0;
-        // uint64_t startTime, endTime;
-
-        MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender, void *context)
+        MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender, void *context)        
         {
             ClientRequest inReq; // Client request we get
             DOMRequest outReq;   // Outgoing request that we attach a deadline to
+
+            VLOG(2) << "Received message from " << sender->GetIPAsString();
 
             if (hdr->msgType == MessageType::CLIENT_REQUEST)
             {
@@ -212,6 +178,7 @@ namespace dombft
 
                 for (int i = 0; i < numReceivers_; i++)
                 {
+                    VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to " << receiverAddrs_[i].ip_;
                     forwardEps_[thread_id]->SignAndSendProtoMsgTo(receiverAddrs_[i], outReq, MessageType::DOM_REQUEST);
                 }
 
@@ -252,8 +219,13 @@ namespace dombft
             }
         };
 
-        MessageHandler handler(handleClientRequest);
+        UDPMsgHandler handler(handleClientRequest);
         Timer monitor(checkEnd, 10, this);
+
+        LOG(INFO) << forwardEps_[thread_id];
+        LOG(INFO) << &handler;
+        LOG(INFO) << this;
+
 
         forwardEps_[thread_id]->RegisterMsgHandler(&handler);
         forwardEps_[thread_id]->RegisterTimer(&monitor);

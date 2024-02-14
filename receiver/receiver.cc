@@ -33,16 +33,6 @@ namespace dombft
             exit(1);
         }
 
-        endpoint_ = new SignedUDPEndpoint(receiverIp, receiverPort, key, true);
-        replyHandler_ = new MessageHandler(
-            [] (MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
-            {
-                ((Receiver *)ctx)->ReceiveRequest(msgHdr, msgBuffer, sender);
-            },
-            this
-        );
-
-
         /** Store all replica addrs */
         for (uint32_t i = 0; i < receiverConfig_.replicaIps.size(); i++)
         {
@@ -51,6 +41,17 @@ namespace dombft
                                             receiverConfig_.replicaPort));  
         }
 
+
+        endpoint_ = new SignedUDPEndpoint(receiverIp, receiverPort, key, true);
+        replyHandler_ = new UDPMsgHandler(
+            [] (MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
+            {
+                ((Receiver *)ctx)->ReceiveRequest(msgHdr, msgBuffer, sender);
+            },
+            this
+        );
+
+        endpoint_->RegisterMsgHandler(replyHandler_);
     }
 
     Receiver::~Receiver()
@@ -63,12 +64,6 @@ namespace dombft
         // Submit first request
         LOG(INFO) << "Starting event loop...";
         endpoint_->LoopRun();
-    }
-
-    void Receiver::Terminate()
-    {
-        LOG(INFO) << "Terminating...";
-        this->endpoint_->LoopBreak();
     }
 
     void Receiver::ReceiveRequest(MessageHeader *msgHdr, char *msgBuffer,

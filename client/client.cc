@@ -34,22 +34,12 @@ namespace dombft
             exit(1);
         }
 
-        endpoint_ = new SignedUDPEndpoint(clientIP, clientPort, key, true);
-        replyHandler_ = new MessageHandler(
-            [] (MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
-            {
-                ((Client *)ctx)->ReceiveReply(msgHdr, msgBuffer, sender);
-            },
-            this
-        );
-
-
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
-        proxyAddrs_.resize(clientConfig_.proxyIps.size());
-        for (uint32_t i = 0; i < proxyAddrs_.size(); i++)
+        for (uint32_t i = 0; i < clientConfig_.proxyIps.size(); i++)
         {
+            LOG(INFO) << "Proxy " << i + 1 << ": " <<  clientConfig_.proxyIps[i] << ", " << clientConfig_.proxyPortBase;
             proxyAddrs_.push_back(Address(clientConfig_.proxyIps[i],
-                                            clientConfig_.clientPort));  
+                                            clientConfig_.proxyPortBase));  
         }
 
 
@@ -70,8 +60,20 @@ namespace dombft
         //     }
         // }
 
-        /** Initialize */
+        /** Initialize state */
         nextReqSeq_ = 1;
+
+
+        endpoint_ = new SignedUDPEndpoint(clientIP, clientPort, key, true);
+        replyHandler_ = new UDPMsgHandler(
+            [] (MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
+            {
+                ((Client *)ctx)->ReceiveReply(msgHdr, msgBuffer, sender);
+            },
+            this
+        );
+
+        endpoint_->RegisterMsgHandler(replyHandler_);
     }
 
     Client::~Client()
@@ -84,12 +86,6 @@ namespace dombft
         // Submit first request
         SubmitRequest();
         endpoint_->LoopRun();
-    }
-
-    void Client::Terminate()
-    {
-        LOG(INFO) << "Terminating...";
-        this->endpoint_->LoopBreak();
     }
 
     void Client::ReceiveReply(MessageHeader *msgHdr, char *msgBuffer,
@@ -138,8 +134,11 @@ namespace dombft
 
         // TODO, select a proxy or replica based on useProxy
 
+
         Address &addr = proxyAddrs_[0];
         endpoint_->SignAndSendProtoMsgTo(addr, request, MessageType::CLIENT_REQUEST);
+        VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
+
         nextReqSeq_++;
 
         // TODO record this outstanding request somewhere

@@ -63,6 +63,7 @@ struct ClientConfig
             key = "useProxy";
             useProxy = config[key].as<bool>();
 
+            key = "proxyIps";
             for (uint32_t i = 0; i < config[key].size(); i++)
             {
                 proxyIps.push_back(config[key][i].as<std::string>());

@@ -7,7 +7,6 @@
 #include "lib/ipc_endpoint.h"
 #include "lib/common_type.h"
 
-
 #include <fstream>
 #include <iostream>
 #include <thread>

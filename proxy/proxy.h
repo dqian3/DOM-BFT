@@ -30,7 +30,7 @@ namespace dombft
          * proxyConfig_*/
         ProxyConfig proxyConfig_;
         /** Each thread is given a unique name (key) */
-        std::map<std::string, std::thread *> threadPool_;
+        std::map<std::string, std::thread *> threads_;
 
         /** Launch threads:
          * (1) ForwardRequestsTd, which receives client requests, signs and

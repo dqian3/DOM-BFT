@@ -70,7 +70,6 @@ namespace dombft
          *  */
         Client(const std::string &configFile = "../configs/nezha-client-config.yaml");
         void Run();
-        void Terminate();
         ~Client();
 
     };
