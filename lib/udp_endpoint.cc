@@ -96,7 +96,6 @@ bool UDPEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
         LOG(ERROR) << "This msgHdl has already been registered";
         return false;
     }
-
     msgHandler_ = udpMsgHdl;
     ev_io_set(udpMsgHdl->evWatcher_, fd_, EV_READ);
     ev_io_start(evLoop_, udpMsgHdl->evWatcher_);

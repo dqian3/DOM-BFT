@@ -41,6 +41,7 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
     }
     shdr->sigLen = sigLen;
     hdr->msgLen = sizeof(SignedMessageHeader) + msgLen + sigLen;
+    hdr->msgType = msgType;
 
     if (1 != EVP_DigestSignFinal(mdctx, sig, &sigLen))
     {
@@ -48,11 +49,13 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
         return -1;
     }
 
+    VLOG(1) << "Sending to " << dstAddr.ip_ << ", " << dstAddr.port_;
+
     int ret = sendto(fd_, buffer, hdr->msgLen + sizeof(MessageHeader), 0,
                      (struct sockaddr *)(&(dstAddr.addr_)), sizeof(sockaddr_in));
     if (ret < 0)
     {
-        VLOG(1) << pthread_self() << "\tSend Fail ret =" << ret;
+        VLOG(1) << "Send Fail ret =" << ret << ". Error: " << strerror(errno);
     }
     return ret;
 

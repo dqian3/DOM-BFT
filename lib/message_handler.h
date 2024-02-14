@@ -51,8 +51,14 @@ struct MessageHandler
         evWatcher_ = new ev_io();
         evWatcher_->data = (void *)this;
     }
-    ~MessageHandler() { delete evWatcher_; }
+    virtual ~MessageHandler() = 0;
 };
+
+// Even though this was pure virtual above, we need define it here to cleanup ev_io
+// We need to make it pure virtual because it segfaults if it is initialized by itself
+// which took me a few hours to figure out -Dan
+MessageHandler::~MessageHandler() {delete evWatcher_;}
+
 
 struct UDPMsgHandler : MessageHandler
 {
@@ -64,6 +70,7 @@ struct UDPMsgHandler : MessageHandler
         {
             UDPMsgHandler* m = (UDPMsgHandler*)(w->data);
             socklen_t sockLen = sizeof(struct sockaddr_in);
+            
             int msgLen = recvfrom(w->fd, m->buffer_, UDP_BUFFER_SIZE, 0,
                                     (struct sockaddr*)(&(m->sender_.addr_)), &sockLen);
             if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) 
