@@ -3,7 +3,7 @@ proxyId: 1
 proxyIp: "127.0.0.5"
 proxyNumShards: 1
 proxyForwardPortBase: 31000
-proxyMeasurmentPort: 32000
+proxyMeasurementPort: 32000
 proxyKey: keys/proxy.pem
 
 # Receiver Info

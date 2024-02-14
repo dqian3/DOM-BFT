@@ -1,4 +1,4 @@
-#include "lib/udp_endpoint.h"
+#include "lib/signed_udp_endpoint.h"
 #include "lib/address.h"
 #include "lib/message_handler.h"
 
@@ -6,6 +6,8 @@
 
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+
+#include <thread>
 
 bool verify(void *body, size_t bodyLen, const unsigned char *sig, size_t sigLen, EVP_PKEY *pubkey)
 {
@@ -37,19 +39,9 @@ bool verify(void *body, size_t bodyLen, const unsigned char *sig, size_t sigLen,
     }
 }
 
-int main(int argc, char *argv[])
+void run(EVP_PKEY *pubkey) 
 {
-    // Read public key file
-    BIO *bo = BIO_new_file(argv[1], "r");
-    EVP_PKEY *pubkey = NULL;
-    PEM_read_bio_PUBKEY(bo, &pubkey, 0, 0);
-
-    if (pubkey == NULL) {
-        LOG(ERROR) << "Unable to load public key!";
-        return 1;
-    }
-
-    UDPEndpoint ep("127.0.0.1", 9000);
+    SignedUDPEndpoint ep("127.0.0.1", 9000, nullptr);
 
     MessageHandlerFunc func = [pubkey](MessageHeader *hdr, void *body, Address *sender, void *context)
     {
@@ -80,4 +72,24 @@ int main(int argc, char *argv[])
 
     ep.LoopRun();
     printf("Done loop run!\n");
+
+}
+
+
+int main(int argc, char *argv[])
+{
+    // Read public key file
+    BIO *bo = BIO_new_file(argv[1], "r");
+    EVP_PKEY *pubkey = NULL;
+    PEM_read_bio_PUBKEY(bo, &pubkey, 0, 0);
+
+    if (pubkey == NULL) {
+        LOG(ERROR) << "Unable to load public key!";
+        return 1;
+    }
+
+
+    std::thread *test_thread = new std::thread(run, pubkey);
+
+    test_thread->join();
 }

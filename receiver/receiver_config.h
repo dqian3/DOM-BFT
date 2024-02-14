@@ -14,6 +14,7 @@ struct ReceiverConfig
 
     // Proxy
     int numProxies;
+    int proxyMeasurementPort;
     std::string proxyPubKeyPrefix;
 
     // Communication to replicas
@@ -46,7 +47,7 @@ struct ReceiverConfig
             key = "receiverId";
             receiverId = config[key].as<int>();
             key = "receiverIp";
-            receiverIp = config[key].as<std::string>(); 
+            receiverIp = config[key].as<std::string>();
             key = "receiverPort";
             receiverPort = config[key].as<int>();
             key = "receiverKey";
@@ -54,11 +55,14 @@ struct ReceiverConfig
 
             key = "numProxies";
             numProxies = config[key].as<int>();
+            key = "proxyMeasurementPort";
+            proxyMeasurementPort = config[key].as<int>();
             key = "proxyPubKeyPrefix";
             proxyPubKeyPrefix = config[key].as<std::string>();
 
             key = "ipcReplica";
-            if (config[key]) {
+            if (config[key])
+            {
                 ipcReplica = config[key].as<bool>();
                 key = "ipcName";
                 ipcName = config[key].as<std::string>();

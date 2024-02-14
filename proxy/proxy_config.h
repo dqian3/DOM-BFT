@@ -11,7 +11,7 @@ struct ProxyConfig
     std::string proxyIp;
     int proxyNumShards;
     int proxyForwardPortBase;
-    int proxyMeasurmentPort;
+    int proxyMeasurementPort;
     std::string proxyKey;
 
     // Measurement settings
@@ -66,8 +66,8 @@ struct ProxyConfig
             proxyNumShards = config[key].as<int>();
             key = "proxyForwardPortBase";
             proxyForwardPortBase = config[key].as<int>();
-            key = "proxyMeasurmentPort";
-            proxyMeasurmentPort = config[key].as<int>();
+            key = "proxyMeasurementPort";
+            proxyMeasurementPort = config[key].as<int>();
             key = "proxyKey";
             proxyKey = config[key].as<std::string>();
 

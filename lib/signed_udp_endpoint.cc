@@ -49,7 +49,7 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
         return -1;
     }
 
-    VLOG(1) << "Sending to " << dstAddr.ip_ << ", " << dstAddr.port_;
+    VLOG(3) << "Sending to " << dstAddr.ip_ << ", " << dstAddr.port_;
 
     int ret = sendto(fd_, buffer, hdr->msgLen + sizeof(MessageHeader), 0,
                      (struct sockaddr *)(&(dstAddr.addr_)), sizeof(sockaddr_in));
@@ -67,6 +67,9 @@ int SignedUDPEndpoint::SignAndSendProtoMsgTo(const Address &dstAddr,
 {
     std::string serializedString = msg.SerializeAsString();
     uint32_t msgLen = serializedString.length();
+
+    VLOG(3) << "Serializing protobuf message type " << (int) msgType << " with len " << msgLen;
+
     if (msgLen > 0)
     {
         SignAndSendMsgTo(dstAddr, serializedString.c_str(), msgLen, msgType);

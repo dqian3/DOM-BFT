@@ -44,7 +44,6 @@ namespace dombft
          *  */
         Receiver(const std::string &configFile);
         void Run();
-        void Terminate();
         ~Receiver();
 
     };

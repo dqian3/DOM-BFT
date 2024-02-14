@@ -41,7 +41,7 @@ namespace dombft
                                                         key, false));
         }
         measurmentEp_ = new UDPEndpoint(
-            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurmentPort);
+            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurementPort);
 
         numReceivers_ = proxyConfig_.receiverIps.size();
         for (int i = 0; i < numReceivers_; i++)
@@ -95,41 +95,44 @@ namespace dombft
         }
     }
 
-
-
     void Proxy::RecvMeasurementsTd()
     {
-        std::vector<uint32_t> replicaOWDs;
+        std::vector<uint32_t> receieverOWDs(numReceivers_);
 
-        MessageHandlerFunc handleMeasurementReply = [this, &replicaOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
+        MessageHandlerFunc handleMeasurementReply = [this, &receieverOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
         {
             MeasurementReply reply;
+            SignedMessageHeader *shdr = (SignedMessageHeader *) body;
+            u_char *reqBytes = (u_char *)(shdr + 1);
 
-            if (reply.ParseFromArray(body, hdr->msgLen))
+            // TODO verify and handle signed header better
+            if (!reply.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader)))
             {
-                if (reply.owd() > 0)
-                {
-                    VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd(); 
-
-                    // TODO actually calculate something here?
-                    replicaOWDs[reply.receiver_id()] = reply.owd();
-                    // Update latency bound
-                    uint32_t estimatedOWD = 0;
-                    for (uint32_t i = 0; i < replicaOWDs.size(); i++)
-                    {
-                        if (estimatedOWD < replicaOWDs[i])
-                        {
-                            estimatedOWD = replicaOWDs[i];
-                        }
-                    }
-                    if (estimatedOWD > maxOWD_)
-                    {
-                        estimatedOWD = maxOWD_;
-                    }
-                    latencyBound_.store(estimatedOWD);
-                    VLOG(1) << "Update bound " << latencyBound_;
-                }
+                LOG(ERROR) << "Unable to parse Measurement_Reply message";
+                return;
             }
+            VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd(); 
+
+            if (reply.owd() > 0)
+            {
+                // TODO actually calculate something here?
+                receieverOWDs[reply.receiver_id()] = reply.owd();
+                // Update latency bound
+                uint32_t estimatedOWD = 0;
+                for (uint32_t i = 0; i < receieverOWDs.size(); i++)
+                {
+                    if (estimatedOWD < receieverOWDs[i])
+                    {
+                        estimatedOWD = receieverOWDs[i];
+                    }
+                }
+                if (estimatedOWD > maxOWD_)
+                {
+                    estimatedOWD = maxOWD_;
+                }
+                VLOG(1) << "Update bound " << latencyBound_ << " => " << estimatedOWD;
+                latencyBound_.store(estimatedOWD);
+             }
         };
 
         /* Checks every 10ms to see if we are done*/
@@ -157,17 +160,21 @@ namespace dombft
             ClientRequest inReq; // Client request we get
             DOMRequest outReq;   // Outgoing request that we attach a deadline to
 
-            VLOG(2) << "Received message from " << sender->GetIPAsString();
-
+            VLOG(2) << "Received message from " << sender->GetIPAsString() << " " << hdr->msgLen;
             if (hdr->msgType == MessageType::CLIENT_REQUEST)
             {
+                SignedMessageHeader *shdr = (SignedMessageHeader *) body;
+                u_char *reqBytes = (u_char *)(shdr + 1);
+
                 // TODO verify and handle signed header better
-                if (!inReq.ParseFromArray(body + sizeof(SignedMessageHeader), hdr->msgLen)) {
+                if (!inReq.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader))) {
                     LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                     return;
                 }
                 
-                outReq.set_deadline(GetMicrosecondTimestamp() + latencyBound_);
+
+                outReq.set_send_time(GetMicrosecondTimestamp());
+                outReq.set_deadline(outReq.send_time() + latencyBound_);
                 outReq.set_proxy_id(proxyConfig_.proxyId);
 
                 // TODO set these properly
@@ -221,11 +228,6 @@ namespace dombft
 
         UDPMsgHandler handler(handleClientRequest);
         Timer monitor(checkEnd, 10, this);
-
-        LOG(INFO) << forwardEps_[thread_id];
-        LOG(INFO) << &handler;
-        LOG(INFO) << this;
-
 
         forwardEps_[thread_id]->RegisterMsgHandler(&handler);
         forwardEps_[thread_id]->RegisterTimer(&monitor);

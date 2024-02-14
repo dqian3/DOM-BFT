@@ -1,6 +1,5 @@
 #include "receiver/receiver.h"
 
-
 #include <openssl/pem.h>
 
 namespace dombft
@@ -16,19 +15,19 @@ namespace dombft
             LOG(ERROR) << "Error loading receiver config: " << error << " Exiting.";
             exit(1);
         }
-        
+
         std::string receiverIp = receiverConfig_.receiverIp;
         LOG(INFO) << "receiverIP=" << receiverIp;
         int receiverPort = receiverConfig_.receiverPort;
         LOG(INFO) << "receiverPort=" << receiverPort;
 
-
         BIO *bo = BIO_new_file(receiverConfig_.receiverKey.c_str(), "r");
         EVP_PKEY *key = NULL;
-        PEM_read_bio_PrivateKey(bo, &key, 0, 0 );
+        PEM_read_bio_PrivateKey(bo, &key, 0, 0);
         BIO_free(bo);
 
-        if(key == NULL) {
+        if (key == NULL)
+        {
             LOG(ERROR) << "Unable to load receiver private key!";
             exit(1);
         }
@@ -36,20 +35,17 @@ namespace dombft
         /** Store all replica addrs */
         for (uint32_t i = 0; i < receiverConfig_.replicaIps.size(); i++)
         {
-            std::cout << receiverConfig_.replicaIps[i] << std::endl;
             replicaAddrs_.push_back(Address(receiverConfig_.replicaIps[i],
-                                            receiverConfig_.replicaPort));  
+                                            receiverConfig_.replicaPort));
         }
-
 
         endpoint_ = new SignedUDPEndpoint(receiverIp, receiverPort, key, true);
         replyHandler_ = new UDPMsgHandler(
-            [] (MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
+            [](MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
             {
                 ((Receiver *)ctx)->ReceiveRequest(msgHdr, msgBuffer, sender);
             },
-            this
-        );
+            this);
 
         endpoint_->RegisterMsgHandler(replyHandler_);
     }
@@ -66,22 +62,25 @@ namespace dombft
         endpoint_->LoopRun();
     }
 
-    void Receiver::ReceiveRequest(MessageHeader *msgHdr, char *msgBuffer,
-                              Address *sender)
+    void Receiver::ReceiveRequest(MessageHeader *hdr, char *body,
+                                  Address *sender)
     {
-        if (msgHdr->msgLen < 0)
+        if (hdr->msgLen < 0)
         {
             return;
         }
         DOMRequest request;
-        if (msgHdr->msgType == MessageType::DOM_REQUEST)
+        if (hdr->msgType == MessageType::DOM_REQUEST)
         {
+            SignedMessageHeader *shdr = (SignedMessageHeader *) body;
+            u_char *reqBytes = (u_char *)(shdr + 1);
+
             // TODO verify and handle signed header better
-            if (!request.ParseFromArray(msgBuffer + sizeof(SignedMessageHeader), msgHdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPLY message";
+            if (!request.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader)))
+            {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
                 return;
             }
-
 
             // Send measurement reply right away
             uint64_t recv_time = GetMicrosecondTimestamp();
@@ -89,30 +88,31 @@ namespace dombft
             MeasurementReply mReply;
             mReply.set_receiver_id(receiverConfig_.receiverId);
             mReply.set_owd(recv_time - request.send_time());
-            
-            endpoint_->SignAndSendProtoMsgTo(*sender, mReply, MessageType::MEASUREMENT_REPLY);
+            VLOG(3) << "Measured delay: " << mReply.owd();
+
+            // TODO get address better lol
+            endpoint_->SignAndSendProtoMsgTo(Address(sender->GetIPAsString(), receiverConfig_.proxyMeasurementPort), mReply, MessageType::MEASUREMENT_REPLY);
 
             // Check if request is on time.
             request.set_late(recv_time < request.deadline());
 
             // Forward request
 
-            if (receiverConfig_.ipcReplica) {
+            if (receiverConfig_.ipcReplica)
+            {
                 // TODO
                 throw "IPC communciation not implemented";
-            } else {
-
+            }
+            else
+            {
                 VLOG(1) << "Forwarding Request with deadline " << request.deadline();
 
-                for (const Address &addr: replicaAddrs_) {
+                for (const Address &addr : replicaAddrs_)
+                {
                     endpoint_->SignAndSendProtoMsgTo(addr, request, MessageType::DOM_REQUEST);
                 }
             }
-
         }
     }
-
-
-
 
 } // namespace dombft
