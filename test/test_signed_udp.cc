@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
     Timer t = Timer([] (void *data, void *endpoint) {
         SignedUDPEndpoint *ep = (SignedUDPEndpoint *) endpoint;
         ep->SignAndSendMsgTo(Address("127.0.0.1", 9000), "Test", 5, 2);
-    }, 1000);
+    }, 1000000);
 
     udpEndpoint.RegisterTimer(&t);
     udpEndpoint.LoopRun();

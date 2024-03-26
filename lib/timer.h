@@ -35,18 +35,18 @@ typedef std::function<void(void *, void *)> TimerFunc;
 
 struct Timer
 {
-    std::function<void(void *, void *)> timerFunc_;
+    TimerFunc timerFunc_;
     void *context_;
     void *attachedEndpoint_;
     struct ev_timer *evTimer_;
 
-    Timer(TimerFunc timerf, uint32_t periodMs = 1, void *ctx = NULL,
+    Timer(TimerFunc timerf, uint32_t repeat, void *ctx = NULL,
           void *aep = NULL)
         : timerFunc_(timerf), context_(ctx), attachedEndpoint_(aep)
     {
         evTimer_ = new ev_timer();
         evTimer_->data = (void *)this;
-        evTimer_->repeat = periodMs * 1e-3;
+        evTimer_->repeat = repeat;
         ev_init(evTimer_,
                 [](struct ev_loop *loop, struct ev_timer *w, int revents)
                 {

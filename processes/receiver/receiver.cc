@@ -40,19 +40,28 @@ namespace dombft
         }
 
         endpoint_ = new SignedUDPEndpoint(receiverIp, receiverPort, key, true);
-        replyHandler_ = new UDPMessageHandler(
+        msgHandler_ = new UDPMessageHandler(
             [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
-                ((Receiver *)ctx)->ReceiveRequest(msgHdr, msgBuffer, sender);
+                ((Receiver *)ctx)->receiveRequest(msgHdr, msgBuffer, sender);
             },
             this);
 
-        endpoint_->RegisterMsgHandler(replyHandler_);
+        fwdTimer_ = new Timer(
+            [](void *ctx, void * endpoint) {
+                ((Receiver *)ctx)->checkDeadlines();
+            },
+            100,
+            this
+        );
+
+        endpoint_->RegisterMsgHandler(msgHandler_);
+        endpoint_->RegisterTimer(fwdTimer_);
     }
 
     Receiver::~Receiver()
     {
-        // TODO cleanup... though we don't really reuse this
+        // TODO cleanup...
     }
 
     void Receiver::Run()
@@ -62,7 +71,7 @@ namespace dombft
         endpoint_->LoopRun();
     }
 
-    void Receiver::ReceiveRequest(MessageHeader *hdr, byte *body,
+    void Receiver::receiveRequest(MessageHeader *hdr, byte *body,
                                   Address *sender)
     {
         if (hdr->msgLen < 0)
@@ -90,28 +99,50 @@ namespace dombft
             mReply.set_owd(recv_time - request.send_time());
             VLOG(3) << "Measured delay: " << mReply.owd();
 
-            // TODO get address better lol
             endpoint_->SignAndSendProtoMsgTo(Address(sender->GetIPAsString(), receiverConfig_.proxyMeasurementPort), mReply, MessageType::MEASUREMENT_REPLY);
-
+        
             // Check if request is on time.
             request.set_late(recv_time < request.deadline());
 
-            // Forward request
-
-            if (receiverConfig_.ipcReplica)
-            {
-                // TODO
-                throw "IPC communciation not implemented";
+            if (request.late()){
+                forwardRequest(request);
+            } else {
+                deadlineQueue_[{request.deadline(), request.client_id()}] = request;
             }
-            else
-            {
-                VLOG(1) << "Forwarding Request with deadline " << request.deadline();
 
-                for (const Address &addr : replicaAddrs_)
-                {
-                    endpoint_->SignAndSendProtoMsgTo(addr, request, MessageType::DOM_REQUEST);
-                }
+        }
+    }
+
+    void Receiver::forwardRequest(const DOMRequest &request)
+    {
+        if (receiverConfig_.ipcReplica)
+        {
+            // TODO
+            throw "IPC communciation not implemented";
+        }
+        else
+        {
+            VLOG(1) << "Forwarding Request with deadline " << request.deadline();
+
+            for (const Address &addr : replicaAddrs_)
+            {
+                endpoint_->SignAndSendProtoMsgTo(addr, request, MessageType::DOM_REQUEST);
             }
+        }
+    }
+
+    void Receiver::checkDeadlines()
+    {
+        uint64_t now = GetMicrosecondTimestamp();
+
+        auto it = deadlineQueue_.begin();
+
+        // ->first gets the key of {deadline, client_id}, second .first gets deadline
+        while (it != deadlineQueue_.end() && it->first.first <= now) {
+            forwardRequest(it->second);
+            auto temp = std::next(it);
+            deadlineQueue_.erase(it);
+            it = temp;
         }
     }
 

@@ -31,13 +31,20 @@ namespace dombft
         /** Or it sends messages to addresses in this vector */
         std::vector<Address> replicaAddrs_;
 
-        /** The message handler used to handle requests (from proxies) */
-        struct MessageHandler *replyHandler_;
+        // TODO storing these protobuf objects like this might not be great performance wise
+        // couldn't find much about this.
+        std::map<std::pair<uint64_t, uint32_t>, dombft::proto::DOMRequest> deadlineQueue_;
+        std::vector<dombft::proto::DOMRequest> lateMessages;
 
-        struct std::map<std::pair<uint64_t, uint32_t>, std::vector<unsigned char>> deadlineQueue_;
+        /** The handler objects for our endpoint library */
+        MessageHandler *msgHandler_;
+        Timer *fwdTimer_;
 
-        /** The message handler to handle messages from proxies. Called from replyHandler_ */
-        void ReceiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+        /** The actual message / timeout handlers */
+        void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+
+        void forwardRequest(const dombft::proto::DOMRequest &request);
+        void checkDeadlines();
 
 
     public:

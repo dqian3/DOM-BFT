@@ -103,7 +103,7 @@ namespace dombft
         {
             MeasurementReply reply;
             SignedMessageHeader *shdr = (SignedMessageHeader *) body;
-            u_char *reqBytes = (u_char *)(shdr + 1);
+            byte *reqBytes = (byte *)(shdr + 1);
 
             // TODO verify and handle signed header better
             if (!reply.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader)))
