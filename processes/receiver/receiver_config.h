@@ -74,6 +74,10 @@ struct ReceiverConfig
                 replicaIps.push_back(config[key][i].as<std::string>());
             }
 
+            key = "replicaPort";
+            replicaPort = config[key].as<int>();
+
+
             return "";
         }
         catch (const YAML::BadConversion &e)

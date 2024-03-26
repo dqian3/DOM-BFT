@@ -51,12 +51,12 @@ namespace dombft
             [](void *ctx, void * endpoint) {
                 ((Receiver *)ctx)->checkDeadlines();
             },
-            100,
+            1000,
             this
         );
 
-        endpoint_->RegisterMsgHandler(msgHandler_);
         endpoint_->RegisterTimer(fwdTimer_);
+        endpoint_->RegisterMsgHandler(msgHandler_);
     }
 
     Receiver::~Receiver()
@@ -102,11 +102,14 @@ namespace dombft
             endpoint_->SignAndSendProtoMsgTo(Address(sender->GetIPAsString(), receiverConfig_.proxyMeasurementPort), mReply, MessageType::MEASUREMENT_REPLY);
         
             // Check if request is on time.
-            request.set_late(recv_time < request.deadline());
+            request.set_late(recv_time > request.deadline());
 
             if (request.late()){
+                VLOG(3) << "Request is late, sending immediately";
                 forwardRequest(request);
             } else {
+                VLOG(3) << "Adding request to priority queue with deadline " << request.deadline() 
+                << " in " << request.deadline() - recv_time << "us";
                 deadlineQueue_[{request.deadline(), request.client_id()}] = request;
             }
 
@@ -131,6 +134,8 @@ namespace dombft
         }
     }
 
+
+    // TODO: there is probably a smarter way than just having this poll every so often
     void Receiver::checkDeadlines()
     {
         uint64_t now = GetMicrosecondTimestamp();
@@ -139,6 +144,7 @@ namespace dombft
 
         // ->first gets the key of {deadline, client_id}, second .first gets deadline
         while (it != deadlineQueue_.end() && it->first.first <= now) {
+            VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
             forwardRequest(it->second);
             auto temp = std::next(it);
             deadlineQueue_.erase(it);
