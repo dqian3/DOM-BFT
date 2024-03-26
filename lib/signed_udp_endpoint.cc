@@ -11,17 +11,17 @@ SignedUDPEndpoint::SignedUDPEndpoint(const std::string &ip, const int port,
 SignedUDPEndpoint::~SignedUDPEndpoint() {}
 
 int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
-                                        const char *msg,
+                                        const byte *msg,
                                         uint32_t msgLen,
-                                        char msgType)
+                                        byte msgType)
 {
-    char buffer[sizeof(MessageHeader) + sizeof(SignedMessageHeader) + msgLen + MAX_SIG_LEN];
+    byte buffer[sizeof(MessageHeader) + sizeof(SignedMessageHeader) + msgLen + MAX_SIG_LEN];
     size_t sigLen = 0;
 
     MessageHeader *hdr = (MessageHeader *) buffer;
     SignedMessageHeader *shdr = (SignedMessageHeader *)(hdr + 1);
-    unsigned char *data = (unsigned char *)(shdr + 1);
-    unsigned char *sig = data + msgLen;
+    byte *data = (byte *)(shdr + 1);
+    byte *sig = data + msgLen;
 
     memcpy(data, msg, msgLen);
 
@@ -63,7 +63,7 @@ int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
 
 int SignedUDPEndpoint::SignAndSendProtoMsgTo(const Address &dstAddr,
                                            const google::protobuf::Message &msg,
-                                           char msgType)
+                                           byte msgType)
 {
     std::string serializedString = msg.SerializeAsString();
     uint32_t msgLen = serializedString.length();
@@ -78,12 +78,12 @@ int SignedUDPEndpoint::SignAndSendProtoMsgTo(const Address &dstAddr,
 }
 
 
-bool SignedUDPEndpoint::verify(MessageHeader *hdr, char *body, EVP_PKEY *pubkey)
+bool SignedUDPEndpoint::verify(MessageHeader *hdr, byte *body, EVP_PKEY *pubkey)
 {
     EVP_MD_CTX *mdctx = NULL;
 
     SignedMessageHeader *shdr = (SignedMessageHeader *) body;
-    u_char *reqBytes = (u_char *)(shdr + 1);
+    u_byte *reqBytes = (u_byte *)(shdr + 1);
     uint32_t reqLen = hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader);
 
     /* Create the Message Digest Context */

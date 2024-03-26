@@ -5,7 +5,7 @@
 
 struct IPCMessageHandler : MessageHandler
 {
-    char buffer_[UDP_BUFFER_SIZE];
+    byte buffer_[UDP_BUFFER_SIZE];
     IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
     ~IPCMessageHandler();
 };
@@ -21,13 +21,13 @@ public:
     ~IPCEndpoint();
 
     int SendMsgTo(const std::string &dstAddr,
-                  const char *msg,
+                  const byte *msg,
                   u_int32_t msgLen,
-                  char msgType);
+                  byte msgType);
 
     int SendProtoMsgTo(const std::string &dstAddr,
                        const google::protobuf::Message &msg,
-                       const char msgType);
+                       const byte msgType);
 
     bool RegisterMsgHandler(MessageHandler *msgHdl) override;
     bool UnRegisterMsgHandler(MessageHandler *msgHdl) override;

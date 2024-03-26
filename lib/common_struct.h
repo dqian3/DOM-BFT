@@ -14,6 +14,8 @@
 #define UDP_BUFFER_SIZE (1024)
 #define IPC_BUFFER_SIZE (1024)
 
+typedef unsigned char byte;
+
 // TODO what about padding on the msgType? Might want to check that.
 
 /**
@@ -25,9 +27,9 @@
  */
 struct MessageHeader
 {
-    char msgType;
+    byte msgType;
     uint32_t msgLen;
-    MessageHeader(const uint32_t l, const char t) : msgType(t), msgLen(l) {}
+    MessageHeader(const uint32_t l, const byte t) : msgType(t), msgLen(l) {}
 };
 
 /**

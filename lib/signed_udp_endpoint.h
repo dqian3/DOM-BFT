@@ -16,17 +16,17 @@ public:
     ~SignedUDPEndpoint();
 
     int SignAndSendMsgTo(const Address &dstAddr,
-                         const char *msg,
+                         const byte *msg,
                          uint32_t msgLen,
-                         char msgType);
+                         byte msgType);
 
     int SignAndSendProtoMsgTo(const Address &dstAddr,
                             const google::protobuf::Message &msg,
-                            char msgType);
+                            byte msgType);
 
     
     // verify mirros how SignedUDPEndpoint passes it to the handler
-    bool verify(MessageHeader *hdr, char *body, EVP_PKEY *pubkey);
+    bool verify(MessageHeader *hdr, byte *body, EVP_PKEY *pubkey);
 };
 
 #endif

@@ -14,7 +14,7 @@ cc_library(
     hdrs = ["client.h"],
     deps = [
         "//proto:dombft_cc_proto",
-        "//lib:common_type",
+        "//lib:message_type",
         "//lib:endpoint",
         "//lib:utils",
         ":client_config",

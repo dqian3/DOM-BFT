@@ -1,5 +1,5 @@
-#ifndef NEZHA_COMMON_TYPE_H
-#define NEZHA_COMMON_TYPE_H
+#ifndef MESSAGE_TYPE_H
+#define MESSAGE_TYPE_H
 
 /**
  * The message types are defined according to the proto files and the

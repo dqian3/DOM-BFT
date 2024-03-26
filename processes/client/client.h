@@ -8,7 +8,7 @@
 #include "lib/address.h"
 #include "proto/dombft_proto.pb.h"
 #include "lib/signed_udp_endpoint.h"
-#include "lib/common_type.h"
+#include "lib/message_type.h"
 
 #include <yaml-cpp/yaml.h>
 

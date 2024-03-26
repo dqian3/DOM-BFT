@@ -5,7 +5,7 @@
 
 struct UDPMessageHandler : MessageHandler
 {
-    char buffer_[UDP_BUFFER_SIZE];
+    byte buffer_[UDP_BUFFER_SIZE];
     UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
     ~UDPMessageHandler();
 };
@@ -24,13 +24,13 @@ public:
     ~UDPEndpoint();
 
     int SendMsgTo(const Address &dstAddr,
-                  const char *msg,
+                  const byte *msg,
                   u_int32_t msgLen,
-                  char msgType);
+                  byte msgType);
 
     int SendProtoMsgTo(const Address &dstAddr,
                        const google::protobuf::Message &msg,
-                       const char msgType);
+                       const byte msgType);
 
     virtual bool RegisterMsgHandler(MessageHandler *msgHdl) override;
 

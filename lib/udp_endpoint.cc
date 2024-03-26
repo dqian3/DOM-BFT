@@ -63,11 +63,11 @@ UDPEndpoint::UDPEndpoint(const std::string &ip, const int port,
 UDPEndpoint::~UDPEndpoint() {}
 
 int UDPEndpoint::SendMsgTo(const Address &dstAddr,
-                           const char *msg,
+                           const byte *msg,
                            u_int32_t msgLen,
-                           char msgType)
+                           byte msgType)
 {
-    char buffer[UDP_BUFFER_SIZE];
+    byte buffer[UDP_BUFFER_SIZE];
     MessageHeader *msgHdr = (MessageHeader *)(void *)buffer;
     msgHdr->msgType = msgType;
     msgHdr->msgLen = msgLen;
@@ -91,7 +91,7 @@ int UDPEndpoint::SendMsgTo(const Address &dstAddr,
 
 int UDPEndpoint::SendProtoMsgTo(const Address &dstAddr,
                                 const google::protobuf::Message &msg,
-                                char msgType)
+                                byte msgType)
 {
     std::string serializedString = msg.SerializeAsString();
     uint32_t msgLen = serializedString.length();

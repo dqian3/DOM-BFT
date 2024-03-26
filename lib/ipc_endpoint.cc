@@ -51,11 +51,11 @@ IPCEndpoint::~IPCEndpoint() {}
 
 // This is basically the same as UDP, could be consolidated...
 int IPCEndpoint::SendMsgTo(const std::string &dstAddr,
-                           const char *msg,
+                           const byte *msg,
                            u_int32_t msgLen,
-                           char msgType)
+                           byte msgType)
 {
-    char buffer[IPC_BUFFER_SIZE];
+    byte buffer[IPC_BUFFER_SIZE];
     MessageHeader *msgHdr = (MessageHeader *)(void *)buffer;
     msgHdr->msgType = msgType;
     msgHdr->msgLen = msgLen;
@@ -88,7 +88,7 @@ int IPCEndpoint::SendMsgTo(const std::string &dstAddr,
 
 int IPCEndpoint::SendProtoMsgTo(const std::string &dstAddr,
                                 const google::protobuf::Message &msg,
-                                char msgType)
+                                byte msgType)
 {
     std::string serializedString = msg.SerializeAsString();
     uint32_t msgLen = serializedString.length();

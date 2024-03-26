@@ -8,9 +8,9 @@ cc_library(
 )
 
 cc_library(
-    name = "common_type",
-    srcs = ["common_type.h"],
-    hdrs = ["common_type.h"],
+    name = "message_type",
+    srcs = ["message_type.h"],
+    hdrs = ["message_type.h"],
     visibility = ["//visibility:public"],
 )
 

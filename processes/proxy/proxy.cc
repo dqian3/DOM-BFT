@@ -2,7 +2,7 @@
 
 #include <openssl/pem.h>
 
-#include "lib/common_type.h"
+#include "lib/message_type.h"
 
 namespace dombft
 {

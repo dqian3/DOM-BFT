@@ -5,7 +5,7 @@
 #include "proto/dombft_proto.pb.h"
 #include "lib/signed_udp_endpoint.h"
 #include "lib/ipc_endpoint.h"
-#include "lib/common_type.h"
+#include "lib/message_type.h"
 
 #include <fstream>
 #include <iostream>
@@ -33,6 +33,8 @@ namespace dombft
 
         /** The message handler used to handle requests (from proxies) */
         struct MessageHandler *replyHandler_;
+
+        struct std::map<std::pair<uint64_t, uint32_t>, std::vector<unsigned char>> deadlineQueue_;
 
         /** The message handler to handle messages from proxies. The function is used
          * to instantiate a replyHandler_ and registered to requestEP_ */

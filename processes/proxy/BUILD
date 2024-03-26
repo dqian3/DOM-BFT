@@ -15,7 +15,7 @@ cc_library(
         "//lib:utils",
         "//lib:address",
         "//lib:endpoint",
-        "//lib:common_type",
+        "//lib:message_type",
         ":proxy_config",
     ],
 )
