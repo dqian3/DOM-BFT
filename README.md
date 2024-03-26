@@ -15,13 +15,13 @@ are setup in this repo means that more recent versions of Bazel are not compatib
 To build the `client`
 
 ```
-bazel build //client/...
+bazel build //processes/client/...
 ```
 
 The same syntax is used to build the `proxy`, `receiver` and other components. You can
 also build all of them at the same time with something like
 ```
-bazel build //proxy/... //receiver/... //client/...
+bazel build //processes/...
 ```
 
 ## Running 
