@@ -1,6 +1,6 @@
 #include "lib/udp_endpoint.h"
 
-UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
+UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx)
     : MessageHandler(msghdl, ctx)
 {
     ev_init(evWatcher_, [] (struct ev_loop *loop, struct ev_io *w, int revents) 
@@ -97,7 +97,7 @@ int UDPEndpoint::SendProtoMsgTo(const Address &dstAddr,
     uint32_t msgLen = serializedString.length();
     if (msgLen > 0)
     {
-        SendMsgTo(dstAddr, serializedString.c_str(), msgLen, msgType);
+        SendMsgTo(dstAddr, (const byte *) serializedString.c_str(), msgLen, msgType);
     }
     return -1;
 }
@@ -129,7 +129,7 @@ bool UDPEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
 
 bool UDPEndpoint::UnRegisterMsgHandler(MessageHandler *msgHdl)
 {
-    UDPMsgHandler *udpMsgHdl = (UDPMsgHandler *)msgHdl;
+    UDPMessageHandler *udpMsgHdl = (UDPMessageHandler *)msgHdl;
     if (evLoop_ == NULL)
     {
         LOG(ERROR) << "No evLoop!";
@@ -147,7 +147,7 @@ bool UDPEndpoint::UnRegisterMsgHandler(MessageHandler *msgHdl)
 
 bool UDPEndpoint::isMsgHandlerRegistered(MessageHandler *msgHdl)
 {
-    return (UDPMsgHandler *)msgHdl == msgHandler_;
+    return (UDPMessageHandler *)msgHdl == msgHandler_;
 }
 
 void UDPEndpoint::UnRegisterAllMsgHandlers()

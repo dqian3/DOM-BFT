@@ -36,9 +36,9 @@ namespace dombft
 
         struct std::map<std::pair<uint64_t, uint32_t>, std::vector<unsigned char>> deadlineQueue_;
 
-        /** The message handler to handle messages from proxies. The function is used
-         * to instantiate a replyHandler_ and registered to requestEP_ */
-        void ReceiveRequest(MessageHeader *msgHdr, char *msgBuffer, Address *sender);
+        /** The message handler to handle messages from proxies. Called from replyHandler_ */
+        void ReceiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+
 
     public:
         /** Receiver accepts a config file, which contains all the necessary information

@@ -144,7 +144,7 @@ namespace dombft
             }
         };
 
-        UDPMsgHandler handler(handleMeasurementReply);
+        UDPMessageHandler handler(handleMeasurementReply);
         Timer monitor(checkEnd, 10, this);
 
         measurmentEp_->RegisterMsgHandler(&handler);
@@ -226,7 +226,7 @@ namespace dombft
             }
         };
 
-        UDPMsgHandler handler(handleClientRequest);
+        UDPMessageHandler handler(handleClientRequest);
         Timer monitor(checkEnd, 10, this);
 
         forwardEps_[thread_id]->RegisterMsgHandler(&handler);

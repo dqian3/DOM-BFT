@@ -65,7 +65,7 @@ void run(EVP_PKEY *pubkey)
         }
 
     };
-    UDPMsgHandler handler(func, nullptr);
+    UDPMessageHandler handler(func, nullptr);
     ep.RegisterMsgHandler(&handler);
 
     printf("Entering event loop\n");

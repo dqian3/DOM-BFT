@@ -58,9 +58,8 @@ namespace dombft
         uint32_t numFastReplies_;
         uint32_t numExecuted_;
 
-        /** The message handler to handle messages from proxies. The function is used
-         * to instantiate a replyHandler_ and registered to requestEP_ */
-        void ReceiveReply(MessageHeader *msgHdr, char *msgBuffer, Address *sender);
+        /** The message handler to handle messages */
+        void ReceiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void SubmitRequest();
 
 

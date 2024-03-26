@@ -2,7 +2,7 @@
 
 #include <sys/un.h>
 
-IPCMessageHandler::IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
+IPCMessageHandler::IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx)
     : MessageHandler(msghdl, ctx)
 {
     ev_init(evWatcher_, [] (struct ev_loop *loop, struct ev_io *w, int revents) 
@@ -94,7 +94,7 @@ int IPCEndpoint::SendProtoMsgTo(const std::string &dstAddr,
     uint32_t msgLen = serializedString.length();
     if (msgLen > 0)
     {
-        SendMsgTo(dstAddr, serializedString.c_str(), msgLen, msgType);
+        SendMsgTo(dstAddr, (const byte *)serializedString.c_str(), msgLen, msgType);
     }
     return -1;
 }
@@ -133,7 +133,7 @@ bool IPCEndpoint::UnRegisterMsgHandler(MessageHandler *msgHdl)
         LOG(ERROR) << "The handler has not been registered ";
         return false;
     }
-    ev_io_stop(evLoop_, udpMsgHdl->evWatcher_);
+    ev_io_stop(evLoop_, ipcMsgHdl->evWatcher_);
     msgHandler_ = NULL;
     return true;
 }

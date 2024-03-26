@@ -18,7 +18,7 @@
  * called every time this endpoint receives some messages.
  *
  * Currently, we only support UDP and Unix Socket IPC communication. Therefore, 
- * we only have two derived structs (UDPMsgHandler and IPCMsgHandler) from 
+ * we only have two derived structs (UDPMessageHandler and IPCMsgHandler) from 
  * MessageHandler. These are defined alongside the respective endpoint types.
  *
  * **/

@@ -65,8 +65,8 @@ namespace dombft
 
 
         endpoint_ = new SignedUDPEndpoint(clientIP, clientPort, key, true);
-        replyHandler_ = new UDPMsgHandler(
-            [] (MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
+        replyHandler_ = new UDPMessageHandler(
+            [] (MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
                 ((Client *)ctx)->ReceiveReply(msgHdr, msgBuffer, sender);
             },
@@ -88,7 +88,7 @@ namespace dombft
         endpoint_->LoopRun();
     }
 
-    void Client::ReceiveReply(MessageHeader *msgHdr, char *msgBuffer,
+    void Client::ReceiveReply(MessageHeader *msgHdr, byte *msgBuffer,
                               Address *sender)
     {
         if (msgHdr->msgLen < 0)

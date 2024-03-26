@@ -72,7 +72,7 @@ int SignedUDPEndpoint::SignAndSendProtoMsgTo(const Address &dstAddr,
 
     if (msgLen > 0)
     {
-        SignAndSendMsgTo(dstAddr, serializedString.c_str(), msgLen, msgType);
+        SignAndSendMsgTo(dstAddr, (const byte *) serializedString.c_str(), msgLen, msgType);
     }
     return -1;
 }
@@ -83,7 +83,7 @@ bool SignedUDPEndpoint::verify(MessageHeader *hdr, byte *body, EVP_PKEY *pubkey)
     EVP_MD_CTX *mdctx = NULL;
 
     SignedMessageHeader *shdr = (SignedMessageHeader *) body;
-    u_byte *reqBytes = (u_byte *)(shdr + 1);
+    byte *reqBytes = (byte *)(shdr + 1);
     uint32_t reqLen = hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader);
 
     /* Create the Message Digest Context */
