@@ -17,12 +17,16 @@ public:
 
     int SignAndSendMsgTo(const Address &dstAddr,
                          const char *msg,
-                         u_int32_t msgLen,
+                         uint32_t msgLen,
                          char msgType);
 
     int SignAndSendProtoMsgTo(const Address &dstAddr,
                             const google::protobuf::Message &msg,
                             char msgType);
+
+    
+    // verify mirros how SignedUDPEndpoint passes it to the handler
+    bool verify(MessageHeader *hdr, char *body, EVP_PKEY *pubkey);
 };
 
 #endif

@@ -12,7 +12,7 @@ SignedUDPEndpoint::~SignedUDPEndpoint() {}
 
 int SignedUDPEndpoint::SignAndSendMsgTo(const Address &dstAddr,
                                         const char *msg,
-                                        u_int32_t msgLen,
+                                        uint32_t msgLen,
                                         char msgType)
 {
     char buffer[sizeof(MessageHeader) + sizeof(SignedMessageHeader) + msgLen + MAX_SIG_LEN];
@@ -75,4 +75,39 @@ int SignedUDPEndpoint::SignAndSendProtoMsgTo(const Address &dstAddr,
         SignAndSendMsgTo(dstAddr, serializedString.c_str(), msgLen, msgType);
     }
     return -1;
+}
+
+
+bool SignedUDPEndpoint::verify(MessageHeader *hdr, char *body, EVP_PKEY *pubkey)
+{
+    EVP_MD_CTX *mdctx = NULL;
+
+    SignedMessageHeader *shdr = (SignedMessageHeader *) body;
+    u_char *reqBytes = (u_char *)(shdr + 1);
+    uint32_t reqLen = hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader);
+
+    /* Create the Message Digest Context */
+    if (!(mdctx = EVP_MD_CTX_create())) {
+        LOG(ERROR) << "Error creating OpenSSL Context";
+        return false;
+    }
+
+    if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, pubkey)) {
+        LOG(ERROR) << "Error initializing digest context";
+        return false;
+    }
+
+    /* Initialize `key` with a public key */
+    if (1 != EVP_DigestVerifyUpdate(mdctx, reqBytes, reqLen))  {
+        LOG(ERROR) << "Error EVP_DigestVerifyUpdate";
+        return false;
+    }
+
+    if (1 == EVP_DigestVerifyFinal(mdctx, reqBytes + reqLen, shdr->sigLen)) {
+        return true;
+    }
+    else {
+        LOG(ERROR) << "signature did not verify :(";
+        return false;
+    }
 }

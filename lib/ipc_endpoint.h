@@ -3,11 +3,18 @@
 
 #include "lib/endpoint.h"
 
+struct IPCMessageHandler : MessageHandler
+{
+    char buffer_[UDP_BUFFER_SIZE];
+    IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
+    ~IPCMessageHandler();
+};
+
 class IPCEndpoint : public Endpoint
 {
 protected:
     /* data */
-    struct IPCMsgHandler *msgHandler_;
+    struct IPCMessageHandler *msgHandler_;
 
 public:
     IPCEndpoint(const std::string &ipcAddr, const bool isMasterReceiver);

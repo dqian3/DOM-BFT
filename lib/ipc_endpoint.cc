@@ -2,6 +2,34 @@
 
 #include <sys/un.h>
 
+IPCMessageHandler::IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
+    : MessageHandler(msghdl, ctx)
+{
+    ev_init(evWatcher_, [] (struct ev_loop *loop, struct ev_io *w, int revents) 
+    {
+        IPCMessageHandler* m = (IPCMessageHandler*)(w->data);
+
+        // We shouldn't need the IPC sender address, our IPC is 1 to 1
+        // TODO, we should make this the case if not, and add support for IPC in Address if so
+        int msgLen = recv(w->fd, m->buffer_, IPC_BUFFER_SIZE, 0);
+
+        if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) 
+        {
+            MessageHeader* msgHeader = (MessageHeader*)(void*)(m->buffer_);
+            if (msgHeader->msgLen + sizeof(MessageHeader) >= (uint32_t)msgLen) 
+            {
+                m->msgHandler_(msgHeader, m->buffer_ + sizeof(MessageHeader),
+                                nullptr, m->context_);
+            }
+        } 
+    });
+}
+
+IPCMessageHandler::~IPCMessageHandler()
+{
+
+}
+
 IPCEndpoint::IPCEndpoint(const std::string &ipcAddr,
                          const bool isMasterReceiver)
     : Endpoint(isMasterReceiver), msgHandler_(NULL)
@@ -73,7 +101,7 @@ int IPCEndpoint::SendProtoMsgTo(const std::string &dstAddr,
 
 bool IPCEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
 {
-    IPCMsgHandler *ipcMsgHdl = (IPCMsgHandler *)msgHdl;
+    IPCMessageHandler *ipcMsgHdl = (IPCMessageHandler *)msgHdl;
     if (evLoop_ == NULL)
     {
         LOG(ERROR) << "No evLoop!";
@@ -94,13 +122,13 @@ bool IPCEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
 
 bool IPCEndpoint::UnRegisterMsgHandler(MessageHandler *msgHdl)
 {
-    UDPMsgHandler *udpMsgHdl = (UDPMsgHandler *)msgHdl;
+    IPCMessageHandler *ipcMsgHdl = (IPCMessageHandler *)msgHdl;
     if (evLoop_ == NULL)
     {
         LOG(ERROR) << "No evLoop!";
         return false;
     }
-    if (!isMsgHandlerRegistered(udpMsgHdl))
+    if (!isMsgHandlerRegistered(ipcMsgHdl))
     {
         LOG(ERROR) << "The handler has not been registered ";
         return false;
@@ -112,7 +140,7 @@ bool IPCEndpoint::UnRegisterMsgHandler(MessageHandler *msgHdl)
 
 bool IPCEndpoint::isMsgHandlerRegistered(MessageHandler *msgHdl)
 {
-    return (IPCMsgHandler *)msgHdl == msgHandler_;
+    return (IPCMessageHandler *)msgHdl == msgHandler_;
 }
 
 void IPCEndpoint::UnRegisterAllMsgHandlers()

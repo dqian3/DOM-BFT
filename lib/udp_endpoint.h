@@ -3,11 +3,18 @@
 
 #include "lib/endpoint.h"
 
+struct UDPMessageHandler : MessageHandler
+{
+    char buffer_[UDP_BUFFER_SIZE];
+    UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
+    ~UDPMessageHandler();
+};
+
 class UDPEndpoint : public Endpoint
 {
 protected:
     /* data */
-    struct UDPMsgHandler *msgHandler_;
+    struct UDPMessageHandler *msgHandler_;
     bool bound_ = false;
 
 
@@ -26,6 +33,7 @@ public:
                        const char msgType);
 
     virtual bool RegisterMsgHandler(MessageHandler *msgHdl) override;
+
     virtual bool UnRegisterMsgHandler(MessageHandler *msgHdl) override;
     virtual bool isMsgHandlerRegistered(MessageHandler *msgHdl) override;
     virtual void UnRegisterAllMsgHandlers() override;
