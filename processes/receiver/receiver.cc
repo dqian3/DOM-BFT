@@ -1,4 +1,4 @@
-#include "receiver/receiver.h"
+#include "receiver.h"
 
 #include <openssl/pem.h>
 

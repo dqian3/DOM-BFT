@@ -1,4 +1,4 @@
-#include "proxy/proxy.h"
+#include "proxy.h"
 
 #include <openssl/pem.h>
 

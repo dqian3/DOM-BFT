@@ -1,4 +1,4 @@
-#include "receiver/receiver.h"
+#include "receiver.h"
 DEFINE_string(config, "configs/receiver.yaml", "The config file for the receiver");
 
 dombft::Receiver* receiver = NULL;

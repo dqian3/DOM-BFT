@@ -1,4 +1,4 @@
-#include "proxy/proxy.h"
+#include "proxy.h"
 DEFINE_string(config, "configs/proxy.yaml", "The config file for the proxy");
 
 dombft::Proxy* proxy = NULL;

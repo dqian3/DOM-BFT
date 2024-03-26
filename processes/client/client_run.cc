@@ -1,4 +1,4 @@
-#include "client/client.h"
+#include "client.h"
 DEFINE_string(config, "configs/client.yaml", "The config file for the client");
 dombft::Client* client = NULL;
 int main(int argc, char* argv[]) {
