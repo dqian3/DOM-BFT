@@ -64,7 +64,8 @@ namespace dombft
         nextReqSeq_ = 1;
 
 
-        endpoint_ = new SignedUDPEndpoint(clientIP, clientPort, key, true);
+        endpoint_ = new UDPEndpoint(clientIP, clientPort, true);
+        sigProvider_ = new SignatureProvider(key);
         replyHandler_ = new UDPMessageHandler(
             [] (MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
@@ -99,7 +100,7 @@ namespace dombft
         if (msgHdr->msgType == MessageType::REPLY || msgHdr->msgType == MessageType::FAST_REPLY)
         {
             // TODO verify and handle signed header better
-            if (!reply.ParseFromArray(msgBuffer + sizeof(SignedMessageHeader), msgHdr->msgLen)) {
+            if (!reply.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse REPLY message";
                 return;
             }
@@ -133,10 +134,12 @@ namespace dombft
         request.set_is_write(true); // TODO modify this based on some random chance
 
         // TODO, select a proxy or replica based on useProxy
-
-
         Address &addr = proxyAddrs_[0];
-        endpoint_->SignAndSendProtoMsgTo(addr, request, MessageType::CLIENT_REQUEST);
+
+        // TODO maybe client should own the memory instead of proxy.
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+        sigProvider_->appendSignature(hdr, UDP_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(addr);
         VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
 
         nextReqSeq_++;

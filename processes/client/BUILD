@@ -16,6 +16,7 @@ cc_library(
         "//proto:dombft_cc_proto",
         "//lib:message_type",
         "//lib:endpoint",
+        "//lib:signature_provider",
         "//lib:utils",
         ":client_config",
     ],
