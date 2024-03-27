@@ -1,8 +1,6 @@
 #include "client.h"
 
 
-#include <openssl/pem.h>
-
 namespace dombft
 {
     using namespace dombft::proto;
@@ -24,15 +22,7 @@ namespace dombft
         LOG(INFO) << "clientPort=" << clientPort;
 
 
-        BIO *bo = BIO_new_file(clientConfig_.clientKey.c_str(), "r");
-        EVP_PKEY *key = NULL;
-        PEM_read_bio_PrivateKey(bo, &key, 0, 0 );
-        BIO_free(bo);
 
-        if(key == NULL) {
-            LOG(ERROR) << "Unable to load client private key!";
-            exit(1);
-        }
 
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < clientConfig_.proxyIps.size(); i++)

@@ -1,17 +1,80 @@
 #include "lib/signature_provider.h"
 #include <glog/logging.h>
+#include <filesystem>
+
+#include <openssl/pem.h>
 
 #define MAX_SIG_LEN 256
 
-SignatureProvider::SignatureProvider(EVP_PKEY *privateKey)
-    : privKey_(privateKey)
-{
-}
+SignatureProvider::SignatureProvider()
+    : privKey_(nullptr) {}
 
 SignatureProvider::~SignatureProvider() {}
 
+bool SignatureProvider::loadPrivateKey(const std::string &privateKeyPath)
+{
+    BIO *bo = BIO_new_file(privateKeyPath.c_str(), "r");
+    PEM_read_bio_PrivateKey(bo, &privKey_, 0, 0);
+    BIO_free(bo);
+
+    if (privKey_ == NULL)
+    {
+        LOG(ERROR) << "Unable to load client private key!";
+        return false;
+    }
+    return true;
+}
+
+// Assumes keys are in directory keyDir with names ending in an _n.pub, where n is the id number
+bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::string &keyDir)
+{
+    // Ohh some C++17 stuff, hopefully this is reasonable
+    const std::filesystem::path keysPath(keyDir);
+
+    try
+    {
+        for (auto const &dirEntry : std::filesystem::directory_iterator(keysPath))
+        {
+            if (!dirEntry.is_regular_file())
+                continue;
+
+            EVP_PKEY *pubKey = nullptr;
+            BIO *bo = BIO_new_file(dirEntry.path().c_str(), "r");
+            PEM_read_bio_PUBKEY(bo, &pubKey, 0, 0);
+            BIO_free(bo);
+
+            if (pubKey == nullptr)
+            {
+                LOG(ERROR) << "Unable to load public key from " << dirEntry.path()
+                           << " continuing...";
+            }
+
+            // Find id by just looking for the suffix _<n>.pub
+            std::string stem = dirEntry.path().stem();
+            // Assumes id is end of name.
+            int id = std::stoi(stem.substr(stem.find_first_of("0123456789")));
+            pubKeys_[keyType][id] = pubKey;
+        }
+    }
+    catch (const std::exception &e)
+    {
+        LOG(ERROR) << e.what();
+        return false;
+    }
+    
+
+    LOG(INFO) << "Loaded " << pubKeys_[keyType].size() << " keys for "
+              << keyType << " from '" << keyDir << "'";
+}
+
 int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 {
+    if (privKey_ == nullptr)
+    {
+        LOG(ERROR) << "Private key not initialized";
+        return -1;
+    }
+
     size_t sigLen;
 
     if (hdr->msgLen + sizeof(MessageHeader) > bufLen)
@@ -59,7 +122,7 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
     return 0;
 }
 
-bool SignatureProvider::verify(MessageHeader *hdr, byte *body, EVP_PKEY *pubkey)
+bool SignatureProvider::verify(MessageHeader *hdr, byte *body, const std::string &pubKeyId)
 {
     EVP_MD_CTX *mdctx = NULL;
 
@@ -72,7 +135,7 @@ bool SignatureProvider::verify(MessageHeader *hdr, byte *body, EVP_PKEY *pubkey)
         return false;
     }
 
-    if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, pubkey))
+    if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, pubKeys_[pubKeyId]))
     {
         LOG(ERROR) << "Error initializing digest context";
         return false;

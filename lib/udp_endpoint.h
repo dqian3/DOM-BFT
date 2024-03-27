@@ -28,7 +28,7 @@ public:
     ~UDPEndpoint();
 
     // Loads message with header prepended into buffer and sets
-    // bufReady to true.
+    // bufReady to true. TODO get some info about buffer size.
     MessageHeader *PrepareMsg(const byte *msg,
                   u_int32_t msgLen,
                   byte msgType);
@@ -37,6 +37,8 @@ public:
         const google::protobuf::Message &msg,
         const byte msgType);
 
+
+    // Sends message in buffer
     int SendPreparedMsgTo(const Address &dstAddr);
 
 
