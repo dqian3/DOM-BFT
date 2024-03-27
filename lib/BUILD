@@ -45,15 +45,29 @@ cc_library(
 )
 
 cc_library(
+    name = "signature_provider",
+    srcs = ["signature_provider.cc"],
+    hdrs = ["signature_provider.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":address",
+        ":common_struct",
+        "@openssl//:openssl",
+        "@com_github_google_glog//:glog",
+    ]
+)
+
+cc_library(
     name = "endpoint",
-    srcs = ["endpoint.cc", "udp_endpoint.cc", "signed_udp_endpoint.cc", "ipc_endpoint.cc"],
-    hdrs = ["endpoint.h", "udp_endpoint.h", "signed_udp_endpoint.h", "ipc_endpoint.h"],
+    srcs = ["endpoint.cc", "udp_endpoint.cc", "ipc_endpoint.cc"],
+    hdrs = ["endpoint.h", "udp_endpoint.h", "ipc_endpoint.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",
         ":common_struct",
         ":message_handler",
         ":timer",
+        ":signature_provider",
         "@com_github_enki_libev//:libev",
         "@com_github_google_glog//:glog",
         "@com_google_protobuf//:protobuf",

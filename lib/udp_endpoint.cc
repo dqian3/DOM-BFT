@@ -13,7 +13,7 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx)
         if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) 
         {
             MessageHeader* msgHeader = (MessageHeader*)(void*)(m->buffer_);
-            if (msgHeader->msgLen + sizeof(MessageHeader) >= (uint32_t)msgLen) 
+            if (sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen >= (uint32_t)msgLen) 
             {
                 m->msgHandler_(msgHeader, m->buffer_ + sizeof(MessageHeader),
                                 &(m->sender_), m->context_);
@@ -62,44 +62,67 @@ UDPEndpoint::UDPEndpoint(const std::string &ip, const int port,
 
 UDPEndpoint::~UDPEndpoint() {}
 
-int UDPEndpoint::SendMsgTo(const Address &dstAddr,
-                           const byte *msg,
+
+
+int UDPEndpoint::SendPreparedMsgTo(const Address &dstAddr)
+{
+    MessageHeader *hdr = (MessageHeader *) buffer_;
+
+    if (!bufReady_) {
+        LOG(ERROR) << "SendPreparedMsgTo called while bufferReady_ = false, make "
+                   << "sure you call PrepareMsg() or PrepareProtoMsg() first ";
+        return -1;
+    }
+
+    int ret = sendto(fd_, buffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0,
+                        (struct sockaddr *)(&(dstAddr.addr_)), sizeof(sockaddr_in));
+    if (ret < 0)
+    {
+        VLOG(1) << "\tSend Fail ret =" << ret;
+    }
+
+    bufReady_= false;
+    return ret;
+}
+
+MessageHeader *UDPEndpoint::PrepareMsg(const byte *msg,
                            u_int32_t msgLen,
                            byte msgType)
 {
-    byte buffer[UDP_BUFFER_SIZE];
-    MessageHeader *msgHdr = (MessageHeader *)(void *)buffer;
-    msgHdr->msgType = msgType;
-    msgHdr->msgLen = msgLen;
+     if (bufReady_) {
+        LOG(ERROR) << "PrepareMsg called while bufferReady_ = true, make "
+                   << "sure you call SendPreparedMessage() after PrepareMsg() is called again ";
+        return nullptr;
+    }
+
+    MessageHeader *hdr = (MessageHeader *)buffer_;
+    hdr->msgType = msgType;
+    hdr->msgLen = msgLen;
+    hdr->sigLen = 0;
     if (msgLen + sizeof(MessageHeader) > UDP_BUFFER_SIZE)
     {
         LOG(ERROR) << "Msg too large " << (uint32_t)msgType
                    << "\t length=" << msgLen;
-        return -1;
+        return nullptr;
     }
 
-    memcpy(buffer + sizeof(MessageHeader), msg,
-           msgHdr->msgLen);
-    int ret = sendto(fd_, buffer, msgHdr->msgLen + sizeof(MessageHeader), 0,
-                     (struct sockaddr *)(&(dstAddr.addr_)), sizeof(sockaddr_in));
-    if (ret < 0)
-    {
-        VLOG(1) << pthread_self() << "\tSend Fail ret =" << ret;
-    }
-    return ret;
+    memcpy(buffer_ + sizeof(MessageHeader), msg,
+           hdr->msgLen);
+
+    bufReady_ = true;
+    return hdr;
 }
 
-int UDPEndpoint::SendProtoMsgTo(const Address &dstAddr,
-                                const google::protobuf::Message &msg,
+MessageHeader *UDPEndpoint::PrepareProtoMsg(const google::protobuf::Message &msg,
                                 byte msgType)
 {
     std::string serializedString = msg.SerializeAsString();
     uint32_t msgLen = serializedString.length();
     if (msgLen > 0)
     {
-        SendMsgTo(dstAddr, (const byte *) serializedString.c_str(), msgLen, msgType);
+        return PrepareMsg((const byte *) serializedString.c_str(), msgLen, msgType);
     }
-    return -1;
+    return nullptr;
 }
 
 bool UDPEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
