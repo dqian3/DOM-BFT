@@ -68,6 +68,9 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
 
     LOG(INFO) << "Loaded " << pubKeys_[keyType].size() << " keys for "
               << keyType << " from '" << keyDir << "'";
+
+
+    return true;
 }
 
 int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
@@ -125,11 +128,19 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
     return 0;
 }
 
-bool SignatureProvider::verify(MessageHeader *hdr, byte *body, const std::string &pubKeyId)
+bool SignatureProvider::verify(MessageHeader *hdr, byte *body, const std::string &pubKeyType, int pubKeyId)
 {
     EVP_MD_CTX *mdctx = NULL;
 
     byte *data = (byte *)(hdr + 1);
+
+
+    if (!pubKeys_[pubKeyType].count(pubKeyId)) {
+        LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";
+        return false;
+    }
+
+    EVP_PKEY *key = pubKeys_[pubKeyType][pubKeyId];
 
     /* Create the Message Digest Context */
     if (!(mdctx = EVP_MD_CTX_create()))
@@ -138,7 +149,7 @@ bool SignatureProvider::verify(MessageHeader *hdr, byte *body, const std::string
         return false;
     }
 
-    if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, pubKeys_[pubKeyId]))
+    if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, key))
     {
         LOG(ERROR) << "Error initializing digest context";
         return false;
