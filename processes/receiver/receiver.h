@@ -3,8 +3,9 @@
 #include "lib/utils.h"
 #include "lib/address.h"
 #include "proto/dombft_proto.pb.h"
-#include "lib/signed_udp_endpoint.h"
+#include "lib/udp_endpoint.h"
 #include "lib/ipc_endpoint.h"
+#include "lib/signature_provider.h"
 #include "lib/message_type.h"
 
 #include <fstream>
@@ -21,8 +22,10 @@ namespace dombft
         /** All the configuration parameters for the receiver */
         ReceiverConfig receiverConfig_;
 
+        SignatureProvider sigProvider_;
+
         /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
-        SignedUDPEndpoint *endpoint_;
+        UDPEndpoint *endpoint_;
 
         /** The receiver optionally uses this endpoint to forward messages along IPC to the receiver*/
         // TODO this could probably be handled in a cleaner way

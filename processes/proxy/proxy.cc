@@ -24,21 +24,16 @@ namespace dombft
 
         logMap_.resize(numShards);
 
-        BIO *bo = BIO_new_file(proxyConfig_.proxyKey.c_str(), "r");
-        EVP_PKEY *key = NULL;
-        PEM_read_bio_PrivateKey(bo, &key, 0, 0 );
-        BIO_free(bo);
-
-        if(key == NULL) {
+        if(!sigProvider_.loadPrivateKey(proxyConfig_.proxyKey)) {
             LOG(ERROR) << "Unable to load private key!";
             exit(1);
         }
 
         for (int i = 0; i < numShards; i++)
         {
-            forwardEps_.push_back(new SignedUDPEndpoint(proxyConfig_.proxyIp,
+            forwardEps_.push_back(new UDPEndpoint(proxyConfig_.proxyIp,
                                                         proxyConfig_.proxyForwardPortBase + i,
-                                                        key, false));
+                                                        false));
         }
         measurmentEp_ = new UDPEndpoint(
             proxyConfig_.proxyIp, proxyConfig_.proxyMeasurementPort);
@@ -102,11 +97,9 @@ namespace dombft
         MessageHandlerFunc handleMeasurementReply = [this, &receieverOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
         {
             MeasurementReply reply;
-            SignedMessageHeader *shdr = (SignedMessageHeader *) body;
-            byte *reqBytes = (byte *)(shdr + 1);
 
             // TODO verify and handle signed header better
-            if (!reply.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader)))
+            if (!reply.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse Measurement_Reply message";
                 return;
@@ -161,13 +154,10 @@ namespace dombft
             DOMRequest outReq;   // Outgoing request that we attach a deadline to
 
             VLOG(2) << "Received message from " << sender->GetIPAsString() << " " << hdr->msgLen;
-            if (hdr->msgType == MessageType::CLIENT_REQUEST)
-            {
-                SignedMessageHeader *shdr = (SignedMessageHeader *) body;
-                u_char *reqBytes = (u_char *)(shdr + 1);
+            if (hdr->msgType == MessageType::CLIENT_REQUEST)            {
 
                 // TODO verify and handle signed header better
-                if (!inReq.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader))) {
+                if (!inReq.ParseFromArray(body, hdr->msgLen)) {
                     LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                     return;
                 }
@@ -186,7 +176,10 @@ namespace dombft
                 for (int i = 0; i < numReceivers_; i++)
                 {
                     VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to " << receiverAddrs_[i].ip_;
-                    forwardEps_[thread_id]->SignAndSendProtoMsgTo(receiverAddrs_[i], outReq, MessageType::DOM_REQUEST);
+                    
+                    MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+                    sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+                    forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]); 
                 }
 
                 // Log* litem = new Log();

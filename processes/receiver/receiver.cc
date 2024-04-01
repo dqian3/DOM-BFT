@@ -21,17 +21,13 @@ namespace dombft
         int receiverPort = receiverConfig_.receiverPort;
         LOG(INFO) << "receiverPort=" << receiverPort;
 
-        BIO *bo = BIO_new_file(receiverConfig_.receiverKey.c_str(), "r");
-        EVP_PKEY *key = NULL;
-        PEM_read_bio_PrivateKey(bo, &key, 0, 0);
-        BIO_free(bo);
-
-        if (key == NULL)
-        {
-            LOG(ERROR) << "Unable to load receiver private key!";
+        
+        if(!sigProvider_.loadPrivateKey(receiverConfig_.receiverKey)) {
+            LOG(ERROR) << "Unable to load private key!";
             exit(1);
         }
-
+        
+        
         /** Store all replica addrs */
         for (uint32_t i = 0; i < receiverConfig_.replicaIps.size(); i++)
         {
@@ -39,7 +35,7 @@ namespace dombft
                                             receiverConfig_.replicaPort));
         }
 
-        endpoint_ = new SignedUDPEndpoint(receiverIp, receiverPort, key, true);
+        endpoint_ = new UDPEndpoint(receiverIp, receiverPort, true);
         msgHandler_ = new UDPMessageHandler(
             [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
@@ -81,11 +77,8 @@ namespace dombft
         DOMRequest request;
         if (hdr->msgType == MessageType::DOM_REQUEST)
         {
-            SignedMessageHeader *shdr = (SignedMessageHeader *) body;
-            u_char *reqBytes = (u_char *)(shdr + 1);
-
             // TODO verify and handle signed header better
-            if (!request.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader)))
+            if (!request.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse DOM_REQUEST message";
                 return;
@@ -99,7 +92,9 @@ namespace dombft
             mReply.set_owd(recv_time - request.send_time());
             VLOG(3) << "Measured delay: " << mReply.owd();
 
-            endpoint_->SignAndSendProtoMsgTo(Address(sender->GetIPAsString(), receiverConfig_.proxyMeasurementPort), mReply, MessageType::MEASUREMENT_REPLY);
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), receiverConfig_.proxyMeasurementPort));
         
             // Check if request is on time.
             request.set_late(recv_time > request.deadline());
@@ -129,7 +124,8 @@ namespace dombft
 
             for (const Address &addr : replicaAddrs_)
             {
-                endpoint_->SignAndSendProtoMsgTo(addr, request, MessageType::DOM_REQUEST);
+                endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+                endpoint_->SendPreparedMsgTo(addr);
             }
         }
     }

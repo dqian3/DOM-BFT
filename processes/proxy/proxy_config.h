@@ -22,11 +22,9 @@ struct ProxyConfig
     std::vector<std::string> receiverIps;
     int receiverPort;
     int receiverShards;
-    std::string receiverHmacPrefix;
 
     // Clients
     int numClients;
-    std::string clientPubKeyPrefix;
 
     // Parses yaml file configFilename and fills in fields of ProxyConfig
     // accordingly. Returns an error message or "" if there are no errors.
@@ -78,9 +76,6 @@ struct ProxyConfig
 
             key = "numClients";
             numClients = config[key].as<int>();
-            key = "clientPubKeyPrefix";
-            clientPubKeyPrefix = config[key].as<std::string>();
-
             return "";
         }
         catch (const YAML::BadConversion &e)
