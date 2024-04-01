@@ -16,7 +16,9 @@ message DOMRequest {
     uint32  proxy_id = 3;
     bool    late = 4;
     uint32  deadline_set_size = 5;
-    bytes   client_req = 6; // Bytes of Client Request + Signature
+
+    uint32  client_id = 6; // repeat client_id here for convenience in breaking ties
+    bytes   client_req = 7; // Bytes of Client Request + Signature
 }
 
 message MeasurementReply {

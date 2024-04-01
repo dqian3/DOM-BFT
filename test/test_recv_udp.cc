@@ -1,4 +1,4 @@
-#include "lib/signed_udp_endpoint.h"
+#include "lib/udp_endpoint.h"
 #include "lib/address.h"
 #include "lib/message_handler.h"
 
@@ -41,31 +41,28 @@ bool verify(void *body, size_t bodyLen, const unsigned char *sig, size_t sigLen,
 
 void run(EVP_PKEY *pubkey) 
 {
-    SignedUDPEndpoint ep("127.0.0.1", 9000, nullptr);
+    UDPEndpoint ep("127.0.0.1", 9000);
 
-    MessageHandlerFunc func = [pubkey](MessageHeader *hdr, void *body, Address *sender, void *context)
+    MessageHandlerFunc func = [pubkey](MessageHeader *hdr, byte *body, Address *sender, void *context)
     {
-        printf("%d %d\n", hdr->msgLen, hdr->msgType);
+        printf("%d %d %d\n", hdr->msgLen, hdr->msgType, hdr->sigLen);
 
-        SignedMessageHeader *shdr = (SignedMessageHeader *)body;
-        uint32_t dataLen = hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader);
-
-        printf("%d %d\n", dataLen, shdr->sigLen);
+        uint32_t bodyLen = hdr->msgLen;
 
         // TODO checks
-        void *data = body + sizeof(SignedMessageHeader);
-        unsigned char *sig = (unsigned char *)(data + dataLen);
+        unsigned char *sig = (unsigned char *)(body + bodyLen);
 
-        if (verify(data, dataLen, sig, shdr->sigLen, pubkey)) {
+        if (verify(body, bodyLen, sig, hdr->sigLen, pubkey)) {
             printf("Verified!\n");
-            printf("%s\n", data);
+            printf("%s\n", body);
         }
         else {
             printf("Failed to verify!\n");
         }
 
     };
-    UDPMsgHandler handler(func, nullptr);
+    UDPMessageHandler handler(func, nullptr);
+    printf("Registiering message handler!\n");
     ep.RegisterMsgHandler(&handler);
 
     printf("Entering event loop\n");
@@ -89,7 +86,5 @@ int main(int argc, char *argv[])
     }
 
 
-    std::thread *test_thread = new std::thread(run, pubkey);
-
-    test_thread->join();
+    run(pubkey);
 }

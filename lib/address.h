@@ -10,6 +10,10 @@
 
 /**
  * Encapsualted IP addresses
+ * 
+ * This class could be used to handle general addresses, but is only used
+ * for this purpose now. See MessageHandler for details, essentially, we 
+ * could also implement other addresses for different kinds of endpoints.
  */
 
 class Address

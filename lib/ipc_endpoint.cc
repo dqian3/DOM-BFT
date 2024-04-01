@@ -2,6 +2,34 @@
 
 #include <sys/un.h>
 
+IPCMessageHandler::IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx)
+    : MessageHandler(msghdl, ctx)
+{
+    ev_init(evWatcher_, [] (struct ev_loop *loop, struct ev_io *w, int revents) 
+    {
+        IPCMessageHandler* m = (IPCMessageHandler*)(w->data);
+
+        // We shouldn't need the IPC sender address, our IPC is 1 to 1
+        // TODO, we should make this the case if not, and add support for IPC in Address if so
+        int msgLen = recv(w->fd, m->buffer_, IPC_BUFFER_SIZE, 0);
+
+        if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) 
+        {
+            MessageHeader* msgHeader = (MessageHeader*)(void*)(m->buffer_);
+            if (msgHeader->msgLen + sizeof(MessageHeader) >= (uint32_t)msgLen) 
+            {
+                m->msgHandler_(msgHeader, m->buffer_ + sizeof(MessageHeader),
+                                nullptr, m->context_);
+            }
+        } 
+    });
+}
+
+IPCMessageHandler::~IPCMessageHandler()
+{
+
+}
+
 IPCEndpoint::IPCEndpoint(const std::string &ipcAddr,
                          const bool isMasterReceiver)
     : Endpoint(isMasterReceiver), msgHandler_(NULL)
@@ -23,11 +51,11 @@ IPCEndpoint::~IPCEndpoint() {}
 
 // This is basically the same as UDP, could be consolidated...
 int IPCEndpoint::SendMsgTo(const std::string &dstAddr,
-                           const char *msg,
+                           const byte *msg,
                            u_int32_t msgLen,
-                           char msgType)
+                           byte msgType)
 {
-    char buffer[IPC_BUFFER_SIZE];
+    byte buffer[IPC_BUFFER_SIZE];
     MessageHeader *msgHdr = (MessageHeader *)(void *)buffer;
     msgHdr->msgType = msgType;
     msgHdr->msgLen = msgLen;
@@ -60,20 +88,20 @@ int IPCEndpoint::SendMsgTo(const std::string &dstAddr,
 
 int IPCEndpoint::SendProtoMsgTo(const std::string &dstAddr,
                                 const google::protobuf::Message &msg,
-                                char msgType)
+                                byte msgType)
 {
     std::string serializedString = msg.SerializeAsString();
     uint32_t msgLen = serializedString.length();
     if (msgLen > 0)
     {
-        SendMsgTo(dstAddr, serializedString.c_str(), msgLen, msgType);
+        SendMsgTo(dstAddr, (const byte *)serializedString.c_str(), msgLen, msgType);
     }
     return -1;
 }
 
 bool IPCEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
 {
-    IPCMsgHandler *ipcMsgHdl = (IPCMsgHandler *)msgHdl;
+    IPCMessageHandler *ipcMsgHdl = (IPCMessageHandler *)msgHdl;
     if (evLoop_ == NULL)
     {
         LOG(ERROR) << "No evLoop!";
@@ -94,25 +122,25 @@ bool IPCEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
 
 bool IPCEndpoint::UnRegisterMsgHandler(MessageHandler *msgHdl)
 {
-    UDPMsgHandler *udpMsgHdl = (UDPMsgHandler *)msgHdl;
+    IPCMessageHandler *ipcMsgHdl = (IPCMessageHandler *)msgHdl;
     if (evLoop_ == NULL)
     {
         LOG(ERROR) << "No evLoop!";
         return false;
     }
-    if (!isMsgHandlerRegistered(udpMsgHdl))
+    if (!isMsgHandlerRegistered(ipcMsgHdl))
     {
         LOG(ERROR) << "The handler has not been registered ";
         return false;
     }
-    ev_io_stop(evLoop_, udpMsgHdl->evWatcher_);
+    ev_io_stop(evLoop_, ipcMsgHdl->evWatcher_);
     msgHandler_ = NULL;
     return true;
 }
 
 bool IPCEndpoint::isMsgHandlerRegistered(MessageHandler *msgHdl)
 {
-    return (IPCMsgHandler *)msgHdl == msgHandler_;
+    return (IPCMessageHandler *)msgHdl == msgHandler_;
 }
 
 void IPCEndpoint::UnRegisterAllMsgHandlers()

@@ -3,24 +3,31 @@
 
 #include "lib/endpoint.h"
 
+struct IPCMessageHandler : MessageHandler
+{
+    byte buffer_[UDP_BUFFER_SIZE];
+    IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
+    ~IPCMessageHandler();
+};
+
 class IPCEndpoint : public Endpoint
 {
 protected:
     /* data */
-    struct IPCMsgHandler *msgHandler_;
+    struct IPCMessageHandler *msgHandler_;
 
 public:
     IPCEndpoint(const std::string &ipcAddr, const bool isMasterReceiver);
     ~IPCEndpoint();
 
     int SendMsgTo(const std::string &dstAddr,
-                  const char *msg,
+                  const byte *msg,
                   u_int32_t msgLen,
-                  char msgType);
+                  byte msgType);
 
     int SendProtoMsgTo(const std::string &dstAddr,
                        const google::protobuf::Message &msg,
-                       const char msgType);
+                       const byte msgType);
 
     bool RegisterMsgHandler(MessageHandler *msgHdl) override;
     bool UnRegisterMsgHandler(MessageHandler *msgHdl) override;

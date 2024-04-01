@@ -15,8 +15,8 @@ receiverIps:
 receiverShards: 1 # The number of threads to receive threads
 receiverPort: 33000 # The port is exposed to client/proxy and is used to receive client/proxy requests.
 
-initialOwd: 80 # The initial one-way delay (usecs) between replicas and proxies
-maxOwd: 200
+initialOwd: 1000 # The initial one-way delay (usecs) between replicas and proxies
+maxOwd: 5000
 
 numClients: 2
 clientPubKeyPrefix: ""

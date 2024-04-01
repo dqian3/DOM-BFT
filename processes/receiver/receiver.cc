@@ -21,17 +21,13 @@ namespace dombft
         int receiverPort = receiverConfig_.receiverPort;
         LOG(INFO) << "receiverPort=" << receiverPort;
 
-        BIO *bo = BIO_new_file(receiverConfig_.receiverKey.c_str(), "r");
-        EVP_PKEY *key = NULL;
-        PEM_read_bio_PrivateKey(bo, &key, 0, 0);
-        BIO_free(bo);
-
-        if (key == NULL)
-        {
-            LOG(ERROR) << "Unable to load receiver private key!";
+        
+        if(!sigProvider_.loadPrivateKey(receiverConfig_.receiverKey)) {
+            LOG(ERROR) << "Unable to load private key!";
             exit(1);
         }
-
+        
+        
         /** Store all replica addrs */
         for (uint32_t i = 0; i < receiverConfig_.replicaIps.size(); i++)
         {
@@ -39,20 +35,29 @@ namespace dombft
                                             receiverConfig_.replicaPort));
         }
 
-        endpoint_ = new SignedUDPEndpoint(receiverIp, receiverPort, key, true);
-        replyHandler_ = new UDPMsgHandler(
-            [](MessageHeader *msgHdr, char *msgBuffer, Address *sender, void *ctx)
+        endpoint_ = new UDPEndpoint(receiverIp, receiverPort, true);
+        msgHandler_ = new UDPMessageHandler(
+            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
-                ((Receiver *)ctx)->ReceiveRequest(msgHdr, msgBuffer, sender);
+                ((Receiver *)ctx)->receiveRequest(msgHdr, msgBuffer, sender);
             },
             this);
 
-        endpoint_->RegisterMsgHandler(replyHandler_);
+        fwdTimer_ = new Timer(
+            [](void *ctx, void * endpoint) {
+                ((Receiver *)ctx)->checkDeadlines();
+            },
+            1000,
+            this
+        );
+
+        endpoint_->RegisterTimer(fwdTimer_);
+        endpoint_->RegisterMsgHandler(msgHandler_);
     }
 
     Receiver::~Receiver()
     {
-        // TODO cleanup... though we don't really reuse this
+        // TODO cleanup...
     }
 
     void Receiver::Run()
@@ -62,7 +67,7 @@ namespace dombft
         endpoint_->LoopRun();
     }
 
-    void Receiver::ReceiveRequest(MessageHeader *hdr, char *body,
+    void Receiver::receiveRequest(MessageHeader *hdr, byte *body,
                                   Address *sender)
     {
         if (hdr->msgLen < 0)
@@ -72,11 +77,8 @@ namespace dombft
         DOMRequest request;
         if (hdr->msgType == MessageType::DOM_REQUEST)
         {
-            SignedMessageHeader *shdr = (SignedMessageHeader *) body;
-            u_char *reqBytes = (u_char *)(shdr + 1);
-
             // TODO verify and handle signed header better
-            if (!request.ParseFromArray(reqBytes, hdr->msgLen - shdr->sigLen - sizeof(SignedMessageHeader)))
+            if (!request.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse DOM_REQUEST message";
                 return;
@@ -90,28 +92,59 @@ namespace dombft
             mReply.set_owd(recv_time - request.send_time());
             VLOG(3) << "Measured delay: " << mReply.owd();
 
-            // TODO get address better lol
-            endpoint_->SignAndSendProtoMsgTo(Address(sender->GetIPAsString(), receiverConfig_.proxyMeasurementPort), mReply, MessageType::MEASUREMENT_REPLY);
-
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), receiverConfig_.proxyMeasurementPort));
+        
             // Check if request is on time.
-            request.set_late(recv_time < request.deadline());
+            request.set_late(recv_time > request.deadline());
 
-            // Forward request
-
-            if (receiverConfig_.ipcReplica)
-            {
-                // TODO
-                throw "IPC communciation not implemented";
+            if (request.late()){
+                VLOG(3) << "Request is late, sending immediately";
+                forwardRequest(request);
+            } else {
+                VLOG(3) << "Adding request to priority queue with deadline " << request.deadline() 
+                << " in " << request.deadline() - recv_time << "us";
+                deadlineQueue_[{request.deadline(), request.client_id()}] = request;
             }
-            else
-            {
-                VLOG(1) << "Forwarding Request with deadline " << request.deadline();
 
-                for (const Address &addr : replicaAddrs_)
-                {
-                    endpoint_->SignAndSendProtoMsgTo(addr, request, MessageType::DOM_REQUEST);
-                }
+        }
+    }
+
+    void Receiver::forwardRequest(const DOMRequest &request)
+    {
+        if (receiverConfig_.ipcReplica)
+        {
+            // TODO
+            throw "IPC communciation not implemented";
+        }
+        else
+        {
+            VLOG(1) << "Forwarding Request with deadline " << request.deadline();
+
+            for (const Address &addr : replicaAddrs_)
+            {
+                endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+                endpoint_->SendPreparedMsgTo(addr);
             }
+        }
+    }
+
+
+    // TODO: there is probably a smarter way than just having this poll every so often
+    void Receiver::checkDeadlines()
+    {
+        uint64_t now = GetMicrosecondTimestamp();
+
+        auto it = deadlineQueue_.begin();
+
+        // ->first gets the key of {deadline, client_id}, second .first gets deadline
+        while (it != deadlineQueue_.end() && it->first.first <= now) {
+            VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
+            forwardRequest(it->second);
+            auto temp = std::next(it);
+            deadlineQueue_.erase(it);
+            it = temp;
         }
     }
 

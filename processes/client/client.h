@@ -7,8 +7,9 @@
 #include "lib/utils.h"
 #include "lib/address.h"
 #include "proto/dombft_proto.pb.h"
-#include "lib/signed_udp_endpoint.h"
-#include "lib/common_type.h"
+#include "lib/udp_endpoint.h"
+#include "lib/signature_provider.h"
+#include "lib/message_type.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -38,7 +39,9 @@ namespace dombft
         ClientConfig clientConfig_;
 
         /** The endpoint uses to submit request to proxies and receive replies*/
-        SignedUDPEndpoint *endpoint_;
+        UDPEndpoint *endpoint_;
+
+        SignatureProvider sigProvider_;
 
         /** The message handler used to handle replies (from replicas) */
         struct MessageHandler *replyHandler_;
@@ -58,9 +61,8 @@ namespace dombft
         uint32_t numFastReplies_;
         uint32_t numExecuted_;
 
-        /** The message handler to handle messages from proxies. The function is used
-         * to instantiate a replyHandler_ and registered to requestEP_ */
-        void ReceiveReply(MessageHeader *msgHdr, char *msgBuffer, Address *sender);
+        /** The message handler to handle messages */
+        void ReceiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void SubmitRequest();
 
 

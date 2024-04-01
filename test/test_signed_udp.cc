@@ -1,5 +1,6 @@
 #include "lib/endpoint.h"
-#include "lib/signed_udp_endpoint.h"
+#include "lib/udp_endpoint.h"
+#include "lib/signature_provider.h"
 
 #include <glog/logging.h>
 
@@ -19,13 +20,19 @@ int main(int argc, char *argv[])
     }
     
 
-    SignedUDPEndpoint udpEndpoint("127.0.0.1", 8000, key);
+    UDPEndpoint udpEndpoint("127.0.0.1", 8000);
+    SignatureProvider sigProvider(key);
 
     // Send timer
-    Timer t = Timer([] (void *data, void *endpoint) {
-        SignedUDPEndpoint *ep = (SignedUDPEndpoint *) endpoint;
-        ep->SignAndSendMsgTo(Address("127.0.0.1", 9000), "Test", 5, 2);
-    }, 1000);
+    Timer t = Timer([&sigProvider] (void *data, void *endpoint) {
+        LOG(INFO) << "Sending";
+        UDPEndpoint *ep = (UDPEndpoint *) endpoint;
+        
+        MessageHeader *hdr = ep->PrepareMsg((const byte *)"Test", 5, 2);
+        sigProvider.appendSignature(hdr, UDP_BUFFER_SIZE); // TODO more elegant way to get UDPBufferSize
+        LOG(INFO) << hdr->msgLen << " " << hdr->sigLen;
+        ep->SendPreparedMsgTo(Address("127.0.0.1", 9000));
+    }, 1000000);
 
     udpEndpoint.RegisterTimer(&t);
     udpEndpoint.LoopRun();
