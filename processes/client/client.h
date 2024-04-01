@@ -41,7 +41,7 @@ namespace dombft
         /** The endpoint uses to submit request to proxies and receive replies*/
         UDPEndpoint *endpoint_;
 
-        SignatureProvider *sigProvider_;
+        SignatureProvider sigProvider_;
 
         /** The message handler used to handle replies (from replicas) */
         struct MessageHandler *replyHandler_;

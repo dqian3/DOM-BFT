@@ -37,6 +37,9 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
         {
             if (!dirEntry.is_regular_file())
                 continue;
+            if (dirEntry.path().extension() != ".pub")
+                continue;
+
 
             EVP_PKEY *pubKey = nullptr;
             BIO *bo = BIO_new_file(dirEntry.path().c_str(), "r");

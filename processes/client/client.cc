@@ -50,12 +50,23 @@ namespace dombft
         //     }
         // }
 
+
+
+        /* Setup keys */
+        if (!sigProvider_.loadPrivateKey(clientConfig_.clientKey)) {
+            LOG(ERROR) << "Error loading client private key, exiting...";
+            exit(1);
+        }
+
+        if (!sigProvider_.loadPublicKeys("replica", clientConfig_.replicaKeysDir)) {
+            LOG(ERROR) << "Error loading replica public keys, exiting...";
+            exit(1);
+        }
+
         /** Initialize state */
         nextReqSeq_ = 1;
 
-
         endpoint_ = new UDPEndpoint(clientIP, clientPort, true);
-        sigProvider_ = new SignatureProvider(key);
         replyHandler_ = new UDPMessageHandler(
             [] (MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
