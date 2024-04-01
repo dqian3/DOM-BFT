@@ -139,7 +139,7 @@ namespace dombft
 
         // TODO maybe client should own the memory instead of proxy.
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
-        sigProvider_->appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(addr);
         VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
 
