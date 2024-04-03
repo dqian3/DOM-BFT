@@ -46,20 +46,23 @@ namespace dombft
         /** The message handler used to handle replies (from replicas) */
         struct MessageHandler *replyHandler_;
 
+        /** The addresses of proxies. */
+        std::vector<Address> proxyAddrs_;
+
 
         /** Each client is assigned with a unqiue id */
         int clientId_;
 
         /** The next requestId to be submitted */
-        uint32_t nextReqSeq_;
+        uint32_t nextReqSeq_ = 0;
 
-        /** The addresses of proxies. */
-        std::vector<Address> proxyAddrs_;
+        /* State for the currently pending request */
+        uint64_t sendTime_;
 
-        /** Counters for the number of replies */
-        uint32_t numReplies_;
-        uint32_t numFastReplies_;
-        uint32_t numExecuted_;
+        // Counters for the number of replies 
+        uint32_t numReplies_ = 0;
+        uint32_t numFastReplies_ = 0;
+        uint32_t numExecuted_ = 0;
 
         /** The message handler to handle messages */
         void ReceiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);

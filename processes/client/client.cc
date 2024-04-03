@@ -106,7 +106,12 @@ namespace dombft
                 return;
             }
 
-            VLOG(3) << "Received reply from replica " << reply.replica_id();
+            VLOG(3) << "Received reply from replica " << reply.replica_id() 
+                << " after " << GetMicrosecondTimestamp() - sendTime_ << " usec";
+
+            // SubmitRequest();
+
+
             // TODO handle dups
             numReplies_++;
             if (reply.fast())
@@ -115,8 +120,8 @@ namespace dombft
                 
             }
 
-            if (numReplies_ == clientConfig_.replicaIps.size()) {
-
+            if (numReplies_ > 100) {
+                exit(1);
             }
 
         }
@@ -137,6 +142,8 @@ namespace dombft
         request.set_client_seq(nextReqSeq_);
         request.set_send_time(GetMicrosecondTimestamp());
         request.set_is_write(true); // TODO modify this based on some random chance
+
+        sendTime_ = request.send_time();
 
         // TODO, select a proxy or replica based on useProxy
         Address &addr = proxyAddrs_[0];
