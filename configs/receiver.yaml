@@ -7,7 +7,7 @@ receiverPort: 33000
 # Proxy info
 numProxies: 1
 proxyMeasurementPort: 32000
-proxyPubKeyPrefix: ""
+proxyPubKeyPrefix: "keys/proxies"
 
 # Ips of replica this receiever forwards to, NOT all replicas.
 replicaIps:

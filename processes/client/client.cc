@@ -97,6 +97,13 @@ namespace dombft
         {
             return;
         }
+
+        if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", 0)){
+            LOG(INFO) << "Failed to verify replica signature";
+            return;
+        }
+
+
         Reply reply;
         if (msgHdr->msgType == MessageType::REPLY || msgHdr->msgType == MessageType::FAST_REPLY)
         {
@@ -109,7 +116,7 @@ namespace dombft
             VLOG(3) << "Received reply from replica " << reply.replica_id() 
                 << " after " << GetMicrosecondTimestamp() - sendTime_ << " usec";
 
-            // SubmitRequest();
+            SubmitRequest();
 
 
             // TODO handle dups

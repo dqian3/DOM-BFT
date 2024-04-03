@@ -37,10 +37,9 @@ public:
         const google::protobuf::Message &msg,
         const byte msgType);
 
-
     // Sends message in buffer
-    int SendPreparedMsgTo(const Address &dstAddr);
-
+    int SendPreparedMsgTo(const Address &dstAddr, bool reuseBuf=false);
+    void setBufReady(bool bufReady);
 
     virtual bool RegisterMsgHandler(MessageHandler *msgHdl) override;
 

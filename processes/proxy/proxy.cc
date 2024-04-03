@@ -171,7 +171,7 @@ namespace dombft
                 outReq.set_deadline_set_size(numReceivers_);
                 outReq.set_late(false);
 
-                outReq.set_client_req(body, hdr->msgLen);
+                outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
                 for (int i = 0; i < numReceivers_; i++)
                 {

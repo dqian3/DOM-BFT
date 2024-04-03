@@ -27,6 +27,12 @@ namespace dombft
             exit(1);
         }
         
+
+        if (!sigProvider_.loadPublicKeys("proxy", receiverConfig_.proxyPubKeyPrefix)) {
+            LOG(ERROR) << "Unable to load proxy public keys!";
+            exit(1);
+        }
+
         
         /** Store all replica addrs */
         for (uint32_t i = 0; i < receiverConfig_.replicaIps.size(); i++)
@@ -74,6 +80,12 @@ namespace dombft
         {
             return;
         }
+        
+        if (!sigProvider_.verify(hdr, body, "proxy", 0)){
+            LOG(INFO) << "Failed to verify proxy signature";
+            return;
+        }
+
         DOMRequest request;
         if (hdr->msgType == MessageType::DOM_REQUEST)
         {
@@ -122,11 +134,16 @@ namespace dombft
         {
             VLOG(1) << "Forwarding Request with deadline " << request.deadline();
 
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+            // TODO check errors for all of these lol
+            // TODO do this while waiting, not in the critical path
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+
             for (const Address &addr : replicaAddrs_)
             {
-                endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
-                endpoint_->SendPreparedMsgTo(addr);
+                endpoint_->SendPreparedMsgTo(addr, true);
             }
+            endpoint_->setBufReady(false);
         }
     }
 
