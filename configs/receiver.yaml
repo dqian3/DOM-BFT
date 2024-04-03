@@ -12,5 +12,8 @@ proxyPubKeyPrefix: "keys/proxies"
 # Ips of replica this receiever forwards to, NOT all replicas.
 replicaIps:
   - "127.0.0.1"
+  - "127.0.0.2"
+  - "127.0.0.3"
+  - "127.0.0.4"
 
 replicaPort: 34000

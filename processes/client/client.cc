@@ -1,6 +1,5 @@
 #include "client.h"
 
-
 namespace dombft
 {
     using namespace dombft::proto;
@@ -21,17 +20,13 @@ namespace dombft
         int clientPort = clientConfig_.clientPort;
         LOG(INFO) << "clientPort=" << clientPort;
 
-
-
-
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < clientConfig_.proxyIps.size(); i++)
         {
-            LOG(INFO) << "Proxy " << i + 1 << ": " <<  clientConfig_.proxyIps[i] << ", " << clientConfig_.proxyPortBase;
+            LOG(INFO) << "Proxy " << i + 1 << ": " << clientConfig_.proxyIps[i] << ", " << clientConfig_.proxyPortBase;
             proxyAddrs_.push_back(Address(clientConfig_.proxyIps[i],
-                                            clientConfig_.proxyPortBase));  
+                                          clientConfig_.proxyPortBase));
         }
-
 
         /** Generate zipfian workload */
         // LOG(INFO) << "keyNum=" << clientConfig_.keyNum
@@ -50,15 +45,15 @@ namespace dombft
         //     }
         // }
 
-
-
         /* Setup keys */
-        if (!sigProvider_.loadPrivateKey(clientConfig_.clientKey)) {
+        if (!sigProvider_.loadPrivateKey(clientConfig_.clientKey))
+        {
             LOG(ERROR) << "Error loading client private key, exiting...";
             exit(1);
         }
 
-        if (!sigProvider_.loadPublicKeys("replica", clientConfig_.replicaKeysDir)) {
+        if (!sigProvider_.loadPublicKeys("replica", clientConfig_.replicaKeysDir))
+        {
             LOG(ERROR) << "Error loading replica public keys, exiting...";
             exit(1);
         }
@@ -68,12 +63,11 @@ namespace dombft
 
         endpoint_ = new UDPEndpoint(clientIP, clientPort, true);
         replyHandler_ = new UDPMessageHandler(
-            [] (MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
                 ((Client *)ctx)->ReceiveReply(msgHdr, msgBuffer, sender);
             },
-            this
-        );
+            this);
 
         endpoint_->RegisterMsgHandler(replyHandler_);
     }
@@ -98,42 +92,47 @@ namespace dombft
             return;
         }
 
-        if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", 0)){
+        if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", 0))
+        {
             LOG(INFO) << "Failed to verify replica signature";
             return;
         }
-
 
         Reply reply;
         if (msgHdr->msgType == MessageType::REPLY || msgHdr->msgType == MessageType::FAST_REPLY)
         {
             // TODO verify and handle signed header better
-            if (!reply.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+            if (!reply.ParseFromArray(msgBuffer, msgHdr->msgLen))
+            {
                 LOG(ERROR) << "Unable to parse REPLY message";
                 return;
             }
 
-            VLOG(3) << "Received reply from replica " << reply.replica_id() 
-                << " after " << GetMicrosecondTimestamp() - sendTime_ << " usec";
-
-            SubmitRequest();
-
+            VLOG(3) << "Received reply from replica " << reply.replica_id()
+                    << " after " << GetMicrosecondTimestamp() - sendTime_ << " usec";
 
             // TODO handle dups
             numReplies_++;
             if (reply.fast())
             {
                 numFastReplies_++;
-                
             }
 
-            if (numReplies_ > 100) {
-                exit(1);
-            }
+            if (numReplies_ >= clientConfig_.replicaIps.size())
+            {
+                numReplies_ = 0;
+                LOG(INFO) << "Fast path commit for " << nextReqSeq_ - 1 << " took "
+                          << GetMicrosecondTimestamp() - sendTime_ << " usec";
 
+                numExecuted_++;
+                if (numExecuted_ == 100) {
+                    exit(0);
+                }    
+
+                SubmitRequest();
+            }
         }
     }
-
 
     void Client::SubmitRequest()
     {
@@ -165,6 +164,5 @@ namespace dombft
 
         // TODO record this outstanding request somewhere
     }
-
 
 } // namespace dombft

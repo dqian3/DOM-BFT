@@ -1,6 +1,5 @@
 
 # Replica Info
-replicaId: 0
 replicaIps:
   - "127.0.0.1"
   - "127.0.0.2"

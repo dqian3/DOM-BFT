@@ -4,6 +4,10 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+
+DECLARE_int32(replicaId);
+
 struct ReplicaConfig
 {
     // Own Config
@@ -35,12 +39,12 @@ struct ReplicaConfig
         }
         LOG(INFO) << "Using config:\n " << config;
 
+
+        replicaId = FLAGS_replicaId;
+
         std::string key; // Keep track of current key for better error messages
         try
         {
-            key = "replicaId";
-            replicaId = config[key].as<int>();
-
             key = "replicaIps";
             for (uint32_t i = 0; i < config[key].size(); i++)
             {
