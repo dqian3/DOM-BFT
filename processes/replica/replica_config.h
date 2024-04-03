@@ -12,6 +12,10 @@ struct ReplicaConfig
     std::string replicaKey;
     int replicaPort;
 
+    std::vector<std::string> clientIps;
+    int clientPort;
+    std::string clientKeysDir;
+
     // Parses yaml file configFilename and fills in fields of ProxyConfig
     // accordingly. Returns an error message or "" if there are no errors.
     std::string parseConfig(std::string configFilename)

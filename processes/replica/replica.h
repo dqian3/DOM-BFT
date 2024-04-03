@@ -3,8 +3,9 @@
 #include "lib/utils.h"
 #include "lib/address.h"
 #include "proto/dombft_proto.pb.h"
-#include "lib/signed_udp_endpoint.h"
+#include "lib/udp_endpoint.h"
 #include "lib/ipc_endpoint.h"
+#include "lib/signature_provider.h"
 #include "lib/common_type.h"
 
 #include <fstream>
@@ -21,8 +22,22 @@ namespace dombft
         /** All the configuration parameters for the replica */
         ReplicaConfig replicaConfig_;
 
+        SignatureProvider sigProvider_;
+
         /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
-        SignedUDPEndpoint *endpoint_;
+        UDPEndpoint *endpoint_;
+
+        
+        MessageHandler *handler_;
+
+        void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+
+
+    public:
+
+        Replica(const std::string &configFile);
+        void run();
+        ~Replica();
 
 
     };
