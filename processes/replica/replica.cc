@@ -1,7 +1,6 @@
 #include "replica.h"
 
 #include <openssl/pem.h>
-#include <message_type.h>
 
 namespace dombft
 {
@@ -17,13 +16,19 @@ namespace dombft
             exit(1);
         }
 
-        std::string replicaIp = replicaConfig_.replicaIp;
+        // TODO check for config errors
+        std::string replicaIp = replicaConfig_.replicaIps[replicaConfig_.replicaId];
         LOG(INFO) << "replicaIP=" << replicaIp;
         int replicaPort = replicaConfig_.replicaPort;
         LOG(INFO) << "replicaPort=" << replicaPort;
 
         if(!sigProvider_.loadPrivateKey(replicaConfig_.replicaKey)) {
             LOG(ERROR) << "Unable to load private key!";
+            exit(1);
+        }
+
+        if(!sigProvider_.loadPublicKeys("client", replicaConfig_.clientKeysDir)) {
+            LOG(ERROR) << "Unable to load client public keys!";
             exit(1);
         }
 
@@ -80,19 +85,27 @@ namespace dombft
 
             Reply reply;
 
-            reply.set_client_id(clientHeader.client_id());
+            uint32_t clientId = clientHeader.client_id();
+            reply.set_client_id(clientId);
             reply.set_client_seq(clientHeader.client_seq());
             reply.set_replica_id(replicaConfig_.replicaId);
             reply.set_fast(true);
 
-            // TODO do this for real
+            // TODO do this for real and actually process the message
             reply.set_view(0);
             reply.set_seq(0);
 
-            endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-            // sigprovider
-            // TODO send to clietn.
-            // endpoint_->SendPreparedMsgTo();
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+            // TODO send to client
+
+            if (clientId < 0 || clientId > replicaConfig_.clientIps.size()) {
+                LOG(ERROR) << "Invalid client id" << clientId;
+                return;
+            }
+
+            LOG(INFO) << "Sending reply back to client " << clientId;
+            endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPort));
         }
     }
 } // namespace dombft

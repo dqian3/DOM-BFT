@@ -19,7 +19,7 @@ bool SignatureProvider::loadPrivateKey(const std::string &privateKeyPath)
 
     if (privKey_ == NULL)
     {
-        LOG(ERROR) << "Unable to load client private key!";
+        LOG(ERROR) << "Unable to load private key!";
         return false;
     }
     return true;

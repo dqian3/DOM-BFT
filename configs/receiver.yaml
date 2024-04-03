@@ -1,6 +1,6 @@
 # Receiver Info
 receiverId: 0
-receiverIp: "127.0.0.1"
+receiverIp: "127.0.0.6"
 receiverKey: keys/receivers/receiver0.pem
 receiverPort: 33000
 

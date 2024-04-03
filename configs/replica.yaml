@@ -7,17 +7,16 @@ replicaIps:
   - "127.0.0.3"
   - "127.0.0.4"
 replicaKeysDir: "keys/replicas"
-replicaKey: "keys/replicas/replica1.pem"
+replicaKey: "keys/replicas/replica0.pem"
 replicaPort: 34000
 
 # Client Info
 clientIps: 
-  - "127.0.0.6"
+  - "127.0.0.7"
 clientKeysDir: keys/clients
-
 clientPort: 33000
 
 
 # Proxy Info
 proxyKeysDir: keys/proxies
-recieverKeysDir: keys/receivers
+receiverKeysDir: keys/receivers

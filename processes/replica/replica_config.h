@@ -8,13 +8,17 @@ struct ReplicaConfig
 {
     // Own Config
     int replicaId;
-    std::string replicaIp;
+    std::vector<std::string> replicaIps;
+    std::string replicaKeysDir;
     std::string replicaKey;
     int replicaPort;
 
     std::vector<std::string> clientIps;
     int clientPort;
     std::string clientKeysDir;
+
+    std::string proxyKeysDir;
+    std::string receiverKeysDir;
 
     // Parses yaml file configFilename and fills in fields of ProxyConfig
     // accordingly. Returns an error message or "" if there are no errors.
@@ -37,14 +41,38 @@ struct ReplicaConfig
             key = "replicaId";
             replicaId = config[key].as<int>();
 
-            key = "replicaIp";
-            replicaIp = config[key].as<std::string>();
+            key = "replicaIps";
+            for (uint32_t i = 0; i < config[key].size(); i++)
+            {
+                replicaIps.push_back(config[key][i].as<std::string>());
+            }
+
+            key = "replicaKeysDir";
+            replicaKeysDir = config[key].as<std::string>();
 
             key = "replicaKey";
             replicaKey = config[key].as<std::string>();
 
             key = "replicaPort";
             replicaPort = config[key].as<int>();
+
+
+            key = "clientIps";
+            for (uint32_t i = 0; i < config[key].size(); i++)
+            {
+                clientIps.push_back(config[key][i].as<std::string>());
+            }
+            key = "clientPort";
+            clientPort = config[key].as<int>();
+            
+            key = "clientKeysDir";
+            clientKeysDir = config[key].as<std::string>();
+
+            key = "proxyKeysDir";
+            proxyKeysDir = config[key].as<std::string>();
+
+            key = "receiverKeysDir";
+            receiverKeysDir = config[key].as<std::string>();
 
             return "";
         }

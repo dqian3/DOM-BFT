@@ -7,5 +7,5 @@ int main(int argc, char* argv[]) {
     google::InitGoogleLogging(argv[0]);
     FLAGS_logtostderr = 1;
     dombft::Replica replica(FLAGS_config);
-    replica.Run();
+    replica.run();
 }

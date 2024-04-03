@@ -106,14 +106,18 @@ namespace dombft
                 return;
             }
 
+            VLOG(3) << "Received reply from replica " << reply.replica_id();
             // TODO handle dups
             numReplies_++;
             if (reply.fast())
             {
                 numFastReplies_++;
+                
             }
 
-            // if (numReplies_ == )
+            if (numReplies_ == clientConfig_.replicaIps.size()) {
+
+            }
 
         }
     }

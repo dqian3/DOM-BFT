@@ -8,10 +8,7 @@ proxyKey: keys/proxies/proxy0.pem
 
 # Receiver Info
 receiverIps:
-  - "127.0.0.1"
-  - "127.0.0.2"
-  - "127.0.0.3"
-  - "127.0.0.4"
+  - "127.0.0.6"
 receiverShards: 1 # The number of threads to receive threads
 receiverPort: 33000 # The port is exposed to client/proxy and is used to receive client/proxy requests.
 

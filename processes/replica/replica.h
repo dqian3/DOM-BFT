@@ -6,7 +6,7 @@
 #include "lib/udp_endpoint.h"
 #include "lib/ipc_endpoint.h"
 #include "lib/signature_provider.h"
-#include "lib/common_type.h"
+#include "lib/message_type.h"
 
 #include <fstream>
 #include <iostream>
