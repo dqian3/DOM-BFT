@@ -1,0 +1,23 @@
+
+# Replica Info
+replicaId: 0
+replicaIps:
+  - "127.0.0.1"
+  - "127.0.0.2"
+  - "127.0.0.3"
+  - "127.0.0.4"
+replicaKeysDir: "keys/replicas"
+replicaKey: "keys/replicas/replica1.pem"
+replicaPort: 34000
+
+# Client Info
+clientIps: 
+  - "127.0.0.6"
+clientKeysDir: keys/clients
+
+clientPort: 33000
+
+
+# Proxy Info
+proxyKeysDir: keys/proxies
+recieverKeysDir: keys/receivers

@@ -1,7 +1,7 @@
 # Receiver Info
-receiverId: 1
+receiverId: 0
 receiverIp: "127.0.0.1"
-receiverKey: keys/receiver.pem
+receiverKey: keys/receivers/receiver0.pem
 receiverPort: 33000
 
 # Proxy info

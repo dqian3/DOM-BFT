@@ -1,7 +1,7 @@
 # Proxy Info
-clientId: 1
+clientId: 0
 clientIp: "127.0.0.6"
-clientKey: keys/client.pem
+clientKey: keys/clients/client0.pem
 
 clientPort: 33000
 
