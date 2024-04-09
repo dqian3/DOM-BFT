@@ -16,6 +16,7 @@ cc_library(
         "//lib:address",
         "//lib:endpoint",
         "//lib:message_type",
+        "//lib:config",
         ":replica_config",
     ],
 )

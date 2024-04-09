@@ -79,12 +79,12 @@ namespace dombft
             return;
         }
 
+
+#if USE_PROXY
         if (hdr->msgType == MessageType::DOM_REQUEST)
         {
             DOMRequest domHeader;
             ClientRequest clientHeader;
-
-            assert(replicaConfig_.useProxy);
 
             if (!domHeader.ParseFromArray(body, hdr->msgLen))
             {
@@ -111,16 +111,10 @@ namespace dombft
             // TODO also pass client request
             handleClientRequest(clientHeader);
        }
-
+#else
         if (hdr->msgType == CLIENT_REQUEST)
         {
             ClientRequest clientHeader;
-
-            if (replicaConfig_.useProxy)
-            {
-                LOG(WARNING) << "Received client request directly while using proxies!";
-                return;
-            }
 
             if (!clientHeader.ParseFromArray(hdr, hdr->msgLen))
             {
@@ -136,6 +130,8 @@ namespace dombft
 
             handleClientRequest(clientHeader);
         }
+#endif
+
     }
 
     void Replica::handleClientRequest(const ClientRequest &request)

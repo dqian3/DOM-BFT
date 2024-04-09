@@ -13,10 +13,6 @@ struct ClientConfig
     int clientPort;
     int proxyPortBase;
 
-    // double writeRatio;
-    // int requestRetryTimeoutUs;
-
-    bool useProxy;
     std::vector<std::string> proxyIps;
 
     std::vector<std::string> replicaIps;
@@ -61,9 +57,6 @@ struct ClientConfig
 
             // key = "requestRetryTimeoutUs";
             // requestRetryTimeoutUs = config[key].as<int>();
-
-            key = "useProxy";
-            useProxy = config[key].as<bool>();
 
             key = "proxyIps";
             for (uint32_t i = 0; i < config[key].size(); i++)

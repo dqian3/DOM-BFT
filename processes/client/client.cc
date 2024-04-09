@@ -141,27 +141,28 @@ namespace dombft
 
         sendTime_ = request.send_time();
 
-        if (clientConfig_.useProxy) {
-            Address &addr = proxyAddrs_[0];
 
-            // TODO maybe client should own the memory instead of proxy.
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
-            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-            endpoint_->SendPreparedMsgTo(addr);
-            VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
-        } else {
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
-            // TODO check errors for all of these lol
-            // TODO do this while waiting, not in the critical path
-            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+#if USE_PROXY && PROTOCOL == DOMBFT
+        Address &addr = proxyAddrs_[0];
 
-            for (const Address &addr : replicaAddrs_)
-            {
-                endpoint_->SendPreparedMsgTo(addr, true);
-            }
-            endpoint_->setBufReady(false);
+        // TODO maybe client should own the memory instead of proxy.
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(addr);
+        VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
 
+#else
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+        // TODO check errors for all of these lol
+        // TODO do this while waiting, not in the critical path
+        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+
+        for (const Address &addr : replicaAddrs_)
+        {
+            endpoint_->SendPreparedMsgTo(addr, true);
         }
+        endpoint_->setBufReady(false);
+#endif
 
 
         nextReqSeq_++;

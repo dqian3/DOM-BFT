@@ -1,5 +1,13 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
+
+cc_library(
+    name = "config",
+    srcs = ["config.h"],
+    hdrs = ["config.h"],
+    visibility = ["//visibility:public"],
+)
+
 cc_library(
     name = "common_struct",
     srcs = ["common_struct.h"],

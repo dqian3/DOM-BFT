@@ -1,0 +1,17 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// Compile time configs
+
+// In general, these are for changing major changes to the behavior of the protocols
+// rather than for tunable parameters such as timeouts or changeable information such 
+// as IPs and ports. Generally these will be used for experiments
+
+#define DOMBFT 0
+#define PBFT 1
+#define ZYZ 1
+
+#define PROTOCOL DOMBFT
+#define USE_PROXY 1
+
+#endif

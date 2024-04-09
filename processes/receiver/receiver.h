@@ -1,5 +1,6 @@
 #include "receiver_config.h"
 
+#include "lib/config.h"
 #include "lib/utils.h"
 #include "lib/address.h"
 #include "proto/dombft_proto.pb.h"

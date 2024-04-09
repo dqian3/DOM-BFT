@@ -6,6 +6,7 @@
 #include <yaml-cpp/yaml.h>
 
 // Own libraries
+#include "lib/config.h"
 #include "lib/utils.h"
 #include "lib/endpoint.h"
 #include "lib/udp_endpoint.h"

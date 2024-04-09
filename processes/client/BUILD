@@ -18,6 +18,7 @@ cc_library(
         "//lib:endpoint",
         "//lib:signature_provider",
         "//lib:utils",
+        "//lib:config",
         ":client_config",
     ],
 )

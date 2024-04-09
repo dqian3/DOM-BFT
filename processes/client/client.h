@@ -4,12 +4,14 @@
 #include <iostream>
 #include <thread>
 
+#include "lib/config.h"
 #include "lib/utils.h"
 #include "lib/address.h"
 #include "proto/dombft_proto.pb.h"
 #include "lib/udp_endpoint.h"
 #include "lib/signature_provider.h"
 #include "lib/message_type.h"
+
 
 #include <yaml-cpp/yaml.h>
 
