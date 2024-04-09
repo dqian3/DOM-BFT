@@ -89,12 +89,15 @@ namespace dombft
         DOMRequest request;
         if (hdr->msgType == MessageType::DOM_REQUEST)
         {
-            // TODO verify and handle signed header better
             if (!request.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse DOM_REQUEST message";
                 return;
             }
+
+#if FABRIC_CRYPTO
+            // TODO: verify sending from proxy.
+#endif
 
             // Send measurement reply right away
             uint64_t recv_time = GetMicrosecondTimestamp();
@@ -137,7 +140,10 @@ namespace dombft
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
             // TODO check errors for all of these lol
             // TODO do this while waiting, not in the critical path
+    
+#if FABRIC_CRYPTO
             sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+#endif
 
             for (const Address &addr : replicaAddrs_)
             {

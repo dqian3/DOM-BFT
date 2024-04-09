@@ -92,6 +92,10 @@ namespace dombft
                 return;
             }
 
+#if FABRIC_CRYPTO
+            // TODO verify that the message came from the fabric
+#endif
+
             // TODO This seems bad...
             // Separate this out into another function probably.
             MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();

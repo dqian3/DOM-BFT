@@ -14,4 +14,6 @@
 #define PROTOCOL DOMBFT
 #define USE_PROXY 1
 
+#define FABRIC_CRYPTO 0
+
 #endif
