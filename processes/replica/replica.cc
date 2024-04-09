@@ -1,6 +1,7 @@
 #include "replica.h"
 
 #include <openssl/pem.h>
+#include <assert.h>
 
 namespace dombft
 {
@@ -83,6 +84,8 @@ namespace dombft
             DOMRequest domHeader;
             ClientRequest clientHeader;
 
+            assert(replicaConfig_.useProxy);
+
             if (!domHeader.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse DOM_REQUEST message";
@@ -91,7 +94,7 @@ namespace dombft
 
             // TODO This seems bad...
             // Separate this out into another function probably.
-            MessageHeader *clientMsgHdr = (MessageHeader *)domHeader.client_req().c_str();
+            MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();
             byte *clientBody = (byte *)(clientMsgHdr + 1);
             if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen))
             {
@@ -105,30 +108,61 @@ namespace dombft
                 return;
             }
 
-            Reply reply;
+            // TODO also pass client request
+            handleClientRequest(clientHeader);
+       }
 
-            uint32_t clientId = clientHeader.client_id();
-            reply.set_client_id(clientId);
-            reply.set_client_seq(clientHeader.client_seq());
-            reply.set_replica_id(replicaConfig_.replicaId);
-            reply.set_fast(true);
+        if (hdr->msgType == CLIENT_REQUEST)
+        {
+            ClientRequest clientHeader;
 
-            // TODO do this for real and actually process the message
-            reply.set_view(0);
-            reply.set_seq(0);
-
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-            // TODO send to client
-
-            if (clientId < 0 || clientId > replicaConfig_.clientIps.size())
+            if (replicaConfig_.useProxy)
             {
-                LOG(ERROR) << "Invalid client id" << clientId;
+                LOG(WARNING) << "Received client request directly while using proxies!";
                 return;
             }
 
-            LOG(INFO) << "Sending reply back to client " << clientId;
-            endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPort));
+            if (!clientHeader.ParseFromArray(hdr, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                return;
+            }
+
+            if (!sigProvider_.verify(hdr, body, "client", clientHeader.client_id()))
+            {
+                LOG(INFO) << "Failed to verify client signature!";
+                return;
+            }
+
+            handleClientRequest(clientHeader);
         }
+    }
+
+    void Replica::handleClientRequest(const ClientRequest &request)
+    {
+        Reply reply;
+
+        uint32_t clientId = request.client_id();
+        reply.set_client_id(clientId);
+        reply.set_client_seq(request.client_seq());
+        reply.set_replica_id(replicaConfig_.replicaId);
+        reply.set_fast(true);
+
+        // TODO do this for real and actually process the message
+        reply.set_view(0);
+        reply.set_seq(0);
+
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        // TODO send to client
+
+        if (clientId < 0 || clientId > replicaConfig_.clientIps.size())
+        {
+            LOG(ERROR) << "Invalid client id" << clientId;
+            return;
+        }
+
+        LOG(INFO) << "Sending reply back to client " << clientId;
+        endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPort));
     }
 } // namespace dombft

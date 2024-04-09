@@ -33,6 +33,8 @@ namespace dombft
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
 
+        void handleClientRequest(const dombft::proto::ClientRequest &request);
+
     public:
 
         Replica(const std::string &configFile);

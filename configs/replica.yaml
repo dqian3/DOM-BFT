@@ -17,5 +17,7 @@ clientPort: 33000
 
 
 # Proxy Info
+useProxy: true
+
 proxyKeysDir: keys/proxies
 receiverKeysDir: keys/receivers

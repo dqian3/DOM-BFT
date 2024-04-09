@@ -48,6 +48,7 @@ namespace dombft
 
         /** The addresses of proxies. */
         std::vector<Address> proxyAddrs_;
+        std::vector<Address> replicaAddrs_;
 
 
         /** Each client is assigned with a unqiue id */

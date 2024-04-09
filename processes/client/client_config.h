@@ -21,6 +21,7 @@ struct ClientConfig
 
     std::vector<std::string> replicaIps;
     std::string replicaKeysDir;
+    int replicaPort;
 
     // Parses yaml file configFilename and fills in fields of ProxyConfig
     // accordingly. Returns an error message or "" if there are no errors.
@@ -76,6 +77,9 @@ struct ClientConfig
                 replicaIps.push_back(config[key][i].as<std::string>());
             }
 
+            key = "replicaPort";
+            replicaPort = config[key].as<int>();
+ 
             key = "replicaKeysDir";
             replicaKeysDir = config[key].as<std::string>();
 

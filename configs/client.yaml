@@ -12,6 +12,7 @@ replicaIps:
   - "127.0.0.3"
   - "127.0.0.4"
 replicaKeysDir: "keys/replicas"
+replicaPort: 34000
 
 useProxy: true
 proxyPortBase: 31000

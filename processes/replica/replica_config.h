@@ -21,8 +21,11 @@ struct ReplicaConfig
     int clientPort;
     std::string clientKeysDir;
 
+    bool useProxy;
+
     std::string proxyKeysDir;
     std::string receiverKeysDir;
+
 
     // Parses yaml file configFilename and fills in fields of ProxyConfig
     // accordingly. Returns an error message or "" if there are no errors.
@@ -71,6 +74,9 @@ struct ReplicaConfig
             
             key = "clientKeysDir";
             clientKeysDir = config[key].as<std::string>();
+
+            key = "useProxy";
+            useProxy = config[key].as<bool>();
 
             key = "proxyKeysDir";
             proxyKeysDir = config[key].as<std::string>();

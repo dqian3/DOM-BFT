@@ -28,22 +28,12 @@ namespace dombft
                                           clientConfig_.proxyPortBase));
         }
 
-        /** Generate zipfian workload */
-        // LOG(INFO) << "keyNum=" << clientConfig_.keyNum
-        //           << "\tskewFactor=" << clientConfig_.skewFactor
-        //           << "\twriteRatio=" << clientConfig_.writeRatio;
-        // zipfianKeys_.resize(1000000, 0);
-        // retryTimeoutUs_ = clientConfig_.requestRetryTimeUs;
-        // if (clientConfig_.keyNum > 1)
-        // {
-        //     std::default_random_engine generator(clientId_); // clientId as the seed
-        //     zipfian_int_distribution<uint32_t> zipfianDistribution(
-        //         0, clientConfig_.keyNum - 1, clientConfig_.skewFactor);
-        //     for (uint32_t i = 0; i < zipfianKeys_.size(); i++)
-        //     {
-        //         zipfianKeys_[i] = zipfianDistribution(generator);
-        //     }
-        // }
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < clientConfig_.replicaIps.size(); i++)
+        {
+            replicaAddrs_.push_back(Address(clientConfig_.replicaIps[i],
+                                            clientConfig_.replicaPort));
+        }
 
         /* Setup keys */
         if (!sigProvider_.loadPrivateKey(clientConfig_.clientKey))
@@ -151,14 +141,28 @@ namespace dombft
 
         sendTime_ = request.send_time();
 
-        // TODO, select a proxy or replica based on useProxy
-        Address &addr = proxyAddrs_[0];
+        if (clientConfig_.useProxy) {
+            Address &addr = proxyAddrs_[0];
 
-        // TODO maybe client should own the memory instead of proxy.
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(addr);
-        VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
+            // TODO maybe client should own the memory instead of proxy.
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(addr);
+            VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
+        } else {
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+            // TODO check errors for all of these lol
+            // TODO do this while waiting, not in the critical path
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+
+            for (const Address &addr : replicaAddrs_)
+            {
+                endpoint_->SendPreparedMsgTo(addr, true);
+            }
+            endpoint_->setBufReady(false);
+
+        }
+
 
         nextReqSeq_++;
 
