@@ -1,5 +1,5 @@
-# include <openssl/evp.h>
-# include <openssl/pem.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
 #include <openssl/rand.h>
 
 #include <stdio.h>
@@ -10,24 +10,23 @@
 int main(int argc, char *argv[])
 {
     EVP_MD_CTX *mdctx = NULL;
-    int ret = 0;
-    size_t slen = 0;
-    
-    unsigned char *sig = NULL;
-    char msg[] = "Test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test";
+    unsigned char pkey[64];
+    RAND_bytes(pkey, 64);
+    EVP_PKEY* key = EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, pkey, 64);
 
-    // Read files
-    BIO* bo = BIO_new_file(argv[1], "r");
-    EVP_PKEY* key = NULL;
-    PEM_read_bio_PrivateKey( bo, &key, 0, 0 );
+    char msg[] = "Test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test";
+    unsigned char *sig = NULL;
+    size_t slen = 0;
+
+    int ret;
 
     if(key == NULL)
         goto err;
     
     printf("Loaded Key\n");
 
-
     for (int i = 0; i < 10000; i++) {
+        // msg[0] = i;
         /* Create the Message Digest Context */
         if(!(mdctx = EVP_MD_CTX_create())) goto err;
         printf("EVP Create\n");
@@ -54,6 +53,7 @@ int main(int argc, char *argv[])
         if(1 != EVP_DigestSignFinal(mdctx, sig, &slen)) goto err;
         printf("Digest Sign Final Size %ld\n", slen);
     }
+
     /* Success */
     ret = 1;
     

@@ -23,3 +23,11 @@ cc_binary(
 )
 
 
+cc_binary(
+    name = "test_mac",
+    srcs = ["test_mac.cc"],
+    deps = [
+        "@openssl//:openssl",
+    ],
+)
+
