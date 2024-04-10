@@ -28,8 +28,9 @@ namespace dombft
         UDPEndpoint *endpoint_;
         MessageHandler *handler_;
 
-
         std::vector<Address> replicaAddrs_;
+
+        uint32_t seq_ = 0;
 
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);

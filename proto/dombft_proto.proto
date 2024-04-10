@@ -44,10 +44,11 @@ message Reply {
 // Zyzzyva and PBFT
 message DummyProto {
     uint32 replica_id = 1;
-    uint32 client_id = 2;
-    uint32 client_seq = 3;
+    uint32 replica_seq = 2;
+    uint32 client_id = 3;
+    uint32 client_seq = 4;
  
-    uint32 stage = 4;
+    uint32 stage = 5;
 }
 
 

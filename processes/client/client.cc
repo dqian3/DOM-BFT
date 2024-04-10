@@ -108,6 +108,22 @@ namespace dombft
                 numFastReplies_++;
             }
 
+#if PROTOCOL == PBFT
+            if (numReplies_ >= clientConfig_.replicaIps.size() / 3 * 2 + 1)
+            {
+                numReplies_ = 0;
+                LOG(INFO) << "PBFT commit for " << nextReqSeq_ - 1 << " took "
+                          << GetMicrosecondTimestamp() - sendTime_ << " usec";
+
+                numExecuted_++;
+                if (numExecuted_ == 100) {
+                    exit(0);
+                }    
+
+                SubmitRequest();
+            }
+
+#else
             if (numReplies_ >= clientConfig_.replicaIps.size())
             {
                 numReplies_ = 0;
@@ -121,6 +137,7 @@ namespace dombft
 
                 SubmitRequest();
             }
+#endif
         }
     }
 

@@ -41,6 +41,13 @@ namespace dombft
             exit(1);
         }
 
+        if (!sigProvider_.loadPublicKeys("replica", replicaConfig_.replicaKeysDir))
+        {
+            LOG(ERROR) << "Unable to load receiver public keys!";
+            exit(1);
+        }
+
+
         /** Store all replica addrs */
         for (uint32_t i = 0; i < replicaConfig_.replicaIps.size(); i++)
         {
@@ -79,15 +86,20 @@ namespace dombft
             return;
         }
 
-        // TODO find id correctly
-        if (!sigProvider_.verify(hdr, body, "receiver", 0))
-        {
-            LOG(INFO) << "Failed to verify receiver signatures";
-            return;
-        }
+
 
 
 #if USE_PROXY
+
+#if FABRIC_CRYPTO
+            // TODO find id correctly
+            if (!sigProvider_.verify(hdr, body, "receiver", 0))
+            {
+                LOG(INFO) << "Failed to verify receiver signatures";
+                return;
+            }
+#endif
+
         if (hdr->msgType == MessageType::DOM_REQUEST)
         {
             DOMRequest domHeader;
@@ -99,9 +111,6 @@ namespace dombft
                 return;
             }
 
-#if FABRIC_CRYPTO
-            // TODO verify that the message came from the fabric
-#endif
 
             // TODO This seems bad...
             // Separate this out into another function probably.
@@ -127,7 +136,7 @@ namespace dombft
         {
             ClientRequest clientHeader;
 
-            if (!clientHeader.ParseFromArray(hdr, hdr->msgLen))
+            if (!clientHeader.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                 return;
@@ -153,7 +162,7 @@ namespace dombft
 
             ClientRequest clientHeader;
 
-            if (!clientHeader.ParseFromArray(hdr, hdr->msgLen))
+            if (!clientHeader.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                 return;
@@ -168,14 +177,21 @@ namespace dombft
             DummyProto prePrepare;
             prePrepare.set_client_id(clientHeader.client_id());
             prePrepare.set_client_seq(clientHeader.client_seq());
-            prePrepare.set_stage(1);
+            prePrepare.set_stage(0);
+            prePrepare.set_replica_id(replicaConfig_.replicaId);
+            prePrepare.set_replica_seq(seq_);
+
+            VLOG(3) << "Leader preprepare " <<  clientHeader.client_id() << ", " <<
+                    clientHeader.client_seq() << " at sequence number " << seq_;
+
+            seq_++;
 
             broadcastToReplicas(prePrepare, MessageType::DUMMY_PROTO);
         }
 
         if (hdr->msgType == DUMMY_PROTO) {
             DummyProto msg; 
-            if (!msg.ParseFromArray(hdr, hdr->msgLen))
+            if (!msg.ParseFromArray(body, hdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse DUMMY_PROTO message";
                 return;
@@ -200,19 +216,33 @@ namespace dombft
             std::pair<int, int> key = {msg.client_id(), msg.client_seq()};
 
             if (msg.stage() == 0) {
+                VLOG(2) << "Replica " << replicaConfig_.replicaId << " got preprepare for " << msg.replica_seq();
                 msg.set_stage(1);
+                msg.set_replica_id(replicaConfig_.replicaId);
                 broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
             } else if (msg.stage() == 1) {
                 prepareCount[key]++;
 
-                if (prepareCount[key] == replicaAddrs_.size() / 3 + 1) {
+                VLOG(4) << "Prepare received from " << msg.replica_id() << " now " << prepareCount[key] << " out of " << replicaAddrs_.size() / 3 * 2 + 1;
+
+                if (prepareCount[key] == replicaAddrs_.size() / 3 * 2 + 1) {
+                    VLOG(2) << "Replica " << replicaConfig_.replicaId << " is prepared on " << msg.replica_seq();
+
                     msg.set_stage(2);
+                    msg.set_replica_id(replicaConfig_.replicaId);
+
                     broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
                 }
             } else if (msg.stage() == 2) {
                 commitCount[key]++;
 
-                if (prepareCount[key] == replicaAddrs_.size() / 3 + 1) {
+                VLOG(4) << "Commit received from " << msg.replica_id() << " now " << commitCount[key] << " out of " << replicaAddrs_.size() / 3 * 2 + 1;
+
+
+
+                if (commitCount[key] == replicaAddrs_.size() / 3 * 2 + 1) {
+                    VLOG(2) << "Replica " << replicaConfig_.replicaId << " is committed on " << msg.replica_seq();
+
                     ClientRequest dummyReq;
                     dummyReq.set_client_id(msg.client_id());
                     dummyReq.set_client_seq(msg.client_seq());
