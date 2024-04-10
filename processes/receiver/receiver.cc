@@ -81,10 +81,12 @@ namespace dombft
             return;
         }
         
+#if FABRIC_CRYPTO
         if (!sigProvider_.verify(hdr, body, "proxy", 0)){
             LOG(INFO) << "Failed to verify proxy signature";
             return;
         }
+#endif
 
         DOMRequest request;
         if (hdr->msgType == MessageType::DOM_REQUEST)

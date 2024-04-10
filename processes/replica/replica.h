@@ -36,7 +36,6 @@ namespace dombft
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);
 
-
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
 
 #if PROTOCOL == PBFT

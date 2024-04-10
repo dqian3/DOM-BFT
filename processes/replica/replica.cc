@@ -207,6 +207,8 @@ namespace dombft
 
             // Handle client request currently just replies back to client,
             // Use that here as a hack lol.
+            VLOG(2) << "Replica " << replicaConfig_.replicaId 
+                    << " got preprepare for " << msg.replica_seq();
             ClientRequest dummyReq;
             dummyReq.set_client_id(msg.client_id());
             dummyReq.set_client_seq(msg.client_seq());
