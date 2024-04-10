@@ -9,6 +9,7 @@ struct ClientConfig
     int clientId;
     std::string clientIp;
     std::string clientKey;
+    int maxInFlight;
 
     int clientPort;
     int proxyPortBase;
@@ -43,9 +44,12 @@ struct ClientConfig
             clientIp = config[key].as<std::string>();
             key = "clientKey";
             clientKey = config[key].as<std::string>();
-
             key = "clientPort";
             clientPort = config[key].as<int>();
+
+            key = "maxInFlight";
+            maxInFlight = config[key].as<int>();
+
             key = "proxyPortBase";
             proxyPortBase = config[key].as<int>();
 

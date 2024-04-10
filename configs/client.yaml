@@ -2,8 +2,9 @@
 clientId: 0
 clientIp: "127.0.0.7"
 clientKey: keys/clients/client0.pem
-
 clientPort: 33000
+
+maxInFlight: 10
 
 # Receiver Info
 replicaIps:

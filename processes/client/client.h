@@ -55,18 +55,23 @@ namespace dombft
 
         /** Each client is assigned with a unqiue id */
         int clientId_;
+        uint32_t maxInFlight_ = 0;
 
         /** The next requestId to be submitted */
         uint32_t nextReqSeq_ = 0;
-
-        /* State for the currently pending request */
-        uint64_t sendTime_;
-
-        // Counters for the number of replies 
-        uint32_t numReplies_ = 0;
-        uint32_t numFastReplies_ = 0;
+        uint32_t inFlight_ = 0;
         uint32_t numExecuted_ = 0;
 
+
+        /* State for the currently pending request */
+
+        // Counters for the number of replies 
+        std::map<int, int> numReplies_;
+        std::map<int, uint64_t> sendTimes_;
+
+        // TODO implement
+        // uint32_t numFastReplies_ = 0;
+ 
         /** The message handler to handle messages */
         void ReceiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void SubmitRequest();

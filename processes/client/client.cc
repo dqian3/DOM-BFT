@@ -1,5 +1,8 @@
 #include "client.h"
 
+
+#define NUM_CLIENTS 100
+
 namespace dombft
 {
     using namespace dombft::proto;
@@ -48,6 +51,11 @@ namespace dombft
             exit(1);
         }
 
+        // TODO make this some sort of config
+        LOG(INFO) << "Simulating " << clientConfig_.maxInFlight << " simultaneous clients!";
+        maxInFlight_ = clientConfig_.maxInFlight;
+
+
         /** Initialize state */
         nextReqSeq_ = 1;
 
@@ -70,7 +78,10 @@ namespace dombft
     void Client::Run()
     {
         // Submit first request
-        SubmitRequest();
+        for (int i = 0; i < maxInFlight_; i++) {
+            SubmitRequest();
+
+        }
         endpoint_->LoopRun();
     }
 
@@ -98,25 +109,28 @@ namespace dombft
                 return;
             }
 
-            VLOG(3) << "Received reply from replica " << reply.replica_id()
-                    << " after " << GetMicrosecondTimestamp() - sendTime_ << " usec";
+            VLOG(4) << "Received reply from replica " << reply.replica_id()
+                    << " after " << GetMicrosecondTimestamp() - sendTimes_[reply.client_seq()] << " usec";
 
             // TODO handle dups
-            numReplies_++;
-            if (reply.fast())
-            {
-                numFastReplies_++;
-            }
+            numReplies_[reply.client_seq()]++;
+            // if (reply.fast())
+            // {
+            //     numFastReplies_++;
+            // }
 
 #if PROTOCOL == PBFT
-            if (numReplies_ >= clientConfig_.replicaIps.size() / 3 * 2 + 1)
+            if (numReplies_[reply.client_seq()] >= clientConfig_.replicaIps.size() / 3 * 2 + 1)
             {
-                numReplies_ = 0;
-                LOG(INFO) << "PBFT commit for " << nextReqSeq_ - 1 << " took "
-                          << GetMicrosecondTimestamp() - sendTime_ << " usec";
+
+                LOG(INFO) << "PBFT commit for " << reply.client_seq() - 1 << " took "
+                          << GetMicrosecondTimestamp() - sendTimes_[reply.client_seq()] << " usec";
+
+                numReplies_.erase(reply.client_seq());
+                sendTimes_.erase(reply.client_seq());
 
                 numExecuted_++;
-                if (numExecuted_ == 100) {
+                if (numExecuted_ >= 1000) {
                     exit(0);
                 }    
 
@@ -124,14 +138,16 @@ namespace dombft
             }
 
 #else
-            if (numReplies_ >= clientConfig_.replicaIps.size())
+            if (numReplies_[reply.client_seq()] >= clientConfig_.replicaIps.size() / 3 * 2 + 1)
             {
-                numReplies_ = 0;
-                LOG(INFO) << "Fast path commit for " << nextReqSeq_ - 1 << " took "
-                          << GetMicrosecondTimestamp() - sendTime_ << " usec";
+                LOG(INFO) << "Fast path commit for " << reply.client_seq() - 1 << " took "
+                          << GetMicrosecondTimestamp() - sendTimes_[reply.client_seq()] << " usec";
+                
+                numReplies_.erase(reply.client_seq());
+                sendTimes_.erase(reply.client_seq());
 
                 numExecuted_++;
-                if (numExecuted_ == 100) {
+                if (numExecuted_ >= 1000) {
                     exit(0);
                 }    
 
@@ -156,7 +172,7 @@ namespace dombft
         request.set_send_time(GetMicrosecondTimestamp());
         request.set_is_write(true); // TODO modify this based on some random chance
 
-        sendTime_ = request.send_time();
+        sendTimes_[nextReqSeq_] = request.send_time();
 
 
 #if USE_PROXY && PROTOCOL == DOMBFT
