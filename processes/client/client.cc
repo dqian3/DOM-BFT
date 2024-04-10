@@ -114,6 +114,7 @@ namespace dombft
 
             // TODO handle dups
             numReplies_[reply.client_seq()]++;
+            repSeqs_[reply.client_seq()].insert(reply.seq());
             // if (reply.fast())
             // {
             //     numFastReplies_++;
@@ -143,6 +144,12 @@ namespace dombft
                 LOG(INFO) << "Fast path commit for " << reply.client_seq() - 1 << " took "
                           << GetMicrosecondTimestamp() - sendTimes_[reply.client_seq()] << " usec";
                 
+                if (repSeqs_[reply.client_seq()].size() > 1) {
+                    LOG(ERROR) << "Contention on sequeunce number " << reply.client_seq() << ", exiting!";
+                    exit(1);
+                }
+
+
                 numReplies_.erase(reply.client_seq());
                 sendTimes_.erase(reply.client_seq());
 

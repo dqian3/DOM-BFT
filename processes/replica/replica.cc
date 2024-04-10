@@ -129,7 +129,8 @@ namespace dombft
             }
 
             // TODO also pass client request
-            handleClientRequest(clientHeader);
+            handleClientRequest(clientHeader, seq_);
+            seq_++;
        }
 #elif PROTOCOL == DOMBFT
         if (hdr->msgType == CLIENT_REQUEST)
@@ -212,7 +213,7 @@ namespace dombft
             ClientRequest dummyReq;
             dummyReq.set_client_id(msg.client_id());
             dummyReq.set_client_seq(msg.client_seq());
-            handleClientRequest(dummyReq);
+            handleClientRequest(dummyReq, msg.replica_seq());
 
 #elif PROTOCOL == PBFT
             std::pair<int, int> key = {msg.client_id(), msg.client_seq()};
@@ -248,7 +249,7 @@ namespace dombft
                     ClientRequest dummyReq;
                     dummyReq.set_client_id(msg.client_id());
                     dummyReq.set_client_seq(msg.client_seq());
-                    handleClientRequest(dummyReq);
+                    handleClientRequest(dummyReq, msg.replica_seq());
                 }
             }
 
@@ -258,7 +259,7 @@ namespace dombft
 #endif
     }
 
-    void Replica::handleClientRequest(const ClientRequest &request)
+    void Replica::handleClientRequest(const ClientRequest &request, uint32_t seq)
     {
         Reply reply;
 
@@ -270,7 +271,7 @@ namespace dombft
 
         // TODO do this for real and actually process the message
         reply.set_view(0);
-        reply.set_seq(0);
+        reply.set_seq(seq);
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);

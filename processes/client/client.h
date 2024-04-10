@@ -68,6 +68,7 @@ namespace dombft
         // Counters for the number of replies 
         std::map<int, int> numReplies_;
         std::map<int, uint64_t> sendTimes_;
+        std::map<int, std::set<int>> repSeqs_; 
 
         // TODO implement
         // uint32_t numFastReplies_ = 0;

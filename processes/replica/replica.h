@@ -34,7 +34,7 @@ namespace dombft
 
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
-        void handleClientRequest(const dombft::proto::ClientRequest &request);
+        void handleClientRequest(const dombft::proto::ClientRequest &request, uint32_t seq);
 
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
 
