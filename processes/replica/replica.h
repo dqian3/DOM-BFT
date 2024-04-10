@@ -22,19 +22,27 @@ namespace dombft
     private:
         /** All the configuration parameters for the replica */
         ReplicaConfig replicaConfig_;
-
         SignatureProvider sigProvider_;
 
         /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
         UDPEndpoint *endpoint_;
-
-        
         MessageHandler *handler_;
 
+
+        std::vector<Address> replicaAddrs_;
+
+
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
-
-
         void handleClientRequest(const dombft::proto::ClientRequest &request);
+
+
+        void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
+
+#if PROTOCOL == PBFT
+        std::map<std::pair<int, int>, int> prepareCount;
+        std::map<std::pair<int, int>, int> commitCount;
+#endif
+
 
     public:
 

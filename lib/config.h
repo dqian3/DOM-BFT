@@ -9,10 +9,10 @@
 
 #define DOMBFT 0
 #define PBFT 1
-#define ZYZ 1
+#define ZYZ 2
 
-#define PROTOCOL DOMBFT
-#define USE_PROXY 1
+#define PROTOCOL PBFT
+#define USE_PROXY (1 && (PROTOCOL == DOMBFT))
 
 #define FABRIC_CRYPTO 0
 

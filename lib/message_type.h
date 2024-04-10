@@ -17,7 +17,9 @@ enum MessageType {
     REPLY = 5,
     CERT = 6,
 
-    EXECUTED = 7
+    EXECUTED = 7,
+
+    DUMMY_PROTO = 8,
 
 };
 
