@@ -11,7 +11,7 @@
 #define PBFT 1
 #define ZYZ 2
 
-#define PROTOCOL DOMBFT
+#define PROTOCOL ZYZ
 #define USE_PROXY (1 && (PROTOCOL == DOMBFT))
 
 #define FABRIC_CRYPTO 0

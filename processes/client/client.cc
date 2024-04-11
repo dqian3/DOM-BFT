@@ -78,7 +78,7 @@ namespace dombft
     void Client::Run()
     {
         // Submit first request
-        for (int i = 0; i < maxInFlight_; i++) {
+        for (uint32_t i = 0; i < maxInFlight_; i++) {
             SubmitRequest();
 
         }
@@ -142,7 +142,8 @@ namespace dombft
             if (numReplies_[reply.client_seq()] >= clientConfig_.replicaIps.size() / 3 * 2 + 1)
             {
                 LOG(INFO) << "Fast path commit for " << reply.client_seq() - 1 << " took "
-                          << GetMicrosecondTimestamp() - sendTimes_[reply.client_seq()] << " usec";
+                          << GetMicrosecondTimestamp() - sendTimes_[reply.client_seq()] << " usec"
+                          << ". Assigned seq " << *repSeqs_[reply.client_seq()].begin() << " at replica";
                 
                 if (repSeqs_[reply.client_seq()].size() > 1) {
                     LOG(ERROR) << "Contention on sequeunce number " << reply.client_seq() << ", exiting!";
