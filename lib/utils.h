@@ -24,6 +24,6 @@ template <typename T1, typename T2>
 using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
 // Get Current Microsecond Timestamp
-uint64_t GetMicrosecondTimestamp();
+int64_t GetMicrosecondTimestamp();
 
 #endif
