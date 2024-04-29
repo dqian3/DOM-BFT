@@ -1,0 +1,56 @@
+clients:
+- clientId: 0
+  clientIp: "127.0.0.7"
+  clientKey: keys/clients/client0.pem
+  clientPort: 33000
+
+clientKeysDir: keys/clients
+maxInFlight: 10
+
+
+  # Proxy Info
+proxies:
+- proxyId: 0
+  proxyIp: "127.0.0.5"
+  proxyNumShards: 1
+  proxyForwardPortBase: 31000
+  proxyMeasurementPort: 32000
+  proxyKey: keys/proxies/proxy0.pem
+
+
+proxyKeysDir: keys/proxies
+initialOwd: 1000 # The initial one-way delay (usecs) between replicas and proxies
+maxOwd: 5000
+clientPubKeyPrefix: ""
+
+# Receiver Info
+receivers:
+- receiverId: 0
+  receiverIp: "127.0.0.6"
+  receiverKey: keys/receivers/receiver0.pem
+  receiverPort: 33000
+
+receiverShards: 1 # The number of threads to receive threads 
+receiverKeysDir: keys/receivers
+
+# Replica Info
+replicas:
+- replicaId: 0
+  replicaIp: "127.0.0.1"
+  replicaPort: 34000
+  replicaKey: "keys/replicas/replica0.pem"
+- replicaId: 1
+  replicaIp: "127.0.0.2"
+  replicaPort: 34001
+  replicaKey: "keys/replicas/replica1.pem"
+- replicaId: 2
+  replicaIp: "127.0.0.3"
+  replicaPort: 34002
+  replicaKey: "keys/replicas/replica2.pem"
+- replicaId: 3
+  replicaIp: "127.0.0.2"
+  replicaPort: 34003
+  replicaKey: "keys/replicas/replica3.pem"
+
+replicaKeysDir: "keys/replicas"
+
