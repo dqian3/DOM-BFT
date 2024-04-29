@@ -1,11 +1,73 @@
 #include "client.h"
-
+#include "../../lib/utils.h"
 
 #define NUM_CLIENTS 100
 
 namespace dombft
 {
     using namespace dombft::proto;
+
+    Client::Client(const size_t clientId_)
+    {
+        LOG(INFO) << "Loading config information from " << CONFIG_FILENAME;
+        std::string error = clientConfig_.parseUnifiedConfig(CONFIG_FILENAME, clientId_);
+        if (error != "")
+        {
+            LOG(ERROR) << "Error loading client config: " << error << " Exiting.";
+            exit(1);
+        }
+        LOG(INFO) << "clientId=" << clientId_;
+        std::string clientIP = clientConfig_.clientIp;
+        LOG(INFO) << "clientIP=" << clientIP;
+        int clientPort = clientConfig_.clientPort;
+        LOG(INFO) << "clientPort=" << clientPort;
+
+        /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
+        for (uint32_t i = 0; i < clientConfig_.proxyIps.size(); i++)
+        {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << clientConfig_.proxyIps[i] << ", " << clientConfig_.proxyPortBase;
+            proxyAddrs_.push_back(Address(clientConfig_.proxyIps[i],
+                                          clientConfig_.proxyPortBase));
+        }
+
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < clientConfig_.replicaIps.size(); i++)
+        {
+            replicaAddrs_.push_back(Address(clientConfig_.replicaIps[i],
+                                            clientConfig_.replicaPorts[i]));
+        }
+
+        /* Setup keys */
+        if (!sigProvider_.loadPrivateKey(clientConfig_.clientKey))
+        {
+            LOG(ERROR) << "Error loading client private key, exiting...";
+            exit(1);
+        }
+
+        if (!sigProvider_.loadPublicKeys("replica", clientConfig_.replicaKeysDir))
+        {
+            LOG(ERROR) << "Error loading replica public keys, exiting...";
+            exit(1);
+        }
+
+        // TODO make this some sort of config
+        LOG(INFO) << "Simulating " << clientConfig_.maxInFlight << " simultaneous clients!";
+        maxInFlight_ = clientConfig_.maxInFlight;
+
+
+        /** Initialize state */
+        nextReqSeq_ = 1;
+
+        endpoint_ = new UDPEndpoint(clientIP, clientPort, true);
+        replyHandler_ = new UDPMessageHandler(
+            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+            {
+                ((Client *)ctx)->ReceiveReply(msgHdr, msgBuffer, sender);
+            },
+            this);
+
+        endpoint_->RegisterMsgHandler(replyHandler_);
+    }
 
     Client::Client(const std::string &configFile)
     {

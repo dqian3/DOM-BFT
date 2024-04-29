@@ -82,6 +82,7 @@ namespace dombft
          * to instantiate the object, then it can call Run method
          *  */
         Client(const std::string &configFile = "../configs/nezha-client-config.yaml");
+        Client(const size_t clientId);
         void Run();
         ~Client();
 
