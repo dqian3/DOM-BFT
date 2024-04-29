@@ -23,6 +23,7 @@ using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
 template <typename T1, typename T2>
 using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
+const std::string CONFIG_FILENAME("configs/config.yaml");
 // Get Current Microsecond Timestamp
 uint64_t GetMicrosecondTimestamp();
 
