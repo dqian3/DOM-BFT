@@ -107,7 +107,7 @@ struct ClientConfig
     // Parses yaml file configFilename and fills in fields of ProxyConfig
     // accordingly. Returns an error message or "" if there are no errors.
     //TODO: make this a static method so we can call it from class instead of instance.
-    std::string parseUnifiedConfig(std::string configFilename, size_t clientId)
+    std::string parseUnifiedConfig(std::string configFilename, const size_t clientId)
     {
         YAML::Node config;
         try
