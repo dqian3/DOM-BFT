@@ -45,6 +45,44 @@ namespace dombft
             receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPort));
         }
     }
+    Proxy::Proxy(const size_t proxyId_)
+    {
+        std::string error = proxyConfig_.parseUnifiedConfig(CONFIG_FILENAME, proxyId_);
+        if (error != "")
+        {
+            LOG(ERROR) << "Error parsing proxy config: " << error << "Exiting.";
+            exit(1);
+        }
+        running_ = true;
+        
+        int numShards = proxyConfig_.proxyNumShards;
+        latencyBound_ = proxyConfig_.initialOwd;
+        maxOWD_ = proxyConfig_.maxOwd;
+
+        logMap_.resize(numShards);
+
+        if(!sigProvider_.loadPrivateKey(proxyConfig_.proxyKey)) {
+            LOG(ERROR) << "Unable to load private key!";
+            exit(1);
+        }
+
+        for (int i = 0; i < numShards; i++)
+        {
+            forwardEps_.push_back(new UDPEndpoint(proxyConfig_.proxyIp,
+                                                        proxyConfig_.proxyForwardPortBase + i,
+                                                        false));
+        }
+        measurmentEp_ = new UDPEndpoint(
+            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurementPort);
+
+        numReceivers_ = proxyConfig_.receiverIps.size();
+        for (int i = 0; i < numReceivers_; i++)
+        {
+            std::string receiverIp = proxyConfig_.receiverIps[i];
+            //could change this back to proxyConfig_.recieverPort if the port number will stay same across receivers
+            receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPorts[i]));
+        }
+    }
 
     void Proxy::Terminate()
     {

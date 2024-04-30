@@ -129,6 +129,7 @@ namespace dombft
          * to instantiate the object, then it can call Run method
          *  */
         Proxy(const std::string &configFile = "../configs/nezha-proxy-config.yaml");
+        Proxy(const size_t proxyId_);
         ~Proxy();
         void Run();
         void Terminate();
