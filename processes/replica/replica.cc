@@ -10,7 +10,7 @@ namespace dombft
     Replica::Replica(const std::string &configFile)
     {
         LOG(INFO) << "Loading config information from " << configFile;
-        std::string error = replicaConfig_.parseConfig(configFile);
+        std::string error = replicaConfig_.parseUnifiedConfig(configFile);
         if (error != "")
         {
             LOG(ERROR) << "Error loading replica config: " << error << " Exiting.";
@@ -20,7 +20,7 @@ namespace dombft
         // TODO check for config errors
         std::string replicaIp = replicaConfig_.replicaIps[replicaConfig_.replicaId];
         LOG(INFO) << "replicaIP=" << replicaIp;
-        int replicaPort = replicaConfig_.replicaPort;
+        int replicaPort = replicaConfig_.replicaPorts[replicaConfig_.replicaId];
         LOG(INFO) << "replicaPort=" << replicaPort;
 
         if (!sigProvider_.loadPrivateKey(replicaConfig_.replicaKey))
@@ -52,7 +52,7 @@ namespace dombft
         for (uint32_t i = 0; i < replicaConfig_.replicaIps.size(); i++)
         {
             replicaAddrs_.push_back(Address(replicaConfig_.replicaIps[i],
-                                            replicaConfig_.replicaPort));
+                                            replicaConfig_.replicaPorts[i]));
         }
 
         endpoint_ = new UDPEndpoint(replicaIp, replicaPort, true);

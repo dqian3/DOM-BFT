@@ -3,7 +3,7 @@
 #include <yaml-cpp/yaml.h>
 #include <string>
 #include <vector>
-
+#include <iostream>
 #include <gflags/gflags.h>
 
 DECLARE_int32(replicaId);
@@ -13,11 +13,13 @@ struct ReplicaConfig
     // Own Config
     int replicaId;
     std::vector<std::string> replicaIps;
+    std::vector<int> replicaPorts;
     std::string replicaKeysDir;
     std::string replicaKey;
     int replicaPort;
 
     std::vector<std::string> clientIps;
+    std::vector<int> clientPorts;
     int clientPort;
     std::string clientKeysDir;
 
@@ -69,6 +71,78 @@ struct ReplicaConfig
             }
             key = "clientPort";
             clientPort = config[key].as<int>();
+            
+            key = "clientKeysDir";
+            clientKeysDir = config[key].as<std::string>();
+            
+            key = "proxyKeysDir";
+            proxyKeysDir = config[key].as<std::string>();
+
+            key = "receiverKeysDir";
+            receiverKeysDir = config[key].as<std::string>();
+
+            return "";
+        }
+        catch (const YAML::BadConversion &e)
+        {
+            if (config[key])
+            {
+                return "Error parsing config field " + key + ": " + e.msg + ".";
+            }
+            else
+            {
+                return "Error parsing config field " + key + ": key not found.";
+            }
+        }
+        catch (const std::exception &e)
+        {
+            return "Error parsing config field " + key + ": " + e.what() + ".";
+        }
+    }
+
+    // Parses yaml file configFilename and fills in fields of ProxyConfig
+    // accordingly. Returns an error message or "" if there are no errors.
+    std::string parseUnifiedConfig(std::string configFilename)
+    {
+        YAML::Node config;
+        try
+        {
+            config = YAML::LoadFile(configFilename);
+        }
+        catch (const YAML::BadFile &e)
+        {
+            return "Error loading config file:" + e.msg + ".";
+        }
+        LOG(INFO) << "Using config:\n " << config;
+
+        replicaId = FLAGS_replicaId;
+
+        std::string key; // Keep track of current key for better error messages
+        try
+        {
+            for (const auto& replicaInfo : config["replicas"]) {
+                key = "replicaId";
+                LOG(INFO) << "ReplicaId: " << replicaInfo[key].as<int>() << std::endl;
+                std::cout << "ReplicaId: " << replicaInfo[key].as<int>() << std::endl;
+                if (replicaInfo[key].as<int>() == replicaId) {
+                    key = "replicaKey";
+                    replicaKey = replicaInfo[key].as<std::string>();
+                }
+                key = "replicaIp";
+                replicaIps.push_back(replicaInfo[key].as<std::string>());
+                key = "replicaPort";
+                replicaPorts.push_back(replicaInfo[key].as<unsigned int>());
+            }
+
+            key = "replicaKeysDir";
+            replicaKeysDir = config[key].as<std::string>();
+
+            for (const auto& clientInfo : config["clients"]) {
+                key = "clientIp";
+                clientIps.push_back(clientInfo[key].as<std::string>());
+                key = "clientPort";
+                clientPorts.push_back(clientInfo[key].as<int>());
+            }
             
             key = "clientKeysDir";
             clientKeysDir = config[key].as<std::string>();
