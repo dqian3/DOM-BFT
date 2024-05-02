@@ -155,12 +155,6 @@ namespace dombft
             return;
         }
 
-        if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", 0))
-        {
-            LOG(INFO) << "Failed to verify replica signature";
-            return;
-        }
-
         Reply reply;
         if (msgHdr->msgType == MessageType::REPLY || msgHdr->msgType == MessageType::FAST_REPLY)
         {
@@ -168,6 +162,13 @@ namespace dombft
             if (!reply.ParseFromArray(msgBuffer, msgHdr->msgLen))
             {
                 LOG(ERROR) << "Unable to parse REPLY message";
+                return;
+            }
+
+
+            if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", reply.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify replica signature";
                 return;
             }
 
