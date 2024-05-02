@@ -283,7 +283,7 @@ namespace dombft
         }
 
         LOG(INFO) << "Sending reply back to client " << clientId;
-        endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPort));
+        endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPorts[clientId]));
     }
 
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type) {
