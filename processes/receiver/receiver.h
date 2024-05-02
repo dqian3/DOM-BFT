@@ -56,6 +56,7 @@ namespace dombft
          * to instantiate the object, then it can call Run method
          *  */
         Receiver(const std::string &configFile);
+        Receiver(const std::string &configFile, const uint32_t receiverId);
         void Run();
         ~Receiver();
 

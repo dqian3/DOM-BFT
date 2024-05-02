@@ -61,6 +61,61 @@ namespace dombft
         endpoint_->RegisterMsgHandler(msgHandler_);
     }
 
+    Receiver::Receiver(const std::string &configFile, const uint32_t receiverId)
+    {
+        LOG(INFO) << "Loading config information from " << configFile;
+        std::string error = receiverConfig_.parseUnifiedConfig(configFile, receiverId);
+        if (error != "")
+        {
+            LOG(ERROR) << "Error loading receiver config: " << error << " Exiting.";
+            exit(1);
+        }
+
+        std::string receiverIp = receiverConfig_.receiverIp;
+        LOG(INFO) << "receiverIP=" << receiverIp;
+        int receiverPort = receiverConfig_.receiverPort;
+        LOG(INFO) << "receiverPort=" << receiverPort;
+
+        
+        if(!sigProvider_.loadPrivateKey(receiverConfig_.receiverKey)) {
+            LOG(ERROR) << "Unable to load private key!";
+            exit(1);
+        }
+        
+
+        if (!sigProvider_.loadPublicKeys("proxy", receiverConfig_.proxyPubKeyPrefix)) {
+            LOG(ERROR) << "Unable to load proxy public keys!";
+            exit(1);
+        }
+
+        
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < receiverConfig_.replicaIps.size(); i++)
+        {
+            replicaAddrs_.push_back(Address(receiverConfig_.replicaIps[i],
+                                            receiverConfig_.replicaPorts[i]));
+        }
+
+        endpoint_ = new UDPEndpoint(receiverIp, receiverPort, true);
+        msgHandler_ = new UDPMessageHandler(
+            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+            {
+                ((Receiver *)ctx)->receiveRequest(msgHdr, msgBuffer, sender);
+            },
+            this);
+
+        fwdTimer_ = new Timer(
+            [](void *ctx, void * endpoint) {
+                ((Receiver *)ctx)->checkDeadlines();
+            },
+            1000,
+            this
+        );
+
+        endpoint_->RegisterTimer(fwdTimer_);
+        endpoint_->RegisterMsgHandler(msgHandler_);
+    }
+
     Receiver::~Receiver()
     {
         // TODO cleanup...
@@ -146,9 +201,11 @@ namespace dombft
 #if FABRIC_CRYPTO
             sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 #endif
+            VLOG(4) << "Number of replicas to forward to: " << replicaAddrs_.size() << std::endl;
 
             for (const Address &addr : replicaAddrs_)
             {
+                VLOG(4) << "Forwarding request to " << addr.ip_ << ":" << addr.port_ << std::endl;
                 endpoint_->SendPreparedMsgTo(addr, true);
             }
             endpoint_->setBufReady(false);

@@ -122,8 +122,6 @@ struct ReplicaConfig
         {
             for (const auto& replicaInfo : config["replicas"]) {
                 key = "replicaId";
-                LOG(INFO) << "ReplicaId: " << replicaInfo[key].as<int>() << std::endl;
-                std::cout << "ReplicaId: " << replicaInfo[key].as<int>() << std::endl;
                 if (replicaInfo[key].as<int>() == replicaId) {
                     key = "replicaKey";
                     replicaKey = replicaInfo[key].as<std::string>();
