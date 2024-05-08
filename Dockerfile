@@ -21,9 +21,4 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel
 
 WORKDIR /app
 
-COPY . /app
-
-RUN bazel --version
-RUN bazel build //processes/...
-
 CMD ["/bin/sh", "-c", "bash"]
