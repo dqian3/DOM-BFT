@@ -33,3 +33,13 @@ void Log::addCert(uint32_t seq)
 {
     // TODO
 }
+
+std::ostream& Log::operator<<(std::ostream &out)
+{
+    // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
+    // starting from the oldest;
+    for (int i = nextSeq - MAX_SPEC_HIST; i < nextSeq; i++) {
+        int seq = i % MAX_SPEC_HIST;
+        out << *log[seq];
+    }
+}

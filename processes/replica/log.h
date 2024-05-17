@@ -9,6 +9,7 @@
 
 #include <unordered_map>
 #include <utility>
+#include <iostream>
 
 struct LogEntry
 {
@@ -55,6 +56,11 @@ struct LogEntry
 
         }
     }
+
+    std::ostream& operator<<(std::ostream &out)
+    {
+        out << seq << ": (" << client_id << " ," << client_seq << ")";
+    }
 };
 
 struct Log
@@ -79,6 +85,8 @@ struct Log
              byte *req, uint32_t req_len);
     
     void addCert(uint32_t seq);
+
+    std::ostream& operator<<(std::ostream &out);
 };
 
 #endif
