@@ -1,10 +1,21 @@
 cc_library(
+    name = "log",
+    hdrs = ["log.h"],
+    srcs = ["log.cc"],
+    deps = [
+        "//lib:common_struct",
+        "@openssl//:openssl",
+    ],
+)
+
+cc_library(
     name = "replica_config",
     hdrs = ["replica_config.h"],
     deps = [
         "@com_github_jbeder_yaml_cpp//:yaml-cpp",
     ],
 )
+
 
 cc_library(
     name = "replica_class",
