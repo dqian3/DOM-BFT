@@ -4,6 +4,7 @@ cc_library(
     srcs = ["log.cc"],
     deps = [
         "//lib:common_struct",
+        "//lib:config"
         "@openssl//:openssl",
     ],
 )

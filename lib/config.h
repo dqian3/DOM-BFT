@@ -16,4 +16,6 @@
 
 #define FABRIC_CRYPTO 0
 
+#define MAX_SPEC_HIST 20
+
 #endif
