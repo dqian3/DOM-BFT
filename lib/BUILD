@@ -111,3 +111,16 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+
+cc_library(
+    name = "application",
+    hdrs = ["application.h"] + glob(["apps/*"]),
+    srcs = glob(["apps/*"]),
+    deps = [
+        ":common_struct",
+        ":config",
+        "@openssl//:openssl",
+    ],
+    visibility = ["//visibility:public"],
+)

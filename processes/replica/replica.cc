@@ -86,9 +86,6 @@ namespace dombft
             return;
         }
 
-
-
-
 #if USE_PROXY
 
 #if FABRIC_CRYPTO
