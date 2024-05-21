@@ -1,13 +1,3 @@
-cc_library(
-    name = "log",
-    hdrs = ["log.h"],
-    srcs = ["log.cc"],
-    deps = [
-        "//lib:common_struct",
-        "//lib:config"
-        "@openssl//:openssl",
-    ],
-)
 
 cc_library(
     name = "replica_config",

@@ -100,3 +100,13 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "log",
+    hdrs = ["log.h"],
+    srcs = ["log.cc"],
+    deps = [
+        ":common_struct",
+        ":config"
+        "@openssl//:openssl",
+    ],
+)
