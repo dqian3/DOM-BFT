@@ -31,3 +31,10 @@ cc_binary(
     ],
 )
 
+
+cc_test(
+  name = "test_log",
+  size = "small",
+  srcs = ["test_log.cc"],
+  deps = ["@com_google_googletest//:gtest_main"],
+)

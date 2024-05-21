@@ -106,7 +106,7 @@ cc_library(
     srcs = ["log.cc"],
     deps = [
         ":common_struct",
-        ":config"
+        ":config",
         "@openssl//:openssl",
     ],
 )

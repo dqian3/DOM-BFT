@@ -9,19 +9,10 @@
 
 int main(int argc, char *argv[])
 {
-    // Read private key file
-    BIO* bo = BIO_new_file(argv[1], "r");
-    EVP_PKEY* key = NULL;
-    PEM_read_bio_PrivateKey(bo, &key, 0, 0 );
-
-    if(key == NULL) {
-        LOG(ERROR) << "Unable to load private key!";
-        return 1;
-    }
-    
-
+    // Read private key file    
     UDPEndpoint udpEndpoint("127.0.0.1", 8000);
-    SignatureProvider sigProvider(key);
+    SignatureProvider sigProvider;
+    sigProvider.loadPrivateKey(argv[1]);
 
     // Send timer
     Timer t = Timer([&sigProvider] (void *data, void *endpoint) {
