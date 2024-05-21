@@ -1,17 +1,67 @@
-#include <log.h>
+#include "log.h"
+
+LogEntry::LogEntry()
+    : seq(0), client_id(0), client_seq(0), raw_req(nullptr)
+{
+    memset(digest, 0, SHA256_DIGEST_LENGTH);
+}
+
+LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
+            byte *req, uint32_t req_len, byte *prev_digest)
+    : seq(s)
+    , client_id(c_id)
+    , client_seq(c_seq)    
+    , raw_req((byte * ) malloc(req_len)) // Manually allocate some memory to store the request
+{
+    memcpy(raw_req, req, req_len);
+
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+
+    SHA256_Update(&ctx, &seq, sizeof(seq));
+    SHA256_Update(&ctx, &client_id, sizeof(client_id));
+    SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
+    SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
+    SHA256_Update(&ctx, &raw_req, req_len);
+    SHA256_Final(digest, &ctx);
+}
+
+LogEntry::~LogEntry()
+    {
+    if (raw_req != nullptr) {
+        free(raw_req);
+
+    }
+}
+
+std::ostream& operator<<(std::ostream &out, const LogEntry& le)
+{
+    out << le.seq << ": (" << le.client_id << " ," << le.client_seq << ")";
+    return out;
+}
 
 Log::Log()
     : nextSeq(1), lastExecuted(0)
 {
+    // Zero initialize all the entries
+    // TODO: there's probably a better way to handle this
+    for (uint32_t i = 0; i < log.size(); i++) {
+        log[i] = std::make_unique<LogEntry>();
+    }
+
 }
 
-void Log::addEntry(uint32_t c_id, uint32_t c_seq,
+bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
                    byte *req, uint32_t req_len)
 {
     uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
     byte *prevDigest = log[prevSeq]->digest;
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
+    
+    nextSeq++;
+    // TODO
+    return true;
 }
 
 bool Log::addAndExecuteEntry(uint32_t c_id, uint32_t c_seq,
@@ -26,6 +76,7 @@ bool Log::addAndExecuteEntry(uint32_t c_id, uint32_t c_seq,
     // TODO execute
 
     lastExecuted++;
+    nextSeq++;
     return true;
 }
 
@@ -34,12 +85,13 @@ void Log::addCert(uint32_t seq)
     // TODO
 }
 
-std::ostream& Log::operator<<(std::ostream &out)
+std::ostream& operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    for (int i = nextSeq - MAX_SPEC_HIST; i < nextSeq; i++) {
+    for (uint32_t i = l.nextSeq - MAX_SPEC_HIST; i < l.nextSeq; i++) {
         int seq = i % MAX_SPEC_HIST;
-        out << *log[seq];
+        out << l.log[seq].get();
     }
+    return out;
 }

@@ -109,4 +109,5 @@ cc_library(
         ":config",
         "@openssl//:openssl",
     ],
+    visibility = ["//visibility:public"],
 )
