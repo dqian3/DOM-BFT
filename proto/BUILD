@@ -8,8 +8,20 @@ proto_library(
 )
 
 cc_proto_library(
-    name = "dombft_cc_proto",
+    name = "dombft_proto_cc",
     deps = [":dombft_proto"],
     visibility = ["//visibility:public"],
 )
 
+
+proto_library(
+    name = "dombft_apps",
+    srcs = ["dombft_apps.proto"],
+    visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "dombft_apps_cc",
+    deps = [":dombft_apps"],
+    visibility = ["//visibility:public"],
+)

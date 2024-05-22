@@ -13,7 +13,7 @@ cc_library(
     srcs = ["client.cc"],
     hdrs = ["client.h"],
     deps = [
-        "//proto:dombft_cc_proto",
+        "//proto:dombft_proto_cc",
         "//lib:message_type",
         "//lib:endpoint",
         "//lib:signature_provider",

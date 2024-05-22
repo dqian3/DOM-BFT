@@ -118,6 +118,7 @@ cc_library(
     hdrs = ["application.h"] + glob(["apps/*"]),
     srcs = glob(["apps/*"]),
     deps = [
+        "//proto:dombft_apps_cc",
         ":common_struct",
         ":config",
         "@openssl//:openssl",

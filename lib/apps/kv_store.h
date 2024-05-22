@@ -11,10 +11,7 @@
 class KVStore : Application{
 
     std::unordered_map<std::string, std::string> data;
-
-
-    virtual std::unique_ptr<byte *> execute(const byte *request);
-
+    virtual std::unique_ptr<AppResponse> execute(const AppRequest &request);
 };
 
 #endif

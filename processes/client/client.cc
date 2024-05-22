@@ -180,6 +180,7 @@ namespace dombft
         request.set_send_time(GetMicrosecondTimestamp());
         request.set_is_write(true); // TODO modify this based on some random chance
 
+
         sendTimes_[nextReqSeq_] = request.send_time();
 
 
