@@ -8,10 +8,13 @@
 
 // TODO instead of requests and responses being raw bytes, have 
 // request and response types that can be serialized/unserialized.
-class KVStore : Application{
-
+class KVStore : public Application {
     std::unordered_map<std::string, std::string> data;
-    virtual std::unique_ptr<AppResponse> execute(const AppRequest &request);
+
+public:
+    virtual ~KVStore();
+
+    virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) override;
 };
 
 #endif

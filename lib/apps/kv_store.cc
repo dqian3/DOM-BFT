@@ -5,6 +5,10 @@
 
 using namespace dombft::apps;
 
+KVStore::~KVStore() {
+    
+}
+
 std::unique_ptr<AppResponse> KVStore::execute(const AppRequest &request)
 {    
     KVRequest *kvReq = (KVRequest *) &request;

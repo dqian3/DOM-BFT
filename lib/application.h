@@ -15,7 +15,9 @@ class Application
 {
 
 public:
-    virtual std::unique_ptr<AppResponse> execute(const AppRequest* request) = 0;
+    virtual ~Application() {};
+
+    virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) = 0;
 
     // virtual uint32_t takeSnapshot() = 0;
     // virtual bool restoreSnapshot() = 0;
