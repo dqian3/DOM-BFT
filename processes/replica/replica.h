@@ -34,9 +34,6 @@ namespace dombft
 
         std::vector<Address> replicaAddrs_;
 
-        uint32_t seq_ = 0;
-
-
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request, uint32_t seq);
 

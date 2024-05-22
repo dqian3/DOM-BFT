@@ -133,8 +133,7 @@ namespace dombft
             }
 
             // TODO also pass client request
-            handleClientRequest(clientHeader, seq_);
-            seq_++;
+            handleClientRequest(clientHeader);
         }    
 #else 
         if (hdr->msgType == CLIENT_REQUEST)
@@ -156,6 +155,27 @@ namespace dombft
             handleClientRequest(clientHeader);
         }
 #endif
+
+        if (hdr->msgType == CERT) {
+            Cert cert;
+
+            if (!cert.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse CERT message";
+                return;
+            }
+
+
+
+            if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id()))
+            {
+                LOG(INFO) << "Failed to verify client signature!";
+                return;
+            }
+
+            handleCert()
+
+        }
     }
 
 

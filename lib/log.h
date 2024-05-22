@@ -38,6 +38,9 @@ struct Log
     // TODO static memory here? or is that overoptimizing?
     std::array<std::unique_ptr<LogEntry>, MAX_SPEC_HIST> log;
 
+    // Map of sequence number to certs
+    std::unordered_map<uint32_t, std::unique_ptr<Cert>> clientSeqs;
+
     // Map of client ids to sequence numbers, for de-duplicating requests
     std::unordered_map<uint32_t, uint32_t> clientSeqs;
 
