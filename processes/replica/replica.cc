@@ -55,15 +55,20 @@ namespace dombft
                                             replicaConfig_.replicaPort));
         }
 
-        endpoint_ = new UDPEndpoint(replicaIp, replicaPort, true);
-        handler_ = new UDPMessageHandler(
+        endpoint_ = std::make_unique<UDPEndpoint>(replicaIp, replicaPort, true);
+        handler_ = std::make_unique<UDPMessageHandler>(
             [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
                 ((Replica *)ctx)->handleMessage(msgHdr, msgBuffer, sender);
             },
-            this);
+            this
+        );
 
-        endpoint_->RegisterMsgHandler(handler_);
+        log_ = std::make_unique<Log>();
+
+        // Passing the raw pointer here, but the endpoint also only lives as long as
+        // the Replica instance so it should be fine.
+        endpoint_->RegisterMsgHandler(handler_.get());
     }
 
     Replica::~Replica()
@@ -78,6 +83,8 @@ namespace dombft
         endpoint_->LoopRun();
     }
 
+
+#if PROTOCOL == DOMBFT
     void Replica::handleMessage(MessageHeader *hdr, byte *body,
                                 Address *sender)
     {
@@ -89,12 +96,12 @@ namespace dombft
 #if USE_PROXY
 
 #if FABRIC_CRYPTO
-            // TODO find id correctly
-            if (!sigProvider_.verify(hdr, body, "receiver", 0))
-            {
-                LOG(INFO) << "Failed to verify receiver signatures";
-                return;
-            }
+        // TODO find id correctly
+        if (!sigProvider_.verify(hdr, body, "receiver", 0))
+        {
+            LOG(INFO) << "Failed to verify receiver signatures";
+            return;
+        }
 #endif
 
         if (hdr->msgType == MessageType::DOM_REQUEST)
@@ -128,8 +135,8 @@ namespace dombft
             // TODO also pass client request
             handleClientRequest(clientHeader, seq_);
             seq_++;
-       }
-#elif PROTOCOL == DOMBFT
+        }    
+#else 
         if (hdr->msgType == CLIENT_REQUEST)
         {
             ClientRequest clientHeader;
@@ -148,8 +155,19 @@ namespace dombft
 
             handleClientRequest(clientHeader);
         }
+#endif
+    }
 
-#else // TODO do separate replica processes instead of these compile flags lol
+
+#else // if not DOM_BFT
+    void Replica::handleMessage(MessageHeader *hdr, byte *body,
+                                Address *sender)
+    {
+        if (hdr->msgLen < 0)
+        {
+            return;
+        }
+
         if (hdr->msgType == CLIENT_REQUEST)
         {
             // Only leader should get client requests for now
@@ -249,18 +267,22 @@ namespace dombft
                     handleClientRequest(dummyReq, msg.replica_seq());
                 }
             }
-
-#endif
-            
+#endif   
         }
-#endif
     }
+#endif   
 
     void Replica::handleClientRequest(const ClientRequest &request, uint32_t seq)
     {
         Reply reply;
-
         uint32_t clientId = request.client_id();
+
+        if (clientId < 0 || clientId > replicaConfig_.clientIps.size())
+        {
+            LOG(ERROR) << "Invalid client id" << clientId;
+            return;
+        }
+
         reply.set_client_id(clientId);
         reply.set_client_seq(request.client_seq());
         reply.set_replica_id(replicaConfig_.replicaId);
@@ -268,17 +290,15 @@ namespace dombft
 
         // TODO do this for real and actually process the message
         reply.set_view(0);
-        reply.set_seq(seq);
+
+        log_->addAndExecuteEntry(clientId, request.client_seq(), 
+            (byte *) request.req_data().c_str(), 
+            request.req_data().length());
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-        // TODO send to client
 
-        if (clientId < 0 || clientId > replicaConfig_.clientIps.size())
-        {
-            LOG(ERROR) << "Invalid client id" << clientId;
-            return;
-        }
+
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPort));
@@ -287,7 +307,6 @@ namespace dombft
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
         // TODO check errors for all of these lol
-        // TODO do this while waiting, not in the critical path
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_)
         {
