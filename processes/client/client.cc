@@ -297,9 +297,9 @@ namespace dombft
         }
     }
 
-    void Client::checkReqState(uint32_t client_seq)
+    void Client::checkReqState(uint32_t clientSeq)
     {
-        auto &reqState = requestStates_[client_seq];
+        auto &reqState = requestStates_[clientSeq];
 
         if (reqState.cert.has_value() && reqState.replies.size() == 3 * f_ + 1)
         {
@@ -334,7 +334,7 @@ namespace dombft
             VLOG(1) << "Request " << rep1.client_seq() << " fast path committed at global seq " << rep1.seq()
                     << ". Took " << GetMicrosecondTimestamp() - requestStates_[rep1.client_seq()].sendTime << " us";
 
-            requestStates_.erase(client_seq);
+            requestStates_.erase(clientSeq);
             submitRequest();
         }
         else
@@ -370,7 +370,29 @@ namespace dombft
                     }
 
                     reqState.certTime = GetMicrosecondTimestamp();
+                    
+#if IMMEDIATE_CERT
+
+                    if ( GetMicrosecondTimestamp() - reqState.certTime < NORMAL_PATH_TIMEOUT) {
+                        return;
+                    }
+                    
+                    VLOG(1) << "Sending cert immediately for request number " << clientSeq << " ";
+
+                    // Send cert to replicas;
+                    endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
+                    for (const Address &addr : replicaAddrs_)
+                    {
+                        endpoint_->SendPreparedMsgTo(addr, true);
+                    }
+                    endpoint_->setBufReady(false);
+
+                    reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
+
+#endif
+                    
                     return;
+
                 }
             }
         }

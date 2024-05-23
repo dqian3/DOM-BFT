@@ -22,5 +22,7 @@
 #define NORMAL_PATH_TIMEOUT    5000     // 5 ms
 #define RETRY_TIMEOUT          500000   // 500 ms
 
+// Whether to send a CERT message as soon as cert can be made
+#define IMMEDIATE_CERT 0 
 
 #endif
