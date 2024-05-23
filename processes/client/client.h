@@ -51,7 +51,7 @@ namespace dombft
         /** The addresses of proxies. */
         std::vector<Address> proxyAddrs_;
         std::vector<Address> replicaAddrs_;
-        int f_;
+        uint32_t f_;
 
         /** Each client is assigned with a unqiue id */
         int clientId_;
@@ -73,7 +73,6 @@ namespace dombft
         void submitRequest();
 
         void checkTimeouts();
-
 
 
     public:

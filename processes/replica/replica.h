@@ -45,7 +45,7 @@ namespace dombft
         std::map<std::pair<int, int>, int> commitCount;
 #endif
 
-        int f_;
+        uint32_t f_;
 
     public:
 

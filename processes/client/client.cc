@@ -136,6 +136,13 @@ namespace dombft
                 return;
             }
 
+            if (requestStates_.count(reply.client_seq()) == 0)
+            {
+                VLOG(2) << "Received reply for " << reply.client_seq() << " not in active requests";
+                return;
+            }
+
+
             auto &reqState = requestStates_[reply.client_seq()];
 
             VLOG(4) << "Received reply from replica " << reply.replica_id()
@@ -169,7 +176,8 @@ namespace dombft
 #endif
         }
 
-        else if (msgHdr->msgType == MessageType::CERT_REPLY) {
+        else if (msgHdr->msgType == MessageType::CERT_REPLY)
+        {
             CertReply certReply;
 
             if (!certReply.ParseFromArray(msgBuffer, msgHdr->msgLen))
@@ -178,6 +186,7 @@ namespace dombft
                 return;
             }
 
+            uint32_t cseq = certReply.client_seq();
 
             if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", certReply.replica_id()))
             {
@@ -185,24 +194,32 @@ namespace dombft
                 return;
             }
 
-            if (requestStates_.count(certReply.client_seq()) == 0) {
-                VLOG(2) << "Received cert for " << certReply.client_seq() << " not in active requests";
+            if (reply.client_id() != clientId_) {
+                VLOG(2) << "Received certReply for client " << reply.client_id()  << " != " << clientId_;
                 return;
+ 
             }
 
-            auto &reqState = requestStates_[certReply.client_seq()];
+            if (requestStates_.count(cseq) == 0)
+            {
+                VLOG(2) << "Received certReply for " << cseq << " not in active requests";
+                return;
+            }
+            
+            auto &reqState = requestStates_[cseq];
 
             reqState.certReplies.insert(certReply.replica_id());
 
-            if (reqState.certReplies.size() >= 2 * f_ + 1) {
+            if (reqState.certReplies.size() >= 2 * f_ + 1)
+            {
                 // Request is committed, so we can clean up state!
 
-                VLOG(1) << "Request " << certReply.client_seq() << " normal path committed!";
+                VLOG(1) << "Request " << cseq << " normal path committed! "
+                        << "Took " << GetMicrosecondTimestamp() - requestStates_[cseq].sendTime << " us";
 
-                requestStates_.erase(certReply.client_seq());
+                requestStates_.erase(cseq);
                 submitRequest();
             }
-
         }
     }
 
@@ -240,6 +257,11 @@ namespace dombft
         endpoint_->setBufReady(false);
 #endif
 
+
+        if (nextReqSeq_ == 100 + maxInFlight_) {
+            LOG(INFO) << "Exiting after sending " << 100 + maxInFlight_  << " requests";
+            exit(0);
+        }
         nextReqSeq_++;
     }
 
@@ -247,11 +269,13 @@ namespace dombft
     {
         uint64_t now = GetMicrosecondTimestamp();
 
-        for (auto& entry: requestStates_) {
+        for (auto &entry : requestStates_)
+        {
             int clientSeq = entry.first;
             RequestState &reqState = entry.second;
 
-            if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT) {
+            if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT)
+            {
 
                 VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
 
@@ -260,13 +284,14 @@ namespace dombft
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr, true);
-                }            
+                }
                 endpoint_->setBufReady(false);
 
                 reqState.certTime = now; // timeout again later
-            } 
-            if (now - reqState.sendTime > RETRY_TIMEOUT){
-                LOG(ERROR) << "Client failed on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now ;
+            }
+            if (now - reqState.sendTime > RETRY_TIMEOUT)
+            {
+                LOG(ERROR) << "Client failed on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
                 exit(1);
             }
         }
@@ -306,7 +331,8 @@ namespace dombft
             // TODO Deliver to application
             // Request is committed and can be cleaned up.
 
-            VLOG(1) << "Request " << rep1.client_seq() << " fast path committed at global seq " << rep1.seq();
+            VLOG(1) << "Request " << rep1.client_seq() << " fast path committed at global seq " << rep1.seq()
+                    << ". Took " << GetMicrosecondTimestamp() - requestStates_[rep1.client_seq()].sendTime << " us";
 
             requestStates_.erase(client_seq);
             submitRequest();
