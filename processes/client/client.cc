@@ -129,7 +129,7 @@ namespace dombft
             // Check validity
             //  1. Not for the same client
             //  2. Client doesn't have state for this request
-            if (reply.client_id() != clientId_ || reply.client_seq())
+            if (reply.client_id() != clientId_ || requestStates_.count(reply.client_seq()) == 0)
             {
                 // TODO more info?
                 LOG(INFO) << "Invalid reply!";
@@ -185,12 +185,20 @@ namespace dombft
                 return;
             }
 
+            if (requestStates_.count(certReply.client_seq()) == 0) {
+                VLOG(2) << "Received cert for " << certReply.client_seq() << " not in active requests";
+                return;
+            }
+
             auto &reqState = requestStates_[certReply.client_seq()];
 
             reqState.certReplies.insert(certReply.replica_id());
 
             if (reqState.certReplies.size() >= 2 * f_ + 1) {
                 // Request is committed, so we can clean up state!
+
+                VLOG(1) << "Request " << certReply.client_seq() << " normal path committed!";
+
                 requestStates_.erase(certReply.client_seq());
                 submitRequest();
             }
@@ -200,11 +208,6 @@ namespace dombft
 
     void Client::submitRequest()
     {
-        if (false) // TODO nextReqSeq_ != commitedId + 1, if called when there is still a pending request
-        {
-            LOG(ERROR) << "SubmitRequest() called before request completed!";
-            return;
-        }
         ClientRequest request;
 
         // submit new request
@@ -213,7 +216,7 @@ namespace dombft
         request.set_send_time(GetMicrosecondTimestamp());
         request.set_is_write(true); // TODO modify this based on some random chance
 
-        requestStates_[nextReqSeq_].certTime = request.send_time();
+        requestStates_[nextReqSeq_].sendTime = request.send_time();
 
 #if USE_PROXY && PROTOCOL == DOMBFT
         Address &addr = proxyAddrs_[0];
@@ -246,21 +249,24 @@ namespace dombft
 
         for (auto& entry: requestStates_) {
             int clientSeq = entry.first;
-            const RequestState &reqState = entry.second;
+            RequestState &reqState = entry.second;
 
-            if (now - reqState.certTime > NORMAL_PATH_TIMEOUT) {
+            if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT) {
+
+                VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
+
                 // Send cert to replicas;
-                assert(reqState.cert.has_value());
-
                 endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr, true);
                 }            
                 endpoint_->setBufReady(false);
+
+                reqState.certTime = now; // timeout again later
             } 
             if (now - reqState.sendTime > RETRY_TIMEOUT){
-                LOG(ERROR) << "Client failed on request " << clientSeq;
+                LOG(ERROR) << "Client failed on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now ;
                 exit(1);
             }
         }
@@ -299,6 +305,8 @@ namespace dombft
 
             // TODO Deliver to application
             // Request is committed and can be cleaned up.
+
+            VLOG(1) << "Request " << rep1.client_seq() << " fast path committed at global seq " << rep1.seq();
 
             requestStates_.erase(client_seq);
             submitRequest();

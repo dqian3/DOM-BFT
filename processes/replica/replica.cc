@@ -92,7 +92,7 @@ namespace dombft
     {
         if (hdr->msgLen < 0)
         {
-            return;lastExecuted
+            return;
         }
 
 #if USE_PROXY

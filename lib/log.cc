@@ -1,5 +1,7 @@
 #include "log.h"
 
+#include <glog/logging.h>
+
 using namespace dombft::proto;
 
 LogEntry::LogEntry()
@@ -14,6 +16,7 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
     , client_id(c_id)
     , client_seq(c_seq)    
     , raw_request((byte * ) malloc(req_len)) // Manually allocate some memory to store the request
+    , raw_result(nullptr)
 {
     memcpy(raw_request, req, req_len);
 
@@ -63,6 +66,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
     
+    VLOG(4) << "Adding new entry at seq=" << nextSeq;
     nextSeq++;
     // TODO
 

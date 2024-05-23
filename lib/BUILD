@@ -105,8 +105,10 @@ cc_library(
     hdrs = ["log.h"],
     srcs = ["log.cc"],
     deps = [
+
         ":common_struct",
         ":config",
+        "@com_github_google_glog//:glog",
         "@openssl//:openssl",
         "//proto:dombft_proto_cc",
     ],
@@ -122,7 +124,7 @@ cc_library(
         "//proto:dombft_apps_cc",
         ":common_struct",
         ":config",
-        "@openssl//:openssl",
+         "@openssl//:openssl",
     ],
     visibility = ["//visibility:public"],
 )

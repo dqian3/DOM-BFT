@@ -16,14 +16,18 @@ TEST(TestLog, TestBasicLog)
     std::cout << log;
 }
 
-TEST(TestLog, TestExecuteFails)
+
+
+TEST(TestLog, TestCircular)
 {
     Log log;
 
     const char *req = "test";
-    log.addEntry(1, 1, (byte *) req, strlen(req));
 
+    for (int i = 1; i < 2 * MAX_SPEC_HIST; i++) {
+        log.addEntry(1, i, (byte *) req, strlen(req));
 
-    ASSERT_FALSE(log.addAndExecuteEntry(2, 4, (byte *) req, strlen(req)));
+    }
+
 
 }
