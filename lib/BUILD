@@ -108,6 +108,7 @@ cc_library(
         ":common_struct",
         ":config",
         "@openssl//:openssl",
+        "//proto:dombft_proto_cc",
     ],
     visibility = ["//visibility:public"],
 )

@@ -23,9 +23,9 @@ public:
     // TODO is this bad practice?
     int appendSignature(MessageHeader *hdr, uint32_t bufLen);
 
-    // verify mirros how SignedUDPEndpoint passes it to the handler
     bool verify(MessageHeader *hdr, byte *body, const std::string &pubKeyType, int pubKeyId);
-
+    // get signature as a string (to be stored elsewhere) after receiving a message.
+    std::string getSignature(MessageHeader *hdr, byte *body);
 
     bool loadPrivateKey(const std::string& privateKeyPath);
 

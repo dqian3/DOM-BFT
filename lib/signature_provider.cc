@@ -128,6 +128,12 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
     return 0;
 }
 
+std::string SignatureProvider::getSignature(MessageHeader *hdr, byte *body)
+{
+    byte *data = (byte *)(hdr + 1);
+    return std::string((char *) data + hdr->msgLen, hdr->sigLen);
+}
+
 bool SignatureProvider::verify(MessageHeader *hdr, byte *body, const std::string &pubKeyType, int pubKeyId)
 {
     EVP_MD_CTX *mdctx = NULL;

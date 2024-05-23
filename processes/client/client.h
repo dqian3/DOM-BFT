@@ -2,37 +2,32 @@
 
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <thread>
 
-#include "lib/config.h"
-#include "lib/utils.h"
 #include "lib/address.h"
-#include "proto/dombft_proto.pb.h"
-#include "lib/udp_endpoint.h"
-#include "lib/signature_provider.h"
+#include "lib/config.h"
 #include "lib/message_type.h"
-
+#include "lib/signature_provider.h"
+#include "lib/udp_endpoint.h"
+#include "lib/utils.h"
+#include "proto/dombft_proto.pb.h"
 
 #include <yaml-cpp/yaml.h>
 
 namespace dombft
 {
-    /** LogInfo is used to dump some performance stats, which can be extended to
-     * include more metrics */
-    struct LogInfo
+    struct RequestState
     {
-        uint32_t reqId;
+        std::map<int, dombft::proto::Reply> replies;
+        std::map<int, std::string> signatures;
+        std::optional<dombft::proto::Cert> cert;
         uint64_t sendTime;
-        uint64_t commitTime;
-        uint32_t commitType;
-        std::string toString()
-        {
-            std::string ret =
-                (std::to_string(reqId) + "," + std::to_string(sendTime) + "," +
-                 std::to_string(commitTime) + "," + std::to_string(commitType));
-            return ret;
-        }
+        uint64_t certTime;
+
+        bool fastPathPossible = true;
     };
+
     class Client
     {
     private:
@@ -41,17 +36,19 @@ namespace dombft
         ClientConfig clientConfig_;
 
         /** The endpoint uses to submit request to proxies and receive replies*/
-        UDPEndpoint *endpoint_;
+        std::unique_ptr<UDPEndpoint> endpoint_;
+        /** The message handler used to handle replies (from replicas) */
+        std::unique_ptr<MessageHandler> replyHandler_;
+        /** Timer to handle request timeouts TODO (timeouts vs repeated timer would maybe be better)*/
+        std::unique_ptr<Timer> timeoutTimer_;
 
         SignatureProvider sigProvider_;
 
-        /** The message handler used to handle replies (from replicas) */
-        struct MessageHandler *replyHandler_;
 
         /** The addresses of proxies. */
         std::vector<Address> proxyAddrs_;
         std::vector<Address> replicaAddrs_;
-
+        int f_;
 
         /** Each client is assigned with a unqiue id */
         int clientId_;
@@ -63,19 +60,17 @@ namespace dombft
         uint32_t numExecuted_ = 0;
 
 
-        /* State for the currently pending request */
-
-        // Counters for the number of replies 
-        std::map<int, int> numReplies_;
-        std::map<int, uint64_t> sendTimes_;
-        std::map<int, std::set<int>> repSeqs_; 
-
-        // TODO implement
-        // uint32_t numFastReplies_ = 0;
+        /* State for the currently pending request */ 
+        std::map<int, RequestState> requestStates_;
  
         /** The message handler to handle messages */
-        void ReceiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
-        void SubmitRequest();
+        void receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+        void checkReqState(uint32_t client_seq);
+
+        void submitRequest();
+
+        void checkTimeouts();
+
 
 
     public:

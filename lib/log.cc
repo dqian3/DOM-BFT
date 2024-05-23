@@ -1,7 +1,7 @@
 #include "log.h"
 
 LogEntry::LogEntry()
-    : seq(0), client_id(0), client_seq(0), raw_req(nullptr)
+    : seq(0), client_id(0), client_seq(0), raw_request(nullptr), raw_result(nullptr)
 {
     memset(digest, 0, SHA256_DIGEST_LENGTH);
 }
@@ -11,9 +11,9 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
     : seq(s)
     , client_id(c_id)
     , client_seq(c_seq)    
-    , raw_req((byte * ) malloc(req_len)) // Manually allocate some memory to store the request
+    , raw_request((byte * ) malloc(req_len)) // Manually allocate some memory to store the request
 {
-    memcpy(raw_req, req, req_len);
+    memcpy(raw_request, req, req_len);
 
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
@@ -22,15 +22,17 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
     SHA256_Update(&ctx, &client_id, sizeof(client_id));
     SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
     SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, &raw_req, req_len);
+    SHA256_Update(&ctx, &raw_request, req_len);
     SHA256_Final(digest, &ctx);
 }
 
 LogEntry::~LogEntry()
-    {
-    if (raw_req != nullptr) {
-        free(raw_req);
-
+{
+    if (raw_request != nullptr) {
+        free(raw_request);
+    }
+    if (raw_result != nullptr) {
+        free(raw_result);
     }
 }
 
@@ -64,6 +66,22 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
     return true;
 }
 
+bool Log::executeEntry(uint32_t seq)
+{
+    if (lastExecuted != nextSeq - 1) {
+        return false;
+    }
+
+    addEntry(c_id, c_seq, req, req_len);
+
+    // TODO execute
+
+    lastExecuted++;
+    nextSeq++;
+    return true;
+}
+
+
 bool Log::addAndExecuteEntry(uint32_t c_id, uint32_t c_seq,
                              byte *req, uint32_t req_len)
 {
@@ -83,6 +101,15 @@ bool Log::addAndExecuteEntry(uint32_t c_id, uint32_t c_seq,
 void Log::addCert(uint32_t seq)
 {
     // TODO
+}
+
+const byte* Log::getDigest() const
+{
+    if (nextSeq == 0) {
+        return nullptr;
+    }
+    uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
+    return log[prevSeq]->digest; 
 }
 
 std::ostream& operator<<(std::ostream &out, const Log &l)

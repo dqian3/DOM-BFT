@@ -165,15 +165,7 @@ namespace dombft
                 return;
             }
 
-
-
-            if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id()))
-            {
-                LOG(INFO) << "Failed to verify client signature!";
-                return;
-            }
-
-            handleCert()
+            handleCert(cert);
 
         }
     }
@@ -292,7 +284,7 @@ namespace dombft
     }
 #endif   
 
-    void Replica::handleClientRequest(const ClientRequest &request, uint32_t seq)
+    void Replica::handleClientRequest(const ClientRequest &request)
     {
         Reply reply;
         uint32_t clientId = request.client_id();
@@ -306,22 +298,41 @@ namespace dombft
         reply.set_client_id(clientId);
         reply.set_client_seq(request.client_seq());
         reply.set_replica_id(replicaConfig_.replicaId);
-        reply.set_fast(true);
 
-        // TODO do this for real and actually process the message
+        // TODO change this when we implement the slow path
         reply.set_view(0);
 
-        log_->addAndExecuteEntry(clientId, request.client_seq(), 
-            (byte *) request.req_data().c_str(), 
-            request.req_data().length());
+        if (log_->lastExecuted == log_->nextSeq - 1) {
+            // TODO check result of this
+            log_->addAndExecuteEntry(clientId, request.client_seq(), 
+                (byte *) request.req_data().c_str(), 
+                request.req_data().length());
+
+            reply.set_fast(true);
+            // TODO add result or digest of result.
+
+        } else {
+            log_->addEntry(clientId, request.client_seq(), 
+                (byte *) request.req_data().c_str(), 
+                request.req_data().length());
+
+            reply.set_fast(false);
+        }
+
+        reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 
-
-
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPort));
+    }
+
+
+    void Replica::handleCert(const Cert &cert)
+    {
+        // TODO verify cert, for now just send back!
+        
     }
 
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type) {

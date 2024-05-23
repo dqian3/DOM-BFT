@@ -51,3 +51,11 @@ cc_test(
     "@com_google_googletest//:gtest_main"
   ],
 )
+
+cc_binary(
+  name = "protobuf_exp",
+  srcs = ["protobuf_exp.cc"],
+  deps = [
+      "//proto:dombft_proto_cc"
+  ],
+)

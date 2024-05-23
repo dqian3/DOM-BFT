@@ -42,13 +42,11 @@ message Reply {
 
 message Cert {
     // A cert logically is a set of 2f + 1 replies
-    // To save space, we only store 1 reply, and store parallel arrays of 2f + 1
-    // ids and "fast" flags, so we can recreate the original replies that are signed.
-    Reply reply = 1;
-
-    repeated uint32 replica_ids = 2;
-    repeated bool fast_flags = 3;
-    repeated bytes signatures = 4;
+    
+    // TODO to save space, we would only store 1 copy of each common field. Instead
+    // we just repeat them here since it's easier
+    repeated Reply replies    = 7;
+    repeated bytes signatures = 8;
 }
 
 

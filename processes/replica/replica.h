@@ -35,7 +35,8 @@ namespace dombft
         std::vector<Address> replicaAddrs_;
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
-        void handleClientRequest(const dombft::proto::ClientRequest &request, uint32_t seq);
+        void handleClientRequest(const dombft::proto::ClientRequest &request);
+        void handleCert(const dombft::proto::Cert &cert);
 
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
 
