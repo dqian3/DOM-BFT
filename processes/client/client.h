@@ -25,6 +25,9 @@ namespace dombft
         uint64_t sendTime;
         uint64_t certTime;
 
+        std::set<int> certReplies;
+
+
         bool fastPathPossible = true;
     };
 

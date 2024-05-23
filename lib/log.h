@@ -51,13 +51,12 @@ struct Log
     
     Log();
 
+    // Adds an entry and returns whether it could be spec. executed.
     bool addEntry(uint32_t c_id, uint32_t c_seq,
              byte *req, uint32_t req_len);
     bool executeEntry(uint32_t seq);
-    bool addAndExecuteEntry(uint32_t c_id, uint32_t c_seq,
-             byte *req, uint32_t req_len);
     
-    void addCert(uint32_t seq);
+    void addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
     const byte* getDigest() const;
 

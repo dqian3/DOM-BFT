@@ -55,6 +55,8 @@ namespace dombft
                                             replicaConfig_.replicaPort));
         }
 
+        f_ = replicaAddrs_.size() / 3;
+
         endpoint_ = std::make_unique<UDPEndpoint>(replicaIp, replicaPort, true);
         handler_ = std::make_unique<UDPMessageHandler>(
             [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
@@ -90,7 +92,7 @@ namespace dombft
     {
         if (hdr->msgLen < 0)
         {
-            return;
+            return;lastExecuted
         }
 
 #if USE_PROXY
@@ -302,22 +304,13 @@ namespace dombft
         // TODO change this when we implement the slow path
         reply.set_view(0);
 
-        if (log_->lastExecuted == log_->nextSeq - 1) {
-            // TODO check result of this
-            log_->addAndExecuteEntry(clientId, request.client_seq(), 
-                (byte *) request.req_data().c_str(), 
-                request.req_data().length());
 
-            reply.set_fast(true);
-            // TODO add result or digest of result.
+        bool fast = log_->addEntry(clientId, request.client_seq(), 
+            (byte *) request.req_data().c_str(), 
+            request.req_data().length());
 
-        } else {
-            log_->addEntry(clientId, request.client_seq(), 
-                (byte *) request.req_data().c_str(), 
-                request.req_data().length());
-
-            reply.set_fast(false);
-        }
+        reply.set_fast(fast);
+    
 
         reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
@@ -331,8 +324,29 @@ namespace dombft
 
     void Replica::handleCert(const Cert &cert)
     {
-        // TODO verify cert, for now just send back!
+        // TODO verify cert, for now just accept it!
+        if (cert.replies().size() < 2 * f_ + 1) {
+            LOG(INFO) << "Received cert of size " << cert.replies().size() 
+            << ", which is smaller than 2f + 1, f=" << f_;
+        }
         
+        const Reply &r = cert.replies()[0];
+        log_->addCert(r.seq(), cert);
+
+        if (log_->lastExecuted < r.seq()) {
+            // Execute up to seq;
+        }
+
+        CertReply reply;
+        reply.set_client_id(r.client_id());
+        reply.set_client_seq(r.client_seq());
+        reply.set_replica_id(replicaConfig_.replicaId);
+
+        // TODO set result
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
+        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[reply.client_id()], replicaConfig_.clientPort));
+
     }
 
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type) {

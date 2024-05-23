@@ -168,6 +168,34 @@ namespace dombft
             checkReqState(reply.client_seq());
 #endif
         }
+
+        else if (msgHdr->msgType == MessageType::CERT_REPLY) {
+            CertReply certReply;
+
+            if (!certReply.ParseFromArray(msgBuffer, msgHdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse CERT_REPLY message";
+                return;
+            }
+
+
+            if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", certReply.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify replica signature for CERT_REPLY!";
+                return;
+            }
+
+            auto &reqState = requestStates_[certReply.client_seq()];
+
+            reqState.certReplies.insert(certReply.replica_id());
+
+            if (reqState.certReplies.size() >= 2 * f_ + 1) {
+                // Request is committed, so we can clean up state!
+                requestStates_.erase(certReply.client_seq());
+                submitRequest();
+            }
+
+        }
     }
 
     void Client::submitRequest()

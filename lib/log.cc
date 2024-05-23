@@ -1,5 +1,7 @@
 #include "log.h"
 
+using namespace dombft::proto;
+
 LogEntry::LogEntry()
     : seq(0), client_id(0), client_seq(0), raw_request(nullptr), raw_result(nullptr)
 {
@@ -63,44 +65,25 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
     
     nextSeq++;
     // TODO
-    return true;
+
+    return executeEntry(nextSeq - 1);
 }
 
 bool Log::executeEntry(uint32_t seq)
 {
-    if (lastExecuted != nextSeq - 1) {
+    if (lastExecuted != seq - 1) {
         return false;
     }
 
-    addEntry(c_id, c_seq, req, req_len);
-
-    // TODO execute
-
+    // TODO execute and get result back.
     lastExecuted++;
-    nextSeq++;
     return true;
 }
 
 
-bool Log::addAndExecuteEntry(uint32_t c_id, uint32_t c_seq,
-                             byte *req, uint32_t req_len)
+void Log::addCert(uint32_t seq, const Cert &cert)
 {
-    if (lastExecuted != nextSeq - 1) {
-        return false;
-    }
-
-    addEntry(c_id, c_seq, req, req_len);
-
-    // TODO execute
-
-    lastExecuted++;
-    nextSeq++;
-    return true;
-}
-
-void Log::addCert(uint32_t seq)
-{
-    // TODO
+    certs[seq] = std::make_unique<Cert>(cert);
 }
 
 const byte* Log::getDigest() const

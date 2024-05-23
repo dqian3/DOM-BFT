@@ -50,6 +50,16 @@ message Cert {
 }
 
 
+message CertReply {
+    uint32 replica_id = 1;
+    uint32 client_id = 2;
+    uint32 client_seq = 3;
+
+    bytes result = 7; 
+}
+
+
+
 // Dummy protocol message used for dummy implemenations of 
 // Zyzzyva and PBFT
 message DummyProto {
