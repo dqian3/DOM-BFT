@@ -1,13 +1,3 @@
-load("@rules_proto//proto:defs.bzl", "proto_library")
-
-cc_library(
-    name = "client_config",
-    hdrs = ["client_config.h"],
-    deps = [
-        "@com_github_jbeder_yaml_cpp//:yaml-cpp",
-    ],
-)
-
 cc_library(
     name = "client_class",
     srcs = ["client.cc"],
@@ -18,8 +8,8 @@ cc_library(
         "//lib:endpoint",
         "//lib:signature_provider",
         "//lib:utils",
-        "//lib:config",
-        ":client_config",
+        "//lib:protocol_config",
+        "//processes:process_config"
     ],
 )
 

@@ -2,7 +2,7 @@
 #define LOG_H
 
 #include "common_struct.h"
-#include "config.h"
+#include "protocol_config.h"
 #include "proto/dombft_proto.pb.h"
 
 #include <openssl/sha.h>

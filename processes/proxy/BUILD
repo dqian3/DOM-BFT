@@ -1,12 +1,4 @@
 cc_library(
-    name = "proxy_config",
-    hdrs = ["proxy_config.h"],
-    deps = [
-        "@com_github_jbeder_yaml_cpp//:yaml-cpp",
-    ],
-)
-
-cc_library(
     name = "proxy_class",
     srcs = ["proxy.cc"],
     hdrs = ["proxy.h"],
@@ -17,8 +9,8 @@ cc_library(
         "//lib:endpoint",
         "//lib:signature_provider",
         "//lib:message_type",
-        "//lib:config",
-        ":proxy_config",
+        "//lib:protocol_config",
+        "//processes:process_config"
     ],
 )
 

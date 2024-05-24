@@ -1,13 +1,3 @@
-
-cc_library(
-    name = "replica_config",
-    hdrs = ["replica_config.h"],
-    deps = [
-        "@com_github_jbeder_yaml_cpp//:yaml-cpp",
-    ],
-)
-
-
 cc_library(
     name = "replica_class",
     srcs = ["replica.cc"],
@@ -18,9 +8,9 @@ cc_library(
         "//lib:address",
         "//lib:endpoint",
         "//lib:message_type",
-        "//lib:config",
+        "//lib:protocol_config",
         "//lib:log",
-        ":replica_config",
+        "//processes:process_config"
     ],
 )
 

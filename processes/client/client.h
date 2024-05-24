@@ -34,9 +34,13 @@ namespace dombft
     class Client
     {
     private:
-        /** All the configuration parameters for client are included in
-         * clientConfig_*/
-        ClientConfig clientConfig_;
+        /* Config parameters that need to be saved */
+        int clientId_;
+        std::vector<Address> proxyAddrs_;
+        std::vector<Address> replicaAddrs_;
+        uint32_t f_;      
+        uint32_t maxInFlight_ = 0;
+
 
         /** The endpoint uses to submit request to proxies and receive replies*/
         std::unique_ptr<UDPEndpoint> endpoint_;
@@ -48,20 +52,10 @@ namespace dombft
         SignatureProvider sigProvider_;
 
 
-        /** The addresses of proxies. */
-        std::vector<Address> proxyAddrs_;
-        std::vector<Address> replicaAddrs_;
-        uint32_t f_;
-
-        /** Each client is assigned with a unqiue id */
-        int clientId_;
-        uint32_t maxInFlight_ = 0;
-
         /** The next requestId to be submitted */
         uint32_t nextReqSeq_ = 0;
         uint32_t inFlight_ = 0;
         uint32_t numExecuted_ = 0;
-
 
         /* State for the currently pending request */ 
         std::map<int, RequestState> requestStates_;
@@ -79,8 +73,7 @@ namespace dombft
         /** Client accepts a config file, which contains all the necessary information
          * to instantiate the object, then it can call Run method
          *  */
-        Client(const std::string &configFile = "../configs/nezha-client-config.yaml");
-        Client(const size_t clientId);
+        Client(const ClientConfig &config, const size_t clientId);
         void Run();
         ~Client();
 

@@ -2,9 +2,9 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 
 
 cc_library(
-    name = "config",
-    srcs = ["config.h"],
-    hdrs = ["config.h"],
+    name = "protocol_config.h",
+    srcs = ["protocol_config.h"],
+    hdrs = ["protocol_config.h"],
     visibility = ["//visibility:public"],
 )
 
@@ -107,7 +107,7 @@ cc_library(
     deps = [
 
         ":common_struct",
-        ":config",
+        ":protocol_config",
         "@com_github_google_glog//:glog",
         "@openssl//:openssl",
         "//proto:dombft_proto_cc",
@@ -123,7 +123,7 @@ cc_library(
     deps = [
         "//proto:dombft_apps_cc",
         ":common_struct",
-        ":config",
+        ":protocol_config",
          "@openssl//:openssl",
     ],
     visibility = ["//visibility:public"],

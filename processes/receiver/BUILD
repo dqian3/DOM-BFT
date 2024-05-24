@@ -1,12 +1,4 @@
 cc_library(
-    name = "receiver_config",
-    hdrs = ["receiver_config.h"],
-    deps = [
-        "@com_github_jbeder_yaml_cpp//:yaml-cpp",
-    ],
-)
-
-cc_library(
     name = "receiver_class",
     srcs = ["receiver.cc"],
     hdrs = ["receiver.h"],
@@ -17,8 +9,8 @@ cc_library(
         "//lib:endpoint",
         "//lib:signature_provider",
         "//lib:message_type",
-        "//lib:config",
-        ":receiver_config",
+        "//lib:protocol_config",
+        "//processes:process_config"
     ],
 )
 

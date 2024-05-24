@@ -52,7 +52,7 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
                            << " continuing...";
             }
 
-            // Find id by just looking for the suffix _<n>.pub
+            // Find id by just looking for the prefix_<n>.pub
             std::string stem = dirEntry.path().stem();
             // Assumes id is end of name.
             int id = std::stoi(stem.substr(stem.find_first_of("0123456789")));
