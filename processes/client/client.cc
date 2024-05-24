@@ -373,9 +373,9 @@ namespace dombft
                     
 #if IMMEDIATE_CERT
 
-                    if ( GetMicrosecondTimestamp() - reqState.certTime < NORMAL_PATH_TIMEOUT) {
-                        return;
-                    }
+                    // if ( GetMicrosecondTimestamp() - reqState.certTime < NORMAL_PATH_TIMEOUT) {
+                    //     return;
+                    // }
                     
                     VLOG(1) << "Sending cert immediately for request number " << clientSeq << " ";
 
