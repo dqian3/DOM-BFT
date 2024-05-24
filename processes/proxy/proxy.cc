@@ -14,7 +14,7 @@ namespace dombft
         latencyBound_ = config.proxyInitialOwd;
         maxOWD_ = config.proxyMaxOwd;
 
-        std::string proxyKey = config.clientKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
+        std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
         LOG(INFO) << "Loading key from " << proxyKey;
         if (!sigProvider_.loadPrivateKey(proxyKey))
         {

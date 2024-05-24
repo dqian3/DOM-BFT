@@ -15,7 +15,7 @@ namespace dombft
         int receiverPort = config.receiverPort;
         LOG(INFO) << "receiverPort=" << receiverPort;
 
-        std::string receiverKey = config.clientKeysDir + "/receiver" + std::to_string(receiverId_) + ".pem";
+        std::string receiverKey = config.receiverKeysDir + "/receiver" + std::to_string(receiverId_) + ".pem";
         LOG(INFO) << "Loading key from " << receiverKey;
         if (!sigProvider_.loadPrivateKey(receiverKey))
         {

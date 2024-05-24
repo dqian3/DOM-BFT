@@ -7,54 +7,57 @@ namespace dombft
 {
     using namespace dombft::proto;
 
-    Replica::Replica(const std::string &configFile)
+    Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
+        : replicaId_(replicaId)
     {
-        LOG(INFO) << "Loading config information from " << configFile;
-        std::string error = replicaConfig_.parseUnifiedConfig(configFile);
-        if (error != "")
-        {
-            LOG(ERROR) << "Error loading replica config: " << error << " Exiting.";
-            exit(1);
-        }
-
         // TODO check for config errors
-        std::string replicaIp = replicaConfig_.replicaIps[replicaConfig_.replicaId];
+        std::string replicaIp = config.replicaIps[replicaId];
         LOG(INFO) << "replicaIP=" << replicaIp;
-        int replicaPort = replicaConfig_.replicaPorts[replicaConfig_.replicaId];
+        int replicaPort = config.replicaPort;
         LOG(INFO) << "replicaPort=" << replicaPort;
 
-        if (!sigProvider_.loadPrivateKey(replicaConfig_.replicaKey))
+
+    std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".pem";
+        LOG(INFO) << "Loading key from " << replicaKey;
+        if (!sigProvider_.loadPrivateKey(replicaKey))
         {
             LOG(ERROR) << "Unable to load private key!";
             exit(1);
         }
 
-        if (!sigProvider_.loadPublicKeys("client", replicaConfig_.clientKeysDir))
+        if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir))
         {
             LOG(ERROR) << "Unable to load client public keys!";
             exit(1);
         }
 
-        if (!sigProvider_.loadPublicKeys("receiver", replicaConfig_.receiverKeysDir))
+        if (!sigProvider_.loadPublicKeys("receiver", config.receiverKeysDir))
         {
             LOG(ERROR) << "Unable to load receiver public keys!";
             exit(1);
         }
 
-        if (!sigProvider_.loadPublicKeys("replica", replicaConfig_.replicaKeysDir))
+        if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir))
         {
             LOG(ERROR) << "Unable to load receiver public keys!";
             exit(1);
         }
 
         /** Store all replica addrs */
-        for (uint32_t i = 0; i < replicaConfig_.replicaIps.size(); i++)
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++)
         {
-            replicaAddrs_.push_back(Address(replicaConfig_.replicaIps[i],
-                                            replicaConfig_.replicaPorts[i]));
+            replicaAddrs_.push_back(Address(config.replicaIps[i],
+                                            config.replicaPort));
+        }
+        f_ = replicaAddrs_.size() / 3;
+
+        /** Store all client addrs */
+        for (uint32_t i = 0; i < config.clientIps.size(); i++)
+        {
+            clientAddrs_.push_back(Address(config.clientIps[i],
+                                            config.clientPort));
         }
 
-        f_ = replicaAddrs_.size() / 3;
 
         endpoint_ = std::make_unique<UDPEndpoint>(replicaIp, replicaPort, true);
         handler_ = std::make_unique<UDPMessageHandler>(
@@ -180,7 +183,7 @@ namespace dombft
         if (hdr->msgType == CLIENT_REQUEST)
         {
             // Only leader should get client requests for now
-            if (replicaConfig_.replicaId != 0)
+            if (replicaId_ != 0)
             {
                 LOG(ERROR) << "Non leader got CLIENT_REQUEST in dummy PBFT/ZYZZYVA";
                 return;
@@ -204,7 +207,7 @@ namespace dombft
             prePrepare.set_client_id(clientHeader.client_id());
             prePrepare.set_client_seq(clientHeader.client_seq());
             prePrepare.set_stage(0);
-            prePrepare.set_replica_id(replicaConfig_.replicaId);
+            prePrepare.set_replica_id(replicaId_);
             prePrepare.set_replica_seq(seq_);
 
             VLOG(3) << "Leader preprepare " << clientHeader.client_id() << ", " << clientHeader.client_seq() << " at sequence number " << seq_;
@@ -233,7 +236,7 @@ namespace dombft
 
             // Handle client request currently just replies back to client,
             // Use that here as a hack lol.
-            VLOG(2) << "Replica " << replicaConfig_.replicaId
+            VLOG(2) << "Replica " << replicaId_
                     << " got preprepare for " << msg.replica_seq();
             ClientRequest dummyReq;
             dummyReq.set_client_id(msg.client_id());
@@ -245,9 +248,9 @@ namespace dombft
 
             if (msg.stage() == 0)
             {
-                VLOG(2) << "Replica " << replicaConfig_.replicaId << " got preprepare for " << msg.replica_seq();
+                VLOG(2) << "Replica " << replicaId_ << " got preprepare for " << msg.replica_seq();
                 msg.set_stage(1);
-                msg.set_replica_id(replicaConfig_.replicaId);
+                msg.set_replica_id(replicaId_);
                 broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
             }
             else if (msg.stage() == 1)
@@ -258,10 +261,10 @@ namespace dombft
 
                 if (prepareCount[key] == replicaAddrs_.size() / 3 * 2 + 1)
                 {
-                    VLOG(2) << "Replica " << replicaConfig_.replicaId << " is prepared on " << msg.replica_seq();
+                    VLOG(2) << "Replica " << replicaId_ << " is prepared on " << msg.replica_seq();
 
                     msg.set_stage(2);
-                    msg.set_replica_id(replicaConfig_.replicaId);
+                    msg.set_replica_id(replicaId_);
 
                     broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
                 }
@@ -274,7 +277,7 @@ namespace dombft
 
                 if (commitCount[key] == replicaAddrs_.size() / 3 * 2 + 1)
                 {
-                    VLOG(2) << "Replica " << replicaConfig_.replicaId << " is committed on " << msg.replica_seq();
+                    VLOG(2) << "Replica " << replicaId_ << " is committed on " << msg.replica_seq();
 
                     ClientRequest dummyReq;
                     dummyReq.set_client_id(msg.client_id());
@@ -292,7 +295,7 @@ namespace dombft
         Reply reply;
         uint32_t clientId = request.client_id();
 
-        if (clientId < 0 || clientId > replicaConfig_.clientIps.size())
+        if (clientId < 0 || clientId > clientAddrs_.size())
         {
             LOG(ERROR) << "Invalid client id" << clientId;
             return;
@@ -300,7 +303,7 @@ namespace dombft
 
         reply.set_client_id(clientId);
         reply.set_client_seq(request.client_seq());
-        reply.set_replica_id(replicaConfig_.replicaId);
+        reply.set_replica_id(replicaId_);
 
         // TODO change this when we implement the slow path
         reply.set_view(0);
@@ -318,7 +321,7 @@ namespace dombft
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 
         LOG(INFO) << "Sending reply back to client " << clientId;
-        endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[clientId], replicaConfig_.clientPorts[clientId]));
+        endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
     }
 
     void Replica::handleCert(const Cert &cert)
@@ -369,14 +372,14 @@ namespace dombft
         CertReply reply;
         reply.set_client_id(r.client_id());
         reply.set_client_seq(r.client_seq());
-        reply.set_replica_id(replicaConfig_.replicaId);
+        reply.set_replica_id(replicaId_);
 
         VLOG(3) << "Sending cert for " << reply.client_id() << ", " << reply.client_seq();
 
         // TODO set result
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(Address(replicaConfig_.clientIps[reply.client_id()], replicaConfig_.clientPort));
+        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
     }
 
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)

@@ -74,9 +74,9 @@ namespace dombft
          * to instantiate the object, then it can call Run method
          *  */
         Client(const ProcessConfig &config, const size_t clientId);
-        void Run();
         ~Client();
 
+        void run();
     };
 
 } // namespace nezha

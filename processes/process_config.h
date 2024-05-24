@@ -7,16 +7,11 @@
 #include <string>
 #include <vector>
 
-class ConfigParseException : public std::exception
+class ConfigParseException : public std::runtime_error
 {
 public:
-    std::string message;
 
-    ConfigParseException(const std::string &msg) : message(msg) {}
-    const char *what()
-    {
-        return message.c_str();
-    }
+    ConfigParseException(const std::string &msg) : std::runtime_error(msg) {}
 
     static ConfigParseException missing(const std::string &field)
     {
@@ -100,7 +95,7 @@ struct ProcessConfig
         }
         catch (const ConfigParseException &e)
         {
-            throw ConfigParseException("Error parsing client " + e.message);
+            throw ConfigParseException("Error parsing client " + std::string(e.what()));
         }
     }
 
@@ -121,7 +116,7 @@ struct ProcessConfig
         }
         catch (const ConfigParseException &e)
         {
-            throw ConfigParseException("Error parsing proxy " + e.message);
+            throw ConfigParseException("Error parsing proxy " + std::string(e.what()));
         }
     }
 
@@ -139,7 +134,7 @@ struct ProcessConfig
         }
         catch (const ConfigParseException &e)
         {
-            throw ConfigParseException("Error parsing receiver " + e.message);
+            throw ConfigParseException("Error parsing receiver " + std::string(e.what()));
         }
     }
 
@@ -156,7 +151,7 @@ struct ProcessConfig
         }
         catch (const ConfigParseException &e)
         {
-            throw ConfigParseException("Error parsing replica " + e.message);
+            throw ConfigParseException("Error parsing replica " + std::string(e.what()));
         }
     }
 

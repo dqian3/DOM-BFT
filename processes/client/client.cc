@@ -81,7 +81,7 @@ namespace dombft
         // TODO cleanup... though we don't really reuse this
     }
 
-    void Client::Run()
+    void Client::run()
     {
         // Submit first request
         for (uint32_t i = 0; i < maxInFlight_; i++)
