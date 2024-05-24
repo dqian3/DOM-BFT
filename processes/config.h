@@ -1,3 +1,6 @@
+#ifndef PROCESS_CONFIG_H
+#define PROCESS_CONFIG_H
+
 #include <glog/logging.h>
 #include <stdint.h>
 #include <yaml-cpp/yaml.h>
@@ -20,44 +23,6 @@ public:
         return ConfigParseException("Config missing field " + field);
     }
 };
-
-template <class T>
-T parseField(const YAML::Node &parent, const std::string &key)
-{
-    if (!parent[key])
-    {
-        throw ConfigParseException("'" + key + "' not found");
-    }
-
-    try
-    {
-        return parent[key].as<T>();
-    }
-    catch (const YAML::BadConversion &e)
-    {
-        throw ConfigParseException("'" + key + "': " + e.msg + ".");
-    }
-}
-
-void parseStringVector(std::vector<std::string> &list, const YAML::Node &parent, const std::string &key)
-{
-    if (!parent[key])
-    {
-        throw ConfigParseException("'" + key + "' not found");
-    }
-
-    try
-    {
-        for (uint32_t i = 0; i < parent[key].size(); i++)
-        {
-            list.push_back(parent[key][i].as<std::string>());
-        }
-    }
-    catch (const YAML::BadConversion &e)
-    {
-        throw ConfigParseException("'" + key + "': " + e.msg + ".");
-    }
-}
 
 struct ProcessConfig
 {
@@ -82,6 +47,44 @@ struct ProcessConfig
     std::vector<std::string> replicaIps;
     int replicaPort;
     std::string replicaKeysDir;
+
+    template <class T>
+    T parseField(const YAML::Node &parent, const std::string &key)
+    {
+        if (!parent[key])
+        {
+            throw ConfigParseException("'" + key + "' not found");
+        }
+
+        try
+        {
+            return parent[key].as<T>();
+        }
+        catch (const YAML::BadConversion &e)
+        {
+            throw ConfigParseException("'" + key + "': " + e.msg + ".");
+        }
+    }
+
+    void parseStringVector(std::vector<std::string> &list, const YAML::Node &parent, const std::string &key)
+    {
+        if (!parent[key])
+        {
+            throw ConfigParseException("'" + key + "' not found");
+        }
+
+        try
+        {
+            for (uint32_t i = 0; i < parent[key].size(); i++)
+            {
+                list.push_back(parent[key][i].as<std::string>());
+            }
+        }
+        catch (const YAML::BadConversion &e)
+        {
+            throw ConfigParseException("'" + key + "': " + e.msg + ".");
+        }
+    }
 
     void parseClientConfig(const YAML::Node &root)
     {
@@ -140,7 +143,6 @@ struct ProcessConfig
         }
     }
 
-
     void parseReplicaConfig(const YAML::Node &root)
     {
         const YAML::Node &replicaNode = root["replica"];
@@ -179,3 +181,5 @@ struct ProcessConfig
         parseReplicaConfig(config);
     }
 };
+
+#endif

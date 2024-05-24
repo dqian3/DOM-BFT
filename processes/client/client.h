@@ -1,4 +1,4 @@
-#include "client_config.h"
+#include "processes/config.h"
 
 #include <fstream>
 #include <iostream>
@@ -6,7 +6,7 @@
 #include <thread>
 
 #include "lib/address.h"
-#include "lib/config.h"
+#include "lib/protocol_config.h"
 #include "lib/message_type.h"
 #include "lib/signature_provider.h"
 #include "lib/udp_endpoint.h"
@@ -35,7 +35,7 @@ namespace dombft
     {
     private:
         /* Config parameters that need to be saved */
-        int clientId_;
+        uint32_t clientId_;
         std::vector<Address> proxyAddrs_;
         std::vector<Address> replicaAddrs_;
         uint32_t f_;      
@@ -73,7 +73,7 @@ namespace dombft
         /** Client accepts a config file, which contains all the necessary information
          * to instantiate the object, then it can call Run method
          *  */
-        Client(const ClientConfig &config, const size_t clientId);
+        Client(const ProcessConfig &config, const size_t clientId);
         void Run();
         ~Client();
 

@@ -2,7 +2,7 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 
 
 cc_library(
-    name = "protocol_config.h",
+    name = "protocol_config",
     srcs = ["protocol_config.h"],
     hdrs = ["protocol_config.h"],
     visibility = ["//visibility:public"],

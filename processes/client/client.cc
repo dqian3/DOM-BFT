@@ -6,11 +6,11 @@ namespace dombft
 {
     using namespace dombft::proto;
 
-    Client::Client(const ClientConfig &config, size_t clientId)
-        : clientId_(clientId_)
+    Client::Client(const ProcessConfig &config, size_t id)
+        : clientId_(id)
     {
         LOG(INFO) << "clientId=" << clientId_;
-        std::string clientIP = config.clientIp;
+        std::string clientIP = config.clientIps[clientId_];
         LOG(INFO) << "clientIP=" << clientIP;
         int clientPort = config.clientPort;
         LOG(INFO) << "clientPort=" << clientPort;
@@ -18,20 +18,22 @@ namespace dombft
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < config.proxyIps.size(); i++)
         {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyPortBase;
+            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPortBase;
             proxyAddrs_.push_back(Address(config.proxyIps[i],
-                                          config.proxyPortBase));
+                                          config.proxyForwardPortBase));
         }
 
         /** Store all replica addrs */
         for (uint32_t i = 0; i < config.replicaIps.size(); i++)
         {
             replicaAddrs_.push_back(Address(config.replicaIps[i],
-                                            config.replicaPorts[i]));
+                                            config.replicaPort));
         }
 
         /* Setup keys */
-        if (!sigProvider_.loadPrivateKey(config.clientKey))
+        std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
+        LOG(INFO) << "Loading key from " << clientKey;
+        if (!sigProvider_.loadPrivateKey(clientKey))
         {
             LOG(ERROR) << "Error loading client private key, exiting...";
             exit(1);
@@ -44,22 +46,34 @@ namespace dombft
         }
 
         // TODO make this some sort of config
-        LOG(INFO) << "Simulating " << config.maxInFlight << " simultaneous clients!";
-        maxInFlight_ = config.maxInFlight;
+        LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
+        maxInFlight_ = config.clientMaxRequests;
 
 
         /** Initialize state */
         nextReqSeq_ = 1;
 
-        endpoint_ = new UDPEndpoint(clientIP, clientPort, true);
-        replyHandler_ = new UDPMessageHandler(
+        endpoint_ = std::make_unique<UDPEndpoint>(clientIP, clientPort, true);
+        replyHandler_ = std::make_unique<UDPMessageHandler>(
             [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {
-                ((Client *)ctx)->ReceiveReply(msgHdr, msgBuffer, sender);
+                ((Client *)ctx)->receiveReply(msgHdr, msgBuffer, sender);
             },
             this);
 
-        endpoint_->RegisterMsgHandler(replyHandler_);
+
+        // Handler only lives as long as the parent class
+        endpoint_->RegisterMsgHandler(replyHandler_.get());
+
+        timeoutTimer_ = std::make_unique<Timer>(
+            [](void *ctx, void *endpoint)
+            {
+                ((Client *)ctx)->checkTimeouts();
+            },
+            5000,
+            this);
+
+        endpoint_->RegisterTimer(timeoutTimer_.get());
     }
 
     Client::~Client()
@@ -82,6 +96,12 @@ namespace dombft
     {
         if (msgHdr->msgLen < 0)
         {
+            return;
+        }
+
+        if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", 0))
+        {
+            LOG(INFO) << "Failed to verify replica signature";
             return;
         }
 
@@ -128,7 +148,7 @@ namespace dombft
             reqState.signatures[reply.replica_id()] = sigProvider_.getSignature(msgHdr, msgBuffer);
 
 #if PROTOCOL == PBFT
-            if (numReplies_[reply.client_seq()] >= f_ * 2 + 1)
+            if (numReplies_[reply.client_seq()] >= f_.size() / 3 * 2 + 1)
             {
 
                 LOG(INFO) << "PBFT commit for " << reply.client_seq() - 1 << " took "
