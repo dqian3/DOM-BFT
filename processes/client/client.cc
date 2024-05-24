@@ -29,6 +29,7 @@ namespace dombft
             replicaAddrs_.push_back(Address(config.replicaIps[i],
                                             config.replicaPort));
         }
+        f_ = replicaAddrs_.size() / 3;
 
         /* Setup keys */
         std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -148,7 +149,7 @@ namespace dombft
             reqState.signatures[reply.replica_id()] = sigProvider_.getSignature(msgHdr, msgBuffer);
 
 #if PROTOCOL == PBFT
-            if (numReplies_[reply.client_seq()] >= f_.size() / 3 * 2 + 1)
+            if (numReplies_[reply.client_seq()] >= f_ / 3 * 2 + 1)
             {
 
                 LOG(INFO) << "PBFT commit for " << reply.client_seq() - 1 << " took "
@@ -271,7 +272,6 @@ namespace dombft
 
             if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT)
             {
-
                 VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
 
                 // Send cert to replicas;
@@ -351,6 +351,8 @@ namespace dombft
                     reply.seq()};
 
                 matchingReplies[key].insert(replicaId);
+                VLOG(3) << reply.view() << " " << reply.seq();
+
 
                 if (matchingReplies[key].size() >= 2 * f_ + 1)
                 {
@@ -366,6 +368,7 @@ namespace dombft
 
                     reqState.certTime = GetMicrosecondTimestamp();
                     
+                    VLOG(1) << "Created cert for request number " << clientSeq;
 #if IMMEDIATE_CERT
 
                     // if ( GetMicrosecondTimestamp() - reqState.certTime < NORMAL_PATH_TIMEOUT) {
