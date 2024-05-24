@@ -8,92 +8,48 @@ namespace dombft
 {
     using namespace dombft::proto;
 
-    Proxy::Proxy(const std::string &configFile)
+    Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     {
-        std::string error = proxyConfig_.parseConfig(configFile);
-        if (error != "")
+        numShards_ = config.proxyShards;
+        latencyBound_ = config.proxyInitialOwd;
+        maxOWD_ = config.proxyMaxOwd;
+
+        std::string proxyKey = config.clientKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
+        LOG(INFO) << "Loading key from " << proxyKey;
+        if (!sigProvider_.loadPrivateKey(proxyKey))
         {
-            LOG(ERROR) << "Error parsing proxy config: " << error << "Exiting.";
-            exit(1);
-        }
-        running_ = true;
-        
-        int numShards = proxyConfig_.proxyNumShards;
-        latencyBound_ = proxyConfig_.initialOwd;
-        maxOWD_ = proxyConfig_.maxOwd;
-
-        logMap_.resize(numShards);
-
-        if(!sigProvider_.loadPrivateKey(proxyConfig_.proxyKey)) {
             LOG(ERROR) << "Unable to load private key!";
             exit(1);
         }
 
-        for (int i = 0; i < numShards; i++)
+        for (int i = 0; i < numShards_; i++)
         {
-            forwardEps_.push_back(new UDPEndpoint(proxyConfig_.proxyIp,
-                                                        proxyConfig_.proxyForwardPortBase + i,
-                                                        false));
+            forwardEps_.push_back(new UDPEndpoint(config.proxyIps[proxyId],
+                                                  config.proxyForwardPortBase + i,
+                                                  false));
         }
-        measurmentEp_ = new UDPEndpoint(
-            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurementPort);
 
-        numReceivers_ = proxyConfig_.receiverIps.size();
+        measurmentEp_ = new UDPEndpoint(
+            config.proxyIps[proxyId], config.proxyMeasurementPort);
+
+        numReceivers_ = config.receiverIps.size();
         for (int i = 0; i < numReceivers_; i++)
         {
-            std::string receiverIp = proxyConfig_.receiverIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPort));
-        }
-    }
-    Proxy::Proxy(const size_t proxyId_)
-    {
-        std::string error = proxyConfig_.parseUnifiedConfig(CONFIG_FILENAME, proxyId_);
-        if (error != "")
-        {
-            LOG(ERROR) << "Error parsing proxy config: " << error << "Exiting.";
-            exit(1);
-        }
-        running_ = true;
-        
-        int numShards = proxyConfig_.proxyNumShards;
-        latencyBound_ = proxyConfig_.initialOwd;
-        maxOWD_ = proxyConfig_.maxOwd;
-
-        logMap_.resize(numShards);
-
-        if(!sigProvider_.loadPrivateKey(proxyConfig_.proxyKey)) {
-            LOG(ERROR) << "Unable to load private key!";
-            exit(1);
-        }
-
-        for (int i = 0; i < numShards; i++)
-        {
-            forwardEps_.push_back(new UDPEndpoint(proxyConfig_.proxyIp,
-                                                        proxyConfig_.proxyForwardPortBase + i,
-                                                        false));
-        }
-        measurmentEp_ = new UDPEndpoint(
-            proxyConfig_.proxyIp, proxyConfig_.proxyMeasurementPort);
-
-        numReceivers_ = proxyConfig_.receiverIps.size();
-        for (int i = 0; i < numReceivers_; i++)
-        {
-            std::string receiverIp = proxyConfig_.receiverIps[i];
-            //could change this back to proxyConfig_.recieverPort if the port number will stay same across receivers
-            receiverAddrs_.push_back(Address(receiverIp, proxyConfig_.receiverPorts[i]));
+            std::string receiverIp = config.receiverIps[i];
+            receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
         }
     }
 
-    void Proxy::Terminate()
+    void Proxy::terminate()
     {
         LOG(INFO) << "Terminating...";
         running_ = false;
     }
 
-    void Proxy::Run()
+    void Proxy::run()
     {
         running_ = true;
-        
+
         LaunchThreads();
         for (auto &kv : threads_)
         {
@@ -112,16 +68,13 @@ namespace dombft
         }
 
         // TODO Cleanup more
-
     }
 
     void Proxy::LaunchThreads()
     {
-        int shardNum = proxyConfig_.proxyNumShards;
-
         threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
 
-        for (int i = 0; i < shardNum; i++)
+        for (int i = 0; i < numShards_; i++)
         {
             std::string key = "ForwardRequestsTd-" + std::to_string(i);
             threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
@@ -142,7 +95,7 @@ namespace dombft
                 LOG(ERROR) << "Unable to parse Measurement_Reply message";
                 return;
             }
-            VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd(); 
+            VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd();
 
             if (reply.owd() > 0)
             {
@@ -163,7 +116,7 @@ namespace dombft
                 }
                 VLOG(1) << "Update bound " << latencyBound_ << " => " << estimatedOWD;
                 latencyBound_.store(estimatedOWD);
-             }
+            }
         };
 
         /* Checks every 10ms to see if we are done*/
@@ -186,24 +139,25 @@ namespace dombft
 
     void Proxy::ForwardRequestsTd(const int thread_id)
     {
-        MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender, void *context)        
+        MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender, void *context)
         {
             ClientRequest inReq; // Client request we get
             DOMRequest outReq;   // Outgoing request that we attach a deadline to
 
             VLOG(2) << "Received message from " << sender->GetIPAsString() << " " << hdr->msgLen;
-            if (hdr->msgType == MessageType::CLIENT_REQUEST)            {
+            if (hdr->msgType == MessageType::CLIENT_REQUEST)
+            {
 
                 // TODO verify and handle signed header better
-                if (!inReq.ParseFromArray(body, hdr->msgLen)) {
+                if (!inReq.ParseFromArray(body, hdr->msgLen))
+                {
                     LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                     return;
                 }
-                
 
                 outReq.set_send_time(GetMicrosecondTimestamp());
                 outReq.set_deadline(outReq.send_time() + latencyBound_);
-                outReq.set_proxy_id(proxyConfig_.proxyId);
+                outReq.set_proxy_id(proxyId_);
 
                 // TODO set these properly
                 outReq.set_deadline_set_size(numReceivers_);
@@ -214,12 +168,12 @@ namespace dombft
                 for (int i = 0; i < numReceivers_; i++)
                 {
                     VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to " << receiverAddrs_[i].ip_;
-                    
+
                     MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
                     sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 #endif
-                    forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]); 
+                    forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
                 }
 
                 // Log* litem = new Log();
@@ -267,6 +221,5 @@ namespace dombft
 
         forwardEps_[thread_id]->LoopRun();
     }
-
 
 } // namespace dombft

@@ -6,7 +6,7 @@
 #include <yaml-cpp/yaml.h>
 
 // Own libraries
-#include "lib/config.h"
+#include "lib/protocol_config.h"
 #include "lib/utils.h"
 #include "lib/endpoint.h"
 #include "lib/udp_endpoint.h"
@@ -14,7 +14,7 @@
 
 #include "proto/dombft_proto.pb.h"
 
-#include "proxy_config.h"
+#include "processes/process_config.h"
 
 namespace dombft
 {
@@ -28,9 +28,6 @@ namespace dombft
     class Proxy
     {
     private:
-        /** All the configuration parameters for this proxy are included in
-         * proxyConfig_*/
-        ProxyConfig proxyConfig_;
         /** Each thread is given a unique name (key) */
         std::map<std::string, std::thread *> threads_;
 
@@ -71,71 +68,20 @@ namespace dombft
          * ForwardRequestsTds read it and included in request messages */
         std::atomic<uint32_t> latencyBound_;
 
-        /** Upper bound of the estimated latencyBound_, used to clamp the bound,
-         * details in ``Adapative Latency Bound`` para of Sec 4 of our paper */
+        uint32_t proxyId_;
         uint32_t maxOWD_;
-
+        int numShards_;
         int numReceivers_;
         std::vector<Address> receiverAddrs_;
-
-        /** Just used to collect logs, can be deleted in the release version*/
-        struct Log
-        {
-            uint32_t replicaId_;
-            uint32_t clientId_;
-            uint32_t reqId_;
-            uint64_t clientTime_;
-            uint64_t proxyTime_;
-            uint64_t proxyEndProcessTime_;
-            uint64_t recvTime_;
-            uint64_t deadline_;
-            uint64_t fastReplyTime_;
-            uint64_t slowReplyTime_;
-            uint64_t proxyRecvTime_;
-            uint32_t commitType_;
-
-            Log(uint32_t rid = 0, uint32_t cId = 0, uint32_t reqId = 0,
-                uint64_t ctime = 0, uint64_t ptime = 0, uint64_t pedtime = 0,
-                uint64_t rtime = 0, uint64_t ddl = 0, uint64_t fttime = 0,
-                uint64_t swtime = 0, uint64_t prcvt = 0, uint32_t cmtt = 0)
-                : replicaId_(rid),
-                  clientId_(cId),
-                  reqId_(reqId),
-                  clientTime_(ctime),
-                  proxyTime_(ptime),
-                  recvTime_(rtime),
-                  deadline_(ddl),
-                  fastReplyTime_(fttime),
-                  slowReplyTime_(swtime),
-                  proxyRecvTime_(prcvt),
-                  commitType_(cmtt) {}
-            std::string ToString()
-            {
-                return std::to_string(replicaId_) + "," + std::to_string(clientId_) +
-                       "," + std::to_string(reqId_) + "," + std::to_string(clientTime_) +
-                       "," + std::to_string(proxyTime_) + "," +
-                       std::to_string(proxyEndProcessTime_) + "," +
-                       std::to_string(recvTime_) + "," + std::to_string(deadline_) + "," +
-                       std::to_string(fastReplyTime_) + "," +
-                       std::to_string(slowReplyTime_) + "," +
-                       std::to_string(proxyRecvTime_) + "," + std::to_string(commitType_);
-            }
-        };
-        ConcurrentQueue<Log> logQu_;
-        std::vector<ConcurrentMap<uint64_t, Log *>> logMap_;
 
     public:
         /** Proxy accept a config file, which contains all the necessary information
          * to instantiate the object, then it can call Run method
          *  */
-        Proxy(const std::string &configFile = "../configs/nezha-proxy-config.yaml");
-        Proxy(const size_t proxyId_);
+        Proxy(const ProcessConfig &config, uint32_t proxyId_);
         ~Proxy();
-        void Run();
-        void Terminate();
-
-        /** Tentative */
-        std::vector<std::vector<uint64_t>> replicaSyncedPoints_;
+        void run();
+        void terminate();
     };
 
 } // namespace nezha

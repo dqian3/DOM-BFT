@@ -10,7 +10,7 @@ cc_library(
         "//lib:signature_provider",
         "//lib:message_type",
         "//lib:protocol_config",
-        "//processes:config"
+        "//processes:process_config"
     ],
 )
 

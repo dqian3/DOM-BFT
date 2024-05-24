@@ -1,7 +1,7 @@
 
 cc_library(
-    name = "config",
-    hdrs = ["config.h"],
+    name = "process_config",
+    hdrs = ["process_config.h"],
     deps = [
         "@com_github_jbeder_yaml_cpp//:yaml-cpp",
     ],

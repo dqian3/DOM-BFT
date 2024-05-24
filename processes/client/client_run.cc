@@ -7,7 +7,6 @@ dombft::Client* client = NULL;
 int main(int argc, char* argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
-    FLAGS_logtostderr = 1;
 
     LOG(INFO) << "Loading config information from " << FLAGS_config;
 
