@@ -157,12 +157,12 @@ namespace dombft
 #endif
 
             // Send measurement reply right away
-            uint64_t recv_time = GetMicrosecondTimestamp();
+            int64_t recv_time = GetMicrosecondTimestamp();
 
             MeasurementReply mReply;
             mReply.set_receiver_id(receiverConfig_.receiverId);
             mReply.set_owd(recv_time - request.send_time());
-            VLOG(3) << "Measured delay: " << mReply.owd();
+            VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
             sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);

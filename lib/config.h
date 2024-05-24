@@ -16,4 +16,13 @@
 
 #define FABRIC_CRYPTO 0
 
+#define MAX_SPEC_HIST 20
+
+// Timeouts in us
+#define NORMAL_PATH_TIMEOUT    5000     // 5 ms
+#define RETRY_TIMEOUT          500000   // 500 ms
+
+// Whether to send a CERT message as soon as cert can be made
+#define IMMEDIATE_CERT 0 
+
 #endif

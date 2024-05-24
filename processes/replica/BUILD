@@ -1,3 +1,4 @@
+
 cc_library(
     name = "replica_config",
     hdrs = ["replica_config.h"],
@@ -6,17 +7,19 @@ cc_library(
     ],
 )
 
+
 cc_library(
     name = "replica_class",
     srcs = ["replica.cc"],
     hdrs = ["replica.h"],
     deps = [
-        "//proto:dombft_cc_proto",
+        "//proto:dombft_proto_cc",
         "//lib:utils",
         "//lib:address",
         "//lib:endpoint",
         "//lib:message_type",
         "//lib:config",
+        "//lib:log",
         ":replica_config",
     ],
 )

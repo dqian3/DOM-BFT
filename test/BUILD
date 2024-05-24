@@ -31,3 +31,31 @@ cc_binary(
     ],
 )
 
+
+cc_test(
+  name = "test_log",
+  size = "small",
+  srcs = ["test_log.cc"],
+  deps = [
+    "//lib:log",
+    "@com_google_googletest//:gtest_main"
+  ],
+)
+
+cc_test(
+  name = "test_kv_store",
+  size = "small",
+  srcs = ["test_kv_store.cc"],
+  deps = [
+    "//lib:application",
+    "@com_google_googletest//:gtest_main"
+  ],
+)
+
+cc_binary(
+  name = "protobuf_exp",
+  srcs = ["protobuf_exp.cc"],
+  deps = [
+      "//proto:dombft_proto_cc"
+  ],
+)

@@ -1,0 +1,22 @@
+syntax = "proto3";
+package dombft.apps;
+
+enum KVRequestType {
+    GET = 0;
+    SET = 1;
+    DELETE = 2;
+}
+
+message KVRequest {
+    KVRequestType msg_type = 1;
+    string key = 2;
+
+    // Optional
+    optional string value = 3;
+    
+}
+
+message KVResponse {
+    bool ok = 1;    
+    optional string value = 2;
+}

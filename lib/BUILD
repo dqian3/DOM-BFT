@@ -100,3 +100,31 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "log",
+    hdrs = ["log.h"],
+    srcs = ["log.cc"],
+    deps = [
+
+        ":common_struct",
+        ":config",
+        "@com_github_google_glog//:glog",
+        "@openssl//:openssl",
+        "//proto:dombft_proto_cc",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+
+cc_library(
+    name = "application",
+    hdrs = ["application.h"] + glob(["apps/*"]),
+    srcs = glob(["apps/*"]),
+    deps = [
+        "//proto:dombft_apps_cc",
+        ":common_struct",
+        ":config",
+         "@openssl//:openssl",
+    ],
+    visibility = ["//visibility:public"],
+)

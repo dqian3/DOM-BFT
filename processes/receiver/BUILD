@@ -11,7 +11,7 @@ cc_library(
     srcs = ["receiver.cc"],
     hdrs = ["receiver.h"],
     deps = [
-        "//proto:dombft_cc_proto",
+        "//proto:dombft_proto_cc",
         "//lib:utils",
         "//lib:address",
         "//lib:endpoint",

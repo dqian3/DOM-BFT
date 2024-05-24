@@ -1,10 +1,10 @@
 # Proxy Info
-clientId: 0
-clientIp: "127.0.0.7"
-clientKey: keys/clients/client0.pem
+clientId: 1
+clientIp: "127.0.0.8"
+clientKey: keys/clients/client1.pem
 clientPort: 33000
 
-maxInFlight: 1
+maxInFlight: 10
 
 # Receiver Info
 replicaIps:

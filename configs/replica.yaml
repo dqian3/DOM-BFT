@@ -12,6 +12,8 @@ replicaPort: 34000
 # Client Info
 clientIps: 
   - "127.0.0.7"
+  - "127.0.0.8"
+
 clientKeysDir: keys/clients
 clientPort: 33000
 

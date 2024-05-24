@@ -25,6 +25,6 @@ using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
 const std::string CONFIG_FILENAME("configs/config.yaml");
 // Get Current Microsecond Timestamp
-uint64_t GetMicrosecondTimestamp();
+int64_t GetMicrosecondTimestamp();
 
 #endif
