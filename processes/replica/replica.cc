@@ -13,11 +13,14 @@ namespace dombft
         // TODO check for config errors
         std::string replicaIp = config.replicaIps[replicaId];
         LOG(INFO) << "replicaIP=" << replicaIp;
+
+        std::string bindAddress = config.receiverLocal ? "0.0.0.0" : replicaIp;
+        LOG(INFO) << "bindAddress=" << bindAddress;
+
         int replicaPort = config.replicaPort;
         LOG(INFO) << "replicaPort=" << replicaPort;
 
-
-    std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".pem";
+        std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".pem";
         LOG(INFO) << "Loading key from " << replicaKey;
         if (!sigProvider_.loadPrivateKey(replicaKey))
         {
@@ -58,8 +61,8 @@ namespace dombft
                                             config.clientPort));
         }
 
-
-        endpoint_ = std::make_unique<UDPEndpoint>(replicaIp, replicaPort, true);
+    
+        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
         handler_ = std::make_unique<UDPMessageHandler>(
             [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
             {

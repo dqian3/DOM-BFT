@@ -29,11 +29,14 @@ namespace dombft
             exit(1);
         }
 
-        /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++)
-        {
-            replicaAddrs_.push_back(Address(config.replicaIps[i],
-                                            config.replicaPort));
+        /** Store replica addrs */
+
+        if (config.receiverLocal) {
+            replicaAddr_ = (Address("127.0.0.1",
+                                        config.replicaPort));
+        } else {
+            replicaAddr_ = (Address(config.replicaIps[receiverId],
+                                    config.replicaPort));
         }
 
         endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);

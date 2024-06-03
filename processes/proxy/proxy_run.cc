@@ -4,7 +4,7 @@
 #include <memory>
 
 DEFINE_string(config, "configs/config.yaml", "The config file for the proxy");
-DEFINE_uint32(proxy_id, 0, "The proxy id.");
+DEFINE_uint32(proxyId, 0, "The proxy id.");
 
 std::unique_ptr<dombft::Proxy> proxy;
 void terminate(int para) {
@@ -21,6 +21,6 @@ int main(int argc, char* argv[]) {
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
 
-    proxy = std::make_unique<dombft::Proxy>(config, FLAGS_proxy_id);
+    proxy = std::make_unique<dombft::Proxy>(config, FLAGS_proxyId);
     proxy->run();
 }

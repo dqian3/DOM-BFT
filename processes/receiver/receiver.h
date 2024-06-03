@@ -48,7 +48,7 @@ namespace dombft
 
         uint32_t receiverId_;
         uint32_t proxyMeasurementPort_;
-        std::vector<Address> replicaAddrs_;
+        Address replicaAddr_;
 
 
     public:

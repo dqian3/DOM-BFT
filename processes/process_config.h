@@ -38,6 +38,7 @@ struct ProcessConfig
     int receiverPort;
     std::string receiverKeysDir;
     int receiverShards;
+    bool receiverLocal;
 
     std::vector<std::string> replicaIps;
     int replicaPort;
@@ -131,6 +132,7 @@ struct ProcessConfig
             receiverPort = parseField<int>(receiverNode, "port");
             receiverKeysDir = parseField<std::string>(receiverNode, "keysDir");
             receiverShards = parseField<int>(receiverNode, "shards");
+            receiverLocal = parseField<bool>(receiverNode, "local");
         }
         catch (const ConfigParseException &e)
         {
@@ -174,6 +176,11 @@ struct ProcessConfig
         parseProxyConfig(config);
         parseReceiverConfig(config);
         parseReplicaConfig(config);
+
+        // TODO do some verification
+        // number of receivers = number of replicas
+        // number of replcias > 3f + 1?
+        // etc.
     }
 };
 
