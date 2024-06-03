@@ -30,6 +30,8 @@ bazel build //processes/...
 The built executables will be created by default in `bazel-bin`, inside of which is 
 the same directory structure as the source, containing the executables.
 
+The [/scripts](/scripts) directory also contains a number of helpful scripts for
+running the executables both locally and remotely.
 
 ## Basic Docker Setup
 

@@ -1,6 +1,6 @@
 client:
   ips: 
-  - "127.0.0.7"
+  - "127.0.0.10"
   port: 33000
   keysDir: keys/clients
   maxRequests: 1
@@ -9,7 +9,7 @@ client:
 # Proxy Info
 proxy:
   ips: 
-    - "127.0.0.5"  
+    - "127.0.0.9"  
   shards: 1
   forwardPortBase: 31000
   measurementPort: 32000
@@ -20,7 +20,10 @@ proxy:
 # Receiver Info
 receiver:
   ips: 
+    - "127.0.0.5"
     - "127.0.0.6"
+    - "127.0.0.7"
+    - "127.0.0.8"
   port: 33000
   keysDir: keys/receivers
   shards: 1 # The number of threads to receive threads 

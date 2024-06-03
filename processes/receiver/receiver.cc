@@ -147,13 +147,7 @@ namespace dombft
 #if FABRIC_CRYPTO
             sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 #endif
-            VLOG(4) << "Number of replicas to forward to: " << replicaAddrs_.size() << std::endl;
-
-            for (const Address &addr : replicaAddrs_)
-            {
-                VLOG(4) << "Forwarding request to " << addr.ip_ << ":" << addr.port_ << std::endl;
-                endpoint_->SendPreparedMsgTo(addr, true);
-            }
+            endpoint_->SendPreparedMsgTo(replicaAddr_, true);
             endpoint_->setBufReady(false);
         }
     }

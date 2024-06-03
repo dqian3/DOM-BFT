@@ -100,12 +100,6 @@ namespace dombft
             return;
         }
 
-        if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", 0))
-        {
-            LOG(INFO) << "Failed to verify replica signature";
-            return;
-        }
-
         Reply reply;
         if (msgHdr->msgType == MessageType::REPLY || msgHdr->msgType == MessageType::FAST_REPLY)
         {

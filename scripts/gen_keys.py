@@ -31,8 +31,10 @@ for process in dirs:
 
     subprocess.run(["mkdir", "-p", key_dir])
 
+    print(f"Generating {nkeys} keys for {process}")
     for i in range(nkeys):
         key_path = os.path.join(key_dir, process + f"{i}")
+        print(key_path)
         subprocess.run(["openssl", "genrsa", "-out", key_path + ".pem", "2048"])
         subprocess.run(["openssl", "rsa", "-in", key_path + ".pem", "-pubout", "-out", key_path + ".pub"])
         
