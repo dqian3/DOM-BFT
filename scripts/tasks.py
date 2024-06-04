@@ -59,17 +59,17 @@ def local(c, config_file):
 
 
 @task 
-def gcloud(c, config_file):
+def gcloud(c, config_file, compile=False, copy_bin=False, copy_keys=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
-    # number of replicas
+    # ips of each process 
     replicas = config["replica"]["ips"]
-    clients = config["client"]["ips"]
-    proxies = config["proxy"]["ips"]
     receivers = config["receiver"]["ips"]
+    proxies = config["proxy"]["ips"]
+    clients = config["client"]["ips"]
 
     # parse gcloud CLI to get internalIP -> externalIP mapping
     gcloud_output = c.run("gcloud compute instances list").stdout[1:].splitlines()
@@ -81,8 +81,6 @@ def gcloud(c, config_file):
     }
 
 
-    # TODO setup and compile if needed
-
     # TODO transfer keys and configs
     ips = []
     for ip in clients + replicas + proxies: # TODO non local receivers?
@@ -92,12 +90,98 @@ def gcloud(c, config_file):
         *ips
     )
 
+
     group.put(config_file)
+    
+    # Copy keys over
+
+    if copy_keys:
+        print("Copying keys over...")
+        for process in ["client", "replica", "receiver", "proxy"]:
+            group.run(f"mkdir -p keys/{process}")
+            for filename in os.listdir(f"../keys/{process}"):
+                group.put(os.path.join(f"../keys/{process}", filename), f"keys/{process}")
+
+
+    if compile:
+        print("Cloning/building repo...")
+        group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
+        group.run("cd DOM-BFT && git pull && bazel build //processes/...")
+
+        group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~") 
+        group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~") 
+        group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
+        group.run("cp ./DOM-BFT/bazel-bin/processes/client/dombft_client ~") 
+
+
+    if copy_bin:        
+        print("Copying binaries over...")
+        
+        group.run("rm dombft_*")
+        group.put("../bazel-bin/processes/replica/dombft_replica")
+        group.put("../bazel-bin/processes/receiver/dombft_receiver")
+        group.put("../bazel-bin/processes/proxy/dombft_proxy")
+        group.put("../bazel-bin/processes/client/dombft_client")
+
+    replica_path = "./dombft_replica" 
+    receiver_path = "./dombft_receiver" 
+    proxy_path = "./dombft_proxy" 
+    client_path = "./dombft_client" 
+
+    clients = [ext_ips[ip] for ip in clients]
+    replicas = [ext_ips[ip] for ip in replicas]
+    receivers = [ext_ips[ip] for ip in receivers]
+    proxies = [ext_ips[ip] for ip in proxies]
+
     remote_config_file = os.path.basename(config_file)
 
-    handles = group.run("sleep 5", asynchronous=True, warn=True)
+    client_handles = []
+    other_handles = []
 
-    for hdl in handles:
-        print(hdl)
-        handles[hdl].runner.kill()
-        handles[hdl].join()
+    def local_log_arun(logfile, ip):
+        def arun(*args, **kwargs):
+            log = open(logfile, "w")
+            conn = Connection(ip)
+
+            # print(f"Running {args}")
+            conn.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+            print(f"Running {args}")
+            return conn.run(*args, **kwargs, asynchronous=True, warn=True, out_stream=log)
+            
+        return arun
+
+    c.run("mkdir -p logs")
+    for id, ip in enumerate(replicas):
+        print("Starting replicas")
+        arun = local_log_arun(f"logs/replica{id}.log", ip)
+        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} 2>&1")
+        other_handles.append(hdl)
+            
+    for id, ip in enumerate(receivers):
+        print("Starting receivers")
+        arun = local_log_arun(f"logs/receiver{id}.log", ip)
+        hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id} 2>&1")
+        other_handles.append(hdl)
+
+    for id, ip in enumerate(proxies):
+        print("Starting proxies")
+        arun = local_log_arun(f"logs/proxy{id}.log", ip)
+        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} 2>&1")
+        other_handles.append(hdl)
+
+    for id, ip in enumerate(clients):
+        print("Starting clients")
+        arun = local_log_arun(f"logs/client{id}.log", ip)
+        hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id} 2>&1")
+        client_handles.append(hdl)
+
+    try:
+        # join on the client processes, which should end
+        for hdl in client_handles:
+            hdl.join()
+
+    finally:
+        # kill these processes and then join
+        for hdl in other_handles:
+            hdl.runner.kill()
+            hdl.join()

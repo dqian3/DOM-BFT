@@ -2,7 +2,7 @@ client:
   ips: 
   - "127.0.0.10"
   port: 33000
-  keysDir: keys/clients
+  keysDir: keys/client
   maxRequests: 1
 
 
@@ -13,7 +13,7 @@ proxy:
   shards: 1
   forwardPortBase: 31000
   measurementPort: 32000
-  keysDir: keys/proxies
+  keysDir: keys/proxy
   initialOwd: 1000 # The initial one-way delay (usecs) between replicas and proxies
   maxOwd: 5000
 
@@ -25,7 +25,7 @@ receiver:
     - "127.0.0.7"
     - "127.0.0.8"
   port: 33000
-  keysDir: keys/receivers
+  keysDir: keys/receiver
   shards: 1 # The number of threads to receive threads 
   local: false # Although it's local, we actually use distinct loopback addresses for localhost experiments :)
 
@@ -37,4 +37,4 @@ replica:
   - "127.0.0.3"
   - "127.0.0.4"
   port: 34000
-  keysDir: "keys/replicas"
+  keysDir: "keys/replica"

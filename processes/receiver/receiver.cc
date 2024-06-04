@@ -138,7 +138,7 @@ namespace dombft
         }
         else
         {
-            VLOG(1) << "Forwarding Request with deadline " << request.deadline();
+            VLOG(1) << "Forwarding Request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString();
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
             // TODO check errors for all of these lol
