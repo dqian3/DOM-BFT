@@ -3,6 +3,7 @@ from fabric import Connection, ThreadingGroup, SerialGroup
 from invoke import task
 import yaml
 import os
+import time
 
 # TODO we can process output of these here instead of in the terminal
 
@@ -138,39 +139,43 @@ def gcloud(c, config_file, compile=False, copy_bin=False, copy_keys=False):
     client_handles = []
     other_handles = []
 
+    group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+
+
     def local_log_arun(logfile, ip):
         def arun(*args, **kwargs):
             log = open(logfile, "w")
             conn = Connection(ip)
 
             # print(f"Running {args}")
-            conn.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
-            print(f"Running {args}")
+            print(f"Running {args} on {ip}" )
             return conn.run(*args, **kwargs, asynchronous=True, warn=True, out_stream=log)
             
         return arun
 
     c.run("mkdir -p logs")
+    print("Starting replicas")
     for id, ip in enumerate(replicas):
-        print("Starting replicas")
         arun = local_log_arun(f"logs/replica{id}.log", ip)
         hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} 2>&1")
         other_handles.append(hdl)
             
+    print("Starting receivers")
     for id, ip in enumerate(receivers):
-        print("Starting receivers")
         arun = local_log_arun(f"logs/receiver{id}.log", ip)
         hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id} 2>&1")
         other_handles.append(hdl)
 
+    print("Starting proxies")
     for id, ip in enumerate(proxies):
-        print("Starting proxies")
         arun = local_log_arun(f"logs/proxy{id}.log", ip)
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} 2>&1")
         other_handles.append(hdl)
 
+    time.sleep(5)
+
+    print("Starting clients")
     for id, ip in enumerate(clients):
-        print("Starting clients")
         arun = local_log_arun(f"logs/client{id}.log", ip)
         hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id} 2>&1")
         client_handles.append(hdl)
