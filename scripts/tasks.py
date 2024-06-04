@@ -59,19 +59,7 @@ def local(c, config_file):
             hdl.join()
 
 
-@task 
-def gcloud(c, config_file, compile=False, copy_bin=False, copy_keys=False):
-    config_file = os.path.abspath(config_file)
-
-    with open(config_file) as cfg_file:
-        config = yaml.load(cfg_file, Loader=yaml.Loader)
-
-    # ips of each process 
-    replicas = config["replica"]["ips"]
-    receivers = config["receiver"]["ips"]
-    proxies = config["proxy"]["ips"]
-    clients = config["client"]["ips"]
-
+def get_gcloud_ext_ips(c):
     # parse gcloud CLI to get internalIP -> externalIP mapping
     gcloud_output = c.run("gcloud compute instances list").stdout[1:].splitlines()
     gcloud_output = map(lambda s : s.split(), gcloud_output)
@@ -81,66 +69,135 @@ def gcloud(c, config_file, compile=False, copy_bin=False, copy_keys=False):
         for line in gcloud_output
     }
 
+    return ext_ips
+
+
+def get_gcloud_process_group(config, ext_ips):
+    int_ips = set()
+    for process in config:
+        int_ips |= set([ip for ip in config[process]["ips"]])
 
     # TODO transfer keys and configs
     ips = []
-    for ip in clients + replicas + proxies: # TODO non local receivers?
+    for ip in int_ips: # TODO non local receivers?
         ips.append(ext_ips[ip])
     
     group = ThreadingGroup(
         *ips
     )
+    return group
 
 
+@task
+def gcloud_build(c, config_file):
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
+    group.put(config_file)
+
+    print("Cloning/building repo...")
+    group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
+    group.run("cd DOM-BFT && git pull && bazel build //processes/...")
+
+    group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~") 
+    group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~") 
+    group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
+    group.run("cp ./DOM-BFT/bazel-bin/processes/client/dombft_client ~") 
+
+
+@task 
+def gcloud_copy_keys(c, config_file):
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
     group.put(config_file)
     
-    # Copy keys over
-
-    if copy_keys:
-        print("Copying keys over...")
-        for process in ["client", "replica", "receiver", "proxy"]:
-            group.run(f"mkdir -p keys/{process}")
-            for filename in os.listdir(f"../keys/{process}"):
-                group.put(os.path.join(f"../keys/{process}", filename), f"keys/{process}")
+    print("Copying keys over...")
+    for process in ["client", "replica", "receiver", "proxy"]:
+        group.run(f"mkdir -p keys/{process}")
+        for filename in os.listdir(f"../keys/{process}"):
+            group.put(os.path.join(f"../keys/{process}", filename), f"keys/{process}")
 
 
-    if compile:
-        print("Cloning/building repo...")
-        group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-        group.run("cd DOM-BFT && git pull && bazel build //processes/...")
+@task 
+def gcloud_copy_bin(c, config_file):
+    config_file = os.path.abspath(config_file)
 
-        group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~") 
-        group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~") 
-        group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
-        group.run("cp ./DOM-BFT/bazel-bin/processes/client/dombft_client ~") 
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
+
+    replicas = config["replica"]["ips"]
+    receivers = config["receiver"]["ips"]
+    proxies = config["proxy"]["ips"]
+    clients = config["client"]["ips"]
+
+    replicas = SerialGroup(*[ext_ips[ip] for ip in replicas])
+    receivers = SerialGroup(*[ext_ips[ip] for ip in receivers])
+    proxies = SerialGroup(*[ext_ips[ip] for ip in proxies])
+    clients = SerialGroup(*[ext_ips[ip] for ip in clients])
 
 
-    if copy_bin:        
-        print("Copying binaries over...")
-        
-        group.run("rm dombft_*")
-        group.put("../bazel-bin/processes/replica/dombft_replica")
-        group.put("../bazel-bin/processes/receiver/dombft_receiver")
-        group.put("../bazel-bin/processes/proxy/dombft_proxy")
-        group.put("../bazel-bin/processes/client/dombft_client")
+    print("Copying binaries over...")
+    group.run("rm dombft_*")
+    
+    replicas.put("../bazel-bin/processes/replica/dombft_replica")
+    print("Copied replica")
+
+    receivers.put("../bazel-bin/processes/receiver/dombft_receiver")
+    print("Copied receiver")
+
+    proxies.put("../bazel-bin/processes/proxy/dombft_proxy")
+    print("Copied proxy")
+
+    clients.put("../bazel-bin/processes/client/dombft_client")
+    print("Copied client")
+
+
+@task 
+def gcloud_run(c, config_file):
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
+    group.put(config_file)
+    group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+
+    # ips of each process 
+    replicas = config["replica"]["ips"]
+    receivers = config["receiver"]["ips"]
+    proxies = config["proxy"]["ips"]
+    clients = config["client"]["ips"]
 
     replica_path = "./dombft_replica" 
     receiver_path = "./dombft_receiver" 
     proxy_path = "./dombft_proxy" 
     client_path = "./dombft_client" 
 
-    clients = [ext_ips[ip] for ip in clients]
     replicas = [ext_ips[ip] for ip in replicas]
     receivers = [ext_ips[ip] for ip in receivers]
     proxies = [ext_ips[ip] for ip in proxies]
+    clients = [ext_ips[ip] for ip in clients]
 
     remote_config_file = os.path.basename(config_file)
 
     client_handles = []
     other_handles = []
-
-    group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
-
 
     def local_log_arun(logfile, ip):
         def arun(*args, **kwargs):
