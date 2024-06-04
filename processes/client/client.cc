@@ -226,7 +226,8 @@ namespace dombft
         requestStates_[nextReqSeq_].sendTime = request.send_time();
 
 #if USE_PROXY && PROTOCOL == DOMBFT
-        Address &addr = proxyAddrs_[0];
+        // TODO how to chhoose proxy
+        Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
 
         // TODO maybe client should own the memory instead of endpoint.
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
