@@ -22,12 +22,6 @@ int main(int argc, char *argv[])
     EVP_PKEY* key = NULL;
     PEM_read_bio_PrivateKey( bo, &key, 0, 0 );
 
-    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
-    EVP_PKEY_keygen_init(pctx);
-    EVP_PKEY_keygen(pctx, &key);
-    EVP_PKEY_CTX_free(pctx);
-
-
     if(key == NULL)
         goto err;
     
