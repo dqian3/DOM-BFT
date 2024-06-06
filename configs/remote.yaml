@@ -4,7 +4,7 @@ client:
   # - "10.128.0.5"
   port: 33000
   keysDir: keys/client
-  maxRequests: 5
+  maxRequests: 1
 
 
 # Proxy Info
@@ -16,8 +16,8 @@ proxy:
   forwardPortBase: 31000
   measurementPort: 32000
   keysDir: keys/proxy
-  initialOwd: 1000 # The initial one-way delay (usecs) between replicas and proxies
-  maxOwd: 5000
+  initialOwd: 5000 # The initial one-way delay (usecs) between replicas and proxies
+  maxOwd: 10000
 
 # Receiver Info
 receiver:
@@ -38,6 +38,6 @@ replica:
   - "10.128.0.6"
   - "10.128.0.7"
   - "10.128.0.8"
-  - "10.128.0.9"
+  # - "10.128.0.9"
   port: 34000
   keysDir: "keys/replica"

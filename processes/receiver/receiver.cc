@@ -115,14 +115,17 @@ namespace dombft
             // Check if request is on time.
             request.set_late(recv_time > request.deadline());
 
+            VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+
             if (request.late())
             {
-                VLOG(3) << "Request is late, sending immediately";
+                VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline()
+                        << " late by " << recv_time - request.deadline() << "us";
                 forwardRequest(request);
             }
             else
             {
-                VLOG(3) << "Adding request to priority queue with deadline " << request.deadline()
+                VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline()
                         << " in " << request.deadline() - recv_time << "us";
                 deadlineQueue_[{request.deadline(), request.client_id()}] = request;
             }

@@ -112,8 +112,6 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
     with open("../ttcs-agent.cfg") as ttcs_file:
         ttcs_template = ttcs_file.read()
 
-    print(ttcs_template)
-
     ip = int_ips[0]
     ttcs_config = ttcs_template.format(ip, ip, 10, "false")
     Connection(ext_ips[ip]).run(f"echo '{ttcs_config}' | sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
@@ -125,9 +123,15 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
     group.run("sudo systemctl stop ntp", warn=True)
     group.run("sudo systemctl disable ntp", warn=True)
+    group.run("sudo systemctl stop systemd-timesyncd", warn=True)
+    group.run("sudo systemctl disable systemd-timesyncd", warn=True)
 
-    group.run("sudo systemctl start ttcs-agent", warn=True)
     group.run("sudo systemctl enable ttcs-agent", warn=True)
+
+    if install:
+        group.run("sudo systemctl start ttcs-agent")
+    else:
+        group.run("sudo systemctl restart ttcs-agent")
 
 
 @task
@@ -255,19 +259,19 @@ def gcloud_run(c, config_file="../configs/remote.yaml"):
     c.run("mkdir -p logs")
     print("Starting replicas")
     for id, ip in enumerate(replicas):
-        arun = local_log_arun(f"logs/replica{id}.log", ip)
+        arun = local_log_arun(f"../logs/replica{id}.log", ip)
         hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} 2>&1")
         other_handles.append(hdl)
             
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = local_log_arun(f"logs/receiver{id}.log", ip)
+        arun = local_log_arun(f"../logs/receiver{id}.log", ip)
         hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id} 2>&1")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = local_log_arun(f"logs/proxy{id}.log", ip)
+        arun = local_log_arun(f"../logs/proxy{id}.log", ip)
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} 2>&1")
         other_handles.append(hdl)
 
@@ -275,7 +279,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml"):
 
     print("Starting clients")
     for id, ip in enumerate(clients):
-        arun = local_log_arun(f"logs/client{id}.log", ip)
+        arun = local_log_arun(f"../logs/client{id}.log", ip)
         hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id} 2>&1")
         client_handles.append(hdl)
 

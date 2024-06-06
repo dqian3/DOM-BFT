@@ -66,7 +66,8 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
     
-    VLOG(4) << "Adding new entry at seq=" << nextSeq;
+    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id
+            << " c_seq=" << c_seq;
     nextSeq++;
     // TODO
 

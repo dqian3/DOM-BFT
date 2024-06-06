@@ -156,13 +156,15 @@ namespace dombft
                 }
 
                 outReq.set_send_time(GetMicrosecondTimestamp());
-                outReq.set_deadline(outReq.send_time() + latencyBound_);
+                outReq.set_deadline(outReq.send_time() + 1.5 * latencyBound_);
                 outReq.set_proxy_id(proxyId_);
 
                 // TODO set these properly
                 outReq.set_deadline_set_size(numReceivers_);
                 outReq.set_late(false);
 
+                outReq.set_client_id(inReq.client_id());
+                outReq.set_client_seq(inReq.client_seq());
                 outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
                 for (int i = 0; i < numReceivers_; i++)
@@ -175,32 +177,6 @@ namespace dombft
 #endif
                     forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
                 }
-
-                // Log* litem = new Log();
-                // litem->clientId_ = request.clientid();
-                // litem->reqId_ = request.reqid();
-                // litem->clientTime_ = request.clienttime();
-                // litem->proxyTime_ = request.sendtime();
-                // litem->deadline_ = request.sendtime() + request.bound();
-                // logs.assign(reqKey, litem);
-                // litem->proxyEndProcessTime_ = GetMicrosecondTimestamp();
-                // LOG(INFO) << "id=" << id << "\t"
-                //           << "cid=" << request.clientid() << "\t" << request.reqid();
-
-                // forwardCnt++;
-                // if (forwardCnt == 1) {
-                //   startTime = GetMicrosecondTimestamp();
-                // } else if (forwardCnt % 100 == 0) {
-                //   endTime = GetMicrosecondTimestamp();
-                //   float rate = 100 / ((endTime - startTime) * 1e-6);
-                //   LOG(INFO) << "Forward-Id=" << id << "\t"
-                //             << "count =" << forwardCnt << "\t"
-                //             << "rate=" << rate << " req/sec"
-                //             << "\t"
-                //             << "req is <" << request.clientid() << ","
-                //             << request.reqid() << ">";
-                //   startTime = endTime;
-                // }
             }
         };
 
