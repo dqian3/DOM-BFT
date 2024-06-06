@@ -88,6 +88,46 @@ def get_gcloud_process_group(config, ext_ips):
     return group
 
 
+@task 
+def gcloud_clockwork(c, config_file, install=False):
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    ext_ips = get_gcloud_ext_ips(c)
+    int_ips = config["proxy"]["ips"] + config["receiver"]["ips"] 
+
+    # Only need to do this on proxies and receivers
+    group = ThreadingGroup(
+        *(ext_ips[ip] for ip in int_ips)
+    )
+
+    if install:
+        group.put("../ttcs-agent_1.3.0_amd64.deb")
+        group.run("sudo dpkg -i ttcs-agent_1.3.0_amd64.deb")
+
+    with open("../ttcs-agent.cfg") as ttcs_file:
+        ttcs_template = ttcs_file.read()
+
+    print(ttcs_template)
+
+    ip = int_ips[0]
+    ttcs_config = ttcs_template.format(ip, ip, 10, "false")
+    Connection(ext_ips[ip]).run(f"echo '{ttcs_config}' | sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
+
+    for ip in int_ips[1:]:
+        ttcs_config = ttcs_template.format(ip, ip, 1, "true")
+        Connection(ext_ips[ip]).run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
+
+
+    group.run("sudo systemctl stop ntp", warn=True)
+    group.run("sudo systemctl disable ntp", warn=True)
+
+    group.run("sudo systemctl start ttcs-agent", warn=True)
+    group.run("sudo systemctl enable ttcs-agent", warn=True)
+
+
 @task
 def gcloud_build(c, config_file):
     config_file = os.path.abspath(config_file)
@@ -234,7 +274,7 @@ def gcloud_run(c, config_file):
     print("Starting clients")
     for id, ip in enumerate(clients):
         arun = local_log_arun(f"logs/client{id}.log", ip)
-        hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id} 2>&1")
+        hdl = arun(f"{client_path} -v {2} -config {remote_config_file} -clientId {id} 2>&1")
         client_handles.append(hdl)
 
     try:

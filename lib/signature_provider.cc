@@ -40,7 +40,6 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
             if (dirEntry.path().extension() != ".pub")
                 continue;
 
-
             EVP_PKEY *pubKey = nullptr;
             BIO *bo = BIO_new_file(dirEntry.path().c_str(), "r");
             PEM_read_bio_PUBKEY(bo, &pubKey, 0, 0);
@@ -64,11 +63,9 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
         LOG(ERROR) << e.what();
         return false;
     }
-    
 
     LOG(INFO) << "Loaded " << pubKeys_[keyType].size() << " keys for "
               << keyType << " from '" << keyDir << "'";
-
 
     return true;
 }
@@ -100,16 +97,31 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
     EVP_MD_CTX *mdctx = NULL;
     if (!(mdctx = EVP_MD_CTX_create()))
         return -1;
-    // Use SHA256 as digest to sign
-    if (1 != EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, privKey_))
-        return -1;
-    if (1 != EVP_DigestSignUpdate(mdctx, data, hdr->msgLen))
-        return -1;
 
-    if (1 != EVP_DigestSignFinal(mdctx, NULL, &sigLen))
+    // These are ust taken from examples here:
+    // https://www.openssl.org/docs/man3.0/man7/Ed25519.html
+    // https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
+    if (EVP_PKEY_id(privKey_) == EVP_PKEY_ED25519)
     {
-        LOG(ERROR) << "Failed to calculate signature length!\n";
-        return -1;
+        if (1 != EVP_DigestSignInit(mdctx, NULL, NULL, NULL, privKey_))
+            return -1;
+        if (1 != EVP_DigestSign(mdctx, NULL, &sigLen, data, hdr->msgLen))
+            return -1;
+        if (1 != EVP_DigestSign(mdctx, sig, &sigLen, data, hdr->msgLen))
+            return -1;
+    }
+    else
+    {
+        if (1 != EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, privKey_))
+            return -1;
+        if (1 != EVP_DigestSignUpdate(mdctx, data, hdr->msgLen))
+            return -1;
+
+        if (1 != EVP_DigestSignFinal(mdctx, NULL, &sigLen))
+        {
+            LOG(ERROR) << "Failed to calculate signature length!\n";
+            return -1;
+        }
     }
     hdr->sigLen = sigLen;
 
@@ -131,13 +143,13 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 std::string SignatureProvider::getSignature(MessageHeader *hdr, byte *body)
 {
     byte *data = (byte *)(hdr + 1);
-    return std::string((char *) data + hdr->msgLen, hdr->sigLen);
+    return std::string((char *)data + hdr->msgLen, hdr->sigLen);
 }
 
-
-bool SignatureProvider::verify(byte *data, uint32_t dataLen,  byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId)
-{ 
-    if (!pubKeys_[pubKeyType].count(pubKeyId)) {
+bool SignatureProvider::verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId)
+{
+    if (!pubKeys_[pubKeyType].count(pubKeyId))
+    {
         LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";
         return false;
     }
@@ -152,27 +164,48 @@ bool SignatureProvider::verify(byte *data, uint32_t dataLen,  byte *sig, uint32_
         return false;
     }
 
-    if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, key))
+    if (EVP_PKEY_id(privKey_) == EVP_PKEY_ED25519)
     {
-        LOG(ERROR) << "Error initializing digest context";
-        return false;
-    }
+        if (1 != EVP_DigestVerifyInit(mdctx, NULL, NULL, NULL, key))
+        {
+            LOG(ERROR) << "Error initializing digest context";
+            return false;
+        }
 
-    /* Initialize `key` with a public key */
-    if (1 != EVP_DigestVerifyUpdate(mdctx, data, dataLen))
-    {
-        LOG(ERROR) << "Error EVP_DigestVerifyUpdate";
-        return false;
-    }
-
-    if (1 == EVP_DigestVerifyFinal(mdctx, sig, sigLen))
-    {
-        return true;
+        if (1 == EVP_DigestVerify(mdctx, sig, sigLen, data, dataLen))
+        {
+            return true;
+        }
+        else
+        {
+            LOG(ERROR) << "signature did not verify :(";
+            return false;
+        }
     }
     else
     {
-        LOG(ERROR) << "signature did not verify :(";
-        return false;
+        if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, key))
+        {
+            LOG(ERROR) << "Error initializing digest context";
+            return false;
+        }
+
+        /* Initialize `key` with a public key */
+        if (1 != EVP_DigestVerifyUpdate(mdctx, data, dataLen))
+        {
+            LOG(ERROR) << "Error EVP_DigestVerifyUpdate";
+            return false;
+        }
+
+        if (1 == EVP_DigestVerifyFinal(mdctx, sig, sigLen))
+        {
+            return true;
+        }
+        else
+        {
+            LOG(ERROR) << "signature did not verify :(";
+            return false;
+        }
     }
 }
 

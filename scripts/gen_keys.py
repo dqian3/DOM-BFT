@@ -6,7 +6,7 @@ import os
 parser = argparse.ArgumentParser(prog="genkeys.py", description="Generate keys for DOMBFT")
 
 parser.add_argument("config")
-parser.add_argument("-s", "--signature", default="RSA", choices=["RSA", "ED25519"])
+parser.add_argument("-a", "--algorithm", default="RSA", choices=["RSA", "ED25519"])
 parser.add_argument("-k", "--keysize", default=2048)
 
 args = parser.parse_args()
@@ -35,6 +35,9 @@ for process in dirs:
     for i in range(nkeys):
         key_path = os.path.join(key_dir, process + f"{i}")
         print(key_path)
-        subprocess.run(["openssl", "genrsa", "-out", key_path + ".pem", "2048"])
-        subprocess.run(["openssl", "rsa", "-in", key_path + ".pem", "-pubout", "-out", key_path + ".pub"])
-        
+
+        if args.algorithm == "RSA":
+            subprocess.run(["openssl", "genrsa", "-out", key_path + ".pem", args.keysize])
+        elif args.algorithm == "ED25519":
+            subprocess.run(["openssl",  "genpkey",  "-algorithm",  "ed25519", "-out", key_path + ".pem"])
+        subprocess.run(["openssl", "pkey", "-in", key_path + ".pem", "-pubout", "-out", key_path + ".pub"])
