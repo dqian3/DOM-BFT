@@ -13,37 +13,14 @@ load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_
 rules_proto_dependencies()
 rules_proto_toolchains()
 
-
 http_archive(
-    name = "com_github_grpc_grpc",
-    sha256 = "9f387689b7fdf6c003fd90ef55853107f89a2121792146770df5486f0199f400",
-    urls = [
-        "https://github.com/grpc/grpc/archive/refs/tags/v1.42.0.zip",
-    ],
-    strip_prefix = "grpc-1.42.0",
+    name = "rules_foreign_cc",
+    sha256 = "2a8000ce03dd9bb324bc9bb7f1f5d01debac406611f4d9fedd385192718804f0",
+    strip_prefix = "rules_foreign_cc-60813d57a0e99be1a009c1a0e9627cdbe81fcd19",
+    url = "https://github.com/bazelbuild/rules_foreign_cc/archive/60813d57a0e99be1a009c1a0e9627cdbe81fcd19.tar.gz",
 )
-load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
-grpc_deps()
-load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
-grpc_extra_deps()
-
-
-http_archive(
-    name = "googleapi",
-    sha256 = "3ff2365822fb573cb1779ada5c2ac7899269cacd0836aef95ffe9d95779031f2",
-    url = "https://github.com/googleapis/googleapis/archive/refs/tags/common-protos-1_3_1.zip", 
-    strip_prefix = "googleapis-common-protos-1_3_1/",
-    build_file="@//external:googleapi.BUILD",
-)
-
-
-http_archive(
-    name = "gogoprotobuf",
-    sha256 = "f89f8241af909ce3226562d135c25b28e656ae173337b3e58ede917aa26e1e3c",
-    url = "https://github.com/gogo/protobuf/archive/refs/tags/v1.3.2.zip", 
-    strip_prefix = "protobuf-1.3.2/",
-    build_file="@//external:gogoprotobuf.BUILD",
-)
+load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
+rules_foreign_cc_dependencies()
 
 git_repository(
     name = "com_github_jbeder_yaml_cpp",
@@ -114,17 +91,6 @@ git_repository(
 )
 
 http_archive(
-    name = "rules_foreign_cc",
-    sha256 = "2a8000ce03dd9bb324bc9bb7f1f5d01debac406611f4d9fedd385192718804f0",
-    strip_prefix = "rules_foreign_cc-60813d57a0e99be1a009c1a0e9627cdbe81fcd19",
-    url = "https://github.com/bazelbuild/rules_foreign_cc/archive/60813d57a0e99be1a009c1a0e9627cdbe81fcd19.tar.gz",
-)
-
-load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
-
-rules_foreign_cc_dependencies()
-
-http_archive(
     name = "openssl",
     build_file = "//third_party/openssl:BUILD.bazel",
     sha256 = "23011a5cc78e53d0dc98dfa608c51e72bcd350aa57df74c5d5574ba4ffb62e74",
@@ -133,23 +99,10 @@ http_archive(
 )
 
 http_archive(
-    name = "com_github_nelhage_rules_boost",
-    url = "https://github.com/nelhage/rules_boost/archive/96e9b631f104b43a53c21c87b01ac538ad6f3b48.tar.gz",
-    strip_prefix = "rules_boost-96e9b631f104b43a53c21c87b01ac538ad6f3b48",
-    sha256 = "5ea00abc70cdf396a23fb53201db19ebce2837d28887a08544429d27783309ed",
-)
-load("@com_github_nelhage_rules_boost//:boost/boost.bzl", "boost_deps")
-boost_deps()
-
-
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-http_archive(
   name = "com_google_googletest",
   urls = ["https://github.com/google/googletest/archive/5ab508a01f9eb089207ee87fd547d290da39d015.zip"],
   strip_prefix = "googletest-5ab508a01f9eb089207ee87fd547d290da39d015",
 )
-
 
 http_archive(
   name = "nng",
