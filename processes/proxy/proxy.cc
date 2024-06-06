@@ -154,9 +154,14 @@ namespace dombft
                     LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                     return;
                 }
+                
+                uint64_t now = GetMicrosecondTimestamp();
+                uint64_t deadline = now + 1.5 * latencyBound_;
+                deadline = std::max(deadline, lastDeadline_ + 1);
+                lastDeadline_ = deadline;
 
-                outReq.set_send_time(GetMicrosecondTimestamp());
-                outReq.set_deadline(outReq.send_time() + 1.5 * latencyBound_);
+                outReq.set_send_time(now);
+                outReq.set_deadline(deadline);
                 outReq.set_proxy_id(proxyId_);
 
                 // TODO set these properly

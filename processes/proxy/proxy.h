@@ -70,6 +70,7 @@ namespace dombft
 
         uint32_t proxyId_;
         uint32_t maxOWD_;
+        uint64_t lastDeadline_;
         int numShards_;
         int numReceivers_;
         std::vector<Address> receiverAddrs_;

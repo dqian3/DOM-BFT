@@ -256,7 +256,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml"):
             
         return arun
 
-    c.run("mkdir -p logs")
+    c.run("mkdir -p ../logs")
     print("Starting replicas")
     for id, ip in enumerate(replicas):
         arun = local_log_arun(f"../logs/replica{id}.log", ip)

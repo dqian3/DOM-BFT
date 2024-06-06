@@ -121,6 +121,10 @@ namespace dombft
             {
                 VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline()
                         << " late by " << recv_time - request.deadline() << "us";
+                VLOG(3) << "Checking deadlines before forwarding late message";
+                checkDeadlines();
+
+
                 forwardRequest(request);
             }
             else
@@ -141,7 +145,8 @@ namespace dombft
         }
         else
         {
-            VLOG(1) << "Forwarding Request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString();
+            VLOG(1) << "Forwarding Request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
+                    << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
             // TODO check errors for all of these lol
