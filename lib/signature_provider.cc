@@ -107,6 +107,15 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
             return -1;
         if (1 != EVP_DigestSign(mdctx, NULL, &sigLen, data, hdr->msgLen))
             return -1;
+
+        if (hdr->msgLen + hdr->sigLen + sizeof(MessageHeader) > bufLen)
+        {
+            LOG(ERROR) << "Error signing message, not enough room in buffer for signature!";
+            return -1;
+        }
+
+        hdr->sigLen = sigLen;
+
         if (1 != EVP_DigestSign(mdctx, sig, &sigLen, data, hdr->msgLen))
             return -1;
     }
@@ -122,20 +131,21 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
             LOG(ERROR) << "Failed to calculate signature length!\n";
             return -1;
         }
-    }
-    hdr->sigLen = sigLen;
+        hdr->sigLen = sigLen;
 
-    if (hdr->msgLen + hdr->sigLen + sizeof(MessageHeader) > bufLen)
-    {
-        LOG(ERROR) << "Error signing message, not enough room in buffer for signature!";
-        return -1;
+        if (hdr->msgLen + hdr->sigLen + sizeof(MessageHeader) > bufLen)
+        {
+            LOG(ERROR) << "Error signing message, not enough room in buffer for signature!";
+            return -1;
+        }
+
+        if (1 != EVP_DigestSignFinal(mdctx, sig, &sigLen))
+        {
+            LOG(ERROR) << "Failed to sign message!\n";
+            return -1;
+        }
     }
 
-    if (1 != EVP_DigestSignFinal(mdctx, sig, &sigLen))
-    {
-        LOG(ERROR) << "Failed to sign message!\n";
-        return -1;
-    }
 
     return 0;
 }

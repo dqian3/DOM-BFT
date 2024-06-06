@@ -53,6 +53,8 @@ def local(c, config_file):
             hdl.join()
 
     finally:
+        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
+
         # kill these processes and then join
         for hdl in other_handles:
             hdl.runner.kill()
@@ -89,7 +91,7 @@ def get_gcloud_process_group(config, ext_ips):
 
 
 @task 
-def gcloud_clockwork(c, config_file, install=False):
+def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -129,7 +131,7 @@ def gcloud_clockwork(c, config_file, install=False):
 
 
 @task
-def gcloud_build(c, config_file):
+def gcloud_build(c, config_file="../configs/remote.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -150,7 +152,7 @@ def gcloud_build(c, config_file):
 
 
 @task 
-def gcloud_copy_keys(c, config_file):
+def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -169,7 +171,7 @@ def gcloud_copy_keys(c, config_file):
 
 
 @task 
-def gcloud_copy_bin(c, config_file):
+def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -190,7 +192,7 @@ def gcloud_copy_bin(c, config_file):
 
 
     print("Copying binaries over...")
-    group.run("rm dombft_*")
+    group.run("rm dombft_*", warn=True)
     
     replicas.put("../bazel-bin/processes/replica/dombft_replica")
     print("Copied replica")
@@ -206,7 +208,7 @@ def gcloud_copy_bin(c, config_file):
 
 
 @task 
-def gcloud_run(c, config_file):
+def gcloud_run(c, config_file="../configs/remote.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -274,7 +276,7 @@ def gcloud_run(c, config_file):
     print("Starting clients")
     for id, ip in enumerate(clients):
         arun = local_log_arun(f"logs/client{id}.log", ip)
-        hdl = arun(f"{client_path} -v {2} -config {remote_config_file} -clientId {id} 2>&1")
+        hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id} 2>&1")
         client_handles.append(hdl)
 
     try:

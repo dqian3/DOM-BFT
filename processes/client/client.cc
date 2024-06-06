@@ -136,6 +136,7 @@ namespace dombft
             auto &reqState = requestStates_[reply.client_seq()];
 
             VLOG(4) << "Received reply from replica " << reply.replica_id()
+                    << " for " << reply.client_seq() << " at log pos " << reply.seq()
                     << " after " << GetMicrosecondTimestamp() - reqState.sendTime << " usec";
 
             // TODO handle dups
@@ -346,8 +347,6 @@ namespace dombft
                     reply.seq()};
 
                 matchingReplies[key].insert(replicaId);
-                VLOG(3) << reply.view() << " " << reply.seq();
-
 
                 if (matchingReplies[key].size() >= 2 * f_ + 1)
                 {

@@ -3,7 +3,7 @@ client:
   - "127.0.0.10"
   port: 33000
   keysDir: keys/client
-  maxRequests: 1
+  maxRequests: 5
 
 
 # Proxy Info
@@ -27,7 +27,7 @@ receiver:
   port: 33000
   keysDir: keys/receiver
   shards: 1 # The number of threads to receive threads 
-  local: true # Although it's local, we actually use distinct loopback addresses for localhost experiments :)
+  local: false # Although it's local, we actually use distinct loopback addresses for localhost experiments
 
 # Replica Info
 replica:
