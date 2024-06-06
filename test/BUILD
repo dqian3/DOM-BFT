@@ -1,22 +1,22 @@
 cc_binary(
-    name = "test_signed_udp",
-    srcs = ["test_signed_udp.cc"],
+    name = "example_signed_udp",
+    srcs = ["example_signed_udp.cc"],
     deps = [
         "//lib:endpoint",
     ],
 )
 
 cc_binary(
-    name = "test_recv_udp",
-    srcs = ["test_recv_udp.cc"],
+    name = "example_recv_udp",
+    srcs = ["example_recv_udp.cc"],
     deps = [
         "//lib:endpoint",
     ],
 )
 
 cc_binary(
-    name = "test_crypto",
-    srcs = ["test_crypto.cc"],
+    name = "sandbox_crypto",
+    srcs = ["sandbox_crypto.cc"],
     deps = [
         "@openssl//:openssl",
     ],
@@ -24,8 +24,8 @@ cc_binary(
 
 
 cc_binary(
-    name = "test_mac",
-    srcs = ["test_mac.cc"],
+    name = "sandbox_mac",
+    srcs = ["sandbox_mac.cc"],
     deps = [
         "@openssl//:openssl",
     ],
@@ -53,9 +53,19 @@ cc_test(
 )
 
 cc_binary(
-  name = "protobuf_exp",
-  srcs = ["protobuf_exp.cc"],
+  name = "sandbox_protobuf",
+  srcs = ["sandbox_protobuf.cc"],
   deps = [
-      "//proto:dombft_proto_cc"
+    "//proto:dombft_proto_cc"
   ],
 )
+
+
+cc_binary(
+  name = "sandbox_nng",
+  srcs = ["sandbox_nng.cc"],
+  deps = [
+    "@nng//:libnng"
+  ],
+)
+

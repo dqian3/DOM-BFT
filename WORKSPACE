@@ -38,16 +38,6 @@ http_archive(
 
 
 http_archive(
-    name = "etcd",
-    sha256 = "580ce584dc7628efebb57f8c8240674918d334ad21e33186bbc5f6348f465bc1",
-    url = "https://github.com/etcd-io/etcd/archive/refs/tags/v3.5.0.zip", 
-    strip_prefix = "etcd-3.5.0/",
-    build_file="@//external:etcd.BUILD",
-)
-
-
-
-http_archive(
     name = "gogoprotobuf",
     sha256 = "f89f8241af909ce3226562d135c25b28e656ae173337b3e58ede917aa26e1e3c",
     url = "https://github.com/gogo/protobuf/archive/refs/tags/v1.3.2.zip", 
@@ -158,4 +148,13 @@ http_archive(
   name = "com_google_googletest",
   urls = ["https://github.com/google/googletest/archive/5ab508a01f9eb089207ee87fd547d290da39d015.zip"],
   strip_prefix = "googletest-5ab508a01f9eb089207ee87fd547d290da39d015",
+)
+
+
+http_archive(
+  name = "nng",
+  urls = ["https://github.com/nanomsg/nng/archive/refs/tags/v1.8.0.tar.gz"],
+  sha256 = "cfacfdfa35c1618a28bb940e71f774a513dcb91292999696b4346ad8bfb5baff",
+  strip_prefix = "nng-1.8.0",
+  build_file = "//third_party/nng:BUILD.bazel",
 )
