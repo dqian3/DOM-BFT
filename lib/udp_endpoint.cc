@@ -117,6 +117,7 @@ MessageHeader *UDPEndpoint::PrepareMsg(const byte *msg,
 MessageHeader *UDPEndpoint::PrepareProtoMsg(const google::protobuf::Message &msg,
                                             byte msgType)
 {
+    // TODO serailize directly into buffer.
     std::string serializedString = msg.SerializeAsString();
     uint32_t msgLen = serializedString.length();
     if (msgLen > 0)
