@@ -12,11 +12,10 @@
 #define SIGNED_FLAG
 
 #define UDP_BUFFER_SIZE (1024)
+#define NNG_BUFFER_SIZE (15000) 
 #define IPC_BUFFER_SIZE (1024)
 
 typedef unsigned char byte;
-
-// TODO what about padding on the msgType? Might want to check that.
 
 /**
  * When the message has been serialized and is about to be sent by the

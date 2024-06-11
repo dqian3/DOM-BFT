@@ -5,7 +5,7 @@
 
 struct IPCMessageHandler : MessageHandler
 {
-    byte buffer_[UDP_BUFFER_SIZE];
+    byte buffer_[IPC_BUFFER_SIZE];
     IPCMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
     ~IPCMessageHandler();
 };
