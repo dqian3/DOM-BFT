@@ -1,7 +1,6 @@
 #include "processes/process_config.h"
 
 #include "lib/transport/address.h"
-#include "lib/transport/ipc_endpoint.h"
 #include "lib/log.h"
 #include "lib/message_type.h"
 #include "lib/protocol_config.h"

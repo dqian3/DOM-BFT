@@ -75,9 +75,8 @@ int UDPEndpoint::SendPreparedMsgTo(const Address &dstAddr)
     return ret;
 }
 
-bool UDPEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
+bool UDPEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
 {
-    UDPMessageHandler *udpMsgHdl = (UDPMessageHandler *)msgHdl;
     if (!bound_)
     {
         LOG(ERROR) << "Endpoint is not bound!";
@@ -88,43 +87,9 @@ bool UDPEndpoint::RegisterMsgHandler(MessageHandler *msgHdl)
         LOG(ERROR) << "No evLoop!";
         return false;
     }
-    if (isMsgHandlerRegistered(msgHdl))
-    {
-        LOG(ERROR) << "This msgHdl has already been registered";
-        return false;
-    }
-    msgHandler_ = udpMsgHdl;
-    ev_io_set(udpMsgHdl->evWatcher_, fd_, EV_READ);
-    ev_io_start(evLoop_, udpMsgHdl->evWatcher_);
+    msgHandler_ = std::make_unique<UDPMessageHandler>(hdl);
+    ev_io_set(msgHandler_->evWatcher_, fd_, EV_READ);
+    ev_io_start(evLoop_, msgHandler_->evWatcher_);
 
     return true;
-}
-
-bool UDPEndpoint::UnRegisterMsgHandler(MessageHandler *msgHdl)
-{
-    UDPMessageHandler *udpMsgHdl = (UDPMessageHandler *)msgHdl;
-    if (evLoop_ == NULL)
-    {
-        LOG(ERROR) << "No evLoop!";
-        return false;
-    }
-    if (!isMsgHandlerRegistered(udpMsgHdl))
-    {
-        LOG(ERROR) << "The handler has not been registered ";
-        return false;
-    }
-    ev_io_stop(evLoop_, udpMsgHdl->evWatcher_);
-    msgHandler_ = NULL;
-    return true;
-}
-
-bool UDPEndpoint::isMsgHandlerRegistered(MessageHandler *msgHdl)
-{
-    return (UDPMessageHandler *)msgHdl == msgHandler_;
-}
-
-void UDPEndpoint::UnRegisterAllMsgHandlers()
-{
-    ev_io_stop(evLoop_, msgHandler_->evWatcher_);
-    msgHandler_ = NULL;
 }

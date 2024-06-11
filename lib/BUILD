@@ -31,18 +31,6 @@ cc_library(
 )
 
 cc_library(
-    name = "message_handler",
-    srcs = ["transport/message_handler.cc"],
-    hdrs = ["transport/message_handler.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@com_github_enki_libev//:libev",
-        ":address",
-        ":common_struct",
-    ],
-)
-
-cc_library(
     name = "timer",
     srcs = ["transport/timer.h"],
     hdrs = ["transport/timer.h"],
@@ -67,8 +55,8 @@ cc_library(
 
 cc_library(
     name = "endpoint",
-    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/ipc_endpoint.cc", "transport/nng_endpoint.cc"],
-    hdrs = ["transport/endpoint.h", "transport/udp_endpoint.h", "transport/ipc_endpoint.h", "transport/nng_endpoint.h"],
+    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc"],
+    hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",

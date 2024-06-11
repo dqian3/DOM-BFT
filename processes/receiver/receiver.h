@@ -5,7 +5,6 @@
 #include "lib/transport/address.h"
 #include "proto/dombft_proto.pb.h"
 #include "lib/transport/udp_endpoint.h"
-#include "lib/transport/ipc_endpoint.h"
 #include "lib/signature_provider.h"
 #include "lib/message_type.h"
 
@@ -24,10 +23,6 @@ namespace dombft
 
         /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
         std::unique_ptr<UDPEndpoint> endpoint_;
-
-        /** The receiver optionally uses this endpoint to forward messages along IPC to the receiver*/
-        // TODO this could probably be handled in a cleaner way
-        // std::unique_ptr<IPCEndpoint> ipc_endpoint;
 
         /** The handler objects for our endpoint library */
         std::unique_ptr<MessageHandler>  msgHandler_;

@@ -23,8 +23,8 @@
  * Essentially, it serves as a wrapper around a socket + libev
  * An Endpoint supports three major functionalities:
  * (1) Receive messages;
- * (2) Process the received messages according to (pre-registered) customized
- * message handlers;
+ * (2) Process the received messages according to a customized
+ * message handler
  * (3) Conduct periodic actions according to (pre-registered)
  * customized timer functions.
  * 
@@ -52,19 +52,19 @@ public:
     virtual ~Endpoint();
 
 
-    // -------------------- Socket Handling --------------------
+    // -------------------- Socket/IO Handling --------------------
 
-    /** An endpoint potentially can have multiple message handlers registered, but
-     * our UDPSocketEndpoint implementation only supports at most one
-     * message handler for one endpoint. So we make them as virtual functions and
-     * different derived classes have their own implementation of the methods */
-    virtual bool RegisterMsgHandler(MessageHandler *msgHdl) = 0;
-    virtual bool UnRegisterMsgHandler(MessageHandler *msgHdl) = 0;
-    virtual bool isMsgHandlerRegistered(MessageHandler *msgHdl) = 0;
-    virtual void UnRegisterAllMsgHandlers() = 0;
+    /* We have a very simple interface for Message Handling, a single
+     * callback is given and any messages received on this endpoint
+     * go to it.
+     */
+    virtual bool RegisterMsgHandler(MessageHandlerFunc msgHdl) = 0;
 
 
     // -------------------- Timer Handling --------------------
+    // The timer handling is slightly more complicated, since we may need to 
+    // register and destroy timers
+
     /** Return true if the timer is successfully registered, otherwise (e.g. it
      * has been registered before and has not been unreigstered), return false */
     bool RegisterTimer(Timer *timer);

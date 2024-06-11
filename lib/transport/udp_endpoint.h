@@ -3,9 +3,21 @@
 
 #include "lib/transport/endpoint.h"
 
-struct UDPMessageHandler : MessageHandler
+struct UDPMessageHandler 
 {
+
     byte buffer_[UDP_BUFFER_SIZE];
+    MessageHandlerFunc msgHandler_;
+    void *context_;
+    Address sender_;
+    struct ev_io *evWatcher_;
+    UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
+        : msgHandler_(msghdl), context_(ctx)
+    {
+        evWatcher_ = new ev_io();
+        evWatcher_->data = (void *)this;
+    }
+ 
     UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
     ~UDPMessageHandler();
 };
@@ -14,7 +26,7 @@ class UDPEndpoint : public Endpoint
 {
 protected:
     /* data */
-    struct UDPMessageHandler *msgHandler_;
+    std::unique_ptr<UDPMessageHandler> msgHandler_;
     bool bound_ = false;
 
 public:
@@ -24,13 +36,7 @@ public:
     // Sends message in buffer
     virtual int SendPreparedMsgTo(const Address &dstAddr) override;
 
-    void setBufReady(bool bufReady);
-
-    virtual bool RegisterMsgHandler(MessageHandler *msgHdl) override;
-
-    virtual bool UnRegisterMsgHandler(MessageHandler *msgHdl) override;
-    virtual bool isMsgHandlerRegistered(MessageHandler *msgHdl) override;
-    virtual void UnRegisterAllMsgHandlers() override;
+    virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
 };
 
 #endif
