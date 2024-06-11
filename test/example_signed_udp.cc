@@ -1,5 +1,5 @@
-#include "lib/endpoint.h"
-#include "lib/udp_endpoint.h"
+#include "lib/transport/endpoint.h"
+#include "lib/transport/udp_endpoint.h"
 #include "lib/signature_provider.h"
 
 #include <glog/logging.h>

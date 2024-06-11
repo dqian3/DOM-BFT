@@ -6,7 +6,7 @@
 #include <ev.h>
 #include <netinet/in.h>
 #include <functional>
-#include "lib/address.h"
+#include "lib/transport/address.h"
 #include "lib/common_struct.h"
 
 /**

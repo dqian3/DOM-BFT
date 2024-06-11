@@ -1,4 +1,4 @@
-#include "lib/ipc_endpoint.h"
+#include "lib/transport/ipc_endpoint.h"
 
 #include <sys/un.h>
 

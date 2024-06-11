@@ -10,7 +10,7 @@
 #include <functional>
 #include <set>
 #include <string>
-#include "lib/address.h"
+#include "lib/transport/address.h"
 
 /**
  * Timer is an encapsulation of libev-based message handler (i.e.

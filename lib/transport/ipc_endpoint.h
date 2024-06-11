@@ -1,7 +1,7 @@
 #ifndef IPC_ENDPOINT_H 
 #define IPC_ENDPOINT_H
 
-#include "lib/endpoint.h"
+#include "lib/transport/endpoint.h"
 
 struct IPCMessageHandler : MessageHandler
 {

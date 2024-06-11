@@ -10,10 +10,10 @@
 #include <functional>
 #include <set>
 #include <string>
-#include "lib/address.h"
+#include "lib/transport/address.h"
 #include "lib/common_struct.h"
-#include "lib/message_handler.h"
-#include "lib/timer.h"
+#include "lib/transport/message_handler.h"
+#include "lib/transport/timer.h"
 
 /**
  * Endpoint is the basic abstraction we use for communcation, and can be

@@ -1,12 +1,12 @@
 #include "processes/process_config.h"
 
-#include "lib/address.h"
-#include "lib/ipc_endpoint.h"
+#include "lib/transport/address.h"
+#include "lib/transport/ipc_endpoint.h"
 #include "lib/log.h"
 #include "lib/message_type.h"
 #include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
-#include "lib/udp_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 

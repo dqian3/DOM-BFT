@@ -1,6 +1,6 @@
-#include "lib/udp_endpoint.h"
-#include "lib/address.h"
-#include "lib/message_handler.h"
+#include "lib/transport/udp_endpoint.h"
+#include "lib/transport/address.h"
+#include "lib/transport/message_handler.h"
 
 #include <glog/logging.h>
 

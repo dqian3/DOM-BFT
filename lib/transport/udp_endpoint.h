@@ -1,7 +1,7 @@
 #ifndef UDP_ENDPOINT_H
 #define UDP_ENDPOINT_H
 
-#include "lib/endpoint.h"
+#include "lib/transport/endpoint.h"
 
 struct UDPMessageHandler : MessageHandler
 {

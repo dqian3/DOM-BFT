@@ -1,4 +1,4 @@
-#include "lib/endpoint.h"
+#include "lib/transport/endpoint.h"
 
 Endpoint::Endpoint(const bool isMasterReceiver)
 {

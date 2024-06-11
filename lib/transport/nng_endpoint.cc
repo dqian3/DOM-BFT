@@ -1,11 +1,11 @@
-#include "lib/udp_endpoint.h"
+#include "lib/transport/nng_endpoint.h"
 
-UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx)
+NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, void *ctx)
     : MessageHandler(msghdl, ctx)
 {
     ev_init(evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents)
             {
-        UDPMessageHandler* m = (UDPMessageHandler*)(w->data);
+        NngMessageHandler* m = (NngMessageHandler*)(w->data);
         socklen_t sockLen = sizeof(struct sockaddr_in);
         
         int msgLen = recvfrom(w->fd, m->buffer_, UDP_BUFFER_SIZE, 0,
@@ -21,42 +21,12 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx)
         } });
 }
 
-UDPMessageHandler::~UDPMessageHandler() {}
+NngMessageHandler::~NngMessageHandler() {}
 
-UDPEndpoint::UDPEndpoint(const std::string &ip, const int port,
+NngEndpoint::NngEndpoint(const std::string &ip, const int port,
                          const bool isMasterReceiver)
     : Endpoint(isMasterReceiver), msgHandler_(NULL)
 {
-    fd_ = socket(PF_INET, SOCK_DGRAM, 0);
-    if (fd_ < 0)
-    {
-        LOG(ERROR) << "Receiver Fd fail ";
-        return;
-    }
-    // Set Non-Blocking
-    int status = fcntl(fd_, F_SETFL, fcntl(fd_, F_GETFL, 0) | O_NONBLOCK);
-    if (status < 0)
-    {
-        LOG(ERROR) << " Set NonBlocking Fail";
-    }
-    if (ip == "" || port < 0)
-    {
-        return;
-    }
-
-    bound_ = true;
-    struct sockaddr_in addr;
-    bzero(&addr, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr(ip.c_str());
-    // Bind socket to Address
-    int bindRet = bind(fd_, (struct sockaddr *)&addr, sizeof(addr));
-    if (bindRet != 0)
-    {
-        LOG(ERROR) << "bind error\t" << bindRet << "\t port=" << port;
-        return;
-    }
 }
 
 UDPEndpoint::~UDPEndpoint() {}

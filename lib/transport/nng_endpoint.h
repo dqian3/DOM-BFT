@@ -1,12 +1,18 @@
 #ifndef UDP_ENDPOINT_H
 #define UDP_ENDPOINT_H
 
-#include "lib/endpoint.h"
+#include "lib/transport/endpoint.h"
 
 #include <nng/nng.h>
 
+
+// Note, this is actually multiple different message handlers
+// TODO how to handle multiple handlers on different threads?
 struct NngMessageHandler : MessageHandler
 {
+    // The base class MessageHandler has a single 
+
+
     byte buffer_[NNG_BUFFER_SIZE];
     NngMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
     ~NngMessageHandler();

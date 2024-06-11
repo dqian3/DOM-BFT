@@ -8,8 +8,8 @@
 // Own libraries
 #include "lib/protocol_config.h"
 #include "lib/utils.h"
-#include "lib/endpoint.h"
-#include "lib/udp_endpoint.h"
+#include "lib/transport/endpoint.h"
+#include "lib/transport/udp_endpoint.h"
 #include "lib/signature_provider.h"
 
 #include "proto/dombft_proto.pb.h"

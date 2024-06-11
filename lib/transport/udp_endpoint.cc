@@ -1,11 +1,11 @@
-#include "lib/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
 
-NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, void *ctx)
+UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx)
     : MessageHandler(msghdl, ctx)
 {
     ev_init(evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents)
             {
-        NngMessageHandler* m = (NngMessageHandler*)(w->data);
+        UDPMessageHandler* m = (UDPMessageHandler*)(w->data);
         socklen_t sockLen = sizeof(struct sockaddr_in);
         
         int msgLen = recvfrom(w->fd, m->buffer_, UDP_BUFFER_SIZE, 0,
@@ -21,7 +21,7 @@ NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, void *ctx)
         } });
 }
 
-NngMessageHandler::~NngMessageHandler() {}
+UDPMessageHandler::~UDPMessageHandler() {}
 
 UDPEndpoint::UDPEndpoint(const std::string &ip, const int port,
                          const bool isMasterReceiver)

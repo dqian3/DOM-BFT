@@ -25,15 +25,15 @@ cc_library(
 
 cc_library(
     name = "address",
-    srcs = ["address.cc"],
-    hdrs = ["address.h"],
+    srcs = ["transport/address.cc"],
+    hdrs = ["transport/address.h"],
     visibility = ["//visibility:public"],
 )
 
 cc_library(
     name = "message_handler",
-    srcs = ["message_handler.cc"],
-    hdrs = ["message_handler.h"],
+    srcs = ["transport/message_handler.cc"],
+    hdrs = ["transport/message_handler.h"],
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_enki_libev//:libev",
@@ -44,8 +44,8 @@ cc_library(
 
 cc_library(
     name = "timer",
-    srcs = ["timer.h"],
-    hdrs = ["timer.h"],
+    srcs = ["transport/timer.h"],
+    hdrs = ["transport/timer.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",
@@ -67,8 +67,8 @@ cc_library(
 
 cc_library(
     name = "endpoint",
-    srcs = ["endpoint.cc", "udp_endpoint.cc", "ipc_endpoint.cc"],
-    hdrs = ["endpoint.h", "udp_endpoint.h", "ipc_endpoint.h"],
+    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/ipc_endpoint.cc", "transport/nng_endpoint.cc"],
+    hdrs = ["transport/endpoint.h", "transport/udp_endpoint.h", "transport/ipc_endpoint.h", "transport/nng_endpoint.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",
@@ -80,6 +80,7 @@ cc_library(
         "@com_github_google_glog//:glog",
         "@com_google_protobuf//:protobuf",
         "@openssl//:openssl",
+        "@nng//:libnng",
     ],
 )
 

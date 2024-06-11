@@ -2,10 +2,10 @@
 
 #include "lib/protocol_config.h"
 #include "lib/utils.h"
-#include "lib/address.h"
+#include "lib/transport/address.h"
 #include "proto/dombft_proto.pb.h"
-#include "lib/udp_endpoint.h"
-#include "lib/ipc_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+#include "lib/transport/ipc_endpoint.h"
 #include "lib/signature_provider.h"
 #include "lib/message_type.h"
 
