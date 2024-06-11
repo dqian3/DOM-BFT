@@ -17,28 +17,13 @@ protected:
     struct UDPMessageHandler *msgHandler_;
     bool bound_ = false;
 
-    // Buffer for preparing messages
-    // bufInUse_ is just for making sure prepare and send calls are 1 to 1. Not thread safe
-    byte buffer_[UDP_BUFFER_SIZE];
-    bool bufReady_ = false;
-
 public:
     UDPEndpoint(const std::string &ip, const int port,
                 const bool isMasterReceiver = false);
     ~UDPEndpoint();
-
-    // Loads message with header prepended into buffer and sets
-    // bufReady to true. TODO get some info about buffer size.
-    MessageHeader *PrepareMsg(const byte *msg,
-                  u_int32_t msgLen,
-                  byte msgType);
-
-    MessageHeader *PrepareProtoMsg(
-        const google::protobuf::Message &msg,
-        const byte msgType);
-
     // Sends message in buffer
-    int SendPreparedMsgTo(const Address &dstAddr, bool reuseBuf=false);
+    virtual int SendPreparedMsgTo(const Address &dstAddr) override;
+
     void setBufReady(bool bufReady);
 
     virtual bool RegisterMsgHandler(MessageHandler *msgHdl) override;

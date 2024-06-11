@@ -67,6 +67,46 @@ bool Endpoint::isTimerRegistered(Timer *timer)
     return (eventTimers_.find(timer) != eventTimers_.end());
 }
 
+MessageHeader *Endpoint::PrepareMsg(const byte *msg,
+                                    u_int32_t msgLen,
+                                    byte msgType)
+{
+    MessageHeader *hdr = (MessageHeader *)buffer_;
+    hdr->msgType = msgType;
+    hdr->msgLen = msgLen;
+    hdr->sigLen = 0;
+    if (msgLen + sizeof(MessageHeader) > SEND_BUFFER_SIZE)
+    {
+        LOG(ERROR) << "Msg too large " << (uint32_t)msgType
+                   << "\t length=" << msgLen;
+        return nullptr;
+    }
+
+    memcpy(buffer_ + sizeof(MessageHeader), msg,
+           hdr->msgLen);
+
+    return hdr;
+}
+
+MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg,
+                                         byte msgType)
+{
+    MessageHeader *hdr = (MessageHeader *)buffer_;
+    hdr->msgType = msgType;
+    hdr->msgLen = msg.ByteSizeLong();
+    hdr->sigLen = 0;
+
+    if (hdr->msgLen + sizeof(MessageHeader) > SEND_BUFFER_SIZE)
+    {
+        LOG(ERROR) << "Msg too large " << (uint32_t)msgType
+                   << "\t length=" << hdr->msgLen;
+        return nullptr;
+    } 
+    msg.SerializeToArray(buffer_ + sizeof(MessageHeader), hdr->msgLen);
+
+    return hdr;
+}
+
 void Endpoint::LoopRun() { ev_run(evLoop_, 0); }
 
 void Endpoint::LoopBreak()

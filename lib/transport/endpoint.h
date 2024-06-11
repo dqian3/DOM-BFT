@@ -25,11 +25,11 @@
  * (1) Receive messages;
  * (2) Process the received messages according to (pre-registered) customized
  * message handlers;
- * (3) Conduct periodical actions according to (pre-registered)
+ * (3) Conduct periodic actions according to (pre-registered)
  * customized timer functions.
- *
- * For convenience, usually we'll define some sendMsgTo function for sending
- * messages by reusing the same (bound) socket
+ * 
+ * For convenience, we also have the endpoint 
+ * (4) Provide a buffer and an interface for sending a message to a specified address
  */
 class Endpoint
 {
@@ -43,11 +43,16 @@ protected:
      * registered or not.*/
     std::set<struct Timer *> eventTimers_;
 
+    byte buffer_[UDP_BUFFER_SIZE];
+
 public:
     int epId_; // The id of the endpoint, mainly for debug
 
     Endpoint(const bool isMasterReceiver = false);
     virtual ~Endpoint();
+
+
+    // -------------------- Socket Handling --------------------
 
     /** An endpoint potentially can have multiple message handlers registered, but
      * our UDPSocketEndpoint implementation only supports at most one
@@ -58,6 +63,8 @@ public:
     virtual bool isMsgHandlerRegistered(MessageHandler *msgHdl) = 0;
     virtual void UnRegisterAllMsgHandlers() = 0;
 
+
+    // -------------------- Timer Handling --------------------
     /** Return true if the timer is successfully registered, otherwise (e.g. it
      * has been registered before and has not been unreigstered), return false */
     bool RegisterTimer(Timer *timer);
@@ -68,6 +75,28 @@ public:
     bool isTimerRegistered(Timer *timer);
     void UnRegisterAllTimers();
 
+
+    // -------------------- Message Sending --------------------
+
+    // Loads message with header prepended into buffer and sets
+    // bufReady to true. TODO get some info about buffer size.
+    MessageHeader *PrepareMsg(const byte *msg,
+                  u_int32_t msgLen,
+                  byte msgType);
+
+    MessageHeader *PrepareProtoMsg(
+        const google::protobuf::Message &msg,
+        const byte msgType);
+
+    // Sends message in buffer to address specifed in dstAddr.
+    // Note that the MessageHeader that PrepareMsg creates contains
+    // the size information needed.
+
+    // The reason preparing and sending messages are split is so for
+    // broadcast we can reuse the same buffer/signatures
+    virtual int SendPreparedMsgTo(const Address &dstAddr) = 0;
+
+    // -------------------- Entrypoints --------------------
     void LoopRun();
     void LoopBreak();
 };
