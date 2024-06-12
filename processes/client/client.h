@@ -44,8 +44,6 @@ namespace dombft
 
         /** The endpoint uses to submit request to proxies and receive replies*/
         std::unique_ptr<UDPEndpoint> endpoint_;
-        /** The message handler used to handle replies (from replicas) */
-        std::unique_ptr<MessageHandler> replyHandler_;
         /** Timer to handle request timeouts TODO (timeouts vs repeated timer would maybe be better)*/
         std::unique_ptr<Timer> timeoutTimer_;
 

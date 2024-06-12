@@ -58,23 +58,18 @@ namespace dombft
         for (uint32_t i = 0; i < config.clientIps.size(); i++)
         {
             clientAddrs_.push_back(Address(config.clientIps[i],
-                                            config.clientPort));
+                                           config.clientPort));
         }
-
-    
-        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
-        handler_ = std::make_unique<UDPMessageHandler>(
-            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
-            {
-                ((Replica *)ctx)->handleMessage(msgHdr, msgBuffer, sender);
-            },
-            this);
 
         log_ = std::make_unique<Log>();
 
-        // Passing the raw pointer here, but the endpoint also only lives as long as
-        // the Replica instance so it should be fine.
-        endpoint_->RegisterMsgHandler(handler_.get());
+        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+        MessageHandlerFunc handler = [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+        {
+            ((Replica *)ctx)->handleMessage(msgHdr, msgBuffer, sender);
+        };
+
+        endpoint_->RegisterMsgHandler(handler);
     }
 
     Replica::~Replica()
@@ -345,26 +340,26 @@ namespace dombft
         }
 
         // Verify each signature in the cert
-        for (int i = 0; i < cert.replies().size(); i++ ) {
+        for (int i = 0; i < cert.replies().size(); i++)
+        {
             const Reply &reply = cert.replies()[i];
             const std::string &sig = cert.signatures()[i];
             std::string serializedReply = reply.SerializeAsString(); // TODO skip reseraizliation here?
 
             if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(),
-                serializedReply.size(),
-                (byte *) sig.c_str(),
-                sig.size(),
-                "replica",
-                reply.replica_id()
-            )) {
+                    (byte *)serializedReply.c_str(),
+                    serializedReply.size(),
+                    (byte *)sig.c_str(),
+                    sig.size(),
+                    "replica",
+                    reply.replica_id()))
+            {
                 LOG(INFO) << "Cert failed to verify!";
                 return;
             }
-
         }
 
-            const Reply &r = cert.replies()[0];
+        const Reply &r = cert.replies()[0];
         log_->addCert(r.seq(), cert);
 
         if (log_->lastExecuted < r.seq())
@@ -392,9 +387,8 @@ namespace dombft
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_)
         {
-            endpoint_->SendPreparedMsgTo(addr, true);
+            endpoint_->SendPreparedMsgTo(addr);
         }
-        endpoint_->setBufReady(false);
     }
 
 } // namespace dombft

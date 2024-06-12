@@ -7,8 +7,7 @@ namespace dombft
     using namespace dombft::proto;
 
     Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
-        : receiverId_(receiverId)
-        , proxyMeasurementPort_(config.proxyMeasurementPort)
+        : receiverId_(receiverId), proxyMeasurementPort_(config.proxyMeasurementPort)
     {
         std::string receiverIp = config.receiverIps[receiverId_];
         LOG(INFO) << "receiverIP=" << receiverIp;
@@ -31,32 +30,34 @@ namespace dombft
 
         /** Store replica addrs */
 
-        if (config.receiverLocal) {
+        if (config.receiverLocal)
+        {
             replicaAddr_ = (Address("127.0.0.1",
-                                        config.replicaPort));
-        } else {
+                                    config.replicaPort));
+        }
+        else
+        {
             replicaAddr_ = (Address(config.replicaIps[receiverId],
                                     config.replicaPort));
         }
 
         endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
-        msgHandler_ = std::make_unique<UDPMessageHandler>(
-            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
-            {
-                ((Receiver *)ctx)->receiveRequest(msgHdr, msgBuffer, sender);
-            },
-            this);
-
+            
         fwdTimer_ = std::make_unique<Timer>(
             [](void *ctx, void *endpoint)
             {
-                ((Receiver *)ctx)->checkDeadlines();
+            ((Receiver *)ctx)->checkDeadlines();
             },
             1000,
             this);
 
         endpoint_->RegisterTimer(fwdTimer_.get());
-        endpoint_->RegisterMsgHandler(msgHandler_.get());
+        endpoint_->RegisterMsgHandler(
+            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+            {
+                ((Receiver *)ctx)->receiveRequest(msgHdr, msgBuffer, sender);
+            }
+        );
     }
 
     Receiver::~Receiver()
@@ -124,7 +125,6 @@ namespace dombft
                 VLOG(3) << "Checking deadlines before forwarding late message";
                 checkDeadlines();
 
-
                 forwardRequest(request);
             }
             else
@@ -138,7 +138,7 @@ namespace dombft
 
     void Receiver::forwardRequest(const DOMRequest &request)
     {
-        if (false) //receiverConfig_.ipcReplica)
+        if (false) // receiverConfig_.ipcReplica)
         {
             // TODO
             throw "IPC communciation not implemented";
@@ -155,8 +155,7 @@ namespace dombft
 #if FABRIC_CRYPTO
             sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 #endif
-            endpoint_->SendPreparedMsgTo(replicaAddr_, true);
-            endpoint_->setBufReady(false);
+            endpoint_->SendPreparedMsgTo(replicaAddr_);
         }
     }
 

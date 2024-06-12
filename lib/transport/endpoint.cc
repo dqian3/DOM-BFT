@@ -71,7 +71,7 @@ MessageHeader *Endpoint::PrepareMsg(const byte *msg,
                                     u_int32_t msgLen,
                                     byte msgType)
 {
-    MessageHeader *hdr = (MessageHeader *)buffer_;
+    MessageHeader *hdr = (MessageHeader *)sendBuffer_;
     hdr->msgType = msgType;
     hdr->msgLen = msgLen;
     hdr->sigLen = 0;
@@ -82,7 +82,7 @@ MessageHeader *Endpoint::PrepareMsg(const byte *msg,
         return nullptr;
     }
 
-    memcpy(buffer_ + sizeof(MessageHeader), msg,
+    memcpy(sendBuffer_ + sizeof(MessageHeader), msg,
            hdr->msgLen);
 
     return hdr;
@@ -91,7 +91,7 @@ MessageHeader *Endpoint::PrepareMsg(const byte *msg,
 MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg,
                                          byte msgType)
 {
-    MessageHeader *hdr = (MessageHeader *)buffer_;
+    MessageHeader *hdr = (MessageHeader *)sendBuffer_;
     hdr->msgType = msgType;
     hdr->msgLen = msg.ByteSizeLong();
     hdr->sigLen = 0;
@@ -102,7 +102,7 @@ MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg,
                    << "\t length=" << hdr->msgLen;
         return nullptr;
     } 
-    msg.SerializeToArray(buffer_ + sizeof(MessageHeader), hdr->msgLen);
+    msg.SerializeToArray(sendBuffer_ + sizeof(MessageHeader), hdr->msgLen);
 
     return hdr;
 }

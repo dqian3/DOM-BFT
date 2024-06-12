@@ -25,7 +25,6 @@ namespace dombft
         std::unique_ptr<UDPEndpoint> endpoint_;
 
         /** The handler objects for our endpoint library */
-        std::unique_ptr<MessageHandler>  msgHandler_;
         std::unique_ptr<Timer>  fwdTimer_;
 
         // TODO storing these protobuf objects like this might not be great performance wise

@@ -61,7 +61,6 @@ cc_library(
     deps = [
         ":address",
         ":common_struct",
-        ":message_handler",
         ":timer",
         ":signature_provider",
         "@com_github_enki_libev//:libev",

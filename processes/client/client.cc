@@ -55,23 +55,19 @@ namespace dombft
         nextReqSeq_ = 1;
 
         endpoint_ = std::make_unique<UDPEndpoint>(clientIP, clientPort, true);
-        replyHandler_ = std::make_unique<UDPMessageHandler>(
-            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
-            {
-                ((Client *)ctx)->receiveReply(msgHdr, msgBuffer, sender);
-            },
-            this);
+        MessageHandlerFunc replyHandler = [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+        {
+            ((Client *)ctx)->receiveReply(msgHdr, msgBuffer, sender);
+        };
 
-
-        // Handler only lives as long as the parent class
-        endpoint_->RegisterMsgHandler(replyHandler_.get());
+        endpoint_->RegisterMsgHandler(replyHandler);
 
         timeoutTimer_ = std::make_unique<Timer>(
             [](void *ctx, void *endpoint)
             {
                 ((Client *)ctx)->checkTimeouts();
             },
-            5000,
+        5000,
             this);
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
@@ -244,9 +240,8 @@ namespace dombft
 
         for (const Address &addr : replicaAddrs_)
         {
-            endpoint_->SendPreparedMsgTo(addr, true);
+            endpoint_->SendPreparedMsgTo(addr);
         }
-        endpoint_->setBufReady(false);
 #endif
 
 
@@ -274,9 +269,8 @@ namespace dombft
                 endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
                 for (const Address &addr : replicaAddrs_)
                 {
-                    endpoint_->SendPreparedMsgTo(addr, true);
+                    endpoint_->SendPreparedMsgTo(addr);
                 }
-                endpoint_->setBufReady(false);
 
                 reqState.certTime = now; // timeout again later
             }
@@ -375,9 +369,8 @@ namespace dombft
                     endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
                     for (const Address &addr : replicaAddrs_)
                     {
-                        endpoint_->SendPreparedMsgTo(addr, true);
+                        endpoint_->SendPreparedMsgTo(addr);
                     }
-                    endpoint_->setBufReady(false);
 
                     reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
 

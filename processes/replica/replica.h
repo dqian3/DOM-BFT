@@ -38,7 +38,6 @@ namespace dombft
         SignatureProvider sigProvider_;
 
         std::unique_ptr<UDPEndpoint> endpoint_;
-        std::unique_ptr<MessageHandler> handler_;
         std::unique_ptr<Log> log_;
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);

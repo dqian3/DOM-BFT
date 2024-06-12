@@ -128,10 +128,9 @@ namespace dombft
             }
         };
 
-        UDPMessageHandler handler(handleMeasurementReply);
         Timer monitor(checkEnd, 10, this);
 
-        measurmentEp_->RegisterMsgHandler(&handler);
+        measurmentEp_->RegisterMsgHandler(handleMeasurementReply);
         measurmentEp_->RegisterTimer(&monitor);
 
         measurmentEp_->LoopRun();
@@ -194,10 +193,9 @@ namespace dombft
             }
         };
 
-        UDPMessageHandler handler(handleClientRequest);
         Timer monitor(checkEnd, 10, this);
 
-        forwardEps_[thread_id]->RegisterMsgHandler(&handler);
+        forwardEps_[thread_id]->RegisterMsgHandler(handleClientRequest);
         forwardEps_[thread_id]->RegisterTimer(&monitor);
 
         forwardEps_[thread_id]->LoopRun();

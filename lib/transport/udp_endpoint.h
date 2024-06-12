@@ -5,20 +5,13 @@
 
 struct UDPMessageHandler 
 {
-
-    byte buffer_[UDP_BUFFER_SIZE];
+    byte sendBuffer_[UDP_BUFFER_SIZE];
     MessageHandlerFunc msgHandler_;
     void *context_;
     Address sender_;
     struct ev_io *evWatcher_;
-    UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL)
-        : msgHandler_(msghdl), context_(ctx)
-    {
-        evWatcher_ = new ev_io();
-        evWatcher_->data = (void *)this;
-    }
- 
     UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
+ 
     ~UDPMessageHandler();
 };
 
