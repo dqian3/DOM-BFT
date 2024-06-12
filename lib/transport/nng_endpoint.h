@@ -31,7 +31,7 @@ protected:
     byte recvBuffer_[NNG_BUFFER_SIZE];
 
 public:
-    NngEndpoint(const std::vector<Address> &bindAddrs, const std::vector<Address> &sendAddrs, bool isMasterReceiver);
+    NngEndpoint(const std::vector<Address> &bindAddrs, const std::vector<Address> &sendAddrs, bool isMasterReceiver = false);
     ~NngEndpoint();
 
     // Sends message in buffer
