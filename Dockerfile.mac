@@ -1,0 +1,33 @@
+FROM arm64v8/ubuntu
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+
+RUN apt-get update && apt-get install -y \
+    apt-transport-https \
+    curl \
+    gnupg \
+    curl \
+    libssl-dev \
+    git-all \
+    build-essential \
+    wget
+
+
+RUN wget https://go.dev/dl/go1.22.4.linux-arm64.tar.gz 
+RUN rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.4.linux-arm64.tar.gz
+ENV PATH="$PATH:/usr/local/go/bin"
+
+# Install Bazel
+# RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg \
+#     && mv bazel.gpg /etc/apt/trusted.gpg.d/ \
+#     && echo "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8" >/etc/apt/sources.list.d/bazel.list \
+#     && curl https://bazel.build/bazel-release.pub.gpg | apt-key add - \
+#     && apt-get update && apt-get install -y bazel=5.2.0 
+
+# RUN wget https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-amd64 -o /usr/local/bin/bazel
+RUN go install github.com/bazelbuild/bazelisk@latest
+ENV PATH="$PATH:$(go env GOPATH)/bin"
+
+WORKDIR /app
+CMD ["/bin/sh", "-c", "bash"]
