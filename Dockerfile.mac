@@ -27,8 +27,7 @@ ENV PATH="$PATH:/usr/local/go/bin"
 
 # RUN wget https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-amd64 -o /usr/local/bin/bazel
 RUN go install github.com/bazelbuild/bazelisk@latest
-ENV PATH="$PATH:$(go env GOPATH)/bin"
-ENV ANOTHER_VAR="hellothere"
+ENV PATH="$PATH:/root/go/bin"
 
 WORKDIR /app
 CMD ["/bin/sh", "-c", "bash"]
