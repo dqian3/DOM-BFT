@@ -34,8 +34,6 @@
 class Endpoint
 {
 protected:
-    /** The socket fd it uses to send/recv messages */
-    int fd_;
     /** The ev_loop struct from libev, which uses to handle io/timer events */
     struct ev_loop *evLoop_;
     /** One endpoint can have multiple timers registered. We maintain a set to

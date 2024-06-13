@@ -62,7 +62,7 @@ NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPai
 
         if ((ret = nng_dial(sock, sendUrl.c_str(), NULL, 0)) != 0) {
             LOG(ERROR) << "Failed to connect to " << sendUrl << ": " << nng_strerror(ret);
-            return;
+            // return;
         }
 
         socks_.push_back(sock);
@@ -102,6 +102,8 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
         nng_socket sock = socks_[i];
         Address &connAddr = socketToAddr_[i];
 
+        LOG(INFO) << "Registering handle for " << connAddr.GetIPAsString();
+
         int fd;
         if ((ret = nng_socket_get_int(sock, NNG_OPT_RECVFD, &fd)) != 0) {
             nng_close(sock);
@@ -110,7 +112,7 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
 
         // TODO recvBuffer is passed as a raw pointer here
         handlers_.push_back(std::make_unique<NngMessageHandler>(hdl, sock, connAddr, recvBuffer_));
-        ev_io_set(handlers_.back()->evWatcher_.get(), fd_, EV_READ);
+        ev_io_set(handlers_.back()->evWatcher_.get(), fd, EV_READ);
         ev_io_start(evLoop_, handlers_.back()->evWatcher_.get());
 
 
