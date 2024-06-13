@@ -1,7 +1,7 @@
 #include "lib/transport/udp_endpoint.h"
 
-UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx)
-    : msgHandler_(msghdl), context_(ctx)
+UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl)
+    : msgHandler_(msghdl)
 {
     evWatcher_ = new ev_io();
     evWatcher_->data = (void *)this;
@@ -10,15 +10,14 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl, void *ctx)
         UDPMessageHandler* m = (UDPMessageHandler*)(w->data);
         socklen_t sockLen = sizeof(struct sockaddr_in);
         
-        int msgLen = recvfrom(w->fd, m->sendBuffer_, UDP_BUFFER_SIZE, 0,
+        int msgLen = recvfrom(w->fd, m->recvBuffer_, UDP_BUFFER_SIZE, 0,
                                 (struct sockaddr*)(&(m->sender_.addr_)), &sockLen);
         if (msgLen > 0 && (uint32_t)msgLen > sizeof(MessageHeader)) 
         {
-            MessageHeader* msgHeader = (MessageHeader*)(void*)(m->sendBuffer_);
-            if (sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen >= (uint32_t)msgLen) 
+            MessageHeader* msgHeader = (MessageHeader*)(void*)(m->recvBuffer_);
+            if ((uint32_t) msgLen >= sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen) 
             {
-                m->msgHandler_(msgHeader, m->sendBuffer_ + sizeof(MessageHeader),
-                                &(m->sender_), m->context_);
+                m->msgHandler_(msgHeader, m->recvBuffer_ + sizeof(MessageHeader), &(m->sender_));
             }
         }
     });

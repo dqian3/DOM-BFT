@@ -55,9 +55,9 @@ namespace dombft
         nextReqSeq_ = 1;
 
         endpoint_ = std::make_unique<UDPEndpoint>(clientIP, clientPort, true);
-        MessageHandlerFunc replyHandler = [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+        MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
-            ((Client *)ctx)->receiveReply(msgHdr, msgBuffer, sender);
+            this->receiveReply(msgHdr, msgBuffer, sender);
         };
 
         endpoint_->RegisterMsgHandler(replyHandler);

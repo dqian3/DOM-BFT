@@ -17,16 +17,18 @@ int main(int argc, char *argv[])
     nng_pair_open(&sock);
     nng_listen(sock, argv[1], NULL, 0);
     nng_dial(sock, argv[2], NULL, 0);
+
     
-    char *recv_buf = NULL;
+    char recv_buf[1000];
     size_t recv_size;
 
 
     const char *msg = "Hello!";
     nng_send(sock, (void *) msg, strlen(msg) + 1, 0);
 
-    nng_recv(sock, &recv_buf, &recv_size, NNG_FLAG_ALLOC);
-    printf("Received: %s\n", recv_buf);
-    nng_free(recv_buf, recv_size);
+    while (true) {
+        nng_recv(sock, recv_buf, &recv_size, 0);
+        printf("Received: %s\n", recv_buf);
+    }
 }
 

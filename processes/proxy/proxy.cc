@@ -85,7 +85,7 @@ namespace dombft
     {
         std::vector<uint32_t> receieverOWDs(numReceivers_);
 
-        MessageHandlerFunc handleMeasurementReply = [this, &receieverOWDs](MessageHeader *hdr, void *body, Address *sender, void *context)
+        MessageHandlerFunc handleMeasurementReply = [this, &receieverOWDs](MessageHeader *hdr, void *body, Address *sender)
         {
             MeasurementReply reply;
 
@@ -138,7 +138,7 @@ namespace dombft
 
     void Proxy::ForwardRequestsTd(const int thread_id)
     {
-        MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender, void *context)
+        MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender)
         {
             ClientRequest inReq; // Client request we get
             DOMRequest outReq;   // Outgoing request that we attach a deadline to

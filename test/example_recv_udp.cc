@@ -43,7 +43,7 @@ void run(EVP_PKEY *pubkey)
 {
     UDPEndpoint ep("127.0.0.1", 9000);
 
-    MessageHandlerFunc func = [pubkey](MessageHeader *hdr, byte *body, Address *sender, void *context)
+    MessageHandlerFunc func = [pubkey](MessageHeader *hdr, byte *body, Address *sender)
     {
         printf("%d %d %d\n", hdr->msgLen, hdr->msgType, hdr->sigLen);
 

@@ -43,7 +43,7 @@ protected:
      * registered or not.*/
     std::set<struct Timer *> eventTimers_;
 
-    byte sendBuffer_[UDP_BUFFER_SIZE];
+    byte sendBuffer_[SEND_BUFFER_SIZE];
 
 public:
     int epId_; // The id of the endpoint, mainly for debug

@@ -53,9 +53,9 @@ namespace dombft
 
         endpoint_->RegisterTimer(fwdTimer_.get());
         endpoint_->RegisterMsgHandler(
-            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+            [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
             {
-                ((Receiver *)ctx)->receiveRequest(msgHdr, msgBuffer, sender);
+                this->receiveRequest(msgHdr, msgBuffer, sender);
             }
         );
     }

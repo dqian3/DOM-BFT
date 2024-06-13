@@ -48,7 +48,7 @@ struct std::hash<Address>
 {
     std::size_t operator()(const Address &k) const
     {
-        boost::hash<pair<std::string, int>>()(make_pair(k.ip_, k.port_));
+        return boost::hash<pair<std::string, int>>()(make_pair(k.ip_, k.port_));
     }
 };
 

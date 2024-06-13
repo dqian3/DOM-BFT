@@ -3,18 +3,25 @@
 
 #include "lib/transport/endpoint.h"
 
-#include <nng/nng.h>
+#include <unordered_map>
+#include <vector>
 
+#include <nng/nng.h>
 
 struct NngMessageHandler
 {
-    MessageHandlerFunc msgHandler_;
-    void *context_;
-    Address sender_;
-    ev_io *evWatcher_;
 
-    // The base class MessageHandler has a single 
-    NngMessageHandler(MessageHandlerFunc msghdl, void *ctx = NULL);
+    MessageHandlerFunc handlerFunc_;
+
+    // Each NngMessageHandler corresponds to a socket and dst addres
+    nng_socket sock_;
+    Address srcAddr_;
+    byte *recvBuffer_;
+
+    std::unique_ptr<ev_io> evWatcher_;
+
+    // TODO handle the memory of the recvBuffer (belonging to NngEndpoint better)
+    NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, const Address &otherAddr, byte *recvBuffer);
     ~NngMessageHandler();
 };
 
@@ -22,16 +29,17 @@ class NngEndpoint : public Endpoint
 {
 protected:
     /* data */
-    struct NngMessageHandler *msgHandler_;
+    std::vector<std::unique_ptr<NngMessageHandler>> handlers_;
+    std::vector<nng_socket> socks_;
+    std::unordered_map<Address, int> addrToSocket_; // Map from Address to index of in socks_
+    std::unordered_map<int, Address> socketToAddr_; // Map from index in socks_ to Address, reverse of above
 
-    // Buffer for preparing messages
-    // bufInUse_ is just for making sure prepare and send calls are 1 to 1. Not thread safe
-    std::vector<nng_socket> socks;
 
     byte recvBuffer_[NNG_BUFFER_SIZE];
 
 public:
-    NngEndpoint(const std::vector<Address> &bindAddrs, const std::vector<Address> &sendAddrs, bool isMasterReceiver = false);
+    // Takes a number of addresses
+    NngEndpoint(const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false);
     ~NngEndpoint();
 
     // Sends message in buffer

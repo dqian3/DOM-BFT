@@ -64,9 +64,9 @@ namespace dombft
         log_ = std::make_unique<Log>();
 
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
-        MessageHandlerFunc handler = [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
+        MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
-            ((Replica *)ctx)->handleMessage(msgHdr, msgBuffer, sender);
+            this->handleMessage(msgHdr, msgBuffer, sender);
         };
 
         endpoint_->RegisterMsgHandler(handler);
