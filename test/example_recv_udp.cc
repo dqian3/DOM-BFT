@@ -1,6 +1,6 @@
-#include "lib/udp_endpoint.h"
-#include "lib/address.h"
-#include "lib/message_handler.h"
+#include "lib/transport/udp_endpoint.h"
+#include "lib/transport/address.h"
+#include "lib/transport/message_handler.h"
 
 #include <glog/logging.h>
 
@@ -43,7 +43,7 @@ void run(EVP_PKEY *pubkey)
 {
     UDPEndpoint ep("127.0.0.1", 9000);
 
-    MessageHandlerFunc func = [pubkey](MessageHeader *hdr, byte *body, Address *sender, void *context)
+    MessageHandlerFunc func = [pubkey](MessageHeader *hdr, byte *body, Address *sender)
     {
         printf("%d %d %d\n", hdr->msgLen, hdr->msgType, hdr->sigLen);
 
@@ -61,9 +61,8 @@ void run(EVP_PKEY *pubkey)
         }
 
     };
-    UDPMessageHandler handler(func, nullptr);
     printf("Registiering message handler!\n");
-    ep.RegisterMsgHandler(&handler);
+    ep.RegisterMsgHandler(func);
 
     printf("Entering event loop\n");
 

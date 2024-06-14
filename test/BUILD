@@ -1,4 +1,22 @@
 cc_binary(
+    name = "example_nng_ep_recv",
+    srcs = ["example_nng_ep_recv.cc"],
+    deps = [
+        "//lib:endpoint",
+    ],
+)
+
+cc_binary(
+    name = "example_nng_ep_send",
+    srcs = ["example_nng_ep_send.cc"],
+    deps = [
+        "//lib:endpoint",
+    ],
+)
+
+
+
+cc_binary(
     name = "example_signed_udp",
     srcs = ["example_signed_udp.cc"],
     deps = [

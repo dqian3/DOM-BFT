@@ -1,4 +1,4 @@
-#include "lib/address.h"
+#include "lib/transport/address.h"
 
 Address::Address() : ip_(""), port_(-1)
 {
@@ -27,4 +27,8 @@ int Address::GetPortAsInt()
 {
     port_ = htons(addr_.sin_port);
     return port_;
+}
+
+bool Address::operator==(const Address& other) const {
+    return ip_ == other.ip_ && port_ == other.port_;
 }

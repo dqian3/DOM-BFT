@@ -1,5 +1,9 @@
 #include "receiver.h"
 
+#include "processes/config_util.h"
+#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+
 #include <openssl/pem.h>
 
 namespace dombft
@@ -7,8 +11,7 @@ namespace dombft
     using namespace dombft::proto;
 
     Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
-        : receiverId_(receiverId)
-        , proxyMeasurementPort_(config.proxyMeasurementPort)
+        : receiverId_(receiverId), proxyMeasurementPort_(config.proxyMeasurementPort)
     {
         std::string receiverIp = config.receiverIps[receiverId_];
         LOG(INFO) << "receiverIP=" << receiverIp;
@@ -31,32 +34,35 @@ namespace dombft
 
         /** Store replica addrs */
 
-        if (config.receiverLocal) {
-            replicaAddr_ = (Address("127.0.0.1",
-                                        config.replicaPort));
-        } else {
-            replicaAddr_ = (Address(config.replicaIps[receiverId],
-                                    config.replicaPort));
-        }
+        if (config.transport == "nng") {
+            auto addrPairs = getReceiverAddrs(config, receiverId);
+            replicaAddr_ = addrPairs.back().second;
 
-        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
-        msgHandler_ = std::make_unique<UDPMessageHandler>(
-            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
-            {
-                ((Receiver *)ctx)->receiveRequest(msgHdr, msgBuffer, sender);
-            },
-            this);
+            endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);            
+        }
+        else {
+            replicaAddr_ = (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId],
+                                        config.replicaPort));
+            endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
+        }
+        
+        LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.GetIPAsString() << ":" << replicaAddr_.GetPortAsInt();
 
         fwdTimer_ = std::make_unique<Timer>(
             [](void *ctx, void *endpoint)
             {
-                ((Receiver *)ctx)->checkDeadlines();
+            ((Receiver *)ctx)->checkDeadlines();
             },
             1000,
             this);
 
         endpoint_->RegisterTimer(fwdTimer_.get());
-        endpoint_->RegisterMsgHandler(msgHandler_.get());
+        endpoint_->RegisterMsgHandler(
+            [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+            {
+                this->receiveRequest(msgHdr, msgBuffer, sender);
+            }
+        );
     }
 
     Receiver::~Receiver()
@@ -115,7 +121,8 @@ namespace dombft
             // Check if request is on time.
             request.set_late(recv_time > request.deadline());
 
-            VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+            VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+                    << " deadline=" << request.deadline() << " now=" << recv_time;
 
             if (request.late())
             {
@@ -123,7 +130,6 @@ namespace dombft
                         << " late by " << recv_time - request.deadline() << "us";
                 VLOG(3) << "Checking deadlines before forwarding late message";
                 checkDeadlines();
-
 
                 forwardRequest(request);
             }
@@ -138,7 +144,7 @@ namespace dombft
 
     void Receiver::forwardRequest(const DOMRequest &request)
     {
-        if (false) //receiverConfig_.ipcReplica)
+        if (false) // receiverConfig_.ipcReplica)
         {
             // TODO
             throw "IPC communciation not implemented";
@@ -155,8 +161,7 @@ namespace dombft
 #if FABRIC_CRYPTO
             sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 #endif
-            endpoint_->SendPreparedMsgTo(replicaAddr_, true);
-            endpoint_->setBufReady(false);
+            endpoint_->SendPreparedMsgTo(replicaAddr_);
         }
     }
 

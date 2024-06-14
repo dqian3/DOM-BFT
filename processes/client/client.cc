@@ -1,5 +1,9 @@
 #include "client.h"
 
+#include "processes/config_util.h"
+#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+
 #define NUM_CLIENTS 100
 
 namespace dombft
@@ -10,17 +14,17 @@ namespace dombft
         : clientId_(id)
     {
         LOG(INFO) << "clientId=" << clientId_;
-        std::string clientIP = config.clientIps[clientId_];
-        LOG(INFO) << "clientIP=" << clientIP;
+        std::string clientIp = config.clientIps[clientId_];
+        LOG(INFO) << "clientIp=" << clientIp;
         int clientPort = config.clientPort;
         LOG(INFO) << "clientPort=" << clientPort;
 
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < config.proxyIps.size(); i++)
         {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPortBase;
+            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
             proxyAddrs_.push_back(Address(config.proxyIps[i],
-                                          config.proxyForwardPortBase));
+                                          config.proxyForwardPort));
         }
 
         /** Store all replica addrs */
@@ -54,24 +58,28 @@ namespace dombft
         /** Initialize state */
         nextReqSeq_ = 1;
 
-        endpoint_ = std::make_unique<UDPEndpoint>(clientIP, clientPort, true);
-        replyHandler_ = std::make_unique<UDPMessageHandler>(
-            [](MessageHeader *msgHdr, byte *msgBuffer, Address *sender, void *ctx)
-            {
-                ((Client *)ctx)->receiveReply(msgHdr, msgBuffer, sender);
-            },
-            this);
+        if (config.transport == "nng") {
+            auto addrPairs = getClientAddrs(config, clientId_);
+            endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+        }
+        else {
+            endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
+        }
+        
+        
+        MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+        {
+            this->receiveReply(msgHdr, msgBuffer, sender);
+        };
 
-
-        // Handler only lives as long as the parent class
-        endpoint_->RegisterMsgHandler(replyHandler_.get());
+        endpoint_->RegisterMsgHandler(replyHandler);
 
         timeoutTimer_ = std::make_unique<Timer>(
             [](void *ctx, void *endpoint)
             {
                 ((Client *)ctx)->checkTimeouts();
             },
-            5000,
+        5000,
             this);
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
@@ -244,9 +252,8 @@ namespace dombft
 
         for (const Address &addr : replicaAddrs_)
         {
-            endpoint_->SendPreparedMsgTo(addr, true);
+            endpoint_->SendPreparedMsgTo(addr);
         }
-        endpoint_->setBufReady(false);
 #endif
 
 
@@ -274,9 +281,8 @@ namespace dombft
                 endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
                 for (const Address &addr : replicaAddrs_)
                 {
-                    endpoint_->SendPreparedMsgTo(addr, true);
+                    endpoint_->SendPreparedMsgTo(addr);
                 }
-                endpoint_->setBufReady(false);
 
                 reqState.certTime = now; // timeout again later
             }
@@ -375,9 +381,8 @@ namespace dombft
                     endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
                     for (const Address &addr : replicaAddrs_)
                     {
-                        endpoint_->SendPreparedMsgTo(addr, true);
+                        endpoint_->SendPreparedMsgTo(addr);
                     }
-                    endpoint_->setBufReady(false);
 
                     reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
 

@@ -1,7 +1,6 @@
 #ifndef PROCESS_CONFIG_H
 #define PROCESS_CONFIG_H
 
-#include <glog/logging.h>
 #include <stdint.h>
 #include <yaml-cpp/yaml.h>
 #include <string>
@@ -21,13 +20,15 @@ public:
 
 struct ProcessConfig
 {
+    std::string transport;
+
     std::vector<std::string> clientIps;
     int clientPort;
     std::string clientKeysDir;
     int clientMaxRequests;
 
     std::vector<std::string> proxyIps;
-    int proxyForwardPortBase;
+    int proxyForwardPort;
     int proxyMeasurementPort;
     int proxyShards;
     std::string proxyKeysDir;
@@ -109,7 +110,7 @@ struct ProcessConfig
         {
             parseStringVector(proxyIps, proxyNode, "ips");
             proxyShards = parseField<int>(proxyNode, "shards");
-            proxyForwardPortBase = parseField<int>(proxyNode, "forwardPortBase");
+            proxyForwardPort = parseField<int>(proxyNode, "forwardPort");
             proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyInitialOwd = parseField<int>(proxyNode, "initialOwd");
@@ -170,7 +171,7 @@ struct ProcessConfig
             throw ConfigParseException("Error loading config file:" + e.msg + ".");
         }
 
-        LOG(INFO) << "Using config:\n " << config;
+        transport = parseField<std::string>(config, "transport");
 
         parseClientConfig(config);
         parseProxyConfig(config);

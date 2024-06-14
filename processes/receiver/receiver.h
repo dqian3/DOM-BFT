@@ -2,10 +2,9 @@
 
 #include "lib/protocol_config.h"
 #include "lib/utils.h"
-#include "lib/address.h"
+#include "lib/transport/address.h"
 #include "proto/dombft_proto.pb.h"
-#include "lib/udp_endpoint.h"
-#include "lib/ipc_endpoint.h"
+#include "lib/transport/endpoint.h"
 #include "lib/signature_provider.h"
 #include "lib/message_type.h"
 
@@ -23,14 +22,9 @@ namespace dombft
         SignatureProvider sigProvider_;
 
         /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
-        std::unique_ptr<UDPEndpoint> endpoint_;
-
-        /** The receiver optionally uses this endpoint to forward messages along IPC to the receiver*/
-        // TODO this could probably be handled in a cleaner way
-        // std::unique_ptr<IPCEndpoint> ipc_endpoint;
+        std::unique_ptr<Endpoint> endpoint_;
 
         /** The handler objects for our endpoint library */
-        std::unique_ptr<MessageHandler>  msgHandler_;
         std::unique_ptr<Timer>  fwdTimer_;
 
         // TODO storing these protobuf objects like this might not be great performance wise

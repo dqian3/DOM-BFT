@@ -7,6 +7,8 @@
 // rather than for tunable parameters such as timeouts or changeable information such 
 // as IPs and ports. Generally these will be used for experiments
 
+// TOOD, move these to yaml
+
 #define DOMBFT 0
 #define PBFT 1
 #define ZYZ 2

@@ -5,11 +5,11 @@
 #include <optional>
 #include <thread>
 
-#include "lib/address.h"
+#include "lib/transport/address.h"
 #include "lib/protocol_config.h"
 #include "lib/message_type.h"
 #include "lib/signature_provider.h"
-#include "lib/udp_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 
@@ -43,9 +43,7 @@ namespace dombft
 
 
         /** The endpoint uses to submit request to proxies and receive replies*/
-        std::unique_ptr<UDPEndpoint> endpoint_;
-        /** The message handler used to handle replies (from replicas) */
-        std::unique_ptr<MessageHandler> replyHandler_;
+        std::unique_ptr<Endpoint> endpoint_;
         /** Timer to handle request timeouts TODO (timeouts vs repeated timer would maybe be better)*/
         std::unique_ptr<Timer> timeoutTimer_;
 

@@ -8,8 +8,7 @@
 // Own libraries
 #include "lib/protocol_config.h"
 #include "lib/utils.h"
-#include "lib/endpoint.h"
-#include "lib/udp_endpoint.h"
+#include "lib/transport/endpoint.h"
 #include "lib/signature_provider.h"
 
 #include "proto/dombft_proto.pb.h"
@@ -54,15 +53,9 @@ namespace dombft
 
         SignatureProvider sigProvider_;
 
-        /** Each CheckQuorumTd thread uses a udp socket inside measurementEp_, based on its
-         * id, to send reply to clients
-         */
-        Endpoint *measurmentEp_;
 
-        /** Each ForwardRequestsTd thread uses a udp socket in forwardEps_, based on
-         * its id, to multicast requests to replicas
-         */
-        std::vector<UDPEndpoint *> forwardEps_;
+        std::unique_ptr<Endpoint> measurmentEp_;
+        std::vector<std::unique_ptr<Endpoint>> forwardEps_;
 
         /** CalculateLatencyBoundTd updates latencyBound_ and concurrently
          * ForwardRequestsTds read it and included in request messages */
