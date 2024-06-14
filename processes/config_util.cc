@@ -113,7 +113,7 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
         addAddrPairs(ret, "127.0.0.2", replicaPort, {"127.0.0.1"}, receiverPort);    
     } else {
         // Only connect to corresponding receiver
-        addAddrPairs(ret, replicaIp, replicaPort, {config.replicaIps[id]}, receiverPort);    
+        addAddrPairs(ret, replicaIp, replicaPort, {config.receiverIps[id]}, receiverPort);    
     }
 
     return ret;

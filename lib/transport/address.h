@@ -38,7 +38,7 @@ public:
     ~Address();
 
     std::string GetIPAsString();
-    int GetPortAsInt();
+    int GetPortAsInt();  
 
     bool operator==(const Address& other) const;
 };

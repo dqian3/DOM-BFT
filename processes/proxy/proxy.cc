@@ -15,6 +15,7 @@ namespace dombft
     {
         numShards_ = config.proxyShards;
         latencyBound_ = config.proxyInitialOwd;
+        lastDeadline_ = GetMicrosecondTimestamp();
         maxOWD_ = config.proxyMaxOwd;
 
         std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
@@ -175,7 +176,7 @@ namespace dombft
                 }
 
                 uint64_t now = GetMicrosecondTimestamp();
-                uint64_t deadline = now + 1.5 * latencyBound_;
+                uint64_t deadline = now + latencyBound_;
                 deadline = std::max(deadline, lastDeadline_ + 1);
                 lastDeadline_ = deadline;
 
@@ -193,7 +194,11 @@ namespace dombft
 
                 for (int i = 0; i < numReceivers_; i++)
                 {
-                    VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to " << receiverAddrs_[i].ip_;
+                    VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq()  
+                            << ") to " << receiverAddrs_[i].ip_
+                            << " deadline=" << deadline << " latencyBound=" << latencyBound_
+                            << " now=" << GetMicrosecondTimestamp();
+
 
                     MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO

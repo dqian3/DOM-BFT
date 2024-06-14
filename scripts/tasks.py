@@ -77,7 +77,7 @@ def get_gcloud_ext_ips(c):
 def get_gcloud_process_group(config, ext_ips):
     int_ips = set()
     for process in config:
-        int_ips |= set([ip for ip in config[process]["ips"]])
+        int_ips |= set([ip for ip in config[process]["ips"] if "ips" in config["process"]])
 
     # TODO transfer keys and configs
     ips = []

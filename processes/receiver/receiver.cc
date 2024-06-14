@@ -36,7 +36,9 @@ namespace dombft
 
         if (config.transport == "nng") {
             auto addrPairs = getReceiverAddrs(config, receiverId);
-            endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+            replicaAddr_ = addrPairs.back().second;
+
+            endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);            
         }
         else {
             replicaAddr_ = (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId],
@@ -44,6 +46,8 @@ namespace dombft
             endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
         }
         
+        LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.GetIPAsString() << ":" << replicaAddr_.GetPortAsInt();
+
         fwdTimer_ = std::make_unique<Timer>(
             [](void *ctx, void *endpoint)
             {
@@ -117,7 +121,8 @@ namespace dombft
             // Check if request is on time.
             request.set_late(recv_time > request.deadline());
 
-            VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+            VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+                    << " deadline=" << request.deadline() << " now=" << recv_time;
 
             if (request.late())
             {

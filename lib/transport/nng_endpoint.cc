@@ -65,6 +65,8 @@ NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPai
             // return;
         }
 
+        VLOG(1) << "Creating connection between " << bindUrl << " and " << sendUrl;
+
         socks_.push_back(sock);
         addrToSocket_[connAddr] = socks_.size() - 1;
         socketToAddr_[socks_.size() - 1] = connAddr;
@@ -89,6 +91,8 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
     {
         VLOG(1) << "\tSend Fail " << nng_strerror(ret);
     }
+
+    VLOG(4) << "Sending to " << socketToAddr_[addrToSocket_[dstAddr]].GetIPAsString();
     return 0;
 }
 
@@ -102,7 +106,7 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
         nng_socket sock = socks_[i];
         Address &connAddr = socketToAddr_[i];
 
-        LOG(INFO) << "Registering handle for " << connAddr.GetIPAsString();
+        LOG(INFO) << "Registering handle for " << connAddr.GetIPAsString() << ":" << connAddr.GetPortAsInt();
 
         int fd;
         if ((ret = nng_socket_get_int(sock, NNG_OPT_RECVFD, &fd)) != 0) {
