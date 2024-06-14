@@ -10,7 +10,8 @@ cc_library(
         "//lib:message_type",
         "//lib:protocol_config",
         "//lib:log",
-        "//processes:process_config"
+        "//processes:process_config",
+        "//processes:config_util",
     ],
 )
 

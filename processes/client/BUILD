@@ -9,7 +9,8 @@ cc_library(
         "//lib:signature_provider",
         "//lib:utils",
         "//lib:protocol_config",
-        "//processes:process_config"
+        "//processes:process_config",
+        "//processes:config_util",
     ],
 )
 

@@ -1,5 +1,9 @@
 #include "receiver.h"
 
+#include "processes/config_util.h"
+#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+
 #include <openssl/pem.h>
 
 namespace dombft
@@ -30,19 +34,16 @@ namespace dombft
 
         /** Store replica addrs */
 
-        if (config.receiverLocal)
-        {
-            replicaAddr_ = (Address("127.0.0.1",
-                                    config.replicaPort));
+        if (config.transport == "nng") {
+            auto addrPairs = getReceiverAddrs(config, receiverId);
+            endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
         }
-        else
-        {
-            replicaAddr_ = (Address(config.replicaIps[receiverId],
-                                    config.replicaPort));
+        else {
+            replicaAddr_ = (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId],
+                                        config.replicaPort));
+            endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
         }
-
-        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
-            
+        
         fwdTimer_ = std::make_unique<Timer>(
             [](void *ctx, void *endpoint)
             {

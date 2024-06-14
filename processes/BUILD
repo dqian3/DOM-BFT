@@ -14,9 +14,9 @@ cc_library(
     hdrs = ["config_util.h"],
     srcs = ["config_util.cc"],
     deps = [
-        ":process_config"
+        ":process_config",
         "@com_github_jbeder_yaml_cpp//:yaml-cpp",
-        "//lib:address"
+        "//lib:address",
     ],
     visibility = ["//visibility:public"],
 )

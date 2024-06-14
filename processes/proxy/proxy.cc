@@ -3,6 +3,9 @@
 #include <openssl/pem.h>
 
 #include "lib/message_type.h"
+#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+#include "processes/config_util.h"
 
 namespace dombft
 {
@@ -21,16 +24,33 @@ namespace dombft
             LOG(ERROR) << "Unable to load private key!";
             exit(1);
         }
+    
 
-        for (int i = 0; i < numShards_; i++)
-        {
-            forwardEps_.push_back(new UDPEndpoint(config.proxyIps[proxyId],
-                                                  config.proxyForwardPort + i,
-                                                  false));
+        if (config.transport == "nng") {
+            if (numShards_ > 1) {
+                LOG(ERROR) << "Multiple shards for proxy and NNG not implemented yet!";
+                exit(1);
+            }
+            auto addrPairs = getProxyAddrs(config, proxyId);
+            // This is rather messy, but the last nReceivers addresses in this return value are 
+            // for the measurement connections  o
+            std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(), addrPairs.end() - config.receiverIps.size());
+            std::vector<std::pair<Address, Address>> measurmentAddrs(addrPairs.end() - config.receiverIps.size(), addrPairs.end());
+
+            forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
+            measurmentEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
+
+        } else {
+            for (int i = 0; i < numShards_; i++)
+            {
+                forwardEps_.push_back(std::make_unique<UDPEndpoint>(config.proxyIps[proxyId],
+                                                    config.proxyForwardPort + i,
+                                                    false));
+            }
+
+            measurmentEp_ = std::make_unique<UDPEndpoint>(
+                config.proxyIps[proxyId], config.proxyMeasurementPort);
         }
-
-        measurmentEp_ = new UDPEndpoint(
-            config.proxyIps[proxyId], config.proxyMeasurementPort);
 
         numReceivers_ = config.receiverIps.size();
         for (int i = 0; i < numReceivers_; i++)
@@ -153,7 +173,7 @@ namespace dombft
                     LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                     return;
                 }
-                
+
                 uint64_t now = GetMicrosecondTimestamp();
                 uint64_t deadline = now + 1.5 * latencyBound_;
                 deadline = std::max(deadline, lastDeadline_ + 1);

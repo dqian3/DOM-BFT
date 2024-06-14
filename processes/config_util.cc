@@ -116,5 +116,5 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
         addAddrPairs(ret, replicaIp, replicaPort, {config.replicaIps[id]}, receiverPort);    
     }
 
-
+    return ret;
 }

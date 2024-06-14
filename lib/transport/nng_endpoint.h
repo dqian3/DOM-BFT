@@ -1,5 +1,5 @@
-#ifndef UDP_ENDPOINT_H
-#define UDP_ENDPOINT_H
+#ifndef NNG_ENDPOINT_H
+#define NNG_ENDPOINT_H
 
 #include "lib/transport/endpoint.h"
 

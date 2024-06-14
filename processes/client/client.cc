@@ -1,5 +1,9 @@
 #include "client.h"
 
+#include "processes/config_util.h"
+#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+
 #define NUM_CLIENTS 100
 
 namespace dombft
@@ -10,8 +14,8 @@ namespace dombft
         : clientId_(id)
     {
         LOG(INFO) << "clientId=" << clientId_;
-        std::string clientIP = config.clientIps[clientId_];
-        LOG(INFO) << "clientIP=" << clientIP;
+        std::string clientIp = config.clientIps[clientId_];
+        LOG(INFO) << "clientIp=" << clientIp;
         int clientPort = config.clientPort;
         LOG(INFO) << "clientPort=" << clientPort;
 
@@ -54,7 +58,15 @@ namespace dombft
         /** Initialize state */
         nextReqSeq_ = 1;
 
-        endpoint_ = std::make_unique<UDPEndpoint>(clientIP, clientPort, true);
+        if (config.transport == "nng") {
+            auto addrPairs = getClientAddrs(config, clientId_);
+            endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+        }
+        else {
+            endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
+        }
+        
+        
         MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
             this->receiveReply(msgHdr, msgBuffer, sender);

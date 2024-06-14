@@ -4,7 +4,6 @@
 #include "process_config.h"
 #include "lib/transport/address.h"
 
-
 #include <utility>
 #include <vector>
 

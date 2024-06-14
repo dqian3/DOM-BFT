@@ -4,7 +4,7 @@
 #include "lib/utils.h"
 #include "lib/transport/address.h"
 #include "proto/dombft_proto.pb.h"
-#include "lib/transport/udp_endpoint.h"
+#include "lib/transport/endpoint.h"
 #include "lib/signature_provider.h"
 #include "lib/message_type.h"
 
@@ -22,7 +22,7 @@ namespace dombft
         SignatureProvider sigProvider_;
 
         /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
-        std::unique_ptr<UDPEndpoint> endpoint_;
+        std::unique_ptr<Endpoint> endpoint_;
 
         /** The handler objects for our endpoint library */
         std::unique_ptr<Timer>  fwdTimer_;

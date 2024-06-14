@@ -1,7 +1,6 @@
 #ifndef PROCESS_CONFIG_H
 #define PROCESS_CONFIG_H
 
-#include <glog/logging.h>
 #include <stdint.h>
 #include <yaml-cpp/yaml.h>
 #include <string>
@@ -21,6 +20,8 @@ public:
 
 struct ProcessConfig
 {
+    std::string transport;
+
     std::vector<std::string> clientIps;
     int clientPort;
     std::string clientKeysDir;
@@ -170,7 +171,7 @@ struct ProcessConfig
             throw ConfigParseException("Error loading config file:" + e.msg + ".");
         }
 
-        LOG(INFO) << "Using config:\n " << config;
+        transport = parseField<std::string>(config, "transport");
 
         parseClientConfig(config);
         parseProxyConfig(config);

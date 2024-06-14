@@ -1,3 +1,6 @@
+transport: "nng"
+
+
 client:
   ips: 
   - "127.0.0.10"

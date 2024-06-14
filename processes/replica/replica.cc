@@ -1,5 +1,9 @@
 #include "replica.h"
 
+#include "processes/config_util.h"
+#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+
 #include <openssl/pem.h>
 #include <assert.h>
 
@@ -63,7 +67,13 @@ namespace dombft
 
         log_ = std::make_unique<Log>();
 
-        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+        if (config.transport == "nng") {
+            auto addrPairs = getReplicaAddrs(config, replicaId_);
+            endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+        } else {
+            endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+
+        }
         MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
             this->handleMessage(msgHdr, msgBuffer, sender);

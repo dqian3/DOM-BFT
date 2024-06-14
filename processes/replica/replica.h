@@ -5,7 +5,7 @@
 #include "lib/message_type.h"
 #include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
-#include "lib/transport/udp_endpoint.h"
+#include "lib/transport/endpoint.h"
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 
@@ -37,7 +37,7 @@ namespace dombft
         /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
         SignatureProvider sigProvider_;
 
-        std::unique_ptr<UDPEndpoint> endpoint_;
+        std::unique_ptr<Endpoint> endpoint_;
         std::unique_ptr<Log> log_;
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
