@@ -11,7 +11,7 @@ proxy:
   ips: 
     - "127.0.0.9"  
   shards: 1
-  forwardPortBase: 31000
+  forwardPort: 31000
   measurementPort: 32000
   keysDir: keys/proxy
   initialOwd: 1000 # The initial one-way delay (usecs) between replicas and proxies

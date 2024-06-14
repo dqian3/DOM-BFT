@@ -18,9 +18,9 @@ namespace dombft
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < config.proxyIps.size(); i++)
         {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPortBase;
+            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
             proxyAddrs_.push_back(Address(config.proxyIps[i],
-                                          config.proxyForwardPortBase));
+                                          config.proxyForwardPort));
         }
 
         /** Store all replica addrs */

@@ -25,7 +25,7 @@ namespace dombft
         for (int i = 0; i < numShards_; i++)
         {
             forwardEps_.push_back(new UDPEndpoint(config.proxyIps[proxyId],
-                                                  config.proxyForwardPortBase + i,
+                                                  config.proxyForwardPort + i,
                                                   false));
         }
 
