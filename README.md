@@ -31,7 +31,18 @@ The built executables will be created by default in `bazel-bin`, inside of which
 the same directory structure as the source, containing the executables.
 
 The [/scripts](/scripts) directory also contains a number of helpful scripts for
-running the executables both locally and remotely.
+running the executables both locally and remotely. See the [README there](/scripts/README.md)
+for more details.
+
+## Tests
+
+Tests exist for this code, though I make no guarantees about how comprehensive they are. The
+tests can be built with 
+```
+bazel build //test/...
+```
+The files starting with `test_` are actualy gtest tests for various components that I've built.
+There are also a few experimental "sandbox" programs that serve as examples of usage. 
 
 ## Basic Docker Setup
 
