@@ -16,7 +16,7 @@ proxy:
     - "10.128.0.19"  
   shards: 1
   forwardPort: 31000
-  measurementPorts 32000
+  measurementPort: 32000
   keysDir: keys/proxy
   initialOwd: 5000 # The initial one-way delay (usecs) between replicas and proxies
   maxOwd: 10000
