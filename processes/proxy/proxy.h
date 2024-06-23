@@ -145,8 +145,8 @@ namespace dombft
         template <typename T>
         class MeasureContext{
         public:
-            MeasureContext(uint32_t numReceivers,T strategy,uint32_t windowSize = 0) :
-                    numReceivers_(numReceivers), windowSize_(windowSize){
+            MeasureContext(uint32_t numReceivers,T strategy, uint32_t cap, uint32_t windowSize = 0) :
+                    numReceivers_(numReceivers), cap_(cap), windowSize_(windowSize){
                 for (uint32_t i = 0; i < numReceivers_; i++){
                     receiverOWDs_.push_back(std::make_unique<T>(strategy));
                 }
@@ -156,12 +156,18 @@ namespace dombft
                 receiverOWDs_[rcvrIndex]->addMeasure(measure);
             }
             inline uint32_t getOWD() const{
-                // find the largest OWD among all receivers that is smaller than 88
-                uint32_t maxOWD = 88;
-                return 0;
+                // find the largest OWD among all receivers that is smaller than cap
+                uint32_t maxOWD = 0;
+                for (uint32_t i = 0; i < numReceivers_; i++){
+                    uint32_t curOWD = receiverOWDs_[i]->getOWD();
+                    maxOWD = curOWD >= cap_ ? maxOWD : std::max(maxOWD, curOWD);
+                }
+
+                return maxOWD;
             }
         private:
             uint32_t numReceivers_;
+            uint32_t cap_;
             uint32_t windowSize_;
             std::vector<std::unique_ptr<BaseCalcStrategy>> receiverOWDs_;
         };

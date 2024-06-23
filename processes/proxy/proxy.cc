@@ -99,7 +99,7 @@ namespace dombft
     void Proxy::RecvMeasurementsTd()
     {
 
-        OWDCalc::MeasureContext context(numReceivers_, OWDCalc::MaxStrategy());
+        OWDCalc::MeasureContext context(numReceivers_, OWDCalc::MaxStrategy(), maxOWD_);
 
         MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender)
         {
