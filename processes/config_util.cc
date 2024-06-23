@@ -7,7 +7,7 @@ void addAddrPairs(vector<pair<Address, Address>> &pairs, const std::string &myIp
                     const std::vector<std::string> theirIps, 
                     int theirPort)
 {
-    for (int i = 0; i < theirIps.size(); i++) {
+    for (uint32_t i = 0; i < theirIps.size(); i++) {
         pairs.push_back({Address(myIp, myBasePort + i), Address(theirIps[i], theirPort)});
     }
 }

@@ -13,7 +13,7 @@ curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg
     && curl https://bazel.build/bazel-release.pub.gpg | apt-key add - \
     && apt-get update && apt-get install -y bazel=5.2.0 
 
-git clone https://github.com/dqian3/DOM-BFT
+git clone -b sender_sliding_window https://github.com/dqian3/DOM-BFT
 
 cd DOM-BFT
 
