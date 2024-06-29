@@ -6,7 +6,7 @@ client:
   - "127.0.0.10"
   port: 33000
   keysDir: keys/client
-  maxRequests: 1
+  maxRequests: 2000
 
 
 # Proxy Info

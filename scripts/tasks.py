@@ -1,9 +1,10 @@
 
-from fabric import Connection, ThreadingGroup, SerialGroup
+# from fabric import Connection, ThreadingGroup, SerialGroup
 from invoke import task
 import yaml
 import os
 import time
+from time import sleep
 
 # TODO we can process output of these here instead of in the terminal
 
@@ -23,6 +24,7 @@ def local(c, config_file):
     n_proxies = len(config["proxy"]["ips"])
     n_receivers = len(config["receiver"]["ips"])
 
+    print("Running on local machine, n_replicas: ", n_replicas, "n_clients: ", n_clients, "n_proxies: ", n_proxies, "n_receivers: ", n_receivers)
 
     client_handles = []
     other_handles = []
@@ -34,20 +36,27 @@ def local(c, config_file):
         for id in range(n_replicas):
             hdl = arun(f"./bazel-bin/processes/replica/dombft_replica -v {5} -config {config_file} -replicaId {id} &>logs/replica{id}.log")
             other_handles.append(hdl)
+
+        sleep(6)
             
         for id in range(n_receivers):
             hdl = arun(f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log")
             other_handles.append(hdl)
+        sleep(2)
+        
 
         for id in range(n_proxies):
             hdl = arun(f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log")
             other_handles.append(hdl)
+        sleep(2)
 
         for id in range(n_clients):
             hdl = arun(f"./bazel-bin/processes/client/dombft_client -v {5} -config {config_file} -clientId {id} &>logs/client{id}.log")
             client_handles.append(hdl)
+    
 
     try:
+        sleep(80)
         # join on the client processes, which should end
         for hdl in client_handles:
             hdl.join()
