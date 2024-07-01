@@ -82,15 +82,14 @@ new_git_repository(
     # shallow_since = "1557212520 +0000",
 )
 
-# RocksDB dependency
-new_git_repository(
-    name = "rocksdb",
-    build_file = "//third_party/rocksdb:BUILD.bazel",
-    commit = "v9.3.1",  # You can specify the desired version or commit hash
-    remote = "https://github.com/facebook/rocksdb.git",
-)
-
-# I do not think that the following part is actually neeeded. 
+# # RocksDB dependency
+# for some reason it is taking very long to build @Daniel Qian please look into this bazel problem
+# new_git_repository(
+#     name = "rocksdb",
+#     build_file = "//third_party/rocksdb:BUILD.bazel",
+#     tag = "v9.3.1",  # You can specify the desired version or commit hash
+#     remote = "https://github.com/facebook/rocksdb.git",
+# )
 
 # load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
 # rules_foreign_cc_dependencies()

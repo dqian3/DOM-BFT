@@ -54,6 +54,19 @@ cc_library(
 )
 
 cc_library(
+    name = "kv_store", 
+    srcs = ["apps/kv_rocksdb.cc"],
+    hdrs = ["apps/kv_rocksdb.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protocol_config",
+        ":log",
+        "@com_github_google_glog//:glog",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_library(
     name = "endpoint",
     srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc"],
     hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h"],

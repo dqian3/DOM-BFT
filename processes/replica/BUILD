@@ -10,6 +10,7 @@ cc_library(
         "//lib:message_type",
         "//lib:protocol_config",
         "//lib:log",
+        "//lib:kv_store",
         "//processes:process_config",
         "//processes:config_util",
     ],

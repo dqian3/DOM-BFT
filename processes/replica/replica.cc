@@ -4,6 +4,8 @@
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
+#include "lib/apps/kv_rocksdb.h"
+
 #include <openssl/pem.h>
 #include <assert.h>
 
