@@ -82,6 +82,22 @@ new_git_repository(
     # shallow_since = "1557212520 +0000",
 )
 
+# RocksDB dependency
+new_git_repository(
+    name = "rocksdb",
+    build_file = "//third_party/rocksdb:BUILD.bazel",
+    commit = "v9.3.1",  # You can specify the desired version or commit hash
+    remote = "https://github.com/facebook/rocksdb.git",
+)
+
+# I do not think that the following part is actually neeeded. 
+
+# load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
+# rules_foreign_cc_dependencies()
+
+# # Load the build definitions for rules_foreign_cc
+# load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake_external")
+
 # Google protobuf.
 git_repository(
     name = "com_google_protobuf",

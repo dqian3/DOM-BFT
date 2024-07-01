@@ -257,10 +257,10 @@ namespace dombft
 #endif
 
 
-        if (nextReqSeq_ == 1000 + maxInFlight_) {
-            LOG(INFO) << "Exiting after sending " << 1000 + maxInFlight_  << " requests";
-            exit(0);
-        }
+        // if (nextReqSeq_ == 1000 + maxInFlight_) {
+        //     LOG(INFO) << "Exiting after sending " << 1000 + maxInFlight_  << " requests";
+        //     exit(0);
+        // }
         nextReqSeq_++;
     }
 

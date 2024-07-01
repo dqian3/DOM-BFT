@@ -141,8 +141,12 @@ namespace dombft
                 return;
             }
 
+            LOG(INFO) << "Received a request with deadline " << domHeader.deadline();
+
             // TODO also pass client request
             handleClientRequest(clientHeader);
+
+            LOG(INFO) << "Done Sending reply back to receiver";
         }
 #else
         if (hdr->msgType == CLIENT_REQUEST)
@@ -330,6 +334,7 @@ namespace dombft
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+        LOG(INFO) << "Endpoint prepared Message Sent!";
     }
 
     void Replica::handleCert(const Cert &cert)

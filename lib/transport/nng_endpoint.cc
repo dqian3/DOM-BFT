@@ -85,8 +85,12 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
 {
     MessageHeader *hdr = (MessageHeader *)sendBuffer_;
 
+    Address tempAddr = dstAddr;
+
     nng_socket s = socks_[addrToSocket_[dstAddr]];
+    LOG(INFO) << "NNG Sending message to " << tempAddr.GetIPAsString() << ":" << tempAddr.GetPortAsInt();
     int ret = nng_send(s, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0);
+    LOG(INFO) << "[OK] Sent message ";
     if (ret != 0)
     {
         VLOG(1) << "\tSend Fail " << nng_strerror(ret);
