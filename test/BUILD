@@ -14,6 +14,15 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "test_rocksdb",
+    srcs = ["test_rocksdb.cc"],
+    deps = [
+        "//lib:kv_store",
+        "//lib:rocksdb_system",
+    ],
+)
+
 
 
 cc_binary(
@@ -60,15 +69,15 @@ cc_test(
   ],
 )
 
-cc_test(
-  name = "test_kv_store",
-  size = "small",
-  srcs = ["test_kv_store.cc"],
-  deps = [
-    "//lib:application",
-    "@com_google_googletest//:gtest_main"
-  ],
-)
+# cc_test(
+#   name = "test_kv_store",
+#   size = "small",
+#   srcs = ["test_kv_store.cc"],
+#   deps = [
+#     "//lib:application",
+#     "@com_google_googletest//:gtest_main"
+#   ],
+# )
 
 cc_binary(
   name = "sandbox_protobuf",

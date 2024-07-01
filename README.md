@@ -53,3 +53,11 @@ The current way to use this setup is to simply run
 docker compose run --rm dev
 ```
 This will give you a bash shell in a conatiner where you can run the above commands to compile the code. Docker compose mounts the source code into the container as well, so any changes you make locally (i.e. in an editor) will be reflected in your conatiner.
+
+## RocksDB Setup
+Currently, rocksdb is not built with bazel, but rather with apt system. To use the rocksdb as the application, after installing in the system, create symbolic links so that the bazel build system can recognize the library. 
+
+```
+mkdir -p /root/DOM-BFT/external/rocksdb
+ln -s /usr/include/rocksdb/* /root/DOM-BFT/external/rocksdb/
+```

@@ -116,16 +116,26 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-
+# @Daniel, because the rocksdb is installed via apt instead of bazel, which was a nightmare. 
+# may need to change this after we have a better way to install rocksdb with Bazel 
 cc_library(
-    name = "application",
-    hdrs = ["application.h"] + glob(["apps/*"]),
-    srcs = glob(["apps/*"]),
-    deps = [
-        "//proto:dombft_apps_cc",
-        ":common_struct",
-        ":protocol_config",
-         "@openssl//:openssl",
-    ],
+    name = "rocksdb_system",
+    hdrs = glob(["external/rocksdb/**/*.h"]),
+    includes = ["/usr/include"],  # This allows your code to include RocksDB headers as <rocksdb/header.h>
+    linkopts = ["-lrocksdb"],  # Link against the RocksDB library installed on the system
     visibility = ["//visibility:public"],
 )
+
+
+# cc_library(
+#     name = "application",
+#     hdrs = ["application.h"] + glob(["apps/*"]),
+#     srcs = glob(["apps/*"]),
+#     deps = [
+#         "//proto:dombft_apps_cc",
+#         ":common_struct",
+#         ":protocol_config",
+#          "@openssl//:openssl",
+#     ],
+#     visibility = ["//visibility:public"],
+# )
