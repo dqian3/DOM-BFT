@@ -121,7 +121,7 @@ cc_library(
 cc_library(
     name = "rocksdb_system",
     hdrs = glob(["external/rocksdb/**/*.h"]),
-    includes = ["/usr/include"],  # This allows your code to include RocksDB headers as <rocksdb/header.h>
+    includes = ["/usr/include/rocksdb/"],  # This allows your code to include RocksDB headers as <rocksdb/header.h>
     linkopts = ["-lrocksdb"],  # Link against the RocksDB library installed on the system
     visibility = ["//visibility:public"],
 )
