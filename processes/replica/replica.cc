@@ -309,6 +309,9 @@ namespace dombft
         Reply reply;
         uint32_t clientId = request.client_id();
 
+        std::string key(request.req_data().begin(), request.req_data().end());
+        LOG(INFO) << "Received request from client " << clientId << " with key " << key;
+
         if (clientId < 0 || clientId > clientAddrs_.size())
         {
             LOG(ERROR) << "Invalid client id" << clientId;
