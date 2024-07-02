@@ -8,7 +8,8 @@
 KVStore::KVStore(const std::string &dbPath) {
     rocksdb::Options options;
     options.create_if_missing = true;
-    rocksdb::Status status = rocksdb::TransactionDB::Open(options_, txn_db_options_, dbPath, &db_);
+    LOG(INFO) << "create if missing? " << options.create_if_missing;
+    rocksdb::Status status = rocksdb::TransactionDB::Open(options, txn_db_options_, dbPath, &db_);
     if (!status.ok()) {
         LOG(ERROR) << "Failed to open transactional database: " << status.ToString();
         exit(1);

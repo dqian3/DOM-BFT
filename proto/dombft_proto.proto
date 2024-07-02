@@ -1,12 +1,24 @@
 syntax = "proto3";
 package dombft.proto;
 
+// enum KVRequestType {
+//     GET = 0;
+//     SET = 1;
+//     DELETE = 2;
+// }
+
 message ClientRequest {
     uint32 client_id = 1;
     uint32 client_seq = 2;
     uint64 send_time = 3;
     bool is_write = 4;
 
+    // // define the kv request type that the client wants: GET, SET, DELETE
+    // KVRequestType kv_request_type = 5;
+    // string key = 6;
+    // optional string value = 7;
+
+    // let us keep the req data as raw bytes for now, and use string streaming to parse the KV request.
     bytes req_data = 5;
 }
 

@@ -7,6 +7,7 @@
 #include "lib/signature_provider.h"
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
+#include "lib/apps/kv_rocksdb.h"
 #include "proto/dombft_proto.pb.h"
 
 #include <fstream>
@@ -28,6 +29,8 @@ namespace dombft
         uint32_t clientPort_;
 
         uint32_t f_;
+
+        KVStore db_;
 
 #if PROTOCOL == PBFT
         std::map<std::pair<int, int>, int> prepareCount;

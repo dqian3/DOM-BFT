@@ -14,7 +14,7 @@ namespace dombft
     using namespace dombft::proto;
 
     Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
-        : replicaId_(replicaId)
+        : replicaId_(replicaId), db_("testdb" + std::to_string(replicaId))
     {
         // TODO check for config errors
         std::string replicaIp = config.replicaIps[replicaId];
@@ -309,8 +309,20 @@ namespace dombft
         Reply reply;
         uint32_t clientId = request.client_id();
 
-        std::string key(request.req_data().begin(), request.req_data().end());
-        LOG(INFO) << "Received request from client " << clientId << " with key " << key;
+        std::string request_data(request.req_data().begin(), request.req_data().end());
+        LOG(INFO) << "Received request from client " << clientId << " with key " << request_data;
+
+        std::istringstream iss(request_data);
+        std::string op, key, value;
+
+        iss >> op >> key >> value;
+        LOG(INFO) << "Operation: " << op << " Key: " << key << " Value: " << value;
+
+        db_.beginTransaction();
+        db_.set(key, value);
+        db_.commit();
+
+        LOG(INFO) <<"commit success";
 
         if (clientId < 0 || clientId > clientAddrs_.size())
         {

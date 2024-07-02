@@ -13,6 +13,7 @@ cc_library(
         "//lib:kv_store",
         "//processes:process_config",
         "//processes:config_util",
+        "//lib:rocksdb_system",
     ],
 )
 

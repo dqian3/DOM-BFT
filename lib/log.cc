@@ -27,7 +27,10 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
     SHA256_Update(&ctx, &client_id, sizeof(client_id));
     SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
     SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, &raw_request, req_len);
+
+    // Peter: I think this might be a mistake. it should pass in the pointer, not the address of the pointer
+    // please check the git log to see what I have changed
+    SHA256_Update(&ctx, raw_request, req_len);
     SHA256_Final(digest, &ctx);
 }
 

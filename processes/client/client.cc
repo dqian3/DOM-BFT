@@ -231,7 +231,9 @@ namespace dombft
         request.set_client_seq(nextReqSeq_);
         request.set_send_time(GetMicrosecondTimestamp());
         request.set_is_write(true); // TODO modify this based on some random chance
-        request.set_req_data("Hello, NYU!");
+
+        // generate random set request
+        request.set_req_data("SET NYU 65");
 
         requestStates_[nextReqSeq_].sendTime = request.send_time();
 
