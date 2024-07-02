@@ -1,6 +1,8 @@
 #include "log.h"
 
 #include <glog/logging.h>
+#include <sstream>
+#include <iomanip>
 
 using namespace dombft::proto;
 
@@ -68,6 +70,8 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
     byte *prevDigest = log[prevSeq]->digest;
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
+
+    logDigest(log[nextSeq % log.size()]->digest);
     
     VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id
             << " c_seq=" << c_seq;
@@ -112,4 +116,14 @@ std::ostream& operator<<(std::ostream &out, const Log &l)
         out << l.log[seq].get();
     }
     return out;
+}
+
+
+void logDigest(const byte digest[SHA256_DIGEST_LENGTH]) {
+    std::stringstream hexStream;
+    hexStream << std::hex << std::setfill('0');
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        hexStream << std::setw(2) << static_cast<int>(digest[i]);
+    }
+    LOG(INFO) << "Digest: " << hexStream.str();
 }

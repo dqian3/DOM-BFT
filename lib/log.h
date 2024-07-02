@@ -30,6 +30,8 @@ struct LogEntry
              byte *req, uint32_t req_len, byte *prev_digest);
     ~LogEntry();
 
+    void logDigest(const byte digest[SHA256_DIGEST_LENGTH]);
+
     friend std::ostream& operator<<(std::ostream &out, const LogEntry &le);
 };
 
