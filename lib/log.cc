@@ -119,7 +119,7 @@ std::ostream& operator<<(std::ostream &out, const Log &l)
 }
 
 
-void logDigest(const byte digest[SHA256_DIGEST_LENGTH]) {
+void Log::logDigest(const byte digest[SHA256_DIGEST_LENGTH]) {
     std::stringstream hexStream;
     hexStream << std::hex << std::setfill('0');
     for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {

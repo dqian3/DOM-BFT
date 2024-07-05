@@ -31,7 +31,7 @@ struct LogEntry
     ~LogEntry();
 
     void logDigest(const byte digest[SHA256_DIGEST_LENGTH]);
-
+    
     friend std::ostream& operator<<(std::ostream &out, const LogEntry &le);
 };
 
@@ -64,6 +64,7 @@ struct Log
 
     friend std::ostream& operator<<(std::ostream &out, const Log &l);
 
+    void logDigest(const byte digest[SHA256_DIGEST_LENGTH]);
 };
 
 
