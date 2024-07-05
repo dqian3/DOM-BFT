@@ -15,6 +15,8 @@
 #include <memory>
 #include <thread>
 
+#include <mutex>
+
 #include <yaml-cpp/yaml.h>
 
 namespace dombft
@@ -22,6 +24,17 @@ namespace dombft
     class Replica
     {
     private:
+
+        // this is for the state of the replica, whether it can take the fast path now or not. 
+        // in the future, it may be extended to more states of the replica
+        // when a request comes in, based on the current state of the replica, the replica will decide whether to take the fast path or not
+        enum class ReplicaState
+        {
+            NORMAL_PATH,
+            FAST_PATH, 
+            SLOW_PATH,
+        };
+
         uint32_t replicaId_;
         std::vector<Address> replicaAddrs_;
 
@@ -31,6 +44,10 @@ namespace dombft
         uint32_t f_;
 
         KVStore db_;
+
+        // init the atomic variable of the state of the replica. 
+        ReplicaState replicaState_;
+        std::mutex stateMutex_;
 
 #if PROTOCOL == PBFT
         std::map<std::pair<int, int>, int> prepareCount;
@@ -48,6 +65,8 @@ namespace dombft
         void handleCert(const dombft::proto::Cert &cert);
 
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
+        void setState(ReplicaState newState);
+        ReplicaState getState();
 
     public:
         Replica(const ProcessConfig &config, uint32_t replicaId);

@@ -14,7 +14,7 @@ namespace dombft
     using namespace dombft::proto;
 
     Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
-        : replicaId_(replicaId), db_("testdb" + std::to_string(replicaId))
+        : replicaId_(replicaId), db_("testdb" + std::to_string(replicaId)), replicaState_(ReplicaState::FAST_PATH)
     {
         // TODO check for config errors
         std::string replicaIp = config.replicaIps[replicaId];
@@ -94,6 +94,18 @@ namespace dombft
         // Submit first request
         LOG(INFO) << "Starting event loop...";
         endpoint_->LoopRun();
+    }
+
+    void Replica::setState(ReplicaState newState)
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        replicaState_ = newState;
+    }
+
+    Replica::ReplicaState Replica::getState()
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        return replicaState_;
     }
 
 #if PROTOCOL == DOMBFT
@@ -304,6 +316,7 @@ namespace dombft
     }
 #endif
 
+    // the way a replica handles the client request is dependent on the current state of the replica. 
     void Replica::handleClientRequest(const ClientRequest &request)
     {
         Reply reply;
@@ -318,40 +331,53 @@ namespace dombft
         iss >> op >> key >> value;
         LOG(INFO) << "Operation: " << op << " Key: " << key << " Value: " << value;
 
-        db_.beginTransaction();
-        db_.set(key, value);
-        db_.commit();
+        if (this->getState() == ReplicaState::FAST_PATH)
+        {   
+            LOG(INFO) << "fast path taken";
+            db_.beginTransaction();
+            db_.set(key, value);
+            db_.commit();
 
-        LOG(INFO) <<"commit success";
+            LOG(INFO) <<"commit success";
 
-        if (clientId < 0 || clientId > clientAddrs_.size())
+            if (clientId < 0 || clientId > clientAddrs_.size())
+            {
+                LOG(ERROR) << "Invalid client id" << clientId;
+                return;
+            }
+
+            reply.set_client_id(clientId);
+            reply.set_client_seq(request.client_seq());
+            reply.set_replica_id(replicaId_);
+
+            // TODO change this when we implement the slow path
+            reply.set_view(0);
+
+            bool fast = log_->addEntry(clientId, request.client_seq(),
+                                    (byte *)request.req_data().c_str(),
+                                    request.req_data().length());
+
+            reply.set_fast(fast);
+            reply.set_seq(log_->nextSeq - 1);
+
+            reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+
+            LOG(INFO) << "Sending reply back to client " << clientId;
+            endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+            LOG(INFO) << "Endpoint prepared Message Sent!";
+        }
+        else if (this->getState() == ReplicaState::NORMAL_PATH)
         {
-            LOG(ERROR) << "Invalid client id" << clientId;
-            return;
+            LOG(INFO) << "Replica is in normal path, which has not been implemented yet";
+        }
+        else
+        {
+            LOG(INFO) << "Replica is in slow path";
         }
 
-        reply.set_client_id(clientId);
-        reply.set_client_seq(request.client_seq());
-        reply.set_replica_id(replicaId_);
-
-        // TODO change this when we implement the slow path
-        reply.set_view(0);
-
-        bool fast = log_->addEntry(clientId, request.client_seq(),
-                                   (byte *)request.req_data().c_str(),
-                                   request.req_data().length());
-
-        reply.set_fast(fast);
-        reply.set_seq(log_->nextSeq - 1);
-
-        reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
-
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-
-        LOG(INFO) << "Sending reply back to client " << clientId;
-        endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
-        LOG(INFO) << "Endpoint prepared Message Sent!";
     }
 
     void Replica::handleCert(const Cert &cert)
