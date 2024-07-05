@@ -14,7 +14,7 @@ namespace dombft
     using namespace dombft::proto;
 
     Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
-        : replicaId_(replicaId), db_("testdb" + std::to_string(replicaId)), replicaState_(ReplicaState::FAST_PATH)
+        : replicaId_(replicaId), db_("testdb" + std::to_string(replicaId)), replicaState_(ReplicaState::FAST_PATH), biggestDeadline_(0)
     {
         // TODO check for config errors
         std::string replicaIp = config.replicaIps[replicaId];
@@ -157,6 +157,7 @@ namespace dombft
 
             LOG(INFO) << "Received a request with deadline " << domHeader.deadline();
 
+            updateDeadline(domHeader.deadline());
             // TODO also pass client request
             handleClientRequest(clientHeader);
 
@@ -382,6 +383,13 @@ namespace dombft
 
     void Replica::handleCert(const Cert &cert)
     {
+
+        // once we receive a cert, we know that either there is something wrong, or client trying to force us to take a normal path
+        // to commit the current requests. 
+        // Either way, we need to revert to the normal path.
+        setState(ReplicaState::NORMAL_PATH);
+        LOG(INFO) << "Received a cert, reverting to normal path";
+
         // TODO verify cert, for now just accept it!
         if (cert.replies().size() < 2 * f_ + 1)
         {
@@ -446,6 +454,20 @@ namespace dombft
         for (const Address &addr : replicaAddrs_)
         {
             endpoint_->SendPreparedMsgTo(addr);
+        }
+    }
+
+    void Replica::updateDeadline(uint64_t deadline)
+    {
+        std::lock_guard<std::mutex> lock(deadlineMutex_);
+        if (deadline > biggestDeadline_)
+        {
+            LOG(INFO) << "updated the deadline to " << deadline;
+            biggestDeadline_ = deadline;
+        } else {
+            // if we receive a deadline that is smaller than the biggest deadline we have seen so far, we need to revert to the normal path
+            setState(ReplicaState::NORMAL_PATH);
+            LOG(INFO) << "Received a smaller deadline, reverting to normal path";
         }
     }
 

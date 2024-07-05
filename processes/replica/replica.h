@@ -49,6 +49,11 @@ namespace dombft
         ReplicaState replicaState_;
         std::mutex stateMutex_;
 
+        // init thhe biggest deadline received so far. 
+        // if a message with a larger deadline is received, switch to normal path (or slow path? )
+        uint64_t biggestDeadline_;
+        std::mutex deadlineMutex_;
+
 #if PROTOCOL == PBFT
         std::map<std::pair<int, int>, int> prepareCount;
         std::map<std::pair<int, int>, int> commitCount;
@@ -67,6 +72,8 @@ namespace dombft
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
         void setState(ReplicaState newState);
         ReplicaState getState();
+
+        void updateDeadline(uint64_t deadline);
 
     public:
         Replica(const ProcessConfig &config, uint32_t replicaId);
