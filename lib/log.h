@@ -22,6 +22,13 @@ struct LogEntry
     byte *raw_request;
     byte *raw_result;
 
+    // if I do not have the length, then having the request does not make sense at all. 
+    // because I will not know wehre to stop reading. 
+    // and include that in the constructor. 
+    uint32_t req_len;
+    // maybe we should also have the result length here.
+    uint32_t result_len;
+
     byte digest[SHA256_DIGEST_LENGTH];
 
     LogEntry();

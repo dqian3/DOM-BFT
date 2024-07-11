@@ -22,6 +22,8 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
 {
     memcpy(raw_request, req, req_len);
 
+    req_len = req_len;
+
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
 
