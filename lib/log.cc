@@ -16,6 +16,7 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
     , client_id(c_id)
     , client_seq(c_seq)    
     , raw_request((byte * ) malloc(req_len)) // Manually allocate some memory to store the request
+    , request_len(req_len)
     , raw_result(nullptr)
 {
     memcpy(raw_request, req, req_len);
@@ -27,7 +28,7 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
     SHA256_Update(&ctx, &client_id, sizeof(client_id));
     SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
     SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, &raw_request, req_len);
+    SHA256_Update(&ctx, raw_request, req_len);
     SHA256_Final(digest, &ctx);
 }
 

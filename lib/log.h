@@ -22,6 +22,9 @@ struct LogEntry
     byte *raw_request;
     byte *raw_result;
 
+    uint32_t request_len;
+    uint32_t result_len;
+
     byte digest[SHA256_DIGEST_LENGTH];
 
     LogEntry();
