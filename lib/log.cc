@@ -62,8 +62,8 @@ Log::Log()
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
                    byte *req, uint32_t req_len)
 {
-    uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
-    byte *prevDigest = log[prevSeq]->digest;
+    uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
+    byte *prevDigest = log[prevSeqIdx]->digest;
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
     
@@ -72,7 +72,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
     nextSeq++;
     // TODO
 
-    return executeEntry(nextSeq - 1);
+    return lastExecuted != nextSeq - 1;
 }
 
 bool Log::executeEntry(uint32_t seq)

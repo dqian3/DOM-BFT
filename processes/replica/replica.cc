@@ -319,6 +319,8 @@ namespace dombft
         bool fast = log_->addEntry(clientId, request.client_seq(),
                                    (byte *)request.req_data().c_str(),
                                    request.req_data().length());
+        // TODO actually get teh result here.
+        log_->executeEntry(log_->nextSeq - 1);
 
         reply.set_fast(fast);
         reply.set_seq(log_->nextSeq - 1);
