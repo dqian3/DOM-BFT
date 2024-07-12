@@ -42,10 +42,10 @@ struct LogCommitPoint
     uint32_t seq;
 
     dombft::proto::Cert cert;
+    byte app_digest[SHA256_DIGEST_LENGTH];
 
-    // TODO application state digest.
-
-    // TODO commit messages from other replicas
+    std::map<int, std::vector<byte>> commitMessages;
+    std::map<int, std::vector<byte>> signatures;
 };
 
 
@@ -54,6 +54,9 @@ struct LogSuffix
     LogCommitPoint base;
     std::vector<std::unique_ptr<LogEntry>> entries;
     dombft::proto::Cert latestCert;
+
+
+    // TODO function to combine 2f + 1 log suffixes into a single one
 };
 
 struct Log
@@ -67,6 +70,7 @@ struct Log
     std::map<uint32_t, std::unique_ptr<dombft::proto::Cert>> certs;
 
     LogCommitPoint commitPoint;
+    LogCommitPoint tentativeCommitPoint;
 
     // Map of client ids to sequence numbers, for de-duplicating requests
     std::unordered_map<uint32_t, uint32_t> clientSeqs;

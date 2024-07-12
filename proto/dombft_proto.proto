@@ -59,6 +59,31 @@ message CertReply {
     bytes result = 4; 
 }
 
+message Commit {
+    uint32 replica_id = 1;
+    uint32 seq = 2;
+
+    bytes log_digest = 3;  
+    bytes app_digest = 4;
+}
+
+message TransferRequest {
+    // TODO
+}
+
+message TransferResponse {
+    // TODO should look like a log suffix, but with app state
+}
+
+message TriggerFallback
+{
+    // More TODO
+}
+
+message StartFallback 
+{
+    // LogSuffix struct
+}
 
 
 // Dummy protocol message used for dummy implemenations of 
