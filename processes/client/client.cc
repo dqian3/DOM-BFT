@@ -212,6 +212,7 @@ namespace dombft
             if (reqState.certReplies.size() >= 2 * f_ + 1)
             {
                 // Request is committed, so we can clean up state!
+                // TODO check we have a consistent set of application replies!
 
                 VLOG(1) << "Request " << cseq << " normal path committed! "
                         << "Took " << GetMicrosecondTimestamp() - requestStates_[cseq].sendTime << " us";

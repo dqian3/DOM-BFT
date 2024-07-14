@@ -319,11 +319,13 @@ namespace dombft
         bool fast = log_->addEntry(clientId, request.client_seq(),
                                    (byte *)request.req_data().c_str(),
                                    request.req_data().length());
+        int seq = log_->nextSeq - 1;
+
         // TODO actually get teh result here.
-        log_->executeEntry(log_->nextSeq - 1);
+        log_->executeEntry(seq);
 
         reply.set_fast(fast);
-        reply.set_seq(log_->nextSeq - 1);
+        reply.set_seq(seq);
 
         reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
@@ -332,6 +334,12 @@ namespace dombft
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+
+        // Try and commit every 10 replies (half of the way before we can't speculatively execute anymore)
+        if (seq % MAX_SPEC_HIST / 2 == 0) {
+            broadcastToReplicas(reply, MessageType::REPLY);
+        }
+
     }
 
     void Replica::handleCert(const Cert &cert)

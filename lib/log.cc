@@ -11,13 +11,10 @@ LogEntry::LogEntry()
 }
 
 LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
-            byte *req, uint32_t req_len, byte *prev_digest)
-    : seq(s)
-    , client_id(c_id)
-    , client_seq(c_seq)    
-    , raw_request((byte * ) malloc(req_len)) // Manually allocate some memory to store the request
-    , request_len(req_len)
-    , raw_result(nullptr)
+                   byte *req, uint32_t req_len, byte *prev_digest)
+    : seq(s), client_id(c_id), client_seq(c_seq), raw_request((byte *)malloc(req_len)) // Manually allocate some memory to store the request
+      ,
+      raw_result(nullptr), request_len(req_len), result_len(0)
 {
     memcpy(raw_request, req, req_len);
 
@@ -34,15 +31,17 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
 
 LogEntry::~LogEntry()
 {
-    if (raw_request != nullptr) {
+    if (raw_request != nullptr)
+    {
         free(raw_request);
     }
-    if (raw_result != nullptr) {
+    if (raw_result != nullptr)
+    {
         free(raw_result);
     }
 }
 
-std::ostream& operator<<(std::ostream &out, const LogEntry& le)
+std::ostream &operator<<(std::ostream &out, const LogEntry &le)
 {
     out << le.seq << ": (" << le.client_id << " ," << le.client_seq << ")";
     return out;
@@ -53,10 +52,10 @@ Log::Log()
 {
     // Zero initialize all the entries
     // TODO: there's probably a better way to handle this
-    for (uint32_t i = 0; i < log.size(); i++) {
+    for (uint32_t i = 0; i < log.size(); i++)
+    {
         log[i] = std::make_unique<LogEntry>();
     }
-
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
@@ -66,18 +65,19 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
     byte *prevDigest = log[prevSeqIdx]->digest;
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
-    
+
     VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id
             << " c_seq=" << c_seq;
     nextSeq++;
-    // TODO
+    // TODO prevent adding entries without committing
 
     return lastExecuted != nextSeq - 1;
 }
 
 bool Log::executeEntry(uint32_t seq)
 {
-    if (lastExecuted != seq - 1) {
+    if (lastExecuted != seq - 1)
+    {
         return false;
     }
 
@@ -86,26 +86,61 @@ bool Log::executeEntry(uint32_t seq)
     return true;
 }
 
-
 void Log::addCert(uint32_t seq, const Cert &cert)
 {
     certs[seq] = std::make_unique<Cert>(cert);
 }
 
-const byte* Log::getDigest() const
+const byte *Log::getDigest() const
 {
-    if (nextSeq == 0) {
+    if (nextSeq == 0)
+    {
         return nullptr;
     }
     uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
-    return log[prevSeq]->digest; 
+    return log[prevSeq]->digest;
 }
 
-std::ostream& operator<<(std::ostream &out, const Log &l)
+// Create a new commit point given the existence of a certificate at seq
+bool Log::createCommitPoint(uint32_t seq)
+{
+    if (certs.count(seq) == 0)
+    {
+        LOG(ERROR) << "Attempt to create a commit point at seq " << seq
+                   << " but no cert exists!";
+    }
+
+    tentativeCommitPoint.seq = seq;
+    tentativeCommitPoint.cert = *certs[seq];
+
+    // TODO actually get app state and create a digest
+    memset(tentativeCommitPoint.app_digest, 0, SHA256_DIGEST_LENGTH);
+
+    tentativeCommitPoint.commitMessages.clear();
+    tentativeCommitPoint.signatures.clear();
+
+    return true;
+}
+
+bool Log::addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int sigLen)
+{
+    int from = commit.replica_id();
+
+    tentativeCommitPoint.commitMessages[from] = commit;
+    tentativeCommitPoint.signatures[from] = n
+
+}
+
+bool Log::commitCommitPoint()
+{
+}
+
+std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    for (uint32_t i = l.nextSeq - MAX_SPEC_HIST; i < l.nextSeq; i++) {
+    for (uint32_t i = l.nextSeq - MAX_SPEC_HIST; i < l.nextSeq; i++)
+    {
         int seq = i % MAX_SPEC_HIST;
         out << l.log[seq].get();
     }

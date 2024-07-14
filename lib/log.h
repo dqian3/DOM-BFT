@@ -39,25 +39,16 @@ struct LogEntry
 
 struct LogCommitPoint
 {
-    uint32_t seq;
-
+    uint32_t seq = 0;
+    // TODO shared ptr here so we don't duplicate it from certs.
     dombft::proto::Cert cert;
     byte app_digest[SHA256_DIGEST_LENGTH];
 
-    std::map<int, std::vector<byte>> commitMessages;
-    std::map<int, std::vector<byte>> signatures;
+    std::map<uint32_t, dombft::proto::Commit> commitMessages;
+    std::map<uint32_t, std::vector<byte>> signatures;
 };
 
 
-struct LogSuffix
-{
-    LogCommitPoint base;
-    std::vector<std::unique_ptr<LogEntry>> entries;
-    dombft::proto::Cert latestCert;
-
-
-    // TODO function to combine 2f + 1 log suffixes into a single one
-};
 
 struct Log
 {
@@ -70,6 +61,7 @@ struct Log
     std::map<uint32_t, std::unique_ptr<dombft::proto::Cert>> certs;
 
     LogCommitPoint commitPoint;
+    // TODO have more than 1 tentative commit point, in case replicas are trying different ones.
     LogCommitPoint tentativeCommitPoint;
 
     // Map of client ids to sequence numbers, for de-duplicating requests
@@ -85,7 +77,14 @@ struct Log
              byte *req, uint32_t req_len);
     bool executeEntry(uint32_t seq);
 
-    bool commitEntry(uint32_t seq);
+    // Create a new commit point given the existence of a certificate at seq 
+    bool createCommitPoint(uint32_t seq);
+    // Add a commit message to the commit point, 
+    bool addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int sigLen);
+    // Once 2f + 1 commits are reached the commit point is durable and
+    // we can truncate state. The 2f + 1 commits serve as a proof of the commit
+    // points validity as well. (TODO can this be f + 1?)
+    bool commitCommitPoint();
 
     
     void addCert(uint32_t seq, const dombft::proto::Cert &cert);
@@ -99,4 +98,17 @@ struct Log
 
 std::ostream& operator<<(std::ostream &out, const LogEntry &le);
 std::ostream& operator<<(std::ostream &out, const Log &l);
+
+
+// Passed around during contention resolution. Will get to this later.
+// struct LogSuffix
+// {
+//     LogCommitPoint base;
+//     std::vector<std::unique_ptr<LogEntry>> entries;
+//     // TODO shared ptr here so we don't duplicate it from certs.
+//     dombft::proto::Cert latestCert;
+
+
+//     // TODO function to combine 2f + 1 log suffixes into a single one
+// };
 #endif

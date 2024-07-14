@@ -40,9 +40,16 @@ namespace dombft
         std::unique_ptr<Endpoint> endpoint_;
         std::unique_ptr<Log> log_;
 
+        std::map<int, dombft::proto::Reply> commitCertReplies;
+        std::map<int, std::string> commitCertSigs;
+
+
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);
         void handleCert(const dombft::proto::Cert &cert);
+
+        void handleReply(const dombft::proto::Reply &cert);
+        void handleCommit(const dombft::proto::Commit &cert);
 
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
 
