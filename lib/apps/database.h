@@ -4,6 +4,10 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "lib/log.h"
+#include "lib/utils.h"
+
+
 
 enum class DB_STORE
 {
@@ -48,7 +52,7 @@ public:
     virtual std::string Put(const std::string key, const std::string value) = 0;
 
     // commit all the transactions up to this idx. 
-    virtual int Commit(const int idx) = 0;
+    virtual int Commit(const int begin_idx, const int end_idx, Log &log) = 0;
 
     /**
      * Select a new active table for the database
@@ -99,6 +103,7 @@ public:
     int Commit(const int begin_idx, const int end_idx, Log &log);   
     // execute a particular command
     std::string Execute(DB_STORE which_db, byte *req, uint32_t req_len);
+    std::string Execute(DB_STORE which_db, std::string req_str, uint32_t req_len);
 };
 
 #endif

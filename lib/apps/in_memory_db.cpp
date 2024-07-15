@@ -1,7 +1,6 @@
 #include "database.h"
 #include <unordered_map>
 #include <iostream>
-#include "log.h"
 #include <sstream>
 
 InMemoryDB::InMemoryDB()
@@ -22,6 +21,13 @@ int InMemoryDB::Open(const std::string)
 
 std::string InMemoryDB::Get(const std::string key)
 {
+    // auto table = db->find(activeTable);
+    // if (table == db->end())
+    // {
+    //     LOG(INFO) << "table not found";
+    //     return std::string();
+    // }
+
     return (*db)[activeTable][key];
 }
 
@@ -81,6 +87,37 @@ std::string InMemoryDB::Execute(DB_STORE which_db, byte *req, uint32_t req_len)
         if (which_db == DB_STORE::STABLE) {
             return GetStable(key);
         } else {
+            return Get(key);
+        }
+    }
+    else
+    {
+        return std::string();
+    }
+
+}
+
+std::string InMemoryDB::Execute(DB_STORE which_db, std::string req_str, uint32_t req_len) 
+{
+    std::istringstream iss(req_str);
+    std::string cmd, key, value;
+    iss >> cmd >> key >> value;
+
+    if (cmd == "SET")
+    {   
+        if (which_db == DB_STORE::STABLE) {
+            return PutStable(key, value);
+        } else {
+            LOG(INFO) << "PUT Unstable: " << key << " " << value;
+            return Put(key, value);
+        }
+    }
+    else if (cmd == "GET")
+    {
+        if (which_db == DB_STORE::STABLE) {
+            return GetStable(key);
+        } else {
+            LOG(INFO) << "GET Unstable: " << key; 
             return Get(key);
         }
     }

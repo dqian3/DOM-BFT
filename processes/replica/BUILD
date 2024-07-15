@@ -14,6 +14,7 @@ cc_library(
         "//processes:process_config",
         "//processes:config_util",
         "//lib:rocksdb_system",
+        "//lib:in_memory_db",
     ],
 )
 

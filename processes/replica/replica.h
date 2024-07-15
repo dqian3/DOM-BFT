@@ -9,6 +9,7 @@
 #include "lib/utils.h"
 #include "lib/apps/kv_rocksdb.h"
 #include "proto/dombft_proto.pb.h"
+#include "lib/apps/database.h"
 
 #include <fstream>
 #include <iostream>
@@ -44,6 +45,8 @@ namespace dombft
         uint32_t f_;
 
         KVStore db_;
+
+        InMemoryDB inMemoryDB_;
 
         // init the atomic variable of the state of the replica. 
         ReplicaState replicaState_;

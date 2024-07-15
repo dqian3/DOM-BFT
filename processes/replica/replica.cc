@@ -69,6 +69,8 @@ namespace dombft
 
         log_ = std::make_unique<Log>();
 
+        inMemoryDB_.Open();
+
         if (config.transport == "nng") {
             auto addrPairs = getReplicaAddrs(config, replicaId_);
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
@@ -335,12 +337,12 @@ namespace dombft
         if (this->getState() == ReplicaState::FAST_PATH)
         {   
             LOG(INFO) << "fast path taken";
-            db_.beginTransaction();
-            db_.set(key, value);
-            db_.commit();
+            // db_.beginTransaction();
+            // db_.set(key, value);
+            // db_.commit();
 
-            LOG(INFO) <<"commit success";
-
+            inMemoryDB_.Execute(DB_STORE::UNSTABLE, request_data, request_data.length());
+            
             if (clientId < 0 || clientId > clientAddrs_.size())
             {
                 LOG(ERROR) << "Invalid client id" << clientId;

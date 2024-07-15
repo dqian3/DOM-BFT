@@ -67,6 +67,21 @@ cc_library(
 )
 
 cc_library(
+    name = "in_memory_db", 
+    srcs = ["apps/in_memory_db.cpp"],
+    hdrs = ["apps/database.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protocol_config",
+        ":log",
+        "@com_github_google_glog//:glog",
+        "@com_google_protobuf//:protobuf",
+        "//lib:utils",
+    ],
+)
+
+
+cc_library(
     name = "endpoint",
     srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc"],
     hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h"],
