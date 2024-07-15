@@ -41,3 +41,4 @@ replica:
   - "127.0.0.4"
   port: 34000
   keysDir: "keys/replica"
+  forceNormal: 200

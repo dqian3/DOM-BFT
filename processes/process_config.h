@@ -5,6 +5,7 @@
 #include <yaml-cpp/yaml.h>
 #include <string>
 #include <vector>
+#include <iostream>
 
 class ConfigParseException : public std::runtime_error
 {
@@ -44,6 +45,9 @@ struct ProcessConfig
     std::vector<std::string> replicaIps;
     int replicaPort;
     std::string replicaKeysDir;
+
+    // the interval after which we force a replica to the normal path.
+    int forceNormal;
 
     template <class T>
     T parseField(const YAML::Node &parent, const std::string &key)
@@ -151,6 +155,7 @@ struct ProcessConfig
             parseStringVector(replicaIps, replicaNode, "ips");
             replicaPort = parseField<int>(replicaNode, "port");
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
+            forceNormal = parseField<int>(replicaNode, "forceNormal");
         }
         catch (const ConfigParseException &e)
         {

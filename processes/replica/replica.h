@@ -47,6 +47,8 @@ namespace dombft
         KVStore db_;
 
         InMemoryDB inMemoryDB_;
+        // an interval after which we forced a normal path.
+        int forceNormal_;
 
         // init the atomic variable of the state of the replica. 
         ReplicaState replicaState_;
@@ -77,6 +79,8 @@ namespace dombft
         ReplicaState getState();
 
         void updateDeadline(uint64_t deadline);
+
+        bool checkNormalPath();
 
     public:
         Replica(const ProcessConfig &config, uint32_t replicaId);

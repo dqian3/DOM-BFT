@@ -27,6 +27,11 @@ namespace dombft
         LOG(INFO) << "replicaPort=" << replicaPort;
 
         std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".pem";
+
+        forceNormal_ = config.forceNormal;
+
+        LOG(INFO) << "forceNormal=" << forceNormal_;
+
         LOG(INFO) << "Loading key from " << replicaKey;
         if (!sigProvider_.loadPrivateKey(replicaKey))
         {
@@ -342,7 +347,7 @@ namespace dombft
             // db_.commit();
 
             inMemoryDB_.Execute(DB_STORE::UNSTABLE, request_data, request_data.length());
-            
+
             if (clientId < 0 || clientId > clientAddrs_.size())
             {
                 LOG(ERROR) << "Invalid client id" << clientId;

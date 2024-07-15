@@ -17,6 +17,7 @@ cc_library(
         ":process_config",
         "@com_github_jbeder_yaml_cpp//:yaml-cpp",
         "//lib:address",
+        "@com_github_google_glog//:glog",
     ],
     visibility = ["//visibility:public"],
 )
