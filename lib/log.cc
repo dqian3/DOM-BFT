@@ -64,14 +64,18 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
     byte *prevDigest = log[prevSeqIdx]->digest;
 
+    if (nextSeq > commitPoint.seq + MAX_SPEC_HIST) {
+        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << commitPoint.seq;
+        return false;
+    }
+
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
 
     VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id
             << " c_seq=" << c_seq;
     nextSeq++;
-    // TODO prevent adding entries without committing
 
-    return lastExecuted != nextSeq - 1;
+    return true;
 }
 
 bool Log::executeEntry(uint32_t seq)
@@ -127,12 +131,13 @@ bool Log::addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int s
     int from = commit.replica_id();
 
     tentativeCommitPoint.commitMessages[from] = commit;
-    tentativeCommitPoint.signatures[from] = n
-
+    tentativeCommitPoint.signatures[from] = std::vector<byte>(sig, sig + sigLen);
 }
 
 bool Log::commitCommitPoint()
 {
+    commitPoint = tentativeCommitPoint;
+    tentativeCommitPoint = LogCommitPoint();
 }
 
 std::ostream &operator<<(std::ostream &out, const Log &l)

@@ -46,8 +46,18 @@ struct LogCommitPoint
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;
     std::map<uint32_t, std::vector<byte>> signatures;
-};
 
+    // Default constructor
+    LogCommitPoint() = default;
+
+    // Copy constructor
+    LogCommitPoint(const LogCommitPoint& other)
+        : seq(other.seq), cert(other.cert), 
+          commitMessages(other.commitMessages), signatures(other.signatures)
+    {
+        std::memcpy(app_digest, other.app_digest, SHA256_DIGEST_LENGTH);
+    }
+};
 
 
 struct Log
@@ -72,7 +82,7 @@ struct Log
     
     Log();
 
-    // Adds an entry and returns whether it could be spec. executed.
+    // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq,
              byte *req, uint32_t req_len);
     bool executeEntry(uint32_t seq);

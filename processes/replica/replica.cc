@@ -316,15 +316,22 @@ namespace dombft
         // TODO change this when we implement the slow path
         reply.set_view(0);
 
-        bool fast = log_->addEntry(clientId, request.client_seq(),
+        bool success = log_->addEntry(clientId, request.client_seq(),
                                    (byte *)request.req_data().c_str(),
                                    request.req_data().length());
-        int seq = log_->nextSeq - 1;
 
-        // TODO actually get teh result here.
+
+        if (!success) {
+            // TODO Handle this more gracefully by queuing requests
+            LOG(ERROR) << "Could not add request to log!";
+            return;
+        }
+
+        int seq = log_->nextSeq - 1;
+        // TODO actually get the result here.
         log_->executeEntry(seq);
 
-        reply.set_fast(fast);
+        reply.set_fast(true);
         reply.set_seq(seq);
 
         reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
@@ -335,7 +342,8 @@ namespace dombft
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
 
-        // Try and commit every 10 replies (half of the way before we can't speculatively execute anymore)
+        // Try and commit every 10 replies (half of the way before 
+        // we can't speculatively execute anymore)
         if (seq % MAX_SPEC_HIST / 2 == 0) {
             broadcastToReplicas(reply, MessageType::REPLY);
         }
@@ -344,7 +352,6 @@ namespace dombft
 
     void Replica::handleCert(const Cert &cert)
     {
-        // TODO verify cert, for now just accept it!
         if (cert.replies().size() < 2 * f_ + 1)
         {
             LOG(INFO) << "Received cert of size " << cert.replies().size()
@@ -399,6 +406,19 @@ namespace dombft
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
     }
+
+
+    void Replica::handleReply(const dombft::proto::Reply &cert)
+    {
+
+    }
+
+
+    void Replica::handleCommit(const dombft::proto::Commit &cert)
+    {
+
+    }
+
 
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
     {
