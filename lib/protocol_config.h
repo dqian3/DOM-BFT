@@ -22,7 +22,7 @@
 
 // Timeouts in us
 #define NORMAL_PATH_TIMEOUT    10000    // 5 ms
-#define RETRY_TIMEOUT          5000000   // 500 ms
+#define RETRY_TIMEOUT          100000000   // 500 ms
 
 // Whether to send a CERT message as soon as cert can be made
 #define IMMEDIATE_CERT 0 

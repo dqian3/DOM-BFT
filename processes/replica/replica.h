@@ -80,7 +80,8 @@ namespace dombft
 
         void updateDeadline(uint64_t deadline);
 
-        bool checkNormalPath();
+        // check if we need to force a normal path for this request. 
+        bool needToForceNormal();
 
     public:
         Replica(const ProcessConfig &config, uint32_t replicaId);

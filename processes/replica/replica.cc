@@ -339,6 +339,12 @@ namespace dombft
         iss >> op >> key >> value;
         LOG(INFO) << "Operation: " << op << " Key: " << key << " Value: " << value;
 
+        if (needToForceNormal())
+        {
+            setState(ReplicaState::NORMAL_PATH);
+            LOG(INFO) << "Forcing normal path";
+        }
+
         if (this->getState() == ReplicaState::FAST_PATH)
         {   
             LOG(INFO) << "fast path taken";
@@ -346,6 +352,7 @@ namespace dombft
             // db_.set(key, value);
             // db_.commit();
 
+            // actually update the database at the replica instead of at the log.
             inMemoryDB_.Execute(DB_STORE::UNSTABLE, request_data, request_data.length());
 
             if (clientId < 0 || clientId > clientAddrs_.size())
@@ -370,7 +377,7 @@ namespace dombft
 
             reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::FAST_REPLY);
             sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 
             LOG(INFO) << "Sending reply back to client " << clientId;
@@ -379,7 +386,29 @@ namespace dombft
         }
         else if (this->getState() == ReplicaState::NORMAL_PATH)
         {
+
+            bool normal = log_->addEntry(clientId, request.client_seq(),
+                                    (byte *)request.req_data().c_str(),
+                                    request.req_data().length());
+
+            reply.set_client_id(clientId);
+            reply.set_client_seq(request.client_seq());
+            reply.set_replica_id(replicaId_);
+
+            reply.set_view(0);
+            reply.set_fast(false);
+            reply.set_seq(log_->nextSeq - 1);
+
+            reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+
+
+            LOG(WARNING) << "forced a normal path";
             LOG(INFO) << "Replica is in normal path, which has not been implemented yet";
+            setState(ReplicaState::FAST_PATH);
         }
         else
         {
@@ -388,14 +417,24 @@ namespace dombft
 
     }
 
+    bool Replica::needToForceNormal()
+    { 
+        // one case would be when the the next seq in the log indicate that normal path has not been taken for a while
+        if (log_->nextSeq % forceNormal_ == 0)
+        {
+            return true;
+        }
+        return false;
+    }
+
     void Replica::handleCert(const Cert &cert)
     {
 
         // once we receive a cert, we know that either there is something wrong, or client trying to force us to take a normal path
         // to commit the current requests. 
         // Either way, we need to revert to the normal path.
-        setState(ReplicaState::NORMAL_PATH);
-        LOG(INFO) << "Received a cert, reverting to normal path";
+        // setState(ReplicaState::NORMAL_PATH);
+        // LOG(INFO) << "Received a cert, reverting to normal path";
 
         // TODO verify cert, for now just accept it!
         if (cert.replies().size() < 2 * f_ + 1)
@@ -445,12 +484,14 @@ namespace dombft
         reply.set_client_seq(r.client_seq());
         reply.set_replica_id(replicaId_);
 
-        VLOG(3) << "Sending cert for " << reply.client_id() << ", " << reply.client_seq();
+        VLOG(3) << "Received cert for " << reply.client_id() << ", " << reply.client_seq();
 
         // TODO set result
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+
+        LOG(INFO) << "send cert reply to client: " << reply.client_id() << "IP: " << clientAddrs_[reply.client_id()].GetIPAsString();
     }
 
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)

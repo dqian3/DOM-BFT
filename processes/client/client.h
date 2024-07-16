@@ -29,6 +29,7 @@ namespace dombft
 
 
         bool fastPathPossible = true;
+        bool certSent = false;
     };
 
     class Client
@@ -65,6 +66,7 @@ namespace dombft
         void submitRequest();
 
         void checkTimeouts();
+        void checkReqStateNormal(uint32_t clientSeq, uint32_t replicaId);
 
 
     public:

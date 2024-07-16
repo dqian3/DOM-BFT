@@ -171,13 +171,21 @@ namespace dombft
             }
 
 #else
-            checkReqState(reply.client_seq());
+
+            if (msgHdr->msgType == MessageType::REPLY) {
+                LOG(INFO) << "Received normal reply for " << reply.client_seq();
+                checkReqStateNormal(reply.client_seq(), reply.replica_id());
+            } else {
+                LOG(INFO) << "Received fast reply for " << reply.client_seq();
+                checkReqState(reply.client_seq());
+            }
 #endif
         }
 
         else if (msgHdr->msgType == MessageType::CERT_REPLY)
         {
             CertReply certReply;
+            // LOG(INFO) << "cert reply received";
 
             if (!certReply.ParseFromArray(msgBuffer, msgHdr->msgLen))
             {
@@ -185,7 +193,10 @@ namespace dombft
                 return;
             }
 
+
             uint32_t cseq = certReply.client_seq();
+
+            LOG(INFO) << "received a cert reply for: "<< cseq;
 
             if (!sigProvider_.verify(msgHdr, msgBuffer, "replica", certReply.replica_id()))
             {
@@ -276,7 +287,7 @@ namespace dombft
             int clientSeq = entry.first;
             RequestState &reqState = entry.second;
 
-            if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT)
+            if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT && !reqState.certSent)
             {
                 VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
 
@@ -295,6 +306,83 @@ namespace dombft
                 exit(1);
             }
         }
+    }
+
+    void Client::checkReqStateNormal(uint32_t clientSeq, uint32_t replicaId) 
+    {
+        // if we already got 2f+1 certificate for the same position, send back a reply
+        auto &reqState = requestStates_[clientSeq];
+        // there is a normal path reply, fast path not possible
+        reqState.fastPathPossible = false;
+        if (reqState.cert.has_value() && !reqState.certSent) {
+            // for this normal path reply, a cert has already been generated, send the cert directly to the replicas that is in a normal path
+
+            VLOG(1) << "Sending cert immediately for request number " << clientSeq << " ";
+            endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
+
+            // this is a normal reply, fast path is not possible anymore
+            // send out the certificate to all the replicas immediately
+            // OR we can selectively send to all those who chose normal path, or whose fast path choice is not correct
+            for (const Address &addr : replicaAddrs_)
+            {
+                endpoint_->SendPreparedMsgTo(addr);
+            }
+
+            reqState.certSent = true;
+            // reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
+
+            return;
+        }
+        // Try and find a certificate
+        std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+
+        for (const auto &entry : reqState.replies)
+        {
+            int replicaId = entry.first;
+            const Reply &reply = entry.second;
+
+            // TODO this is ugly lol
+            // We don't need client_seq/client_id, these are already checked.
+            // We also don't check the result here, that only needs to happen in the fast path
+            std::tuple<std::string, int, int> key = {
+                reply.digest(),
+                reply.view(),
+                reply.seq()};
+
+            matchingReplies[key].insert(replicaId);
+
+            if (matchingReplies[key].size() >= 2 * f_ + 1)
+            {
+                reqState.cert = Cert();
+
+                // TODO check if fast path is not posssible, and we can send cert right away
+                for (auto repId : matchingReplies[key])
+                {
+                    reqState.cert->add_signatures(reqState.signatures[repId]);
+                    // THis usage is so weird, is protobuf the right tool?
+                    (*reqState.cert->add_replies()) = reqState.replies[repId];
+                }
+
+                reqState.certTime = GetMicrosecondTimestamp();
+                
+                VLOG(1) << "Created cert for request number " << clientSeq;
+            }
+        }
+
+        if (reqState.cert.has_value() && !reqState.certSent) {
+            // Send cert to replicas;
+
+            LOG(INFO) << "Normal path collected enough cert, sending cert to replicas!";
+            endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
+            for (const Address &addr : replicaAddrs_)
+            {
+                endpoint_->SendPreparedMsgTo(addr);
+            }
+
+            reqState.certSent = true;
+            reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
+        }
+
     }
 
     void Client::checkReqState(uint32_t clientSeq)

@@ -83,6 +83,23 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
     return executeEntry(nextSeq - 1);
 }
 
+bool Log::addEntryNormalPath(uint32_t c_id, uint32_t c_seq,
+                   byte *req, uint32_t req_len)
+{
+    uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
+    byte *prevDigest = log[prevSeq]->digest;
+
+    log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
+
+    logDigest(log[nextSeq % log.size()]->digest);
+    
+    VLOG(4) << "Adding new Normal Path entry at seq=" << nextSeq << " c_id=" << c_id
+            << " c_seq=" << c_seq;
+    nextSeq++;
+    // TODO
+    return true;
+}
+
 bool Log::executeEntry(uint32_t seq)
 {
     if (lastExecuted != seq - 1) {
