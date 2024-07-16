@@ -308,33 +308,12 @@ namespace dombft
         }
     }
 
-    void Client::checkReqStateNormal(uint32_t clientSeq, uint32_t replicaId) 
-    {
-        // if we already got 2f+1 certificate for the same position, send back a reply
-        auto &reqState = requestStates_[clientSeq];
-        // there is a normal path reply, fast path not possible
-        reqState.fastPathPossible = false;
-        if (reqState.cert.has_value() && !reqState.certSent) {
-            // for this normal path reply, a cert has already been generated, send the cert directly to the replicas that is in a normal path
-
-            VLOG(1) << "Sending cert immediately for request number " << clientSeq << " ";
-            endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
-
-            // this is a normal reply, fast path is not possible anymore
-            // send out the certificate to all the replicas immediately
-            // OR we can selectively send to all those who chose normal path, or whose fast path choice is not correct
-            for (const Address &addr : replicaAddrs_)
-            {
-                endpoint_->SendPreparedMsgTo(addr);
-            }
-
-            reqState.certSent = true;
-            // reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
-
-            return;
-        }
+    // TODO: find more efficient way to form a certificate. This is repetitive and inefficient.
+    bool Client::checkCert(RequestState& reqState, uint32_t client_seq){
         // Try and find a certificate
         std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+
+        bool cert_formed = false;
 
         for (const auto &entry : reqState.replies)
         {
@@ -365,11 +344,42 @@ namespace dombft
 
                 reqState.certTime = GetMicrosecondTimestamp();
                 
-                VLOG(1) << "Created cert for request number " << clientSeq;
+                VLOG(1) << "Created cert for request number " << client_seq;
+                cert_formed = true;
             }
         }
+        return cert_formed;
+    }
 
+    void Client::checkReqStateNormal(uint32_t clientSeq, uint32_t replicaId) 
+    {
+        // if we already got 2f+1 certificate for the same position, send back a reply
+        auto &reqState = requestStates_[clientSeq];
+        // there is a normal path reply, fast path not possible
+        reqState.fastPathPossible = false;
         if (reqState.cert.has_value() && !reqState.certSent) {
+            // for this normal path reply, a cert has already been generated, send the cert directly to the replicas that is in a normal path
+
+            VLOG(1) << "Sending cert immediately for request number " << clientSeq << " ";
+            endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
+
+            // this is a normal reply, fast path is not possible anymore
+            // send out the certificate to all the replicas immediately
+            // OR we can selectively send to all those who chose normal path, or whose fast path choice is not correct
+            for (const Address &addr : replicaAddrs_)
+            {
+                endpoint_->SendPreparedMsgTo(addr);
+            }
+
+            reqState.certSent = true;
+            // reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
+
+            return;
+        }
+        
+        bool cert_formed = checkCert(reqState, clientSeq);
+
+        if (reqState.cert.has_value() && !reqState.certSent && cert_formed) {
             // Send cert to replicas;
 
             LOG(INFO) << "Normal path collected enough cert, sending cert to replicas!";

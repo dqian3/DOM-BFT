@@ -63,6 +63,8 @@ namespace dombft
         void receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void checkReqState(uint32_t client_seq);
 
+        bool checkCert(RequestState& reqState, uint32_t clientSeq);
+
         void submitRequest();
 
         void checkTimeouts();
