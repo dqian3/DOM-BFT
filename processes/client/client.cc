@@ -226,7 +226,7 @@ namespace dombft
 
                 VLOG(1) << "Request " << cseq << " normal path committed! "
                         << "Took " << GetMicrosecondTimestamp() - requestStates_[cseq].sendTime << " us";
-
+                // TODO: do not erase just yet. There might be a fourth cert reply coming, and need to verify if it is correct. 
                 requestStates_.erase(cseq);
                 submitRequest();
             }
@@ -389,7 +389,7 @@ namespace dombft
     {
         auto &reqState = requestStates_[clientSeq];
 
-        if (reqState.cert.has_value() && reqState.replies.size() == 3 * f_ + 1)
+        if (reqState.cert.has_value() && reqState.replies.size() == 3 * f_ + 1 && reqState.fastPathPossible)
         {
             // We already have a cert, so fast path might be possible.
             // TODO check if fast path is not posssible and prevent extra work

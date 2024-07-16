@@ -53,18 +53,18 @@ cc_library(
     ]
 )
 
-cc_library(
-    name = "kv_store", 
-    srcs = ["apps/kv_rocksdb.cc"],
-    hdrs = ["apps/kv_rocksdb.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":protocol_config",
-        ":log",
-        "@com_github_google_glog//:glog",
-        "@com_google_protobuf//:protobuf",
-    ],
-)
+# cc_library(
+#     name = "kv_store", 
+#     srcs = ["apps/kv_rocksdb.cc"],
+#     hdrs = ["apps/kv_rocksdb.h"],
+#     visibility = ["//visibility:public"],
+#     deps = [
+#         ":protocol_config",
+#         ":log",
+#         "@com_github_google_glog//:glog",
+#         "@com_google_protobuf//:protobuf",
+#     ],
+# )
 
 cc_library(
     name = "in_memory_db", 
@@ -131,15 +131,15 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-# @Daniel, because the rocksdb is installed via apt instead of bazel, which was a nightmare. 
-# may need to change this after we have a better way to install rocksdb with Bazel 
-cc_library(
-    name = "rocksdb_system",
-    hdrs = glob(["external/rocksdb/**/*.h"]),
-    includes = ["/usr/include/rocksdb/"],  # This allows your code to include RocksDB headers as <rocksdb/header.h>
-    linkopts = ["-lrocksdb"],  # Link against the RocksDB library installed on the system
-    visibility = ["//visibility:public"],
-)
+# # @Daniel, because the rocksdb is installed via apt instead of bazel, which was a nightmare. 
+# # may need to change this after we have a better way to install rocksdb with Bazel 
+# cc_library(
+#     name = "rocksdb_system",
+#     hdrs = glob(["external/rocksdb/**/*.h"]),
+#     includes = ["/usr/include/rocksdb/"],  # This allows your code to include RocksDB headers as <rocksdb/header.h>
+#     linkopts = ["-lrocksdb"],  # Link against the RocksDB library installed on the system
+#     visibility = ["//visibility:public"],
+# )
 
 
 # cc_library(

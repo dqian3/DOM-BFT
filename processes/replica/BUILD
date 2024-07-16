@@ -10,10 +10,10 @@ cc_library(
         "//lib:message_type",
         "//lib:protocol_config",
         "//lib:log",
-        "//lib:kv_store",
+        # "//lib:kv_store",
         "//processes:process_config",
         "//processes:config_util",
-        "//lib:rocksdb_system",
+        # "//lib:rocksdb_system",
         "//lib:in_memory_db",
     ],
 )

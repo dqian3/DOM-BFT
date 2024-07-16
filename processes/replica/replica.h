@@ -7,7 +7,7 @@
 #include "lib/signature_provider.h"
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
-#include "lib/apps/kv_rocksdb.h"
+// #include "lib/apps/kv_rocksdb.h"
 #include "proto/dombft_proto.pb.h"
 #include "lib/apps/database.h"
 
@@ -44,7 +44,7 @@ namespace dombft
 
         uint32_t f_;
 
-        KVStore db_;
+        // KVStore db_;
 
         InMemoryDB inMemoryDB_;
         // an interval after which we forced a normal path.

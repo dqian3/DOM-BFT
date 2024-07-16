@@ -4,7 +4,7 @@
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
-#include "lib/apps/kv_rocksdb.h"
+// #include "lib/apps/kv_rocksdb.h"
 
 #include <openssl/pem.h>
 #include <assert.h>
@@ -14,7 +14,7 @@ namespace dombft
     using namespace dombft::proto;
 
     Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
-        : replicaId_(replicaId), db_("testdb" + std::to_string(replicaId)), replicaState_(ReplicaState::FAST_PATH), biggestDeadline_(0)
+        : replicaId_(replicaId), replicaState_(ReplicaState::FAST_PATH), biggestDeadline_(0)
     {
         // TODO check for config errors
         std::string replicaIp = config.replicaIps[replicaId];
@@ -163,6 +163,8 @@ namespace dombft
             }
 
             LOG(INFO) << "Received a request with deadline " << domHeader.deadline();
+
+            // LOG(INFO) << "This amount of time has elpased from the moment when the request is generated: " << GetMicrosecondTimestamp() -  domHeader.send_time();
 
             updateDeadline(domHeader.deadline());
             // TODO also pass client request
@@ -383,6 +385,8 @@ namespace dombft
             LOG(INFO) << "Sending reply back to client " << clientId;
             endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
             LOG(INFO) << "Endpoint prepared Message Sent!";
+            LOG(INFO) << "This amount of time has elpased from the moment when the request is generated: " << GetMicrosecondTimestamp() -  request.send_time();
+
         }
         else if (this->getState() == ReplicaState::NORMAL_PATH)
         {
@@ -409,6 +413,7 @@ namespace dombft
             LOG(WARNING) << "forced a normal path";
             LOG(INFO) << "Replica is in normal path, which has not been implemented yet";
             setState(ReplicaState::FAST_PATH);
+
         }
         else
         {

@@ -14,14 +14,14 @@ cc_binary(
     ],
 )
 
-cc_binary(
-    name = "test_rocksdb",
-    srcs = ["test_rocksdb.cc"],
-    deps = [
-        "//lib:kv_store",
-        "//lib:rocksdb_system",
-    ],
-)
+# cc_binary(
+#     name = "test_rocksdb",
+#     srcs = ["test_rocksdb.cc"],
+#     deps = [
+#         "//lib:kv_store",
+#         "//lib:rocksdb_system",
+#     ],
+# )
 
 
 
