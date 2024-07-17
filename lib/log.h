@@ -8,8 +8,9 @@
 #include <openssl/sha.h>
 
 #include <iostream>
-#include <memory>
 #include <map>
+#include <memory>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -41,11 +42,11 @@ struct LogCommitPoint
 {
     uint32_t seq = 0;
     // TODO shared ptr here so we don't duplicate it from certs.
-    dombft::proto::Cert cert;
+    std::optional<dombft::proto::Cert> cert;
     byte app_digest[SHA256_DIGEST_LENGTH];
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;
-    std::map<uint32_t, std::vector<byte>> signatures;
+    std::map<uint32_t, std::string> signatures;
 
     // Default constructor
     LogCommitPoint() = default;
@@ -72,7 +73,7 @@ struct Log
 
     LogCommitPoint commitPoint;
     // TODO have more than 1 tentative commit point, in case replicas are trying different ones.
-    LogCommitPoint tentativeCommitPoint;
+    std::optional<LogCommitPoint> tentativeCommitPoint;
 
     // Map of client ids to sequence numbers, for de-duplicating requests
     std::unordered_map<uint32_t, uint32_t> clientSeqs;
@@ -100,6 +101,8 @@ struct Log
     void addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
     const byte* getDigest() const;
+
+    const byte* getDigest(uint32_t seq) const;
 
     friend std::ostream& operator<<(std::ostream &out, const Log &l);
 

@@ -105,6 +105,19 @@ const byte *Log::getDigest() const
     return log[prevSeq]->digest;
 }
 
+const byte *Log::getDigest(uint32_t seq) const
+{
+    if (seq < nextSeq - MAX_SPEC_HIST)
+    {
+        LOG(ERROR) << "Tried to access digest of seq=" << seq << " but nextSeq=" << nextSeq;
+        return nullptr;
+    }
+    uint32_t seqIdx = seq + log.size() % log.size();
+    return log[seqIdx]->digest;
+}
+
+
+
 // Create a new commit point given the existence of a certificate at seq
 bool Log::createCommitPoint(uint32_t seq)
 {
@@ -113,15 +126,16 @@ bool Log::createCommitPoint(uint32_t seq)
         LOG(ERROR) << "Attempt to create a commit point at seq " << seq
                    << " but no cert exists!";
     }
+    tentativeCommitPoint = LogCommitPoint(); // TODO use a constructor?
 
-    tentativeCommitPoint.seq = seq;
-    tentativeCommitPoint.cert = *certs[seq];
+    tentativeCommitPoint->seq = seq;
+    tentativeCommitPoint->cert = *certs[seq];
 
     // TODO actually get app state and create a digest
-    memset(tentativeCommitPoint.app_digest, 0, SHA256_DIGEST_LENGTH);
+    memset(tentativeCommitPoint->app_digest, 0, SHA256_DIGEST_LENGTH);
 
-    tentativeCommitPoint.commitMessages.clear();
-    tentativeCommitPoint.signatures.clear();
+    tentativeCommitPoint->commitMessages.clear();
+    tentativeCommitPoint->signatures.clear();
 
     return true;
 }
@@ -130,14 +144,28 @@ bool Log::addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int s
 {
     int from = commit.replica_id();
 
-    tentativeCommitPoint.commitMessages[from] = commit;
-    tentativeCommitPoint.signatures[from] = std::vector<byte>(sig, sig + sigLen);
+    if (!tentativeCommitPoint.has_value())
+    {
+        LOG(ERROR) << "Trying to add commit message to empty commit point!";
+        return false;  
+    }
+
+    // TODO check match?
+
+    tentativeCommitPoint->commitMessages[from] = commit;
+    tentativeCommitPoint->signatures[from] = std::string(sig, sig + sigLen);
 }
 
 bool Log::commitCommitPoint()
 {
-    commitPoint = tentativeCommitPoint;
-    tentativeCommitPoint = LogCommitPoint();
+    if (!tentativeCommitPoint.has_value())
+    {
+        LOG(ERROR) << "Trying to commit with empty tentative commit point!";
+        return false;  
+    }
+
+    commitPoint = tentativeCommitPoint.value();
+    tentativeCommitPoint.reset();
 }
 
 std::ostream &operator<<(std::ostream &out, const Log &l)

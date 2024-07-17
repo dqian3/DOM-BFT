@@ -177,6 +177,26 @@ namespace dombft
 
             handleCert(cert);
         }
+
+        if (hdr->msgType == REPLY)
+        {
+            Reply replyHeader;
+
+            if (!replyHeader.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+                return;
+            }
+
+            if (!sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify client signature!";
+                return;
+            }
+
+            handleReply(replyHeader, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+
     }
 
 #else // if not DOM_BFT
@@ -327,7 +347,7 @@ namespace dombft
             return;
         }
 
-        int seq = log_->nextSeq - 1;
+        uint32_t seq = log_->nextSeq - 1;
         // TODO actually get the result here.
         log_->executeEntry(seq);
 
@@ -345,7 +365,12 @@ namespace dombft
         // Try and commit every 10 replies (half of the way before 
         // we can't speculatively execute anymore)
         if (seq % MAX_SPEC_HIST / 2 == 0) {
+            // TODO remove execution result here
             broadcastToReplicas(reply, MessageType::REPLY);
+
+            if (!log_->tentativeCommitPoint.has_value() || log_->tentativeCommitPoint->seq < seq) {
+                log_->createCommitPoint(seq);
+            }
         }
 
     }
@@ -408,13 +433,75 @@ namespace dombft
     }
 
 
-    void Replica::handleReply(const dombft::proto::Reply &cert)
+    void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
     {
+        if (!log_->tentativeCommitPoint.has_value() && reply.seq() >= log_->nextSeq) {
+            LOG(INFO) << "Received reply for operation replica hasn't processed, adding to new cert";
+            log_->createCommitPoint(reply.seq());
+        }
+        if (reply.seq() != log_->tentativeCommitPoint->seq) {
+            LOG(ERROR) << "Received reply for seq=" << reply.seq()
+                    << " not equal to tent. commit point seq="
+                    << log_->tentativeCommitPoint->seq;
+            return;
+        }
+
+        if (log_->tentativeCommitPoint.has_value()) {
+            VLOG(3) << "Ignoring reply from " << reply.replica_id() << " since cert already created";
+            return;
+        }
+
+        commitCertReplies[reply.replica_id()] = reply;
+        commitCertSigs[reply.replica_id()] = std::string(sig.begin(), sig.end());
+
+        std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+
+        for (const auto &entry : commitCertReplies)
+        {
+            int replicaId = entry.first;
+            const Reply &reply = entry.second;
+
+            // TODO this is ugly lol
+            // We don't need client_seq/client_id, these are already checked.
+            // We also don't check the result here, that only needs to happen in the fast path
+            std::tuple<std::string, int, int> key = {
+                reply.digest(),
+                reply.view(),
+                reply.seq()};
+
+            matchingReplies[key].insert(replicaId);
+
+            if (matchingReplies[key].size() >= 2 * f_ + 1)
+            {
+                
+                log_->tentativeCommitPoint->cert = Cert();
+                dombft::proto::Cert &cert = *log_->tentativeCommitPoint->cert;
+
+                // TODO check if fast path is not posssible, and we can send cert right away
+                for (auto repId : matchingReplies[key])
+                {
+                    cert.add_signatures(commitCertSigs[repId]);
+                    // THis usage is so weird, is protobuf the right tool?
+                    (*cert.add_replies()) = commitCertReplies[repId];
+                }
+
+                VLOG(1) << "Created cert for request number " << reply.seq();
+
+
+                // Broadcast commmit Message
+                // TODO get app digest
+                dombft::proto::Commit commit;
+                commit.set_replica_id(replicaId_);
+                commit.set_seq(reply.seq());
+                commit.set_log_digest((const char *) log_->getDigest(reply.seq()));
+
+            }
+        }
 
     }
 
 
-    void Replica::handleCommit(const dombft::proto::Commit &cert)
+    void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
     {
 
     }
@@ -424,6 +511,7 @@ namespace dombft
     {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
         // TODO check errors for all of these lol
+        // TODO this sends to self as well, could shortcut this
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_)
         {

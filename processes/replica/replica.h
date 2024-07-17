@@ -13,6 +13,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <span>
 
 #include <yaml-cpp/yaml.h>
 
@@ -48,8 +49,8 @@ namespace dombft
         void handleClientRequest(const dombft::proto::ClientRequest &request);
         void handleCert(const dombft::proto::Cert &cert);
 
-        void handleReply(const dombft::proto::Reply &cert);
-        void handleCommit(const dombft::proto::Commit &cert);
+        void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
+        void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
 
