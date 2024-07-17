@@ -48,11 +48,13 @@ namespace dombft
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);
         void handleCert(const dombft::proto::Cert &cert);
-
         void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
         void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
+
+        bool verifyCert(const dombft::proto::Cert &cert);
+
 
     public:
         Replica(const ProcessConfig &config, uint32_t replicaId);

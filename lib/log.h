@@ -43,7 +43,8 @@ struct LogCommitPoint
     uint32_t seq = 0;
     // TODO shared ptr here so we don't duplicate it from certs.
     std::optional<dombft::proto::Cert> cert;
-    byte app_digest[SHA256_DIGEST_LENGTH];
+    byte logDigest[SHA256_DIGEST_LENGTH];
+    byte appDigest[SHA256_DIGEST_LENGTH];
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;
     std::map<uint32_t, std::string> signatures;
@@ -56,7 +57,7 @@ struct LogCommitPoint
         : seq(other.seq), cert(other.cert), 
           commitMessages(other.commitMessages), signatures(other.signatures)
     {
-        std::memcpy(app_digest, other.app_digest, SHA256_DIGEST_LENGTH);
+        std::memcpy(appDigest, other.appDigest, SHA256_DIGEST_LENGTH);
     }
 };
 

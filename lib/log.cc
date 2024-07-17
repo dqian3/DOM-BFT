@@ -131,8 +131,10 @@ bool Log::createCommitPoint(uint32_t seq)
     tentativeCommitPoint->seq = seq;
     tentativeCommitPoint->cert = *certs[seq];
 
-    // TODO actually get app state and create a digest
-    memset(tentativeCommitPoint->app_digest, 0, SHA256_DIGEST_LENGTH);
+    memcpy(tentativeCommitPoint->logDigest, getDigest(seq), SHA256_DIGEST_LENGTH);
+
+    // TODO actually get app state and create a digest    
+    memset(tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
 
     tentativeCommitPoint->commitMessages.clear();
     tentativeCommitPoint->signatures.clear();

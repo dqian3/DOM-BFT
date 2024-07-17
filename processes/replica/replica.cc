@@ -67,12 +67,14 @@ namespace dombft
 
         log_ = std::make_unique<Log>();
 
-        if (config.transport == "nng") {
+        if (config.transport == "nng")
+        {
             auto addrPairs = getReplicaAddrs(config, replicaId_);
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
-        } else {
+        }
+        else
+        {
             endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
-
         }
         MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
@@ -190,13 +192,31 @@ namespace dombft
 
             if (!sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id()))
             {
-                LOG(INFO) << "Failed to verify client signature!";
+                LOG(INFO) << "Failed to verify replica signature!";
                 return;
             }
 
             handleReply(replyHeader, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
+        if (hdr->msgType == COMMIT)
+        {
+            Commit commitMsg;
+
+            if (!commitMsg.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+                return;
+            }
+
+            if (!sigProvider_.verify(hdr, body, "replica", commitMsg.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify replica signature!";
+                return;
+            }
+
+            handleCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
     }
 
 #else // if not DOM_BFT
@@ -337,11 +357,11 @@ namespace dombft
         reply.set_view(0);
 
         bool success = log_->addEntry(clientId, request.client_seq(),
-                                   (byte *)request.req_data().c_str(),
-                                   request.req_data().length());
+                                      (byte *)request.req_data().c_str(),
+                                      request.req_data().length());
 
-
-        if (!success) {
+        if (!success)
+        {
             // TODO Handle this more gracefully by queuing requests
             LOG(ERROR) << "Could not add request to log!";
             return;
@@ -362,53 +382,25 @@ namespace dombft
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
 
-        // Try and commit every 10 replies (half of the way before 
+        // Try and commit every 10 replies (half of the way before
         // we can't speculatively execute anymore)
-        if (seq % MAX_SPEC_HIST / 2 == 0) {
+        if (seq % MAX_SPEC_HIST / 2 == 0)
+        {
             // TODO remove execution result here
             broadcastToReplicas(reply, MessageType::REPLY);
 
-            if (!log_->tentativeCommitPoint.has_value() || log_->tentativeCommitPoint->seq < seq) {
+            if (!log_->tentativeCommitPoint.has_value() || log_->tentativeCommitPoint->seq < seq)
+            {
                 log_->createCommitPoint(seq);
             }
         }
-
     }
 
     void Replica::handleCert(const Cert &cert)
     {
-        if (cert.replies().size() < 2 * f_ + 1)
+        if (!verifyCert(cert))
         {
-            LOG(INFO) << "Received cert of size " << cert.replies().size()
-                      << ", which is smaller than 2f + 1, f=" << f_;
             return;
-        }
-
-        if (cert.replies().size() != cert.signatures().size())
-        {
-            LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
-                      << "cert signatures size" << cert.signatures().size();
-            return;
-        }
-
-        // Verify each signature in the cert
-        for (int i = 0; i < cert.replies().size(); i++)
-        {
-            const Reply &reply = cert.replies()[i];
-            const std::string &sig = cert.signatures()[i];
-            std::string serializedReply = reply.SerializeAsString(); // TODO skip reseraizliation here?
-
-            if (!sigProvider_.verify(
-                    (byte *)serializedReply.c_str(),
-                    serializedReply.size(),
-                    (byte *)sig.c_str(),
-                    sig.size(),
-                    "replica",
-                    reply.replica_id()))
-            {
-                LOG(INFO) << "Cert failed to verify!";
-                return;
-            }
         }
 
         const Reply &r = cert.replies()[0];
@@ -432,21 +424,23 @@ namespace dombft
         endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
     }
 
-
     void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
     {
-        if (!log_->tentativeCommitPoint.has_value() && reply.seq() >= log_->nextSeq) {
+        if (!log_->tentativeCommitPoint.has_value() && reply.seq() >= log_->nextSeq)
+        {
             LOG(INFO) << "Received reply for operation replica hasn't processed, adding to new cert";
             log_->createCommitPoint(reply.seq());
         }
-        if (reply.seq() != log_->tentativeCommitPoint->seq) {
+        if (reply.seq() != log_->tentativeCommitPoint->seq)
+        {
             LOG(ERROR) << "Received reply for seq=" << reply.seq()
-                    << " not equal to tent. commit point seq="
-                    << log_->tentativeCommitPoint->seq;
+                       << " not equal to tent. commit point seq="
+                       << log_->tentativeCommitPoint->seq;
             return;
         }
 
-        if (log_->tentativeCommitPoint.has_value()) {
+        if (log_->tentativeCommitPoint.has_value())
+        {
             VLOG(3) << "Ignoring reply from " << reply.replica_id() << " since cert already created";
             return;
         }
@@ -473,7 +467,7 @@ namespace dombft
 
             if (matchingReplies[key].size() >= 2 * f_ + 1)
             {
-                
+
                 log_->tentativeCommitPoint->cert = Cert();
                 dombft::proto::Cert &cert = *log_->tentativeCommitPoint->cert;
 
@@ -487,25 +481,44 @@ namespace dombft
 
                 VLOG(1) << "Created cert for request number " << reply.seq();
 
-
                 // Broadcast commmit Message
                 // TODO get app digest
                 dombft::proto::Commit commit;
                 commit.set_replica_id(replicaId_);
                 commit.set_seq(reply.seq());
-                commit.set_log_digest((const char *) log_->getDigest(reply.seq()));
-
+                commit.set_log_digest((const char *)log_->getDigest(reply.seq()));
             }
         }
-
     }
-
 
     void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
     {
+        if (!log_->tentativeCommitPoint.has_value()) {
+            // TODO handle this case, we probably would need to request a cert from another replica!
+            LOG(ERROR) << "Received COMMIT message without commit point!";
+            return;
+        }
 
+        LogCommitPoint &point = *log_->tentativeCommitPoint;
+
+        // Convert to string for comparison
+        std::string lDigest(point.logDigest, point.logDigest + SHA256_DIGEST_LENGTH);
+        std::string aDigest(point.appDigest, point.appDigest + SHA256_DIGEST_LENGTH);
+
+        // Check message matches commiu
+        if (commitMsg.seq() != point.seq || commitMsg.log_digest() != lDigest || commitMsg.app_digest() != aDigest)
+        {
+            LOG(INFO) << "Commit message from " << commitMsg.replica_id() << " does not match current commit!";
+            return;
+        }
+
+
+        point.commitMessages[commitMsg.replica_id()] = commitMsg;
+        
+        if (point.commitMessages.size() >= 2 * f_ + 1) {
+            log_->commitCommitPoint();
+        }
     }
-
 
     void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
     {
@@ -517,6 +530,47 @@ namespace dombft
         {
             endpoint_->SendPreparedMsgTo(addr);
         }
+    }
+
+    bool Replica::verifyCert(const Cert &cert)
+    {
+        if (cert.replies().size() < 2 * f_ + 1)
+        {
+            LOG(INFO) << "Received cert of size " << cert.replies().size()
+                      << ", which is smaller than 2f + 1, f=" << f_;
+            return false;
+        }
+
+        if (cert.replies().size() != cert.signatures().size())
+        {
+            LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
+                      << "cert signatures size" << cert.signatures().size();
+            return false;
+        }
+
+        // Verify each signature in the cert
+        for (int i = 0; i < cert.replies().size(); i++)
+        {
+            const Reply &reply = cert.replies()[i];
+            const std::string &sig = cert.signatures()[i];
+            std::string serializedReply = reply.SerializeAsString(); // TODO skip reseraizliation here?
+
+            if (!sigProvider_.verify(
+                    (byte *)serializedReply.c_str(),
+                    serializedReply.size(),
+                    (byte *)sig.c_str(),
+                    sig.size(),
+                    "replica",
+                    reply.replica_id()))
+            {
+                LOG(INFO) << "Cert failed to verify!";
+                return false;
+            }
+        }
+
+        // TOOD verify that cert actually contains matching replies...
+
+        return true;
     }
 
 } // namespace dombft
