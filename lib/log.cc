@@ -55,7 +55,7 @@ std::ostream& operator<<(std::ostream &out, const LogEntry& le)
 }
 
 Log::Log()
-    : nextSeq(1), lastExecuted(0)
+    : nextSeq(1), lastExecuted(0), lastCommitIdx_(0)
 {
     // Zero initialize all the entries
     // TODO: there's probably a better way to handle this

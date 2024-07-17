@@ -350,9 +350,6 @@ namespace dombft
         if (this->getState() == ReplicaState::FAST_PATH)
         {   
             LOG(INFO) << "fast path taken";
-            // db_.beginTransaction();
-            // db_.set(key, value);
-            // db_.commit();
 
             // actually update the database at the replica instead of at the log.
             inMemoryDB_.Execute(DB_STORE::UNSTABLE, request_data, request_data.length());
@@ -479,9 +476,12 @@ namespace dombft
         const Reply &r = cert.replies()[0];
         log_->addCert(r.seq(), cert);
 
-        if (log_->lastExecuted < r.seq())
+        LOG(INFO) << "Received cert for " << r.client_id() << ", sequence id: " << r.seq() << " exec up to: " << log_->lastCommitIdx_;
+
+        if (log_->lastCommitIdx_ < r.seq())
         {
             // Execute up to seq;
+            inMemoryDB_.Commit(log_->lastCommitIdx_ + 1, r.seq(), *log_);
         }
 
         CertReply reply;

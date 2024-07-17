@@ -57,6 +57,10 @@ struct Log
 
     uint32_t nextSeq;
     uint32_t lastExecuted;
+
+    // as a beginning point for the commit operation, 
+    // update each time after the commit operation is done.
+    uint32_t lastCommitIdx_;
     
     Log();
 

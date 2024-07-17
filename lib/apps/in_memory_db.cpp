@@ -129,10 +129,13 @@ std::string InMemoryDB::Execute(DB_STORE which_db, std::string req_str, uint32_t
 }
 
 int InMemoryDB::Commit(const int begin_idx, const int end_idx, Log &log){
-    for (int i = begin_idx; i < end_idx; i++) {
+    for (int i = begin_idx; i < end_idx+1; i++) {
         LogEntry *le = log.log[i % MAX_SPEC_HIST].get();
         Execute(DB_STORE::STABLE, le->raw_request, le->req_len);
     }
+    log.lastCommitIdx_ = end_idx;
+
+    LOG(INFO) << "Commit up to the index: " << end_idx;
     return 0;
 }
 
