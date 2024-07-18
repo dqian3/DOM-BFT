@@ -50,35 +50,49 @@ namespace dombft
             exit(1);
         }
 
-        /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++)
-        {
-            replicaAddrs_.push_back(Address(config.replicaIps[i],
-                                            config.replicaPort));
-        }
-        f_ = replicaAddrs_.size() / 3;
 
-        /** Store all client addrs */
-        for (uint32_t i = 0; i < config.clientIps.size(); i++)
-        {
-            clientAddrs_.push_back(Address(config.clientIps[i],
-                                           config.clientPort));
-        }
+        f_ = config.replicaIps.size() / 3;
+
+
 
         log_ = std::make_unique<Log>();
 
         if (config.transport == "nng")
         {
             auto addrPairs = getReplicaAddrs(config, replicaId_);
-
-            // TODO get replica addresses correctly
-
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+
+            size_t nClients = config.clientIps.size();
+            for (size_t i = 0; i < nClients; i++) {
+                // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.GetIPAsString();
+                clientAddrs_.push_back(addrPairs[i].second);
+            }
+
+            for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
+                // LOG(INFO) << "Replica " << i << ": " <<  addrPairs[i].second.GetIPAsString();
+                replicaAddrs_.push_back(addrPairs[i].second);
+            }
         }
         else
         {
             endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+
+            /** Store all replica addrs */
+            for (uint32_t i = 0; i < config.replicaIps.size(); i++)
+            {
+                replicaAddrs_.push_back(Address(config.replicaIps[i],
+                                                config.replicaPort));
+            }
+
+            /** Store all client addrs */
+            for (uint32_t i = 0; i < config.clientIps.size(); i++)
+            {
+                clientAddrs_.push_back(Address(config.clientIps[i],
+                                               config.clientPort));
+            }
         }
+
+
         MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
             this->handleMessage(msgHdr, msgBuffer, sender);
@@ -422,8 +436,9 @@ namespace dombft
         reply.set_client_id(r.client_id());
         reply.set_client_seq(r.client_seq());
         reply.set_replica_id(replicaId_);
-
-        VLOG(3) << "Sending cert for " << reply.client_id() << ", " << reply.client_seq();
+ 
+        VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq()
+        << " to " << clientAddrs_[reply.client_id()].GetIPAsString();
 
         // TODO set result
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);

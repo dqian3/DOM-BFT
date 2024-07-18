@@ -106,7 +106,6 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
     uint32_t replicaPort = config.replicaPort + config.clientIps.size();
     uint32_t receiverPort = config.receiverPort + 2 * config.proxyIps.size();
 
-
     if (config.receiverLocal) {
         // 5b. above
         // TODO use IPC instead of localhost?
@@ -116,8 +115,12 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
         addAddrPairs(ret, replicaIp, replicaPort, {config.receiverIps[id]}, receiverPort);    
     }
 
-
     // TODO add replica ports
+    replicaBase = config.replicaPort + config.clientIps.size() + 1;
+    uint32_t myPort = replicaBase + id;
+
+    addAddrPairs(ret, replicaIp, myPort, config.replicaIps, replicaBase);    
+
 
     return ret;
 }

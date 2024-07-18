@@ -2,7 +2,8 @@ transport: "udp"
 
 client:
   ips: 
-  - "127.0.0.10"
+  - "127.0.1.0"
+  - "127.0.1.1"
   port: 33000
   keysDir: keys/client
   maxRequests: 1
@@ -12,6 +13,7 @@ client:
 proxy:
   ips: 
     - "127.0.0.9"  
+    - "127.0.0.10"  
   shards: 1
   forwardPort: 31000
   measurementPort: 32000
