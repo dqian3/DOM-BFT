@@ -123,9 +123,10 @@ namespace dombft
             return;
         }
 
-        Reply reply;
         if (msgHdr->msgType == MessageType::REPLY || msgHdr->msgType == MessageType::FAST_REPLY)
         {
+            Reply reply;
+
             // TODO verify and handle signed header better
             if (!reply.ParseFromArray(msgBuffer, msgHdr->msgLen))
             {
@@ -209,8 +210,8 @@ namespace dombft
                 return;
             }
 
-            if (reply.client_id() != clientId_) {
-                VLOG(2) << "Received certReply for client " << reply.client_id()  << " != " << clientId_;
+            if (certReply.client_id() != clientId_) {
+                VLOG(2) << "Received certReply for client " << certReply.client_id()  << " != " << clientId_;
                 return;
  
             }

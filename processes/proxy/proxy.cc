@@ -33,8 +33,7 @@ namespace dombft
                 exit(1);
             }
             auto addrPairs = getProxyAddrs(config, proxyId);
-            // This is rather messy, but the 'nClients'th addresss pair is for forwarding,
-            // last nReceivers addresses in this return value are for the measurement connections 
+            // This is rather messy, but the last nReceivers addresses in this return value are for the measurement connections 
             size_t nClients = config.clientIps.size();
             size_t nReplicas = config.replicaIps.size();
             std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(), addrPairs.end() - config.receiverIps.size());
@@ -45,7 +44,6 @@ namespace dombft
 
             for (int i = nClients; i < forwardAddrs.size(); i++)
             {
-                LOG(INFO) << forwardAddrs[i].second.ip_;
                 receiverAddrs_.push_back(forwardAddrs[i].second);
             }
 

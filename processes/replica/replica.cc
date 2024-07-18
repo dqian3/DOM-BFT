@@ -436,8 +436,9 @@ namespace dombft
         reply.set_client_id(r.client_id());
         reply.set_client_seq(r.client_seq());
         reply.set_replica_id(replicaId_);
-
-        VLOG(3) << "Sending cert for " << reply.client_id() << ", " << reply.client_seq();
+ 
+        VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq()
+        << " to " << clientAddrs_[reply.client_id()].GetIPAsString();
 
         // TODO set result
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
