@@ -396,6 +396,8 @@ namespace dombft
 
             if (!log_->tentativeCommitPoint.has_value() || log_->tentativeCommitPoint->seq < seq)
             {
+                commitCertReplies.clear();
+                commitCertSigs.clear();
                 log_->createCommitPoint(seq);
             }
         }
@@ -434,8 +436,11 @@ namespace dombft
         if (!log_->tentativeCommitPoint.has_value() && reply.seq() >= log_->nextSeq)
         {
             LOG(INFO) << "Received reply for operation replica hasn't processed, adding to new cert";
+            commitCertReplies.clear();
+            commitCertSigs.clear();
             log_->createCommitPoint(reply.seq());
         }
+
         if (reply.seq() != log_->tentativeCommitPoint->seq)
         {
             LOG(ERROR) << "Received reply for seq=" << reply.seq()
@@ -444,11 +449,13 @@ namespace dombft
             return;
         }
 
-        if (log_->tentativeCommitPoint.has_value())
+        if (log_->tentativeCommitPoint->cert.has_value())
         {
             VLOG(3) << "Ignoring reply from " << reply.replica_id() << " since cert already created";
             return;
         }
+
+        VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
 
         commitCertReplies[reply.replica_id()] = reply;
         commitCertSigs[reply.replica_id()] = std::string(sig.begin(), sig.end());
@@ -491,7 +498,12 @@ namespace dombft
                 dombft::proto::Commit commit;
                 commit.set_replica_id(replicaId_);
                 commit.set_seq(reply.seq());
-                commit.set_log_digest((const char *)log_->getDigest(reply.seq()));
+                commit.set_log_digest((const char*) log_->tentativeCommitPoint->logDigest, SHA256_DIGEST_LENGTH);
+                commit.set_app_digest((const char*) log_->tentativeCommitPoint->appDigest, SHA256_DIGEST_LENGTH);
+
+
+                broadcastToReplicas(commit, MessageType::COMMIT);
+                return;
             }
         }
     }
@@ -504,16 +516,23 @@ namespace dombft
             return;
         }
 
+        VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
+
         LogCommitPoint &point = *log_->tentativeCommitPoint;
 
         // Convert to string for comparison
         std::string lDigest(point.logDigest, point.logDigest + SHA256_DIGEST_LENGTH);
         std::string aDigest(point.appDigest, point.appDigest + SHA256_DIGEST_LENGTH);
 
-        // Check message matches commiu
+        // Check message matches commit
         if (commitMsg.seq() != point.seq || commitMsg.log_digest() != lDigest || commitMsg.app_digest() != aDigest)
         {
             LOG(INFO) << "Commit message from " << commitMsg.replica_id() << " does not match current commit!";
+
+            VLOG(3) << "commitMsg.seq=" << commitMsg.seq() << " point.seq=" << point.seq << 
+                "\ncommitMsg.log_digest: " << digest_to_hex((const byte *) commitMsg.log_digest().c_str()) << 
+                "\n    point.log_digest: " << digest_to_hex(point.logDigest);
+
             return;
         }
 
@@ -521,6 +540,8 @@ namespace dombft
         point.commitMessages[commitMsg.replica_id()] = commitMsg;
         
         if (point.commitMessages.size() >= 2 * f_ + 1) {
+            LOG(INFO) << "Committing seq=" << commitMsg.seq();
+
             log_->commitCommitPoint();
         }
     }
@@ -533,7 +554,6 @@ namespace dombft
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_)
         {
-            LOG(INFO) << addr.ip_;
             endpoint_->SendPreparedMsgTo(addr);
         }
     }

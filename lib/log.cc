@@ -107,7 +107,7 @@ const byte *Log::getDigest() const
 
 const byte *Log::getDigest(uint32_t seq) const
 {
-    if (seq < nextSeq - MAX_SPEC_HIST)
+    if (seq + MAX_SPEC_HIST < nextSeq)
     {
         LOG(ERROR) << "Tried to access digest of seq=" << seq << " but nextSeq=" << nextSeq;
         return nullptr;
@@ -126,18 +126,24 @@ bool Log::createCommitPoint(uint32_t seq)
     //     LOG(ERROR) << "Attempt to create a commit point at seq " << seq
     //                << " but no cert exists!";
     // }
+    LOG(INFO) << "Creating tentative commit point for " << seq;
+
     tentativeCommitPoint = LogCommitPoint(); // TODO use a constructor?
 
     tentativeCommitPoint->seq = seq;
-    tentativeCommitPoint->cert = *certs[seq];
-
-    memcpy(tentativeCommitPoint->logDigest, getDigest(seq), SHA256_DIGEST_LENGTH);
+    // TODO initialize CERT
+    // TODO fix this
+    // memcpy(tentativeCommitPoint->logDigest, getDigest(seq), SHA256_DIGEST_LENGTH);
 
     // TODO actually get app state and create a digest    
+    memset(tentativeCommitPoint->logDigest, 0, SHA256_DIGEST_LENGTH);
+
     memset(tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
 
     tentativeCommitPoint->commitMessages.clear();
     tentativeCommitPoint->signatures.clear();
+
+    LOG(INFO) << "Created tentative commit point for " << seq;
 
     return true;
 }
@@ -173,6 +179,8 @@ bool Log::commitCommitPoint()
 
     return true;
 }
+
+
 
 std::ostream &operator<<(std::ostream &out, const Log &l)
 {
