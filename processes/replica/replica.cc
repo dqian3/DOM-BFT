@@ -477,7 +477,8 @@ namespace dombft
 
             matchingReplies[key].insert(replicaId);
 
-            if (matchingReplies[key].size() >= 2 * f_ + 1)
+            // Need 2f + 1 and own reply
+            if (matchingReplies[key].size() >= 2 * f_ + 1 && commitCertReplies.count(replicaId_))
             {
 
                 log_->tentativeCommitPoint->cert = Cert();
@@ -492,6 +493,10 @@ namespace dombft
                 }
 
                 VLOG(1) << "Created cert for request number " << reply.seq();
+
+                memcpy(log_->tentativeCommitPoint->logDigest, log_->getDigest(reply.seq()), SHA256_DIGEST_LENGTH);
+                // TODO set digest here
+                memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
 
                 // Broadcast commmit Message
                 // TODO get app digest

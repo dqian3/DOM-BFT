@@ -112,7 +112,7 @@ const byte *Log::getDigest(uint32_t seq) const
         LOG(ERROR) << "Tried to access digest of seq=" << seq << " but nextSeq=" << nextSeq;
         return nullptr;
     }
-    uint32_t seqIdx = seq + log.size() % log.size();
+    uint32_t seqIdx = (seq + log.size()) % log.size();
     return log[seqIdx]->digest;
 }
 
@@ -131,13 +131,11 @@ bool Log::createCommitPoint(uint32_t seq)
     tentativeCommitPoint = LogCommitPoint(); // TODO use a constructor?
 
     tentativeCommitPoint->seq = seq;
-    // TODO initialize CERT
-    // TODO fix this
-    // memcpy(tentativeCommitPoint->logDigest, getDigest(seq), SHA256_DIGEST_LENGTH);
 
-    // TODO actually get app state and create a digest    
+
+    // Note, CERT, logDigest, appDigest get added later
+    // TODO maybe don't create one without these?
     memset(tentativeCommitPoint->logDigest, 0, SHA256_DIGEST_LENGTH);
-
     memset(tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
 
     tentativeCommitPoint->commitMessages.clear();
