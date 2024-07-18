@@ -18,8 +18,9 @@ enum MessageType {
     CERT = 6,
     CERT_REPLY = 7,
 
-    DUMMY_PROTO = 8,
+    COMMIT = 8,
 
+    DUMMY_PROTO = 9,
 };
 
 #endif

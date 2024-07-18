@@ -60,6 +60,9 @@ namespace dombft
 
         if (config.transport == "nng") {
             auto addrPairs = getClientAddrs(config, clientId_);
+
+            // TODO get replica addresses correctly
+
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
         }
         else {
@@ -130,6 +133,7 @@ namespace dombft
             if (reply.client_id() != clientId_ || requestStates_.count(reply.client_seq()) == 0)
             {
                 // TODO more info?
+                LOG(INFO) << reply.client_id();
                 LOG(INFO) << "Invalid reply!";
                 return;
             }
@@ -212,6 +216,7 @@ namespace dombft
             if (reqState.certReplies.size() >= 2 * f_ + 1)
             {
                 // Request is committed, so we can clean up state!
+                // TODO check we have a consistent set of application replies!
 
                 VLOG(1) << "Request " << cseq << " normal path committed! "
                         << "Took " << GetMicrosecondTimestamp() - requestStates_[cseq].sendTime << " us";
