@@ -22,7 +22,7 @@
  *              receiverBase + numProxies * 2 <==> replicaBase + numClients
  *      5b. Each replica/receiver own machine
  *              (127.0.0.1) receiverBase + numProxies * 2 <==> (127.0.0.2) replicaBase + numClients
- * 
+ *      6. Replica/replica communication
  */
 
 
