@@ -41,6 +41,9 @@ namespace dombft
         std::unique_ptr<Endpoint> endpoint_;
         std::unique_ptr<Log> log_;
 
+
+        // State for commit/checkpoint protocol
+        // TODO move this somewhere else?
         std::map<int, dombft::proto::Reply> commitCertReplies;
         std::map<int, std::string> commitCertSigs;
 
