@@ -85,11 +85,19 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
 {
     MessageHeader *hdr = (MessageHeader *)sendBuffer_;
 
+    if (addrToSocket_.count(dstAddr) == 0)
+    {
+        LOG(ERROR) << "Attempt to send to unregistered address " << dstAddr.ip_ 
+            << ":" << dstAddr.port_;
+        return -1;
+    }
+
     nng_socket s = socks_[addrToSocket_[dstAddr]];
     int ret = nng_send(s, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0);
     if (ret != 0)
     {
         VLOG(1) << "\tSend Fail " << nng_strerror(ret);
+        return ret;
     }
 
     VLOG(4) << "Sending to " << socketToAddr_[addrToSocket_[dstAddr]].GetIPAsString();

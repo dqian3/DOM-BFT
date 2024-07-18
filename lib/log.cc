@@ -121,11 +121,11 @@ const byte *Log::getDigest(uint32_t seq) const
 // Create a new commit point given the existence of a certificate at seq
 bool Log::createCommitPoint(uint32_t seq)
 {
-    if (certs.count(seq) == 0)
-    {
-        LOG(ERROR) << "Attempt to create a commit point at seq " << seq
-                   << " but no cert exists!";
-    }
+    // if (certs.count(seq) == 0)
+    // {
+    //     LOG(ERROR) << "Attempt to create a commit point at seq " << seq
+    //                << " but no cert exists!";
+    // }
     tentativeCommitPoint = LogCommitPoint(); // TODO use a constructor?
 
     tentativeCommitPoint->seq = seq;
@@ -156,6 +156,8 @@ bool Log::addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int s
 
     tentativeCommitPoint->commitMessages[from] = commit;
     tentativeCommitPoint->signatures[from] = std::string(sig, sig + sigLen);
+
+    return true;
 }
 
 bool Log::commitCommitPoint()
@@ -168,6 +170,8 @@ bool Log::commitCommitPoint()
 
     commitPoint = tentativeCommitPoint.value();
     tentativeCommitPoint.reset();
+
+    return true;
 }
 
 std::ostream &operator<<(std::ostream &out, const Log &l)

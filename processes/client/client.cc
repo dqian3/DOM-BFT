@@ -60,6 +60,9 @@ namespace dombft
 
         if (config.transport == "nng") {
             auto addrPairs = getClientAddrs(config, clientId_);
+
+            // TODO get replica addresses correctly
+
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
         }
         else {
@@ -130,6 +133,7 @@ namespace dombft
             if (reply.client_id() != clientId_ || requestStates_.count(reply.client_seq()) == 0)
             {
                 // TODO more info?
+                LOG(INFO) << reply.client_id();
                 LOG(INFO) << "Invalid reply!";
                 return;
             }

@@ -70,6 +70,9 @@ namespace dombft
         if (config.transport == "nng")
         {
             auto addrPairs = getReplicaAddrs(config, replicaId_);
+
+            // TODO get replica addresses correctly
+
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
         }
         else
@@ -384,8 +387,10 @@ namespace dombft
 
         // Try and commit every 10 replies (half of the way before
         // we can't speculatively execute anymore)
-        if (seq % MAX_SPEC_HIST / 2 == 0)
+        if (seq % (MAX_SPEC_HIST / 2) == 0)
         {
+            LOG(INFO) << "Collecting cert for " << seq << " to checkpoint";
+
             // TODO remove execution result here
             broadcastToReplicas(reply, MessageType::REPLY);
 
@@ -528,6 +533,7 @@ namespace dombft
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_)
         {
+            LOG(INFO) << addr.ip_;
             endpoint_->SendPreparedMsgTo(addr);
         }
     }
