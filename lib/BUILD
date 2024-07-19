@@ -113,6 +113,8 @@ cc_library(
         ":common_struct",
         ":protocol_config",
          "@openssl//:openssl",
+        "@com_github_google_glog//:glog",
+        "//lib:log",
     ],
     visibility = ["//visibility:public"],
 )

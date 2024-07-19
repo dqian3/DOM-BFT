@@ -107,7 +107,7 @@ struct Log
 
     friend std::ostream& operator<<(std::ostream &out, const Log &l);
 
-    LogEntry* Log::getEntry(uint32_t seq) {
+    LogEntry* getEntry(uint32_t seq);
 
 
 };

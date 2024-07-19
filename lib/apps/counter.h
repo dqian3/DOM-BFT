@@ -4,9 +4,11 @@
 #include "lib/application.h"
 #include "lib/log.h"
 
-
 #include <unordered_map>
 #include <string>
+#include <glog/logging.h>
+
+#define INT_SIZE_IN_BYTES (sizeof(int))
 
 // TODO instead of requests and responses being raw bytes, have 
 // request and response types that can be serialized/unserialized.
@@ -14,6 +16,9 @@ class Counter : public Application {
     int counter;
 
     int counter_stable;
+
+    byte commit_digest[INT_SIZE_IN_BYTES];
+    byte snapshot_digest[INT_SIZE_IN_BYTES];
 
     std::shared_ptr<Log> log_;
 
@@ -27,6 +32,9 @@ public:
     virtual byte* getDigest(uint32_t digest_idx) override;
 
     virtual byte* takeSnapshot() override;
+
+    Counter(std::shared_ptr<Log> log) : log_(log), counter(0), counter_stable(0) {}
+    
 };
 
 #endif

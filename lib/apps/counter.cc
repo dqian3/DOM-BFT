@@ -46,12 +46,19 @@ bool Counter::commit(uint32_t commit_idx)
 
 byte* Counter::getDigest(uint32_t digest_idx)
 {
-    byte* digest = log_->getEntry(digest_idx)->digest;
-    return digest;
+    std::copy(static_cast<const char*>(static_cast<const void*>(&counter)),
+              static_cast<const char*>(static_cast<const void*>(&counter)) + INT_SIZE_IN_BYTES,
+              commit_digest);
+
+    return commit_digest;
 }
 
 byte* Counter::takeSnapshot()
 {
-    return getDigest(log_->lastExecuted);
+    std::copy(static_cast<const char*>(static_cast<const void*>(&counter_stable)),
+              static_cast<const char*>(static_cast<const void*>(&counter_stable)) + INT_SIZE_IN_BYTES,
+              snapshot_digest);
+
+    return snapshot_digest;
 }
 
