@@ -15,6 +15,12 @@ public:
     virtual ~KVStore();
 
     virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) override;
+
+    virtual bool commit(uint32_t commit_idx) override { return true; }
+
+    virtual byte* getDigest(uint32_t digest_idx) override { return nullptr; }
+
+    virtual byte* takeSnapshot() override { return nullptr; }
 };
 
 #endif

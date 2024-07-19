@@ -19,6 +19,12 @@ public:
 
     virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) = 0;
 
+    virtual bool commit(uint32_t commit_idx) = 0;
+
+    virtual byte* getDigest(uint32_t digest_idx) = 0;
+    
+    virtual byte* takeSnapshot() = 0;
+
     // virtual uint32_t takeSnapshot() = 0;
     // virtual bool restoreSnapshot() = 0;
 

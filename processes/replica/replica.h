@@ -39,7 +39,10 @@ namespace dombft
         SignatureProvider sigProvider_;
 
         std::unique_ptr<Endpoint> endpoint_;
-        std::unique_ptr<Log> log_;
+        // std::unique_ptr<Log> log_;
+        // the log_ is needed in the application layer as well
+        // So a unique ptr cannot be used. 
+        std::shared_ptr<Log> log_;
 
 
         // State for commit/checkpoint protocol
