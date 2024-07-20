@@ -30,6 +30,8 @@ namespace dombft
 
         uint32_t f_;
 
+        std::unique_ptr<Application> app_;
+
 #if PROTOCOL == PBFT
         std::map<std::pair<int, int>, int> prepareCount;
         std::map<std::pair<int, int>, int> commitCount;

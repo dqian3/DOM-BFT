@@ -5,6 +5,7 @@ client:
   - "127.0.1.0"
   port: 33000
   keysDir: keys/client
+  app : "counter"
   maxRequests: 1
 
 
@@ -40,4 +41,5 @@ replica:
   - "127.0.0.3"
   - "127.0.0.4"
   port: 34000
+  app: "counter"
   keysDir: "keys/replica"

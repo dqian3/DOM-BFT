@@ -4,6 +4,10 @@
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
+#include "lib/application.h"
+
+#include "lib/apps/counter.h"
+
 #include <openssl/pem.h>
 #include <assert.h>
 
@@ -98,6 +102,15 @@ namespace dombft
         {
             this->handleMessage(msgHdr, msgBuffer, sender);
         };
+
+        // init the app
+        if (config.replicaApp == AppType::COUNTER)
+        {
+            app_ = std::make_unique<Counter>(log_);
+        } else {
+            LOG(ERROR) << "Unknown app type!";
+            exit(1);
+        }
 
         endpoint_->RegisterMsgHandler(handler);
     }
@@ -389,6 +402,10 @@ namespace dombft
         // TODO actually get the result here.
         log_->executeEntry(seq);
 
+        // app layer
+        std::unique_ptr<AppResponse> appResponse = app_->execute(request.req_data());
+        reply.set_result(appResponse->SerializeAsString());
+
         reply.set_fast(true);
         reply.set_seq(seq);
 
@@ -556,6 +573,8 @@ namespace dombft
 
             return;
         }
+
+        app_->commit(commitMsg.seq());
 
 
         point.commitMessages[commitMsg.replica_id()] = commitMsg;

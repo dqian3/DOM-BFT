@@ -9,9 +9,13 @@ KVStore::~KVStore() {
     
 }
 
-std::unique_ptr<AppResponse> KVStore::execute(const AppRequest &request)
+std::unique_ptr<AppResponse> KVStore::execute(const std::string &serialized_request)
 {    
-    KVRequest *kvReq = (KVRequest *) &request;
+    std::unique_ptr<KVRequest> kvReq = std::make_unique<KVRequest>();
+    if (!kvReq->ParseFromString(serialized_request)) {
+        LOG(ERROR) << "Failed to parse KVRequest";
+        return nullptr; 
+    }
     std::unique_ptr<KVResponse> ret = std::make_unique<KVResponse>();
 
     std::string key = kvReq->key();

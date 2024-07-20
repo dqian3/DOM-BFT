@@ -66,6 +66,9 @@ namespace dombft
 
         void checkTimeouts();
 
+        std::unique_ptr<AppTrafficGen> trafficGen_;
+
+        AppType appType_;
 
     public:
         /** Client accepts a config file, which contains all the necessary information

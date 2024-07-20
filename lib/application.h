@@ -6,10 +6,17 @@
 #include "common_struct.h"
 
 #include <google/protobuf/message.h>
+#include <glog/logging.h>
 
 // Originally had some custom classes here, but this is easier lol
 typedef google::protobuf::Message AppRequest;
 typedef google::protobuf::Message AppResponse;
+
+enum class AppType
+{
+    KV_STORE,
+    COUNTER
+};
 
 class Application
 {
@@ -17,7 +24,7 @@ class Application
 public:
     virtual ~Application() {};
 
-    virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) = 0;
+    virtual std::unique_ptr<AppResponse> execute(const std::string &serialized_request) = 0;
 
     virtual bool commit(uint32_t commit_idx) = 0;
 
@@ -28,6 +35,14 @@ public:
     // virtual uint32_t takeSnapshot() = 0;
     // virtual bool restoreSnapshot() = 0;
 
+};
+
+class AppTrafficGen {
+public:
+    virtual ~AppTrafficGen() = default;
+
+    // Virtual function to generate app traffic
+    virtual void* generateAppTraffic() = 0;
 };
 
 #endif

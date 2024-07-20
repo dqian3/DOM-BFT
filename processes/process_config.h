@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/application.h"
+
 class ConfigParseException : public std::runtime_error
 {
 public:
@@ -26,6 +28,8 @@ struct ProcessConfig
     int clientPort;
     std::string clientKeysDir;
     int clientMaxRequests;
+    std::string clientAppStr;
+    AppType clientApp;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -44,6 +48,8 @@ struct ProcessConfig
     std::vector<std::string> replicaIps;
     int replicaPort;
     std::string replicaKeysDir;
+    std::string replicaAppStr;
+    AppType replicaApp;
 
     template <class T>
     T parseField(const YAML::Node &parent, const std::string &key)
@@ -94,6 +100,12 @@ struct ProcessConfig
             clientPort = parseField<int>(clientNode, "port");
             clientKeysDir = parseField<std::string>(clientNode, "keysDir");
             clientMaxRequests = parseField<int>(clientNode, "maxRequests");
+            clientAppStr = parseField<std::string>(clientNode, "app");
+            if (clientAppStr == "counter") {
+                clientApp = AppType::COUNTER;
+            } else {
+                throw ConfigParseException("Invalid app type");
+            }
         }
         catch (const ConfigParseException &e)
         {
@@ -151,6 +163,12 @@ struct ProcessConfig
             parseStringVector(replicaIps, replicaNode, "ips");
             replicaPort = parseField<int>(replicaNode, "port");
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
+            replicaAppStr = parseField<std::string>(replicaNode, "app");
+            if (replicaAppStr == "counter") {
+                replicaApp = AppType::COUNTER;
+            } else {
+                throw ConfigParseException("Invalid app type");
+            }
         }
         catch (const ConfigParseException &e)
         {

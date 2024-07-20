@@ -14,7 +14,7 @@ class KVStore : public Application {
 public:
     virtual ~KVStore();
 
-    virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) override;
+    virtual std::unique_ptr<AppResponse> execute(const std::string &serialized_request) override;
 
     virtual bool commit(uint32_t commit_idx) override { return true; }
 

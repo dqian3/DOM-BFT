@@ -193,7 +193,7 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 }
 
 LogEntry* Log::getEntry(uint32_t seq) {
-    if (seq < nextSeq && seq >= nextSeq - MAX_SPEC_HIST) {
+    if (seq < nextSeq) {
         uint32_t index = seq % MAX_SPEC_HIST;
         return log[index].get();
     } else {

@@ -13,6 +13,9 @@
 // TODO instead of requests and responses being raw bytes, have 
 // request and response types that can be serialized/unserialized.
 class Counter : public Application {
+public:
+    std::shared_ptr<Log> log_;
+
     int counter;
 
     int counter_stable;
@@ -20,12 +23,11 @@ class Counter : public Application {
     byte commit_digest[INT_SIZE_IN_BYTES];
     byte snapshot_digest[INT_SIZE_IN_BYTES];
 
-    std::shared_ptr<Log> log_;
 
-public:
+
     virtual ~Counter();
 
-    virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) override;
+    virtual std::unique_ptr<AppResponse> execute(const std::string &serialized_request) override;
 
     virtual bool commit(uint32_t commit_idx) override;
 
@@ -35,6 +37,13 @@ public:
 
     Counter(std::shared_ptr<Log> log) : log_(log), counter(0), counter_stable(0) {}
     
+};
+
+class CounterTrafficGen : public AppTrafficGen {
+public:
+    CounterTrafficGen() = default;
+
+    void* generateAppTraffic() override;
 };
 
 #endif
