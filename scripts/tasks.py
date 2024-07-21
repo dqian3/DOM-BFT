@@ -66,7 +66,7 @@ def local(c: invoke.Context, config_file: str):
 
 
 def get_gcloud_ext_ips(c):
-    # parse gcloud CLI to get internalIP -> externalIP mapping
+    # parse gcloud CLI to get internalIP -> externalIP mapping    
     gcloud_output = c.run("gcloud compute instances list").stdout[1:].splitlines()
     gcloud_output = map(lambda s: s.split(), gcloud_output)
     ext_ips = {
@@ -75,13 +75,11 @@ def get_gcloud_ext_ips(c):
         for line in gcloud_output
     }
 
-    return ext_ips
-
-
 def get_gcloud_process_group(config, ext_ips):
     int_ips = set()
     for process in config:
-        int_ips |= set([ip for ip in config[process]["ips"] if "ips" in config["process"]])
+        if process == "transport": continue
+        int_ips |= set([ip for ip in config[process]["ips"]])
 
     # TODO transfer keys and configs
     ips = []
@@ -293,3 +291,63 @@ def gcloud_run(c, config_file="../configs/remote.yaml"):
         for hdl in other_handles:
             hdl.runner.kill()
             hdl.join()
+
+
+def get_gcloud_process_ips(c, filter):
+    gcloud_output = c.run(f"gcloud compute instances list | grep {filter}").stdout.splitlines()
+    gcloud_output = map(lambda s : s.split(), gcloud_output)
+
+    return [
+        # internal ip is 3rd last token in line
+        line[-3]
+        for line in gcloud_output
+    ]
+
+
+@task
+def gcloud_create_prod(c, config_template="../configs/remote.yaml"):
+    # This is probably better, but can't be across zones:
+    # https://cloud.google.com/compute/docs/instances/multiple/create-in-bulk
+
+    create_vm_template = """
+gcloud compute instances create {} \
+    --project=mythic-veld-419517 \
+    --zone={} \
+    --machine-type=t2d-standard-16 \
+    --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
+    --create-disk=auto-delete=yes,boot=yes,device-name=prod-replica1,image=projects/debian-cloud/global/images/debian-12-bookworm-v20240709,mode=rw,size=20,type=projects/mythic-veld-419517/zones/us-west1-c/diskTypes/pd-ssd 
+"""
+
+    zones = ["us-west1-c", "us-west4-c", "us-east1-c", "us-east5-c"]
+
+    config_file = os.path.abspath(config_template)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+
+    n = len(config["replica"]["ips"])
+    n_proxies = len(config["proxy"]["ips"])
+    n_clients = len(config["client"]["ips"])
+
+    for i in range(n):
+        zone = zones[i % len(zones)]
+        c.run(create_vm_template.format(f"prod-replica{i}", zone))
+
+    for i in range(n_proxies):
+        zone = zones[i % len(zones)]
+        c.run(create_vm_template.format(f"prod-proxy{i}", zone))
+    
+
+    for i in range(n_clients):
+        zone = zones[i % len(zones)]
+        c.run(create_vm_template.format(f"prod-client{i}", zone))
+
+
+    config["replica"]["ips"] = get_gcloud_process_ips(c, "prod-replica")
+    config["receiver"]["ips"] = get_gcloud_process_ips(c, "prod-replica")
+    config["proxy"]["ips"] = get_gcloud_process_ips(c, "prod-proxy")
+    config["client"]["ips"] = get_gcloud_process_ips(c, "prod-client")
+
+    filename, ext = os.path.splitext(config_template)
+    yaml.dump(config, open(filename + "-prod" + ext, "w"))

@@ -50,30 +50,49 @@ namespace dombft
             exit(1);
         }
 
-        /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++)
-        {
-            replicaAddrs_.push_back(Address(config.replicaIps[i],
-                                            config.replicaPort));
-        }
-        f_ = replicaAddrs_.size() / 3;
 
-        /** Store all client addrs */
-        for (uint32_t i = 0; i < config.clientIps.size(); i++)
-        {
-            clientAddrs_.push_back(Address(config.clientIps[i],
-                                           config.clientPort));
-        }
+        f_ = config.replicaIps.size() / 3;
+
+
 
         log_ = std::make_unique<Log>();
 
-        if (config.transport == "nng") {
+        if (config.transport == "nng")
+        {
             auto addrPairs = getReplicaAddrs(config, replicaId_);
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
-        } else {
+
+            size_t nClients = config.clientIps.size();
+            for (size_t i = 0; i < nClients; i++) {
+                // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.GetIPAsString();
+                clientAddrs_.push_back(addrPairs[i].second);
+            }
+
+            for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
+                // LOG(INFO) << "Replica " << i << ": " <<  addrPairs[i].second.GetIPAsString();
+                replicaAddrs_.push_back(addrPairs[i].second);
+            }
+        }
+        else
+        {
             endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
 
+            /** Store all replica addrs */
+            for (uint32_t i = 0; i < config.replicaIps.size(); i++)
+            {
+                replicaAddrs_.push_back(Address(config.replicaIps[i],
+                                                config.replicaPort));
+            }
+
+            /** Store all client addrs */
+            for (uint32_t i = 0; i < config.clientIps.size(); i++)
+            {
+                clientAddrs_.push_back(Address(config.clientIps[i],
+                                               config.clientPort));
+            }
         }
+
+
         MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
             this->handleMessage(msgHdr, msgBuffer, sender);
@@ -176,6 +195,44 @@ namespace dombft
             }
 
             handleCert(cert);
+        }
+
+        if (hdr->msgType == REPLY)
+        {
+            Reply replyHeader;
+
+            if (!replyHeader.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+                return;
+            }
+
+            if (!sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify replica signature!";
+                return;
+            }
+
+            handleReply(replyHeader, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+
+        if (hdr->msgType == COMMIT)
+        {
+            Commit commitMsg;
+
+            if (!commitMsg.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+                return;
+            }
+
+            if (!sigProvider_.verify(hdr, body, "replica", commitMsg.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify replica signature!";
+                return;
+            }
+
+            handleCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
     }
 
@@ -316,12 +373,23 @@ namespace dombft
         // TODO change this when we implement the slow path
         reply.set_view(0);
 
-        bool fast = log_->addEntry(clientId, request.client_seq(),
-                                   (byte *)request.req_data().c_str(),
-                                   request.req_data().length());
+        bool success = log_->addEntry(clientId, request.client_seq(),
+                                      (byte *)request.req_data().c_str(),
+                                      request.req_data().length());
 
-        reply.set_fast(fast);
-        reply.set_seq(log_->nextSeq - 1);
+        if (!success)
+        {
+            // TODO Handle this more gracefully by queuing requests
+            LOG(ERROR) << "Could not add request to log!";
+            return;
+        }
+
+        uint32_t seq = log_->nextSeq - 1;
+        // TODO actually get the result here.
+        log_->executeEntry(seq);
+
+        reply.set_fast(true);
+        reply.set_seq(seq);
 
         reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
@@ -330,23 +398,200 @@ namespace dombft
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+
+        // Try and commit every 10 replies (half of the way before
+        // we can't speculatively execute anymore)
+        if (seq % (MAX_SPEC_HIST / 2) == 0)
+        {
+            LOG(INFO) << "Collecting cert for " << seq << " to checkpoint";
+
+            // TODO remove execution result here
+            broadcastToReplicas(reply, MessageType::REPLY);
+
+            if (!log_->tentativeCommitPoint.has_value() || log_->tentativeCommitPoint->seq < seq)
+            {
+                commitCertReplies.clear();
+                commitCertSigs.clear();
+                log_->createCommitPoint(seq);
+            }
+        }
     }
 
     void Replica::handleCert(const Cert &cert)
     {
-        // TODO verify cert, for now just accept it!
+        if (!verifyCert(cert))
+        {
+            return;
+        }
+
+        const Reply &r = cert.replies()[0];
+        log_->addCert(r.seq(), cert);
+
+        if (log_->lastExecuted < r.seq())
+        {
+            // Execute up to seq;
+        }
+
+        CertReply reply;
+        reply.set_client_id(r.client_id());
+        reply.set_client_seq(r.client_seq());
+        reply.set_replica_id(replicaId_);
+ 
+        VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq()
+        << " to " << clientAddrs_[reply.client_id()].GetIPAsString();
+
+        // TODO set result
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
+        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+    }
+
+    void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
+    {
+        if (!log_->tentativeCommitPoint.has_value() && reply.seq() >= log_->nextSeq)
+        {
+            LOG(INFO) << "Received reply for operation replica hasn't processed, adding to new cert";
+            commitCertReplies.clear();
+            commitCertSigs.clear();
+            log_->createCommitPoint(reply.seq());
+        }
+
+        if (reply.seq() != log_->tentativeCommitPoint->seq)
+        {
+            LOG(ERROR) << "Received reply for seq=" << reply.seq()
+                       << " not equal to tent. commit point seq="
+                       << log_->tentativeCommitPoint->seq;
+            return;
+        }
+
+        if (log_->tentativeCommitPoint->cert.has_value())
+        {
+            VLOG(3) << "Ignoring reply from " << reply.replica_id() << " since cert already created";
+            return;
+        }
+
+        VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
+
+        commitCertReplies[reply.replica_id()] = reply;
+        commitCertSigs[reply.replica_id()] = std::string(sig.begin(), sig.end());
+
+        std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+
+        for (const auto &entry : commitCertReplies)
+        {
+            int replicaId = entry.first;
+            const Reply &reply = entry.second;
+
+            // TODO this is ugly lol
+            // We don't need client_seq/client_id, these are already checked.
+            // We also don't check the result here, that only needs to happen in the fast path
+            std::tuple<std::string, int, int> key = {
+                reply.digest(),
+                reply.view(),
+                reply.seq()};
+
+            matchingReplies[key].insert(replicaId);
+
+            // Need 2f + 1 and own reply
+            if (matchingReplies[key].size() >= 2 * f_ + 1 && commitCertReplies.count(replicaId_))
+            {
+
+                log_->tentativeCommitPoint->cert = Cert();
+                dombft::proto::Cert &cert = *log_->tentativeCommitPoint->cert;
+
+                // TODO check if fast path is not posssible, and we can send cert right away
+                for (auto repId : matchingReplies[key])
+                {
+                    cert.add_signatures(commitCertSigs[repId]);
+                    // THis usage is so weird, is protobuf the right tool?
+                    (*cert.add_replies()) = commitCertReplies[repId];
+                }
+
+                VLOG(1) << "Created cert for request number " << reply.seq();
+
+                memcpy(log_->tentativeCommitPoint->logDigest, log_->getDigest(reply.seq()), SHA256_DIGEST_LENGTH);
+                // TODO set digest here
+                memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
+
+                // Broadcast commmit Message
+                // TODO get app digest
+                dombft::proto::Commit commit;
+                commit.set_replica_id(replicaId_);
+                commit.set_seq(reply.seq());
+                commit.set_log_digest((const char*) log_->tentativeCommitPoint->logDigest, SHA256_DIGEST_LENGTH);
+                commit.set_app_digest((const char*) log_->tentativeCommitPoint->appDigest, SHA256_DIGEST_LENGTH);
+
+
+                broadcastToReplicas(commit, MessageType::COMMIT);
+                return;
+            }
+        }
+    }
+
+    void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
+    {
+        if (!log_->tentativeCommitPoint.has_value()) {
+            // TODO handle this case, we probably would need to request a cert from another replica!
+            LOG(ERROR) << "Received COMMIT message without commit point!";
+            return;
+        }
+
+        VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
+
+        LogCommitPoint &point = *log_->tentativeCommitPoint;
+
+        // Convert to string for comparison
+        std::string lDigest(point.logDigest, point.logDigest + SHA256_DIGEST_LENGTH);
+        std::string aDigest(point.appDigest, point.appDigest + SHA256_DIGEST_LENGTH);
+
+        // Check message matches commit
+        if (commitMsg.seq() != point.seq || commitMsg.log_digest() != lDigest || commitMsg.app_digest() != aDigest)
+        {
+            LOG(INFO) << "Commit message from " << commitMsg.replica_id() << " does not match current commit!";
+
+            VLOG(3) << "commitMsg.seq=" << commitMsg.seq() << " point.seq=" << point.seq << 
+                "\ncommitMsg.log_digest: " << digest_to_hex((const byte *) commitMsg.log_digest().c_str()) << 
+                "\n    point.log_digest: " << digest_to_hex(point.logDigest);
+
+            return;
+        }
+
+
+        point.commitMessages[commitMsg.replica_id()] = commitMsg;
+        
+        if (point.commitMessages.size() >= 2 * f_ + 1) {
+            LOG(INFO) << "Committing seq=" << commitMsg.seq();
+
+            log_->commitCommitPoint();
+        }
+    }
+
+    void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
+    {
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
+        // TODO check errors for all of these lol
+        // TODO this sends to self as well, could shortcut this
+        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        for (const Address &addr : replicaAddrs_)
+        {
+            endpoint_->SendPreparedMsgTo(addr);
+        }
+    }
+
+    bool Replica::verifyCert(const Cert &cert)
+    {
         if (cert.replies().size() < 2 * f_ + 1)
         {
             LOG(INFO) << "Received cert of size " << cert.replies().size()
                       << ", which is smaller than 2f + 1, f=" << f_;
-            return;
+            return false;
         }
 
         if (cert.replies().size() != cert.signatures().size())
         {
             LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
                       << "cert signatures size" << cert.signatures().size();
-            return;
+            return false;
         }
 
         // Verify each signature in the cert
@@ -365,40 +610,13 @@ namespace dombft
                     reply.replica_id()))
             {
                 LOG(INFO) << "Cert failed to verify!";
-                return;
+                return false;
             }
         }
 
-        const Reply &r = cert.replies()[0];
-        log_->addCert(r.seq(), cert);
+        // TOOD verify that cert actually contains matching replies...
 
-        if (log_->lastExecuted < r.seq())
-        {
-            // Execute up to seq;
-        }
-
-        CertReply reply;
-        reply.set_client_id(r.client_id());
-        reply.set_client_seq(r.client_seq());
-        reply.set_replica_id(replicaId_);
-
-        VLOG(3) << "Sending cert for " << reply.client_id() << ", " << reply.client_seq();
-
-        // TODO set result
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
-    }
-
-    void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
-    {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
-        // TODO check errors for all of these lol
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-        for (const Address &addr : replicaAddrs_)
-        {
-            endpoint_->SendPreparedMsgTo(addr);
-        }
+        return true;
     }
 
 } // namespace dombft

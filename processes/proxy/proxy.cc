@@ -27,13 +27,20 @@ namespace dombft
                 exit(1);
             }
             auto addrPairs = getProxyAddrs(config, proxyId);
-            // This is rather messy, but the last nReceivers addresses in this return value are 
-            // for the measurement connections  o
+            // This is rather messy, but the last nReceivers addresses in this return value are for the measurement connections 
+            size_t nClients = config.clientIps.size();
+            size_t nReplicas = config.replicaIps.size();
             std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(), addrPairs.end() - config.receiverIps.size());
             std::vector<std::pair<Address, Address>> measurmentAddrs(addrPairs.end() - config.receiverIps.size(), addrPairs.end());
 
             forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
             measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
+
+            for (int i = nClients; i < forwardAddrs.size(); i++)
+            {
+                receiverAddrs_.push_back(forwardAddrs[i].second);
+            }
+
 
         } else {
             for (int i = 0; i < numShards_; i++)
@@ -45,14 +52,17 @@ namespace dombft
 
             measurementEp_ = std::make_unique<UDPEndpoint>(
                 config.proxyIps[proxyId], config.proxyMeasurementPort);
+
+
+            numReceivers_ = config.receiverIps.size();
+            for (int i = 0; i < numReceivers_; i++)
+            {
+                std::string receiverIp = config.receiverIps[i];
+                receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            }
         }
 
-        numReceivers_ = config.receiverIps.size();
-        for (int i = 0; i < numReceivers_; i++)
-        {
-            std::string receiverIp = config.receiverIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
-        }
+
     }
 
     void Proxy::terminate()

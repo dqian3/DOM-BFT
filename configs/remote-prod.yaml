@@ -1,0 +1,36 @@
+client:
+  ips:
+  - 10.138.0.6
+  - 10.182.0.4
+  keysDir: keys/client
+  maxRequests: 1
+  port: 33000
+proxy:
+  forwardPort: 31000
+  initialOwd: 5000
+  ips:
+  - 10.138.0.5
+  - 10.182.0.3
+  keysDir: keys/proxy
+  maxOwd: 10000
+  measurementPort: 32000
+  shards: 1
+receiver:
+  ips:
+  - 10.138.0.4
+  - 10.142.0.2
+  - 10.182.0.2
+  - 10.202.0.2
+  keysDir: keys/receiver
+  local: true
+  port: 33000
+  shards: 1
+replica:
+  ips:
+  - 10.138.0.4
+  - 10.142.0.2
+  - 10.182.0.2
+  - 10.202.0.2
+  keysDir: keys/replica
+  port: 34000
+transport: nng

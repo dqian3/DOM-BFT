@@ -19,21 +19,7 @@ namespace dombft
         int clientPort = config.clientPort;
         LOG(INFO) << "clientPort=" << clientPort;
 
-        /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
-        for (uint32_t i = 0; i < config.proxyIps.size(); i++)
-        {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
-            proxyAddrs_.push_back(Address(config.proxyIps[i],
-                                          config.proxyForwardPort));
-        }
-
-        /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++)
-        {
-            replicaAddrs_.push_back(Address(config.replicaIps[i],
-                                            config.replicaPort));
-        }
-        f_ = replicaAddrs_.size() / 3;
+        f_ = config.replicaIps.size() / 3;
 
         /* Setup keys */
         std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -54,18 +40,44 @@ namespace dombft
         LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
         maxInFlight_ = config.clientMaxRequests;
 
-
-        /** Initialize state */
-        nextReqSeq_ = 1;
-
+        /** Setup transport */
         if (config.transport == "nng") {
             auto addrPairs = getClientAddrs(config, clientId_);
+
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+
+            for (size_t i = 0; i < addrPairs.size(); i++) 
+            {
+            }
+
+            size_t nReplicas = config.replicaIps.size();
+            for (size_t i = 0; i < nReplicas; i++) 
+                replicaAddrs_.push_back(addrPairs[i].second);
+
+            for (size_t i = nReplicas; i < addrPairs.size(); i++)
+                proxyAddrs_.push_back(addrPairs[i].second);
         }
         else {
             endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
+
+            /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
+            for (uint32_t i = 0; i < config.proxyIps.size(); i++)
+            {
+                LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
+                proxyAddrs_.push_back(Address(config.proxyIps[i],
+                                              config.proxyForwardPort));
+            }
+
+            /** Store all replica addrs */
+            for (uint32_t i = 0; i < config.replicaIps.size(); i++)
+            {
+                replicaAddrs_.push_back(Address(config.replicaIps[i],
+                                                config.replicaPort));
+            }
         }
-        
+    
+        /** Initialize state */
+        nextReqSeq_ = 1;
         
         MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
@@ -83,6 +95,9 @@ namespace dombft
             this);
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
+
+
+        LOG(INFO) << "Client finished initializing";
     }
 
     Client::~Client()
@@ -108,9 +123,10 @@ namespace dombft
             return;
         }
 
-        Reply reply;
         if (msgHdr->msgType == MessageType::REPLY || msgHdr->msgType == MessageType::FAST_REPLY)
         {
+            Reply reply;
+
             // TODO verify and handle signed header better
             if (!reply.ParseFromArray(msgBuffer, msgHdr->msgLen))
             {
@@ -130,6 +146,7 @@ namespace dombft
             if (reply.client_id() != clientId_ || requestStates_.count(reply.client_seq()) == 0)
             {
                 // TODO more info?
+                LOG(INFO) << reply.client_id();
                 LOG(INFO) << "Invalid reply!";
                 return;
             }
@@ -193,8 +210,8 @@ namespace dombft
                 return;
             }
 
-            if (reply.client_id() != clientId_) {
-                VLOG(2) << "Received certReply for client " << reply.client_id()  << " != " << clientId_;
+            if (certReply.client_id() != clientId_) {
+                VLOG(2) << "Received certReply for client " << certReply.client_id()  << " != " << clientId_;
                 return;
  
             }
@@ -212,6 +229,7 @@ namespace dombft
             if (reqState.certReplies.size() >= 2 * f_ + 1)
             {
                 // Request is committed, so we can clean up state!
+                // TODO check we have a consistent set of application replies!
 
                 VLOG(1) << "Request " << cseq << " normal path committed! "
                         << "Took " << GetMicrosecondTimestamp() - requestStates_[cseq].sendTime << " us";
