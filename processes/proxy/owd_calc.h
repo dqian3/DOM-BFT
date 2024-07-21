@@ -1,3 +1,11 @@
+#ifndef OWD_CALC_H
+#define OWD_CALC_H
+
+// TODO get rid of templates here..
+// The main issue with this design is that the Strategy class acts as both 
+// a template for constructing per-receiver strategies and a calculator for
+// those strategies. It works for now though.
+
 #include <vector>
 #include <algorithm>
 namespace dombft {
@@ -75,7 +83,6 @@ namespace dombft {
             std::vector<uint32_t> storedMeasure_;
         };
 
-        template<typename T>
         class MeasureContext {
         public:
             MeasureContext(uint32_t numReceivers, T strategy, uint32_t cap, uint32_t windowSize = 0) :
@@ -110,3 +117,5 @@ namespace dombft {
 
     }
 }
+
+#endif
