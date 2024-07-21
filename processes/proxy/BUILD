@@ -1,7 +1,7 @@
 cc_library(
     name = "proxy_class",
     srcs = ["proxy.cc"],
-    hdrs = ["proxy.h"],
+    hdrs = ["proxy.h", "owd_calc.h"],
     deps = [
         "//proto:dombft_proto_cc",
         "//lib:utils",

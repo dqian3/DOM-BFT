@@ -1,14 +1,16 @@
-
-from fabric import Connection, ThreadingGroup, SerialGroup
-from invoke import task
-import yaml
 import os
 import time
 
+import invoke
+import yaml
+from fabric import Connection, SerialGroup, ThreadingGroup
+from invoke import task
+
 # TODO we can process output of these here instead of in the terminal
 
+
 @task
-def local(c, config_file):
+def local(c: invoke.Context, config_file: str):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 
@@ -22,8 +24,6 @@ def local(c, config_file):
     n_clients = len(config["client"]["ips"])
     n_proxies = len(config["proxy"]["ips"])
     n_receivers = len(config["receiver"]["ips"])
-
-
     client_handles = []
     other_handles = []
 
@@ -32,19 +32,23 @@ def local(c, config_file):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
-            hdl = arun(f"./bazel-bin/processes/replica/dombft_replica -v {5} -config {config_file} -replicaId {id} &>logs/replica{id}.log")
+            hdl = arun(
+                f"./bazel-bin/processes/replica/dombft_replica -v {5} -config {config_file} -replicaId {id} &>logs/replica{id}.log")
             other_handles.append(hdl)
-            
+
         for id in range(n_receivers):
-            hdl = arun(f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log")
+            hdl = arun(
+                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log")
             other_handles.append(hdl)
 
         for id in range(n_proxies):
-            hdl = arun(f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log")
+            hdl = arun(
+                f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log")
             other_handles.append(hdl)
 
         for id in range(n_clients):
-            hdl = arun(f"./bazel-bin/processes/client/dombft_client -v {5} -config {config_file} -clientId {id} &>logs/client{id}.log")
+            hdl = arun(
+                f"./bazel-bin/processes/client/dombft_client -v {5} -config {config_file} -clientId {id} &>logs/client{id}.log")
             client_handles.append(hdl)
 
     try:
@@ -64,11 +68,10 @@ def local(c, config_file):
 def get_gcloud_ext_ips(c):
     # parse gcloud CLI to get internalIP -> externalIP mapping    
     gcloud_output = c.run("gcloud compute instances list").stdout[1:].splitlines()
-    gcloud_output = map(lambda s : s.split(), gcloud_output)
-    
+    gcloud_output = map(lambda s: s.split(), gcloud_output)
     ext_ips = {
         # internal ip and external ip are last 2 tokens in each line
-        line[-3] : line[-2]
+        line[-3]: line[-2]
         for line in gcloud_output
     }
 
@@ -80,16 +83,16 @@ def get_gcloud_process_group(config, ext_ips):
 
     # TODO transfer keys and configs
     ips = []
-    for ip in int_ips: # TODO non local receivers?
+    for ip in int_ips:  # TODO non local receivers?
         ips.append(ext_ips[ip])
-    
+
     group = ThreadingGroup(
         *ips
     )
     return group
 
 
-@task 
+@task
 def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
     config_file = os.path.abspath(config_file)
 
@@ -97,7 +100,7 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    int_ips = config["proxy"]["ips"] + config["receiver"]["ips"] 
+    int_ips = config["proxy"]["ips"] + config["receiver"]["ips"]
 
     # Only need to do this on proxies and receivers
     group = ThreadingGroup(
@@ -118,7 +121,6 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
     for ip in int_ips[1:]:
         ttcs_config = ttcs_template.format(ip, ip, 1, "true")
         Connection(ext_ips[ip]).run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
-
 
     group.run("sudo systemctl stop ntp", warn=True)
     group.run("sudo systemctl disable ntp", warn=True)
@@ -148,24 +150,23 @@ def gcloud_build(c, config_file="../configs/remote.yaml"):
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
     group.run("cd DOM-BFT && git pull && bazel build //processes/...")
 
-    group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~") 
-    group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~") 
+    group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
+    group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
-    group.run("cp ./DOM-BFT/bazel-bin/processes/client/dombft_client ~") 
+    group.run("cp ./DOM-BFT/bazel-bin/processes/client/dombft_client ~")
 
 
-@task 
+@task
 def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
-
     ext_ips = get_gcloud_ext_ips(c)
     group = get_gcloud_process_group(config, ext_ips)
     group.put(config_file)
-    
+
     print("Copying keys over...")
     for process in ["client", "replica", "receiver", "proxy"]:
         group.run(f"mkdir -p keys/{process}")
@@ -173,7 +174,7 @@ def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
             group.put(os.path.join(f"../keys/{process}", filename), f"keys/{process}")
 
 
-@task 
+@task
 def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
     config_file = os.path.abspath(config_file)
 
@@ -193,10 +194,9 @@ def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
     proxies = SerialGroup(*[ext_ips[ip] for ip in proxies])
     clients = SerialGroup(*[ext_ips[ip] for ip in clients])
 
-
     print("Copying binaries over...")
     group.run("rm dombft_*", warn=True)
-    
+
     replicas.put("../bazel-bin/processes/replica/dombft_replica")
     print("Copied replica")
 
@@ -210,13 +210,12 @@ def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
     print("Copied client")
 
 
-@task 
+@task
 def gcloud_run(c, config_file="../configs/remote.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
-
 
     ext_ips = get_gcloud_ext_ips(c)
     group = get_gcloud_process_group(config, ext_ips)
@@ -229,10 +228,10 @@ def gcloud_run(c, config_file="../configs/remote.yaml"):
     proxies = config["proxy"]["ips"]
     clients = config["client"]["ips"]
 
-    replica_path = "./dombft_replica" 
-    receiver_path = "./dombft_receiver" 
-    proxy_path = "./dombft_proxy" 
-    client_path = "./dombft_client" 
+    replica_path = "./dombft_replica"
+    receiver_path = "./dombft_receiver"
+    proxy_path = "./dombft_proxy"
+    client_path = "./dombft_client"
 
     replicas = [ext_ips[ip] for ip in replicas]
     receivers = [ext_ips[ip] for ip in receivers]
@@ -250,9 +249,9 @@ def gcloud_run(c, config_file="../configs/remote.yaml"):
             conn = Connection(ip)
 
             # print(f"Running {args}")
-            print(f"Running {args} on {ip}" )
+            print(f"Running {args} on {ip}")
             return conn.run(*args, **kwargs, asynchronous=True, warn=True, out_stream=log)
-            
+
         return arun
 
     c.run("mkdir -p ../logs")
@@ -261,7 +260,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml"):
         arun = local_log_arun(f"../logs/replica{id}.log", ip)
         hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} 2>&1")
         other_handles.append(hdl)
-            
+
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = local_log_arun(f"../logs/receiver{id}.log", ip)
