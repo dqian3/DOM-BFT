@@ -36,6 +36,8 @@ public:
     virtual byte* takeSnapshot() override;
 
     Counter(std::shared_ptr<Log> log) : log_(log), counter(0), counter_stable(0) {}
+
+    virtual bool abort() override;
     
 };
 

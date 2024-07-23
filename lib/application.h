@@ -32,6 +32,9 @@ public:
     
     virtual byte* takeSnapshot() = 0;
 
+    // resetting the application state to the committed state
+    virtual bool abort() = 0;
+
 
 };
 

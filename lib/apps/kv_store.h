@@ -21,6 +21,8 @@ public:
     virtual byte* getDigest(uint32_t digest_idx) override { return nullptr; }
 
     virtual byte* takeSnapshot() override { return nullptr; }
+
+    virtual bool abort() override { return true; }
 };
 
 #endif

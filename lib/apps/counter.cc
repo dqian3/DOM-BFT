@@ -84,3 +84,9 @@ void* CounterTrafficGen::generateAppTraffic()
     return request;
 }
 
+bool Counter::abort()
+{
+    counter = counter_stable;
+    return true;
+}
+
