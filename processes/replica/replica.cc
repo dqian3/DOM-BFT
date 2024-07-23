@@ -399,7 +399,6 @@ namespace dombft
         }
 
         uint32_t seq = log_->nextSeq - 1;
-        // TODO actually get the result here.
         log_->executeEntry(seq);
 
         // app layer
