@@ -59,7 +59,6 @@ namespace dombft
 
 
 
-        // log_ = std::make_unique<Log>();
         log_ = std::make_shared<Log>();
 
         if (config.transport == "nng")
