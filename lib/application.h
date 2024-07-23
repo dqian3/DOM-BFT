@@ -32,8 +32,6 @@ public:
     
     virtual byte* takeSnapshot() = 0;
 
-    // virtual uint32_t takeSnapshot() = 0;
-    // virtual bool restoreSnapshot() = 0;
 
 };
 
