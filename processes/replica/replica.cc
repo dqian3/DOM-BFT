@@ -104,7 +104,7 @@ namespace dombft
         };
 
         // init the app
-        if (config.replicaApp == AppType::COUNTER)
+        if (config.app == AppType::COUNTER)
         {
             app_ = std::make_unique<Counter>(log_);
         } else {

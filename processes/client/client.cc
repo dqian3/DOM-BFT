@@ -101,7 +101,7 @@ namespace dombft
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
 
-        if (config.clientApp == AppType::COUNTER)
+        if (config.app == AppType::COUNTER)
         {
             trafficGen_ = std::make_unique<CounterTrafficGen>();
             appType_ = AppType::COUNTER;

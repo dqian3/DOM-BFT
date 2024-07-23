@@ -1,5 +1,7 @@
 transport: "udp"
 
+app: "counter"
+
 client:
   ips: 
   - "127.0.1.0"
