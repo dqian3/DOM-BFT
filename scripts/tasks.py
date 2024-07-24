@@ -137,7 +137,7 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
 
 @task
-def gcloud_build(c, config_file="../configs/remote.yaml"):
+def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -147,7 +147,12 @@ def gcloud_build(c, config_file="../configs/remote.yaml"):
     group = get_gcloud_process_group(config, ext_ips)
     group.put(config_file)
 
+    if setup:
+        group.put("setup.sh")
+        group.run("chmod +x ./setup.sh && sudo ./setup.sh")
+
     print("Cloning/building repo...")
+
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
     group.run("cd DOM-BFT && git pull && bazel build //processes/...")
 

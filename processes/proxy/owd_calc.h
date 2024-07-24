@@ -83,6 +83,8 @@ namespace dombft {
             std::vector<uint32_t> storedMeasure_;
         };
 
+
+        template<typename T>    
         class MeasureContext {
         public:
             MeasureContext(uint32_t numReceivers, T strategy, uint32_t cap, uint32_t windowSize = 0) :
