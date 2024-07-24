@@ -10,7 +10,7 @@ from invoke import task
 
 
 @task
-def local(c: invoke.Context, config_file: str):
+def local(c, config_file):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 
@@ -74,6 +74,7 @@ def get_gcloud_ext_ips(c):
         line[-3]: line[-2]
         for line in gcloud_output
     }
+    return ext_ips
 
 def get_gcloud_process_group(config, ext_ips):
     int_ips = set()
