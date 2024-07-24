@@ -190,7 +190,7 @@ namespace dombft
                             << " now=" << GetMicrosecondTimestamp();
 
 
-                    // MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+                    MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
                     sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
 #endif

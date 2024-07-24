@@ -71,7 +71,8 @@ int UDPEndpoint::SendPreparedMsgTo(const Address &dstAddr)
                      (struct sockaddr *)(&(dstAddr.addr_)), sizeof(sockaddr_in));
     if (ret < 0)
     {
-        VLOG(1) << "\tSend Fail ret =" << ret << " " << strerror(errno);
+        VLOG(1) << "\tSend Fail: " << strerror(errno);
+        VLOG(1) << "Message size: " <<  (sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
     }
 
     return ret;
