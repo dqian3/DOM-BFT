@@ -20,6 +20,9 @@ namespace dombft
         LOG(INFO) << "clientPort=" << clientPort;
 
         f_ = config.replicaIps.size() / 3;
+        normalPathTimeout_ = config.clientNormalPathTimeout;
+
+        slowPathTimeout_ = config.clientSlowPathTimeout;
 
         /* Setup keys */
         std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -291,7 +294,7 @@ namespace dombft
             int clientSeq = entry.first;
             RequestState &reqState = entry.second;
 
-            if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT)
+            if (reqState.cert.has_value() && now - reqState.certTime > normalPathTimeout_)
             {
                 VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
 
@@ -304,7 +307,7 @@ namespace dombft
 
                 reqState.certTime = now; // timeout again later
             }
-            if (now - reqState.sendTime > RETRY_TIMEOUT)
+            if (now - reqState.sendTime > slowPathTimeout_)
             {
                 LOG(ERROR) << "Client failed on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
                 exit(1);

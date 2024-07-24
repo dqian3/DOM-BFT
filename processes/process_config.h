@@ -26,6 +26,8 @@ struct ProcessConfig
     int clientPort;
     std::string clientKeysDir;
     int clientMaxRequests;
+    int clientNormalPathTimeout;
+    int clientSlowPathTimeout;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -94,7 +96,11 @@ struct ProcessConfig
             clientPort = parseField<int>(clientNode, "port");
             clientKeysDir = parseField<std::string>(clientNode, "keysDir");
             clientMaxRequests = parseField<int>(clientNode, "maxRequests");
+            clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
+            clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
+
         }
+        
         catch (const ConfigParseException &e)
         {
             throw ConfigParseException("Error parsing client " + std::string(e.what()));

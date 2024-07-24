@@ -41,6 +41,9 @@ namespace dombft
         uint32_t f_;      
         uint32_t maxInFlight_ = 0;
 
+        uint64_t normalPathTimeout_;
+        uint64_t slowPathTimeout_;
+
 
         /** The endpoint uses to submit request to proxies and receive replies*/
         std::unique_ptr<Endpoint> endpoint_;

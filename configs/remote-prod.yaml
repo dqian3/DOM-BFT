@@ -1,3 +1,5 @@
+transport: udp
+
 client:
   ips:
   - 10.138.0.6
@@ -5,6 +7,11 @@ client:
   keysDir: keys/client
   maxRequests: 1
   port: 33000
+  normalPathTimeout: 100000
+  slowPathTimeout:   1000000
+
+
+
 proxy:
   forwardPort: 31000
   initialOwd: 5000
@@ -12,7 +19,7 @@ proxy:
   - 10.138.0.5
   - 10.182.0.3
   keysDir: keys/proxy
-  maxOwd: 10000
+  maxOwd: 200000
   measurementPort: 32000
   shards: 1
 receiver:
@@ -33,4 +40,4 @@ replica:
   - 10.202.0.2
   keysDir: keys/replica
   port: 34000
-transport: nng
+
