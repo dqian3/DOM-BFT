@@ -2,7 +2,6 @@
 #define COUNTER_H
 
 #include "lib/application.h"
-#include "lib/log.h"
 
 #include <unordered_map>
 #include <string>
@@ -14,8 +13,6 @@
 // request and response types that can be serialized/unserialized.
 class Counter : public Application {
 public:
-    std::shared_ptr<Log> log_;
-
     int counter;
 
     int counter_stable;
@@ -27,15 +24,15 @@ public:
 
     virtual ~Counter();
 
-    virtual std::unique_ptr<AppResponse> execute(const std::string &serialized_request) override;
+    virtual std::unique_ptr<AppLayerResponse> execute(const std::string &serialized_request) override;
 
-    virtual bool commit(uint32_t commit_idx) override;
+    virtual bool commit(uint32_t commit_idx, byte* committed_value) override;
 
     virtual byte* getDigest(uint32_t digest_idx) override;
 
     virtual byte* takeSnapshot() override;
 
-    Counter(std::shared_ptr<Log> log) : log_(log), counter(0), counter_stable(0) {}
+    Counter() : counter(0), counter_stable(0) {}
 
     virtual bool abort() override;
     

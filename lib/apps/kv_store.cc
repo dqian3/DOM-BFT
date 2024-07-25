@@ -9,7 +9,7 @@ KVStore::~KVStore() {
     
 }
 
-std::unique_ptr<AppResponse> KVStore::execute(const std::string &serialized_request)
+std::unique_ptr<AppLayerResponse> KVStore::execute(const std::string &serialized_request)
 {    
     std::unique_ptr<KVRequest> kvReq = std::make_unique<KVRequest>();
     if (!kvReq->ParseFromString(serialized_request)) {
@@ -43,5 +43,5 @@ std::unique_ptr<AppResponse> KVStore::execute(const std::string &serialized_requ
         return nullptr;
     }
     
-    return ret;    
+    return NULL;    
 }

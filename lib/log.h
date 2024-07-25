@@ -14,6 +14,10 @@
 #include <unordered_map>
 #include <utility>
 
+#include "lib/apps/counter.h"
+#include "lib/application.h"
+
+
 struct LogEntry
 {
     uint32_t seq;
@@ -22,7 +26,7 @@ struct LogEntry
     uint32_t client_seq;
 
     byte *raw_request;
-    byte *raw_result;
+    std::unique_ptr<byte[]> raw_result;
 
     uint32_t request_len;
     uint32_t result_len;
@@ -81,13 +85,21 @@ struct Log
 
     uint32_t nextSeq;
     uint32_t lastExecuted;
+
+    // The log claims ownership of the application, instead of the replica
+    std::unique_ptr<Application> app_;
     
     Log();
+
+    Log(AppType app_type);
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq,
              byte *req, uint32_t req_len);
     bool executeEntry(uint32_t seq);
+    bool executeEntry(uint32_t seq, const dombft::proto::ClientRequest &request, dombft::proto::Reply &reply);
+
+    void commit(uint32_t seq);
 
     // Create a new commit point given the existence of a certificate at seq 
     bool createCommitPoint(uint32_t seq);

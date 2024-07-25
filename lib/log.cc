@@ -34,11 +34,13 @@ LogEntry::~LogEntry()
     if (raw_request != nullptr)
     {
         free(raw_request);
+        raw_request = nullptr;
     }
-    if (raw_result != nullptr)
-    {
-        free(raw_result);
-    }
+    // if (raw_result != nullptr)
+    // {
+    //     free(raw_result);
+    //     raw_result = nullptr;
+    // }
 }
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
@@ -56,6 +58,27 @@ Log::Log()
     {
         log[i] = std::make_unique<LogEntry>();
     }
+}
+
+Log::Log(AppType app_type)
+    : nextSeq(1), lastExecuted(0)
+{
+    // Zero initialize all the entries
+    // TODO: there's probably a better way to handle this
+    for (uint32_t i = 0; i < log.size(); i++)
+    {
+        log[i] = std::make_unique<LogEntry>();
+    }
+
+    if (app_type == AppType::COUNTER) {
+        LOG(INFO) << "Creating a counter application";
+        app_ = std::make_unique<Counter>();
+    } else {
+        LOG(ERROR) << "Unsupported application type";
+        exit(1);
+    }
+
+    app_ = std::make_unique<Counter>();
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
@@ -88,6 +111,31 @@ bool Log::executeEntry(uint32_t seq)
     // TODO execute and get result back.
     lastExecuted++;
     return true;
+}
+
+bool Log::executeEntry(uint32_t seq, const ClientRequest &request, Reply &reply)
+{
+
+    if (lastExecuted != seq - 1)
+    {
+        return false;
+    }
+
+    LOG(INFO) << "Executing entry at seq=" << seq << " Sending to app layer";
+
+    auto appResponse = app_->execute(request.req_data());
+    LOG(INFO) << "Get app response for " << seq << " result is: " << *reinterpret_cast<int*>(appResponse.get()->response.get());
+
+    reply.set_result(appResponse.get()->response.get(), sizeof(int));
+
+    getEntry(seq)->raw_result = std::move(appResponse.get()->response);
+    // TODO put the exeuction digest to the log entry as well, may need to add a field in the logentry struct. 
+
+    // TODO execute and get result back.
+    lastExecuted++;
+
+    return true;
+
 }
 
 void Log::addCert(uint32_t seq, const Cert &cert)
@@ -175,6 +223,8 @@ bool Log::commitCommitPoint()
     commitPoint = tentativeCommitPoint.value();
     tentativeCommitPoint.reset();
 
+    LOG(INFO) << "New Stable Commit Point: " << commitPoint.seq;
+
     return true;
 }
 
@@ -199,5 +249,14 @@ LogEntry* Log::getEntry(uint32_t seq) {
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
+    }
+}
+
+void Log::commit(uint32_t seq) {
+    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+        uint32_t index = seq % MAX_SPEC_HIST;
+        app_.get()->commit(seq, log[index]->raw_result.get());
+    } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
     }
 }

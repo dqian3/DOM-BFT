@@ -59,7 +59,7 @@ namespace dombft
 
 
 
-        log_ = std::make_shared<Log>();
+        log_ = std::make_shared<Log>(config.app);
 
         if (config.transport == "nng")
         {
@@ -101,15 +101,6 @@ namespace dombft
         {
             this->handleMessage(msgHdr, msgBuffer, sender);
         };
-
-        // init the app
-        if (config.app == AppType::COUNTER)
-        {
-            app_ = std::make_unique<Counter>(log_);
-        } else {
-            LOG(ERROR) << "Unknown app type!";
-            exit(1);
-        }
 
         endpoint_->RegisterMsgHandler(handler);
     }
@@ -175,6 +166,7 @@ namespace dombft
 
             // TODO also pass client request
             handleClientRequest(clientHeader);
+            LOG(INFO) << "Received and processed DOM_REQUEST message";
         }
 #else
         if (hdr->msgType == CLIENT_REQUEST)
@@ -398,11 +390,7 @@ namespace dombft
         }
 
         uint32_t seq = log_->nextSeq - 1;
-        log_->executeEntry(seq);
-
-        // app layer
-        std::unique_ptr<AppResponse> appResponse = app_->execute(request.req_data());
-        reply.set_result(appResponse->SerializeAsString());
+        log_->executeEntry(seq, request, reply);
 
         reply.set_fast(true);
         reply.set_seq(seq);
@@ -414,6 +402,9 @@ namespace dombft
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+
+        LOG(INFO) << "Done Sending reply back to client " << clientId;
+
 
         // Try and commit every 10 replies (half of the way before
         // we can't speculatively execute anymore)
@@ -495,6 +486,9 @@ namespace dombft
 
         for (const auto &entry : commitCertReplies)
         {
+
+            VLOG(3) << "Forming cert from " << reply.replica_id() << " for seq " << reply.seq();
+            
             int replicaId = entry.first;
             const Reply &reply = entry.second;
 
@@ -526,6 +520,7 @@ namespace dombft
                 VLOG(1) << "Created cert for request number " << reply.seq();
 
                 memcpy(log_->tentativeCommitPoint->logDigest, log_->getDigest(reply.seq()), SHA256_DIGEST_LENGTH);
+                LOG(INFO) << "Created log digest for seq " << reply.seq() << " " << digest_to_hex(log_->tentativeCommitPoint->logDigest);
                 // TODO set digest here
                 memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
 
@@ -572,7 +567,9 @@ namespace dombft
             return;
         }
 
-        app_->commit(commitMsg.seq());
+        VLOG(4) << "ready to call commit at log";
+
+        log_->commit(commitMsg.seq());
 
 
         point.commitMessages[commitMsg.replica_id()] = commitMsg;

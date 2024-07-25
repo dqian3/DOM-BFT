@@ -18,15 +18,22 @@ enum class AppType
     COUNTER
 };
 
+typedef struct AppLayerResponse
+{
+    std::unique_ptr<byte[]> response;
+    bool success;
+    size_t result_len;
+} AppLayerResponse;
+
 class Application
 {
 
 public:
     virtual ~Application() {};
 
-    virtual std::unique_ptr<AppResponse> execute(const std::string &serialized_request) = 0;
+    virtual std::unique_ptr<AppLayerResponse> execute(const std::string &serialized_request) = 0;
 
-    virtual bool commit(uint32_t commit_idx) = 0;
+    virtual bool commit(uint32_t commit_idx, byte* committed_value) = 0;
 
     virtual byte* getDigest(uint32_t digest_idx) = 0;
     

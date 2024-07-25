@@ -99,6 +99,7 @@ cc_library(
         "@com_github_google_glog//:glog",
         "@openssl//:openssl",
         "//proto:dombft_proto_cc",
+        "//lib:application",
     ],
     visibility = ["//visibility:public"],
 )
@@ -114,7 +115,6 @@ cc_library(
         ":protocol_config",
          "@openssl//:openssl",
         "@com_github_google_glog//:glog",
-        "//lib:log",
     ],
     visibility = ["//visibility:public"],
 )
