@@ -22,7 +22,7 @@ namespace dombft {
 
         class MeanStrategy : public BaseCalcStrategy {
         public:
-            explicit MeanStrategy(uint32_t windowSize = 0) :
+            explicit MeanStrategy(uint32_t windowSize = 100) :
                     windowSize_(windowSize), windowIndex_(0) { storedMeasure_.resize(windowSize); }
 
             inline void addMeasure(uint32_t measure) override {
@@ -60,7 +60,7 @@ namespace dombft {
 
         class PercentileStrategy : public BaseCalcStrategy {
         public:
-            explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize = 0) :
+            explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize = 100) :
                     windowSize_(windowSize), percentile_(percentile), windowIndex_(0) {
                 storedMeasure_.resize(windowSize);
             }
@@ -87,8 +87,8 @@ namespace dombft {
         template<typename T>    
         class MeasureContext {
         public:
-            MeasureContext(uint32_t numReceivers, T strategy, uint32_t cap, uint32_t windowSize = 0) :
-                    numReceivers_(numReceivers), cap_(cap), windowSize_(windowSize) {
+            MeasureContext(uint32_t numReceivers, T strategy, uint32_t cap) :
+                    numReceivers_(numReceivers), cap_(cap) {
                 for (uint32_t i = 0; i < numReceivers_; i++) {
                     receiverOWDs_.push_back(std::make_unique<T>(strategy));
                 }
@@ -113,7 +113,6 @@ namespace dombft {
         private:
             uint32_t numReceivers_;
             uint32_t cap_;
-            uint32_t windowSize_;
             std::vector<std::unique_ptr<BaseCalcStrategy>> receiverOWDs_;
         };
 
