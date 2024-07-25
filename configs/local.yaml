@@ -1,4 +1,4 @@
-transport: udp
+transport: nng
 
 client:
   ips: 
@@ -6,7 +6,7 @@ client:
   - "127.0.1.1"
   port: 33000
   keysDir: keys/client
-  maxRequests: 1
+  maxRequests: 5
   normalPathTimeout: 5000
   slowPathTimeout: 500000
 

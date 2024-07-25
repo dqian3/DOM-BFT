@@ -20,6 +20,7 @@ namespace dombft
             exit(1);
         }
     
+        numReceivers_ = config.receiverIps.size();
 
         if (config.transport == "nng") {
             if (numShards_ > 1) {
@@ -54,7 +55,6 @@ namespace dombft
                 config.proxyIps[proxyId], config.proxyMeasurementPort);
 
 
-            numReceivers_ = config.receiverIps.size();
             for (int i = 0; i < numReceivers_; i++)
             {
                 std::string receiverIp = config.receiverIps[i];
