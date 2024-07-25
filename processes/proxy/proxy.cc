@@ -197,6 +197,9 @@ namespace dombft
                     forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
                 }
             }
+            else {
+                LOG(ERROR) << "Unknown message type " << hdr->msgType;
+            }
         };
 
         /* Checks every 10ms to see if we are done*/

@@ -60,7 +60,7 @@ namespace dombft {
 
         class PercentileStrategy : public BaseCalcStrategy {
         public:
-            explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize = 100) :
+            explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize = 10) :
                     windowSize_(windowSize), percentile_(percentile), windowIndex_(0) {
                 storedMeasure_.resize(windowSize);
             }

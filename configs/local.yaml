@@ -3,12 +3,12 @@ transport: nng
 client:
   ips: 
   - "127.0.1.0"
-  - "127.0.1.1"
+  # - "127.0.1.1"
   port: 33000
   keysDir: keys/client
   maxRequests: 5
   normalPathTimeout: 5000
-  slowPathTimeout: 500000
+  slowPathTimeout: 50000
 
 
 # Proxy Info

@@ -1,5 +1,7 @@
 #include "config_util.h"
 
+#include <glog/logging.h>
+
 using namespace std;
 
 void addAddrPairs(vector<pair<Address, Address>> &pairs, const std::string &myIp, 
@@ -115,12 +117,21 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
         addAddrPairs(ret, replicaIp, replicaPort, {config.receiverIps[id]}, receiverPort);    
     }
 
-    // TODO add replica ports
+    // Replica to replicas
     replicaBase = config.replicaPort + config.clientIps.size() + 1;
-    uint32_t myPort = replicaBase + id;
 
-    addAddrPairs(ret, replicaIp, myPort, config.replicaIps, replicaBase);    
-
+    // Each replica just uses (base + i) to connect with replica i
+    // For itself, we create a nng pairs on both sides, betwen (base + n) and (base + id)
+    // And in replica we need to account for this.
+    // This is not ideal at all though...
+    for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+        if (i == id) {
+            ret.push_back({Address(replicaIp, replicaBase + id), Address(config.replicaIps[i], replicaBase + config.replicaIps.size())});
+            ret.push_back({Address(replicaIp, replicaBase + config.replicaIps.size()), Address(config.replicaIps[i], replicaBase + id)});
+        } else {
+            ret.push_back({Address(replicaIp, replicaBase + i), Address(config.replicaIps[i], replicaBase + id)});
+        }
+    }
 
     return ret;
 }

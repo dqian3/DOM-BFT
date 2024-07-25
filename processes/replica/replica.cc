@@ -69,7 +69,11 @@ namespace dombft
             }
 
             for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
-                // LOG(INFO) << "Replica " << i << ": " <<  addrPairs[i].second.GetIPAsString();
+                LOG(INFO) << "Replica " << i << ": " <<  addrPairs[i].second.GetIPAsString();
+
+                // Skip adding one side of self connection so replica chooses one side to send to
+                // TODO this is very ugly.
+                if (i - (nClients + 1) == replicaId_) continue;
                 replicaAddrs_.push_back(addrPairs[i].second);
             }
         }
