@@ -3,9 +3,9 @@ transport: nng
 client:
   ips:
   - 10.138.0.6
-  # - 10.182.0.4
+  - 10.182.0.4
   keysDir: keys/client
-  maxRequests: 100
+  maxRequests: 20
   port: 33000
   normalPathTimeout: 100000
   slowPathTimeout:   1000000

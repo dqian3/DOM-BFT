@@ -397,11 +397,17 @@ namespace dombft
 
         reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
+
+        VLOG(4) << "Start prepare message";
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+        VLOG(4) << "Finish Serialization, start signature";
+
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        VLOG(4) << "Finish signature";
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+        LOG(INFO) << "Finish sending";
 
         // Try and commit every 10 replies (half of the way before
         // we can't speculatively execute anymore)
