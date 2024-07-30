@@ -35,7 +35,6 @@ struct ProcessConfig
     int proxyMeasurementPort;
     int proxyShards;
     std::string proxyKeysDir;
-    uint32_t proxyInitialOwd;
     uint32_t proxyMaxOwd;
 
     std::vector<std::string> receiverIps;
@@ -121,7 +120,6 @@ struct ProcessConfig
             proxyForwardPort = parseField<int>(proxyNode, "forwardPort");
             proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
-            proxyInitialOwd = parseField<int>(proxyNode, "initialOwd");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
         }
         catch (const ConfigParseException &e)

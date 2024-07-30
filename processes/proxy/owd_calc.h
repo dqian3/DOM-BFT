@@ -72,6 +72,7 @@ namespace dombft {
                 , windowIndex_(0) 
             {
                 storedMeasure_.resize(windowSize, initialMeasure);
+
             }
 
             inline void addMeasure(uint32_t measure) override {
@@ -113,7 +114,7 @@ namespace dombft {
                 uint32_t maxOWD = 0;
                 for (uint32_t i = 0; i < numReceivers_; i++) {
                     uint32_t curOWD = receiverOWDs_[i]->getOWD();
-                    maxOWD = curOWD >= cap_ ? maxOWD : std::max(maxOWD, curOWD);
+                    maxOWD = std::min(cap_, std::max(maxOWD, curOWD));
                 }
 
                 return maxOWD;

@@ -15,7 +15,6 @@ client:
 
 proxy:
   forwardPort: 31000
-  initialOwd: 5000
   ips:
   - 10.138.0.5
   - 10.182.0.3
