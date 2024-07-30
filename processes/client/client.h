@@ -40,6 +40,7 @@ namespace dombft
         std::vector<Address> replicaAddrs_;
         uint32_t f_;      
         uint32_t maxInFlight_ = 0;
+        uint32_t numRequests_;
 
         uint64_t normalPathTimeout_;
         uint64_t slowPathTimeout_;

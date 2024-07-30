@@ -26,6 +26,7 @@ struct ProcessConfig
     int clientPort;
     std::string clientKeysDir;
     int clientMaxRequests;
+    int clientNumRequests;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
 
@@ -34,7 +35,6 @@ struct ProcessConfig
     int proxyMeasurementPort;
     int proxyShards;
     std::string proxyKeysDir;
-    uint32_t proxyInitialOwd;
     uint32_t proxyMaxOwd;
 
     std::vector<std::string> receiverIps;
@@ -96,6 +96,7 @@ struct ProcessConfig
             clientPort = parseField<int>(clientNode, "port");
             clientKeysDir = parseField<std::string>(clientNode, "keysDir");
             clientMaxRequests = parseField<int>(clientNode, "maxRequests");
+            clientNumRequests = parseField<int>(clientNode, "numRequests");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
 
@@ -119,7 +120,6 @@ struct ProcessConfig
             proxyForwardPort = parseField<int>(proxyNode, "forwardPort");
             proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
-            proxyInitialOwd = parseField<int>(proxyNode, "initialOwd");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
         }
         catch (const ConfigParseException &e)

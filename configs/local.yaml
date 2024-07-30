@@ -3,10 +3,11 @@ transport: nng
 client:
   ips: 
   - "127.0.1.0"
-  # - "127.0.1.1"
+  - "127.0.1.1"
   port: 33000
   keysDir: keys/client
   maxRequests: 5
+  numRequests: 1000
   normalPathTimeout: 5000
   slowPathTimeout: 50000
 
@@ -20,8 +21,7 @@ proxy:
   forwardPort: 31000
   measurementPort: 32000
   keysDir: keys/proxy
-  initialOwd: 1000 # The initial one-way delay (usecs) between replicas and proxies
-  maxOwd: 5000
+  maxOwd: 15000
 
 # Receiver Info
 receiver:

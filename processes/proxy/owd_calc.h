@@ -22,8 +22,12 @@ namespace dombft {
 
         class MeanStrategy : public BaseCalcStrategy {
         public:
-            explicit MeanStrategy(uint32_t windowSize = 100) :
-                    windowSize_(windowSize), windowIndex_(0) { storedMeasure_.resize(windowSize); }
+            explicit MeanStrategy(uint32_t windowSize, uint32_t initialMeasure) 
+                : windowSize_(windowSize)
+                , windowIndex_(0) 
+            { 
+                storedMeasure_.resize(windowSize, initialMeasure);
+            }
 
             inline void addMeasure(uint32_t measure) override {
                 storedMeasure_[windowIndex_] = measure;
@@ -46,6 +50,8 @@ namespace dombft {
 
         class MaxStrategy : public BaseCalcStrategy {
         public:
+            MaxStrategy(uint32_t initialMeasure) : storedMeasure_(initialMeasure) {}
+
             inline void addMeasure(uint32_t measure) override {
                 storedMeasure_ = std::max(storedMeasure_, measure);
             }
@@ -60,9 +66,13 @@ namespace dombft {
 
         class PercentileStrategy : public BaseCalcStrategy {
         public:
-            explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize = 10) :
-                    windowSize_(windowSize), percentile_(percentile), windowIndex_(0) {
-                storedMeasure_.resize(windowSize);
+            explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize, uint32_t initialMeasure) 
+                : windowSize_(windowSize)
+                , percentile_(percentile)
+                , windowIndex_(0) 
+            {
+                storedMeasure_.resize(windowSize, initialMeasure);
+
             }
 
             inline void addMeasure(uint32_t measure) override {
@@ -104,7 +114,7 @@ namespace dombft {
                 uint32_t maxOWD = 0;
                 for (uint32_t i = 0; i < numReceivers_; i++) {
                     uint32_t curOWD = receiverOWDs_[i]->getOWD();
-                    maxOWD = curOWD >= cap_ ? maxOWD : std::max(maxOWD, curOWD);
+                    maxOWD = std::min(cap_, std::max(maxOWD, curOWD));
                 }
 
                 return maxOWD;

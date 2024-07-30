@@ -21,8 +21,13 @@ namespace dombft
 
         f_ = config.replicaIps.size() / 3;
         normalPathTimeout_ = config.clientNormalPathTimeout;
-
         slowPathTimeout_ = config.clientSlowPathTimeout;
+
+        // TODO make this some sort of config
+        LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
+        maxInFlight_ = config.clientMaxRequests;
+        LOG(INFO) << "Sending " << config.clientNumRequests << " requests!";
+        numRequests_ = config.clientNumRequests;
 
         /* Setup keys */
         std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -39,9 +44,6 @@ namespace dombft
             exit(1);
         }
 
-        // TODO make this some sort of config
-        LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
-        maxInFlight_ = config.clientMaxRequests;
 
         /** Setup transport */
         if (config.transport == "nng") {
@@ -95,7 +97,7 @@ namespace dombft
                 ((Client *)ctx)->checkTimeouts();
             },
         5000,
-            this);
+        this);
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
 
@@ -245,6 +247,12 @@ namespace dombft
 
     void Client::submitRequest()
     {
+        if (nextReqSeq_ == numRequests_ + maxInFlight_) {
+            LOG(INFO) << "Exiting before sending " << numRequests_ + maxInFlight_  << " requests";
+            exit(0);
+        }
+
+
         ClientRequest request;
 
         // submit new request
@@ -281,10 +289,7 @@ namespace dombft
 #endif
 
 
-        if (nextReqSeq_ == 1000 + maxInFlight_) {
-            LOG(INFO) << "Exiting after sending " << 1000 + maxInFlight_  << " requests";
-            exit(0);
-        }
+
         nextReqSeq_++;
     }
 

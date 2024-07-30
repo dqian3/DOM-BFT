@@ -7,9 +7,9 @@ namespace dombft
     Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     {
         numShards_ = config.proxyShards;
-        latencyBound_ = config.proxyInitialOwd;
         lastDeadline_ = GetMicrosecondTimestamp();
         maxOWD_ = config.proxyMaxOwd;
+        latencyBound_ = config.proxyMaxOwd; // Initialize to max to be more conservative
         proxyId_ = proxyId;
 
         std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
@@ -109,7 +109,7 @@ namespace dombft
     void Proxy::RecvMeasurementsTd()
     {
 
-        OWDCalc::MeasureContext context(numReceivers_, OWDCalc::PercentileStrategy(90,10), maxOWD_);
+        OWDCalc::MeasureContext context(numReceivers_, OWDCalc::PercentileStrategy(90, 10, maxOWD_), maxOWD_);
         MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender)
         {
             MeasurementReply reply;
