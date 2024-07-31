@@ -51,10 +51,11 @@ namespace dombft
         fwdTimer_ = std::make_unique<Timer>(
             [](void *ctx, void *endpoint)
             {
-            ((Receiver *)ctx)->checkDeadlines();
+                ((Receiver *)ctx)->checkDeadlines();
             },
             1000,
-            this);
+            this
+        );
 
         endpoint_->RegisterTimer(fwdTimer_.get());
         endpoint_->RegisterMsgHandler(
@@ -138,6 +139,15 @@ namespace dombft
                 VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline()
                         << " in " << request.deadline() - recv_time << "us";
                 deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+
+
+                // Check if timer is firing before deadline
+                uint64_t now = GetMicrosecondTimestamp();
+
+                uint64_t nextCheck = request.deadline() - now;
+                if (nextCheck <= endpoint_->GetTimerRemaining(fwdTimer_.get())) {
+                    endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+                }
             }
         }
     }
@@ -165,7 +175,6 @@ namespace dombft
         }
     }
 
-    // TODO: there is probably a smarter way than just having this poll every so often
     void Receiver::checkDeadlines()
     {
         uint64_t now = GetMicrosecondTimestamp();
@@ -181,6 +190,9 @@ namespace dombft
             deadlineQueue_.erase(it);
             it = temp;
         }
+
+        uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first;
+        endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
     }
 
 } // namespace dombft

@@ -87,6 +87,21 @@ void Endpoint::UnRegisterAllTimers()
     eventTimers_.clear();
 }
 
+uint64_t Endpoint::GetTimerRemaining(Timer *t)
+{
+    if (evLoop_ == NULL)
+    {
+        LOG(ERROR) << "No evLoop!";
+        return false;
+    }
+    if (!isTimerRegistered(t))
+    {
+        LOG(ERROR) << "The timer has not been registered ";
+        return false;
+    }
+    return 1e+6 * ev_timer_remaining(evLoop_, t->evTimer_);    
+}
+
 bool Endpoint::isTimerRegistered(Timer *timer)
 {
     return (eventTimers_.find(timer) != eventTimers_.end());

@@ -67,13 +67,17 @@ public:
      * has been registered before and has not been unreigstered), return false */
     bool RegisterTimer(Timer *timer);
 
-    bool ResetTimer(Timer *timer, u_int32_t timeout_us); 
     bool ResetTimer(Timer *timer);
+    bool ResetTimer(Timer *timer, uint32_t timeout_us); 
+    
     /** Return true if the timer is successfully unregistered, otherwise (e.g. the
      * timer has not been registered before), return false */
     bool UnRegisterTimer(Timer *timer);
     /** Check whether the timer has been registered */
     bool isTimerRegistered(Timer *timer);
+
+    uint64_t GetTimerRemaining(Timer *timer);
+
     void UnRegisterAllTimers();
 
 

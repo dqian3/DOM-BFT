@@ -25,6 +25,7 @@ namespace dombft
         std::unique_ptr<Endpoint> endpoint_;
 
         /** The handler objects for our endpoint library */
+        // TODO shared pointer for endpoint and timer??
         std::unique_ptr<Timer>  fwdTimer_;
 
         // TODO storing these protobuf objects like this might not be great performance wise
