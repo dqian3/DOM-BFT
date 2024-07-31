@@ -66,6 +66,9 @@ public:
     /** Return true if the timer is successfully registered, otherwise (e.g. it
      * has been registered before and has not been unreigstered), return false */
     bool RegisterTimer(Timer *timer);
+
+    bool ResetTimer(Timer *timer, u_int32_t timeout_us); 
+    bool ResetTimer(Timer *timer);
     /** Return true if the timer is successfully unregistered, otherwise (e.g. the
      * timer has not been registered before), return false */
     bool UnRegisterTimer(Timer *timer);

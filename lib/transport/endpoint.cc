@@ -36,6 +36,31 @@ bool Endpoint::RegisterTimer(Timer *timer)
     return true;
 }
 
+
+bool Endpoint::ResetTimer(Timer *timer)
+{
+    if (evLoop_ == NULL)
+    {
+        LOG(ERROR) << "No evLoop!";
+        return false;
+    }
+    if (!isTimerRegistered(timer))
+    {
+        LOG(ERROR) << "The timer has not been registered ";
+        return false;
+    }
+    ev_timer_again(evLoop_, timer->evTimer_);
+    return true;
+}
+
+
+bool Endpoint::ResetTimer(Timer *timer, uint32_t timeout_us)
+{
+    timer->evTimer_->repeat = timeout_us * 1e-7;
+    ResetTimer(timer);
+}
+
+
 bool Endpoint::UnRegisterTimer(Timer *timer)
 {
     if (evLoop_ == NULL)
