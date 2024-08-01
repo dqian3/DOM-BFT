@@ -317,8 +317,28 @@ namespace dombft
             }
             if (now - reqState.sendTime > slowPathTimeout_)
             {
-                LOG(ERROR) << "Client failed on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
-                exit(1);
+                LOG(ERROR) << "Client attempting slow path on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
+                reqState.sendTime = now;
+
+                reqState.fallbackAttempts++;
+
+                if (reqState.fallbackAttempts == 10) {
+                    LOG(ERROR) << "Client failed on request " << clientSeq << " after 10 attempts";
+                    exit(1);
+                }
+
+                FallbackTrigger fallbackTriggerMsg;
+
+                fallbackTriggerMsg.set_client_id(clientId_);
+                fallbackTriggerMsg.set_instance(reqState.instance_);
+                fallbackTriggerMsg.set_client_seq(clientSeq);
+
+                // TODO set request data and proof
+                endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                for (const Address &addr : replicaAddrs_)
+                {
+                    endpoint_->SendPreparedMsgTo(addr);
+                }
             }
         }
     }
@@ -350,7 +370,7 @@ namespace dombft
             for (; it != reqState.replies.end(); it++)
             {
                 const Reply &rep2 = it->second;
-                if (rep1.view() != rep2.view() || rep1.seq() != rep2.seq() || rep1.digest() != rep2.digest() || rep1.result() != rep2.result())
+                if (rep1.instance() != rep2.instance() || rep1.seq() != rep2.seq() || rep1.digest() != rep2.digest() || rep1.result() != rep2.result())
                     return;
             }
 
@@ -378,7 +398,7 @@ namespace dombft
                 // We also don't check the result here, that only needs to happen in the fast path
                 std::tuple<std::string, int, int> key = {
                     reply.digest(),
-                    reply.view(),
+                    reply.instance(),
                     reply.seq()};
 
                 matchingReplies[key].insert(replicaId);

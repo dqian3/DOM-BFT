@@ -13,6 +13,7 @@ namespace dombft
 
     Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
         : replicaId_(replicaId)
+        , instance_(0)
     {
         // TODO check for config errors
         std::string replicaIp = config.replicaIps[replicaId];
@@ -103,6 +104,16 @@ namespace dombft
         };
 
         endpoint_->RegisterMsgHandler(handler);
+
+        fallbackStartTimer_ = std::make_unique<Timer>(
+            [this](void *ctx, void *endpoint) 
+            {
+                this->startFallback();
+            },
+            10000,
+            this
+        );
+
     }
 
     Replica::~Replica()
@@ -237,6 +248,33 @@ namespace dombft
             }
 
             handleCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+
+        if (hdr->msgType == FALLBACK_TRIGGER) {
+            FallbackTrigger fallbackTriggerMsg;
+
+            if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+                return;
+            }
+                        
+            if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
+                LOG(INFO) << "Received fallback trigger again!";
+                return;
+            }
+
+            // TODO if attached request has been executed in another view,
+            // send result back
+
+            // TODO actually check proof here
+            if (false) {
+                broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
+            } else {
+                endpoint_->RegisterTimer(fallbackStartTimer_.get());
+
+            }
+            
         }
     }
 
@@ -373,9 +411,7 @@ namespace dombft
         reply.set_client_id(clientId);
         reply.set_client_seq(request.client_seq());
         reply.set_replica_id(replicaId_);
-
-        // TODO change this when we implement the slow path
-        reply.set_view(0);
+        reply.set_instance(instance_);
 
         bool success = log_->addEntry(clientId, request.client_seq(),
                                       (byte *)request.req_data().c_str(),
@@ -497,7 +533,7 @@ namespace dombft
             // We also don't check the result here, that only needs to happen in the fast path
             std::tuple<std::string, int, int> key = {
                 reply.digest(),
-                reply.view(),
+                reply.instance(),
                 reply.seq()};
 
             matchingReplies[key].insert(replicaId);
@@ -628,5 +664,22 @@ namespace dombft
 
         return true;
     }
+
+
+    void Replica::handleMessageFallback(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+    {
+
+    }
+
+    void Replica::startFallback()
+    {
+        LOG(INFO) << "Starting fallback!";
+    }
+
+    void Replica::finishFallback()
+    {
+
+    }
+
 
 } // namespace dombft

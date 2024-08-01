@@ -24,10 +24,12 @@ namespace dombft
         std::optional<dombft::proto::Cert> cert;
         uint64_t sendTime;
         uint64_t certTime;
-
         std::set<int> certReplies;
 
+        uint32_t instance_ = 0;
 
+        std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
+        uint32_t fallbackAttempts = 0;
         bool fastPathPossible = true;
     };
 

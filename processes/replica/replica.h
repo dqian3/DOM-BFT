@@ -24,11 +24,11 @@ namespace dombft
     private:
         uint32_t replicaId_;
         std::vector<Address> replicaAddrs_;
-
         std::vector<Address> clientAddrs_;
-        uint32_t clientPort_;
 
         uint32_t f_;
+        uint32_t instance_ = 0;
+
 
 #if PROTOCOL == PBFT
         std::map<std::pair<int, int>, int> prepareCount;
@@ -39,14 +39,18 @@ namespace dombft
         SignatureProvider sigProvider_;
 
         std::unique_ptr<Endpoint> endpoint_;
-        std::unique_ptr<Log> log_;
-
+        std::unique_ptr<Timer> fallbackStartTimer_;
+        std::unique_ptr<Timer> fallbackTimer_;
+        std::unique_ptr<Log> log_;        
 
         // State for commit/checkpoint protocol
         // TODO move this somewhere else?
         std::map<int, dombft::proto::Reply> commitCertReplies;
         std::map<int, std::string> commitCertSigs;
 
+        // State for fallback
+        bool fallback_ = false;
+        uint32_t fallbackTriggerSeq_ = 0;
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);
@@ -55,9 +59,11 @@ namespace dombft
         void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
-
         bool verifyCert(const dombft::proto::Cert &cert);
 
+        void handleMessageFallback(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+        void startFallback();
+        void finishFallback();
 
     public:
         Replica(const ProcessConfig &config, uint32_t replicaId);

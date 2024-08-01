@@ -20,7 +20,11 @@ enum MessageType {
 
     COMMIT = 8,
 
-    DUMMY_PROTO = 9,
+    FALLBACK_TRIGGER = 9,
+    FALLBACK_START = 10,
+    FALLBACK_EXECUTED = 11,
+    
+    DUMMY_PROTO = 12,
 };
 
 #endif
