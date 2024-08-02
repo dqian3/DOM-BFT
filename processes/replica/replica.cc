@@ -661,6 +661,7 @@ namespace dombft
         }
 
         // TOOD verify that cert actually contains matching replies...
+        // And that there aren't signatures from the same replica.
 
         return true;
     }
