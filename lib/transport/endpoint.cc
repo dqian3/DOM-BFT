@@ -56,8 +56,8 @@ bool Endpoint::ResetTimer(Timer *timer)
 
 bool Endpoint::ResetTimer(Timer *timer, uint32_t timeout_us)
 {
-    timer->evTimer_->repeat = timeout_us * 1e-7;
-    ResetTimer(timer);
+    timer->evTimer_->repeat = timeout_us * 1e-6;
+    return ResetTimer(timer);
 }
 
 

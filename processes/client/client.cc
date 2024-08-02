@@ -277,14 +277,14 @@ namespace dombft
         requestStates_[nextReqSeq_].sendTime = request.send_time();
 
 #if USE_PROXY && PROTOCOL == DOMBFT
-        // TODO how to chhoose proxy
+        // TODO how to choose proxy, perhaps by IP or config
+        // VLOG(4) << "Begin sending request number " << nextReqSeq_;
         Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-        VLOG(4) << "Begin sending request number " << nextReqSeq_;
         // TODO maybe client should own the memory instead of endpoint.
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
-        VLOG(4) << "Serialization Done " << nextReqSeq_;
+        // VLOG(4) << "Serialization Done " << nextReqSeq_;
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-        VLOG(4) << "Signature Done " << nextReqSeq_;
+        // VLOG(4) << "Signature Done " << nextReqSeq_;
 
         endpoint_->SendPreparedMsgTo(addr);
         VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();

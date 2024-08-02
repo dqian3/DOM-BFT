@@ -143,10 +143,11 @@ namespace dombft
 
                 // Check if timer is firing before deadline
                 uint64_t now = GetMicrosecondTimestamp();
-
                 uint64_t nextCheck = request.deadline() - now;
+
                 if (nextCheck <= endpoint_->GetTimerRemaining(fwdTimer_.get())) {
                     endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+                    VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
                 }
             }
         }
@@ -181,6 +182,8 @@ namespace dombft
 
         auto it = deadlineQueue_.begin();
 
+        VLOG(3) << "Checking deadlines";
+
         // ->first gets the key of {deadline, client_id}, second .first gets deadline
         while (it != deadlineQueue_.end() && it->first.first <= now)
         {
@@ -191,7 +194,9 @@ namespace dombft
             it = temp;
         }
 
-        uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first;
+        uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
+        VLOG(3) << "Next deadline check in " << nextCheck << "us";
+
         endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
     }
 

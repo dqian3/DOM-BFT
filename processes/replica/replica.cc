@@ -258,7 +258,9 @@ namespace dombft
                 LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
                 return;
             }
-                        
+            LOG(INFO) << "Received fallback trigger from " << fallbackTriggerMsg.client_id() 
+                    << " for cseq=" <<  fallbackTriggerMsg.client_seq();                        
+
             if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
                 LOG(INFO) << "Received fallback trigger again!";
                 return;
@@ -267,9 +269,12 @@ namespace dombft
             // TODO if attached request has been executed in another view,
             // send result back
 
-            // TODO actually check proof here
-            if (false) {
+            if (fallbackTriggerMsg.has_proof()) {
+                // TODO verify proof
+                LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+
                 broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                startFallback();
             } else {
                 endpoint_->RegisterTimer(fallbackStartTimer_.get());
 
