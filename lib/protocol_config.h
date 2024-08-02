@@ -20,8 +20,4 @@
 
 #define MAX_SPEC_HIST 200
 
-// Timeouts in us
-#define NORMAL_PATH_TIMEOUT    10000    // 10 ms
-#define RETRY_TIMEOUT          500000   // 500 ms
-
 #endif
