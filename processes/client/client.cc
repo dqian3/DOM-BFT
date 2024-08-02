@@ -333,6 +333,10 @@ namespace dombft
                 fallbackTriggerMsg.set_instance(reqState.instance_);
                 fallbackTriggerMsg.set_client_seq(clientSeq);
 
+                if (reqState.fallbackProof.has_value()) {
+                    (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
+                }
+
                 // TODO set request data and proof
                 endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
                 for (const Address &addr : replicaAddrs_)
@@ -353,7 +357,6 @@ namespace dombft
             // TODO check if fast path is not posssible and prevent extra work
             // TODO this fast path is quite basic, since it just checks for 3 f + 1 fast replies
             // we want it to do a bit more, specifically
-            // 1. Check if we can still take the fast path if there are some normal replies
             // 2. Send certs to replicas with normal path to catch them up
 
             auto it = reqState.replies.begin();
@@ -385,8 +388,10 @@ namespace dombft
         }
         else
         {
-            // Try and find a certificate
+            
+            // Try and find a certificate or proof of divergent histories
             std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+            size_t maxMatching = 0;;
 
             for (const auto &entry : reqState.replies)
             {
@@ -402,6 +407,7 @@ namespace dombft
                     reply.seq()};
 
                 matchingReplies[key].insert(replicaId);
+                maxMatching = std::max(maxMatching, matchingReplies[key].size());
 
                 if (matchingReplies[key].size() >= 2 * f_ + 1)
                 {
@@ -418,29 +424,43 @@ namespace dombft
                     reqState.certTime = GetMicrosecondTimestamp();
                     
                     VLOG(1) << "Created cert for request number " << clientSeq;
-#if IMMEDIATE_CERT
 
-                    // if ( GetMicrosecondTimestamp() - reqState.certTime < NORMAL_PATH_TIMEOUT) {
-                    //     return;
-                    // }
-                    
-                    VLOG(1) << "Sending cert immediately for request number " << clientSeq << " ";
-
-                    // Send cert to replicas;
-                    endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
-                    for (const Address &addr : replicaAddrs_)
-                    {
-                        endpoint_->SendPreparedMsgTo(addr);
-                    }
-
-                    reqState.certTime = GetMicrosecondTimestamp(); // timeout again later
-
-#endif
-                    
                     return;
 
                 }
             }
+
+            // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
+            // we have a proof of inconsistency. 
+            if (reqState.fallbackAttempts == 0 && 3 * f_ + 1 - reqState.replies.size() < 2 * f_ + 1 - maxMatching) {
+                LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
+
+                reqState.fallbackProof = Cert();
+                FallbackTrigger fallbackTriggerMsg;
+
+                fallbackTriggerMsg.set_client_id(clientId_);
+                fallbackTriggerMsg.set_instance(reqState.instance_);
+                fallbackTriggerMsg.set_client_seq(clientSeq);
+
+                // TODO check if fast path is not posssible, and we can send cert right away
+                for (auto replyEntry : reqState.replies)
+                {
+                    reqState.fallbackProof->add_signatures(reqState.signatures[replyEntry.first]);
+                    (*reqState.fallbackProof->add_replies()) = replyEntry.second;
+                }
+
+                // I think this is right, or we could do set_allocated_foo if fallbackProof was dynamically allcoated.
+                (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
+
+                reqState.fallbackAttempts++;
+
+                endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                for (const Address &addr : replicaAddrs_)
+                {
+                    endpoint_->SendPreparedMsgTo(addr);
+                }
+            }
+
         }
     }
 

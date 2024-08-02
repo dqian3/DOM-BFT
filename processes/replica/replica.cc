@@ -545,7 +545,6 @@ namespace dombft
                 log_->tentativeCommitPoint->cert = Cert();
                 dombft::proto::Cert &cert = *log_->tentativeCommitPoint->cert;
 
-                // TODO check if fast path is not posssible, and we can send cert right away
                 for (auto repId : matchingReplies[key])
                 {
                     cert.add_signatures(commitCertSigs[repId]);

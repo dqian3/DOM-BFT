@@ -29,6 +29,7 @@ namespace dombft
         uint32_t instance_ = 0;
 
         std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
+        std::optional<dombft::proto::Cert> fallbackProof;
         uint32_t fallbackAttempts = 0;
         bool fastPathPossible = true;
     };
