@@ -27,6 +27,7 @@ struct ProcessConfig
     std::string clientKeysDir;
     int clientMaxRequests;
     int clientNumRequests;
+    int clientRuntimeSeconds;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
 
@@ -97,6 +98,7 @@ struct ProcessConfig
             clientKeysDir = parseField<std::string>(clientNode, "keysDir");
             clientMaxRequests = parseField<int>(clientNode, "maxRequests");
             clientNumRequests = parseField<int>(clientNode, "numRequests");
+            clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
 

@@ -101,6 +101,17 @@ namespace dombft
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
 
+        terminateTimer_ = std::make_unique<Timer>(
+            [config](void *ctx, void *endpoint)
+            {
+                LOG(INFO) << "Exiting before after running for " << config.clientRuntimeSeconds  << " seconds";
+                // TODO print some stats
+                exit(0);
+            },
+            config.clientRuntimeSeconds * 1000000, // timer is in us.
+            this
+        );
+
 
         LOG(INFO) << "Client finished initializing";
     }
@@ -240,19 +251,21 @@ namespace dombft
                         << "Took " << GetMicrosecondTimestamp() - requestStates_[cseq].sendTime << " us";
 
                 requestStates_.erase(cseq);
+                numCommitted_++;
+
                 submitRequest();
             }
+        }
+
+
+        if (numCommitted_ >= numRequests_) {
+            LOG(INFO) << "Exiting before after committing " << numRequests_  << " requests";
+            exit(0);
         }
     }
 
     void Client::submitRequest()
     {
-        if (nextReqSeq_ == numRequests_ + maxInFlight_) {
-            LOG(INFO) << "Exiting before sending " << numRequests_ + maxInFlight_  << " requests";
-            exit(0);
-        }
-
-
         ClientRequest request;
 
         // submit new request
@@ -361,6 +374,7 @@ namespace dombft
                     << ". Took " << GetMicrosecondTimestamp() - requestStates_[rep1.client_seq()].sendTime << " us";
 
             requestStates_.erase(clientSeq);
+            numCommitted_++;
             submitRequest();
         }
         else

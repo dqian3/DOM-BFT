@@ -41,6 +41,7 @@ namespace dombft
         uint32_t f_;      
         uint32_t maxInFlight_ = 0;
         uint32_t numRequests_;
+        uint32_t numCommitted_ = 0;
 
         uint64_t normalPathTimeout_;
         uint64_t slowPathTimeout_;
@@ -48,8 +49,11 @@ namespace dombft
 
         /** The endpoint uses to submit request to proxies and receive replies*/
         std::unique_ptr<Endpoint> endpoint_;
-        /** Timer to handle request timeouts TODO (timeouts vs repeated timer would maybe be better)*/
+        /** Timer to handle request timeouts  (TODO timeouts vs repeated timer would maybe be better)*/
         std::unique_ptr<Timer> timeoutTimer_;
+
+        /** Timer to stop client after running for configured time */
+        std::unique_ptr<Timer> terminateTimer_;
 
         SignatureProvider sigProvider_;
 
