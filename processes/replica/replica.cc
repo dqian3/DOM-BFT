@@ -280,6 +280,12 @@ namespace dombft
                 return;
             }
 
+            if (!sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id()))
+            {
+                LOG(INFO) << "Failed to verify client signature!";
+                return;
+            }
+
             LOG(INFO) << "Received fallback trigger from " << fallbackTriggerMsg.client_id() 
                     << " for cseq=" <<  fallbackTriggerMsg.client_seq() << " and instance="
                     << fallbackTriggerMsg.instance();
@@ -298,7 +304,36 @@ namespace dombft
                 endpoint_->RegisterTimer(fallbackStartTimer_.get());
 
             }
-            
+        }
+
+        if (hdr->msgType == FALLBACK_START)
+        {
+            FallbackStart msg;
+
+            if (!msg.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+                return;
+            }
+
+            if (msg.instance() != replicaId_ % replicaAddrs_.size()) {
+                LOG(INFO) << "Received FALLBACK_START for instance where I am not leader";
+                return;
+            }
+ 
+            if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify replica signature!";
+                return;
+            }
+
+            // TODO handle case where instance is higher
+
+            fallbackHistory[msg.replica_id()] = msg;
+
+            if (instance_ % replicaAddrs_.size() == replicaId_) {
+                checkFallbackProposal();
+            }
         }
     }
 
@@ -696,6 +731,7 @@ namespace dombft
 
     void Replica::startFallback()
     {
+        fallback_ = true;
         instance_++;
         LOG(INFO) << "Starting fallback for instance " << instance_;
 
@@ -708,14 +744,111 @@ namespace dombft
         // Extract log into start fallback message
         FallbackStart fallbackStartMsg;
         fallbackStartMsg.set_instance(instance_);
-        log_->toProto(&fallbackStartMsg);
+        log_->toProto(fallbackStartMsg);
 
         endpoint_->PrepareProtoMsg(fallbackStartMsg, FALLBACK_START);
-        endpoint_->SendPreparedMsgTo(replicaAddrs_[instance_ % replicaAddrs_.size()])
+        endpoint_->SendPreparedMsgTo(replicaAddrs_[instance_ % replicaAddrs_.size()]);
     }
 
-    void Replica::finishFallback()
+    void Replica::checkFallbackProposal()
     {
+        // First check if we have 2f + 1 fallback start messages for the same instance
+        auto numStartMsgs = std::count_if(fallbackHistory.begin(), fallbackHistory.end(), 
+            [this] (auto &startMsg) {
+                return startMsg.second.instance() == instance_;
+            }
+        );
+
+        if (numStartMsgs < 2 * f_ + 1) {
+            return;
+        }
+
+        FallbackProposal proposal;
+
+        proposal.set_instance(instance_);
+        for (auto &startMsg : fallbackHistory) {
+            if (startMsg.second.instance() != instance_) continue;
+        
+            *(proposal.add_logs()) = startMsg.second;
+        }
+    }
+
+
+    void Replica::finishFallback(const FallbackProposal &history)
+    {
+        // TODO apply FallbackProposal.
+        fallback_ = false;
+    
+        uint32_t maxCheckpointSeq = 0;
+        uint32_t maxCheckpointIdx;
+
+        // First find highest commit point
+        for (int i = 0; i < history.logs().size(); i++)
+        {
+            auto &log  = history.logs()[i];
+            // TODO verify each checkpoint 
+            if (log.checkpoint().seq() > maxCheckpointSeq) {
+                maxCheckpointSeq = 0;
+                maxCheckpointIdx = i;
+            } 
+        }
+
+        // Find highest request with a cert
+        // By quorum intersection there can't be conflicting certificates, unless one is
+        // from an old instance (TODO handle this)
+
+
+        uint32_t maxSeq = 0;
+        const Cert* maxSeqCert = nullptr;
+
+        for (int i = 0; i < history.logs().size(); i++)
+        {
+            auto &log  = history.logs()[i];
+            // TODO verify each checkpoint 
+
+            for (const dombft::proto::LogEntry& entry : log.log_entries()) {
+                if (!entry.has_cert()) continue;
+                // Already included in checkpoint
+                if (entry.seq() <= maxCheckpointSeq) continue;
+
+                // TODO verify cert
+                if (entry.cert().replies()[0].seq() > maxSeq)
+                {
+                    maxSeqCert = &entry.cert();
+                }
+            }
+        }
+
+        assert(maxSeqCert != nullptr);
+        // TODO verify first
+        // TODO add some cert util methods
+        std::string certDigest = maxSeqCert->replies()[0].digest();
+        uint32_t certSeq = maxSeq;
+
+        // Counts of matching digests for each seq coming after max cert
+        std::map<int, std::map<std::string, int>> matchingEntries;
+
+        for (int i = 0; i < history.logs().size(); i++)
+        {
+            auto &log  = history.logs()[i];
+            // TODO verify each checkpoint 
+
+            for (const dombft::proto::LogEntry& entry : log.log_entries()) {
+                if (entry.seq() <= certSeq) continue;
+
+                matchingEntries[entry.seq()][entry.digest()]++;
+
+                if (matchingEntries[entry.seq()][entry.digest()] == f_ + 1) {
+                    VLOG(4) << "f + 1 matching digests found for " << entry.seq();
+                }
+            }
+        }
+
+
+
+        // See if any requests after cert have f + 1 replies
+
+        // Add rest of the requests in.
 
     }
 

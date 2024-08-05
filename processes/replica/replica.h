@@ -51,6 +51,7 @@ namespace dombft
         // State for fallback
         bool fallback_ = false;
         uint32_t fallbackTriggerSeq_ = 0;
+        std::map<int, dombft::proto::FallbackStart> fallbackHistory;
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);
@@ -63,7 +64,8 @@ namespace dombft
 
         void handleMessageFallback(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void startFallback();
-        void finishFallback();
+        void checkFallbackProposal();
+        void finishFallback(const dombft::proto::FallbackProposal &history);
 
     public:
         Replica(const ProcessConfig &config, uint32_t replicaId);

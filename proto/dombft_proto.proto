@@ -115,16 +115,17 @@ message LogCheckpoint
 
 message FallbackStart 
 {
-    uint32 instance = 1;
+    uint32 replica_id = 1;
+    uint32 instance = 2;
 
-    repeated LogEntry log_entries = 2;
-    LogCheckpoint checkpoint = 3;
+    repeated LogEntry log_entries = 3;
+    LogCheckpoint checkpoint = 4;
 }
 
-message FallbackLogs
+message FallbackProposal
 {
+    uint32 instance = 1;
     repeated FallbackStart logs = 2;
-    LogCheckpoint checkpoint = 3;
 }
 
 message FallbackExecuted
