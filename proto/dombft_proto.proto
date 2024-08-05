@@ -84,14 +84,51 @@ message FallbackTrigger
     optional Cert proof = 7;
 }
 
+
+message LogEntry
+{
+    uint32 seq = 4;
+    uint32 client_id = 5;
+    uint32 client_seq = 6;
+
+    bytes digest = 7;
+
+    // TODO is this needed?
+    bytes request = 8;
+    bytes result = 9;
+
+    optional Cert cert = 10;
+}
+
+
+message LogCheckpoint
+{
+    uint32 seq = 4;
+    bytes app_digest = 5;
+    bytes log_digest = 6;
+
+    repeated Commit commits   = 7;
+    repeated bytes signatures = 8;
+    Cert cert = 10;
+}
+
+
 message FallbackStart 
 {
-    // LogSuffix struct
+    uint32 instance = 1;
+
+    repeated LogEntry log_entries = 2;
+    LogCheckpoint checkpoint = 3;
+}
+
+message FallbackLogs
+{
+    repeated FallbackStart logs = 2;
+    LogCheckpoint checkpoint = 3;
 }
 
 message FallbackExecuted
 {
-    // LogSuffix struct
 }
 
 

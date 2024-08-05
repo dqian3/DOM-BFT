@@ -67,10 +67,10 @@ struct Log
 
     // Circular buffer of LogEntry, since we know the history won't exceed MAX_SPEC_HIST
     // TODO static memory here? or is that overoptimizing?
-    std::array<std::unique_ptr<LogEntry>, MAX_SPEC_HIST> log;
+    std::array<std::shared_ptr<LogEntry>, MAX_SPEC_HIST> log;
 
     // Map of sequence number to certs
-    std::map<uint32_t, std::unique_ptr<dombft::proto::Cert>> certs;
+    std::map<uint32_t, std::shared_ptr<dombft::proto::Cert>> certs;
 
     LogCommitPoint commitPoint;
     // TODO have more than 1 tentative commit point, in case replicas are trying different ones.
@@ -102,8 +102,10 @@ struct Log
     void addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
     const byte* getDigest() const;
-
     const byte* getDigest(uint32_t seq) const;
+
+
+    void toProto(dombft::proto::FallbackStart &msg);
 
     friend std::ostream& operator<<(std::ostream &out, const Log &l);
 

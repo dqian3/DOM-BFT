@@ -328,9 +328,10 @@ namespace dombft
 
                 reqState.certTime = now; // timeout again later
             }
+
             if (now - reqState.sendTime > slowPathTimeout_)
             {
-                LOG(ERROR) << "Client attempting slow path on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
+                LOG(INFO) << "Client attempting slow path on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
                 reqState.sendTime = now;
 
                 reqState.fallbackAttempts++;
@@ -356,6 +357,7 @@ namespace dombft
                 {
                     endpoint_->SendPreparedMsgTo(addr);
                 }
+
             }
         }
     }
@@ -468,6 +470,7 @@ namespace dombft
 
                 reqState.fallbackAttempts++;
 
+                reqState.sendTime = GetMicrosecondTimestamp();
                 endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
                 for (const Address &addr : replicaAddrs_)
                 {

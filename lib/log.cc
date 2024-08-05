@@ -2,8 +2,6 @@
 
 #include <glog/logging.h>
 
-using namespace dombft::proto;
-
 LogEntry::LogEntry()
     : seq(0), client_id(0), client_seq(0), raw_request(nullptr), raw_result(nullptr)
 {
@@ -90,10 +88,11 @@ bool Log::executeEntry(uint32_t seq)
     return true;
 }
 
-void Log::addCert(uint32_t seq, const Cert &cert)
+void Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 {
-    certs[seq] = std::make_unique<Cert>(cert);
+    certs[seq] = std::make_shared<dombft::proto::Cert>(cert);
 }
+
 
 const byte *Log::getDigest() const
 {
@@ -172,10 +171,54 @@ bool Log::commitCommitPoint()
         return false;  
     }
 
+    // TODO truncate log/commit application state
+
     commitPoint = tentativeCommitPoint.value();
     tentativeCommitPoint.reset();
 
     return true;
+}
+
+
+void Log::toProto(dombft::proto::FallbackStart &msg)
+{
+    dombft::proto::LogCheckpoint* checkpoint = msg.mutable_checkpoint();
+    
+    if (commitPoint.seq > 0) {
+        checkpoint->set_seq(commitPoint.seq);
+        checkpoint->set_app_digest((const char*) commitPoint.appDigest, SHA256_DIGEST_LENGTH);
+        checkpoint->set_log_digest((const char*) commitPoint.logDigest, SHA256_DIGEST_LENGTH);
+
+        for (auto x : commitPoint.commitMessages) {
+            (*checkpoint->add_commits()) = x.second;
+            checkpoint->add_signatures(commitPoint.signatures[x.first]);
+        }
+
+        if (!commitPoint.cert.has_value()) {
+            LOG(ERROR) << "commitPoint cert is null!";
+        }
+
+        (*checkpoint->mutable_cert()) = commitPoint.cert.value();
+    }
+
+
+    for (uint32_t i = commitPoint.seq + 1; i < nextSeq; i++) {
+        dombft::proto::LogEntry* entryProto = msg.add_log_entries();
+        LogEntry &entry = *log[i % log.size()];
+        
+        assert(i == entry.seq);
+
+        if (certs.count(i)) {
+            (*checkpoint->mutable_cert()) = *certs[i];
+        }
+
+        entryProto->set_seq(i);
+        entryProto->set_client_id(entry.client_id);
+        entryProto->set_client_seq(entry.client_seq);
+        entryProto->set_digest(entry.digest, SHA256_DIGEST_LENGTH);
+        entryProto->set_request(entry.raw_request, entry.request_len);
+        entryProto->set_result(entry.raw_result, entry.result_len);
+    }
 }
 
 

@@ -108,12 +108,23 @@ namespace dombft
         fallbackStartTimer_ = std::make_unique<Timer>(
             [this](void *ctx, void *endpoint) 
             {
+                endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
                 this->startFallback();
             },
             10000,
             this
         );
 
+
+        fallbackTimer_ = std::make_unique<Timer>(
+            [this](void *ctx, void *endpoint) 
+            {
+                LOG(INFO) << "Fallback for instance=" << instance_ << " failed!";  
+                this->startFallback();
+            },
+            20000,
+            this
+        );
     }
 
     Replica::~Replica()
@@ -258,13 +269,21 @@ namespace dombft
                 LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
                 return;
             }
-            LOG(INFO) << "Received fallback trigger from " << fallbackTriggerMsg.client_id() 
-                    << " for cseq=" <<  fallbackTriggerMsg.client_seq();                        
+
+            // Ignore any messages not for your current instance
+            if (fallbackTriggerMsg.instance() != instance_) {
+                return;
+            }
 
             if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
                 LOG(INFO) << "Received fallback trigger again!";
                 return;
             }
+
+            LOG(INFO) << "Received fallback trigger from " << fallbackTriggerMsg.client_id() 
+                    << " for cseq=" <<  fallbackTriggerMsg.client_seq() << " and instance="
+                    << fallbackTriggerMsg.instance();
+
 
             // TODO if attached request has been executed in another view,
             // send result back
@@ -439,16 +458,15 @@ namespace dombft
         reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
 
-        VLOG(4) << "Start prepare message";
+        // VLOG(4) << "Start prepare message";
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-        VLOG(4) << "Finish Serialization, start signature";
+        // VLOG(4) << "Finish Serialization, start signature";
 
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-        VLOG(4) << "Finish signature";
+        // VLOG(4) << "Finish signature";
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
-        LOG(INFO) << "Finish sending";
 
         // Try and commit every 10 replies (half of the way before
         // we can't speculatively execute anymore)
@@ -678,7 +696,22 @@ namespace dombft
 
     void Replica::startFallback()
     {
-        LOG(INFO) << "Starting fallback!";
+        instance_++;
+        LOG(INFO) << "Starting fallback for instance " << instance_;
+
+        if (endpoint_->isTimerRegistered(fallbackTimer_.get())) {
+            endpoint_->ResetTimer(fallbackTimer_.get());
+        } else {
+            endpoint_->RegisterTimer(fallbackTimer_.get());
+        }
+
+        // Extract log into start fallback message
+        FallbackStart fallbackStartMsg;
+        fallbackStartMsg.set_instance(instance_);
+        log_->toProto(&fallbackStartMsg);
+
+        endpoint_->PrepareProtoMsg(fallbackStartMsg, FALLBACK_START);
+        endpoint_->SendPreparedMsgTo(replicaAddrs_[instance_ % replicaAddrs_.size()])
     }
 
     void Replica::finishFallback()

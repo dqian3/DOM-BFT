@@ -1,4 +1,4 @@
-transport: nng
+transport: udp
 
 client:
   ips: 
@@ -8,7 +8,7 @@ client:
   keysDir: keys/client
   maxRequests: 5
   numRequests: 1000000
-  runtimeSeconds: 60 
+  runtimeSeconds: 10 
   normalPathTimeout: 5000
   slowPathTimeout: 50000
 
