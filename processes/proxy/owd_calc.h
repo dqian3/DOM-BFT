@@ -19,9 +19,25 @@ namespace dombft::OWDCalc {
 
             virtual inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) = 0;
 
-            // TODO(Hao): add a function to get the OWD with heuristics
-            virtual inline uint32_t getOWD() const = 0;
-
+            uint32_t getCappedMaxOWD() const{
+                uint32_t  maxOWD = 0;
+                for(auto &measures: recvrMeasures_) {
+                    maxOWD = std::min(cap_,std::max(maxOWD, getRcvrOWD(measures)));
+                }
+                return maxOWD;
+            }
+            uint32_t getPercentileOWD(uint32_t percentile) const{
+                uint32_t  percentileOWD = 0;
+                std::vector<uint32_t> sortedMeasure;
+                for(auto &measures: recvrMeasures_) {
+                    sortedMeasure.push_back(getRcvrOWD(measures));
+                }
+                std::sort(sortedMeasure.begin(), sortedMeasure.end());
+                percentileOWD = sortedMeasure[(sortedMeasure.size() - 1) * percentile / 100];
+                return percentileOWD;
+            }
+        protected:
+            virtual uint32_t getRcvrOWD(const std::vector<uint32_t> &rcvrMeasures) const = 0;
         protected:
             uint32_t numReceivers_;
             uint32_t cap_;
@@ -41,16 +57,8 @@ namespace dombft::OWDCalc {
                 windowIndex_ = windowSize_ ? (windowIndex_ + 1) % windowSize_ : windowIndex_ + 1;
             }
 
-            inline uint32_t getOWD() const override {
-                uint32_t  maxOWD = 0;
-                for(auto &measures: recvrMeasures_) {
-                    maxOWD = std::min(cap_,std::max(maxOWD, getMean(measures)));
-                }
-                return maxOWD;
-            }
-
         private:
-            inline uint32_t getMean(const std::vector<uint32_t> &measures) const {
+            inline uint32_t getRcvrOWD(const std::vector<uint32_t> &measures) const {
                 uint32_t sum = 0;
                 for (auto &measure: measures) {
                     sum += measure;
@@ -67,13 +75,9 @@ namespace dombft::OWDCalc {
             inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override {
                 recvrMeasures_[rcvrIndex][0] = std::max(recvrMeasures_[rcvrIndex][0], measure);
             }
-
-            inline uint32_t getOWD() const override {
-                uint32_t  maxOWD = 0;
-                for(auto &measures: recvrMeasures_) {
-                    maxOWD = std::min(cap_,std::max(maxOWD, measures[0]));
-                }
-                return maxOWD;
+        private:
+            inline uint32_t getRcvrOWD(const std::vector<uint32_t> &measures) const override {
+                return measures[0];
             }
         };
 
@@ -87,23 +91,13 @@ namespace dombft::OWDCalc {
                 windowIndex_ = windowSize_ ? (windowIndex_ + 1) % windowSize_ : windowIndex_ + 1;
             }
 
-            inline uint32_t getOWD() const override {
-                uint32_t  maxOWD = 0;
-                for(auto &measures: recvrMeasures_) {
-                    maxOWD = std::min(cap_,std::max(maxOWD, getPercentile(measures)));
-                }
-                return maxOWD;
-            }
-
         private:
             uint32_t percentile_;
-            uint32_t getPercentile(const std::vector<uint32_t> &measures) const {
+            uint32_t getRcvrOWD(const std::vector<uint32_t> &measures) const override{
                 std::vector<uint32_t> sortedMeasure = measures;
                 std::sort(sortedMeasure.begin(), sortedMeasure.end());
                 return sortedMeasure[(sortedMeasure.size() - 1) * percentile_ / 100];
             }
         };
     }
-
-
 #endif

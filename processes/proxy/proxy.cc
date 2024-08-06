@@ -37,7 +37,7 @@ namespace dombft
             forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
             measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
 
-            for (int i = nClients; i < forwardAddrs.size(); i++)
+            for (uint32_t i = nClients; i < forwardAddrs.size(); i++)
             {
                 receiverAddrs_.push_back(forwardAddrs[i].second);
             }
@@ -125,7 +125,7 @@ namespace dombft
             if (reply.owd() > 0)
             {
                 context.addMeasure(reply.receiver_id(), reply.owd());
-                latencyBound_.store(context.getOWD());
+                latencyBound_.store(context.getCappedMaxOWD());
                 VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
             }
         };
