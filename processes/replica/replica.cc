@@ -4,6 +4,10 @@
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
+#include "lib/application.h"
+
+#include "lib/apps/counter.h"
+
 #include <openssl/pem.h>
 #include <assert.h>
 
@@ -32,6 +36,8 @@ namespace dombft
             exit(1);
         }
 
+        LOG(INFO) << "private key loaded";
+
         if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir))
         {
             LOG(ERROR) << "Unable to load client public keys!";
@@ -54,9 +60,10 @@ namespace dombft
         f_ = config.replicaIps.size() / 3;
 
 
-
-        log_ = std::make_unique<Log>();
-
+        LOG(INFO) << "instantiating log";
+        log_ = std::make_shared<Log>(config.app);
+        LOG(INFO) << "log instantiated";
+        
         if (config.transport == "nng")
         {
             auto addrPairs = getReplicaAddrs(config, replicaId_);
@@ -166,6 +173,7 @@ namespace dombft
 
             // TODO also pass client request
             handleClientRequest(clientHeader);
+            LOG(INFO) << "Received and processed DOM_REQUEST message";
         }
 #else
         if (hdr->msgType == CLIENT_REQUEST)
@@ -389,8 +397,7 @@ namespace dombft
         }
 
         uint32_t seq = log_->nextSeq - 1;
-        // TODO actually get the result here.
-        log_->executeEntry(seq);
+        log_->executeEntry(seq, request, reply);
 
         reply.set_fast(true);
         reply.set_seq(seq);
@@ -408,6 +415,9 @@ namespace dombft
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
         LOG(INFO) << "Finish sending";
+
+        LOG(INFO) << "Done Sending reply back to client " << clientId;
+
 
         // Try and commit every 10 replies (half of the way before
         // we can't speculatively execute anymore)
@@ -489,6 +499,9 @@ namespace dombft
 
         for (const auto &entry : commitCertReplies)
         {
+
+            VLOG(3) << "Forming cert from " << reply.replica_id() << " for seq " << reply.seq();
+            
             int replicaId = entry.first;
             const Reply &reply = entry.second;
 
@@ -520,6 +533,7 @@ namespace dombft
                 VLOG(1) << "Created cert for request number " << reply.seq();
 
                 memcpy(log_->tentativeCommitPoint->logDigest, log_->getDigest(reply.seq()), SHA256_DIGEST_LENGTH);
+                LOG(INFO) << "Created log digest for seq " << reply.seq() << " " << digest_to_hex(log_->tentativeCommitPoint->logDigest);
                 // TODO set digest here
                 memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
 
@@ -565,6 +579,10 @@ namespace dombft
 
             return;
         }
+
+        VLOG(4) << "ready to call commit at log";
+
+        log_->commit(commitMsg.seq());
 
 
         point.commitMessages[commitMsg.replica_id()] = commitMsg;

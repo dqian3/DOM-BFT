@@ -39,7 +39,8 @@ namespace dombft
         SignatureProvider sigProvider_;
 
         std::unique_ptr<Endpoint> endpoint_;
-        std::unique_ptr<Log> log_;
+        
+        std::shared_ptr<Log> log_;
 
 
         // State for commit/checkpoint protocol

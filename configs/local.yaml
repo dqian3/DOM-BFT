@@ -1,9 +1,10 @@
 transport: nng
 
+app: "counter"
+
 client:
   ips: 
   - "127.0.1.0"
-  - "127.0.1.1"
   port: 33000
   keysDir: keys/client
   maxRequests: 5
@@ -44,4 +45,5 @@ replica:
   - "127.0.0.3"
   - "127.0.0.4"
   port: 34000
+  app: "counter"
   keysDir: "keys/replica"

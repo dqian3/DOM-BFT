@@ -20,3 +20,16 @@ message KVResponse {
     bool ok = 1;    
     optional string value = 2;
 }
+
+enum CounterOperation {
+    INCREMENT = 0;
+    DECREMENT = 1;
+}
+
+message CounterRequest {
+    CounterOperation op = 1;
+}
+
+message CounterResponse {
+    int64 value = 1;
+}
