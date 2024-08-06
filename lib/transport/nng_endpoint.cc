@@ -65,7 +65,7 @@ NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPai
             // return;
         }
 
-        VLOG(1) << "Creating connection between " << bindUrl << " and " << sendUrl;
+        VLOG(1) << bindUrl << " <---> " << sendUrl;
 
         socks_.push_back(sock);
         addrToSocket_[connAddr] = socks_.size() - 1;

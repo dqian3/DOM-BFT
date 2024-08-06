@@ -1,12 +1,5 @@
 #include "proxy.h"
 
-#include <openssl/pem.h>
-
-#include "lib/message_type.h"
-#include "lib/transport/nng_endpoint.h"
-#include "lib/transport/udp_endpoint.h"
-#include "processes/config_util.h"
-
 namespace dombft
 {
     using namespace dombft::proto;
@@ -14,9 +7,10 @@ namespace dombft
     Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     {
         numShards_ = config.proxyShards;
-        latencyBound_ = config.proxyInitialOwd;
         lastDeadline_ = GetMicrosecondTimestamp();
         maxOWD_ = config.proxyMaxOwd;
+        latencyBound_ = config.proxyMaxOwd; // Initialize to max to be more conservative
+        proxyId_ = proxyId;
 
         std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
         LOG(INFO) << "Loading key from " << proxyKey;
@@ -26,6 +20,7 @@ namespace dombft
             exit(1);
         }
     
+        numReceivers_ = config.receiverIps.size();
 
         if (config.transport == "nng") {
             if (numShards_ > 1) {
@@ -40,7 +35,7 @@ namespace dombft
             std::vector<std::pair<Address, Address>> measurmentAddrs(addrPairs.end() - config.receiverIps.size(), addrPairs.end());
 
             forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
-            measurmentEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
+            measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
 
             for (int i = nClients; i < forwardAddrs.size(); i++)
             {
@@ -56,11 +51,10 @@ namespace dombft
                                                     false));
             }
 
-            measurmentEp_ = std::make_unique<UDPEndpoint>(
+            measurementEp_ = std::make_unique<UDPEndpoint>(
                 config.proxyIps[proxyId], config.proxyMeasurementPort);
 
 
-            numReceivers_ = config.receiverIps.size();
             for (int i = 0; i < numReceivers_; i++)
             {
                 std::string receiverIp = config.receiverIps[i];
@@ -114,9 +108,9 @@ namespace dombft
 
     void Proxy::RecvMeasurementsTd()
     {
-        std::vector<uint32_t> receieverOWDs(numReceivers_);
 
-        MessageHandlerFunc handleMeasurementReply = [this, &receieverOWDs](MessageHeader *hdr, void *body, Address *sender)
+        OWDCalc::MeasureContext context(numReceivers_, OWDCalc::PercentileStrategy(90, 10, maxOWD_), maxOWD_);
+        MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender)
         {
             MeasurementReply reply;
 
@@ -130,30 +124,16 @@ namespace dombft
 
             if (reply.owd() > 0)
             {
-                // TODO actually calculate something here?
-                receieverOWDs[reply.receiver_id()] = reply.owd();
-                // Update latency bound
-                uint32_t estimatedOWD = 0;
-                for (uint32_t i = 0; i < receieverOWDs.size(); i++)
-                {
-                    if (estimatedOWD < receieverOWDs[i])
-                    {
-                        estimatedOWD = receieverOWDs[i];
-                    }
-                }
-                if (estimatedOWD > maxOWD_)
-                {
-                    estimatedOWD = maxOWD_;
-                }
-                VLOG(1) << "Update bound " << latencyBound_ << " => " << estimatedOWD;
-                latencyBound_.store(estimatedOWD);
+                context.addMeasure(reply.receiver_id(), reply.owd());
+                latencyBound_.store(context.getOWD());
+                VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
             }
         };
 
         /* Checks every 10ms to see if we are done*/
         auto checkEnd = [](void *ctx, void *receiverEP)
         {
-            if (((Proxy *)ctx)->running_ == false)
+            if (!((Proxy *) ctx)->running_)
             {
                 ((Endpoint *)receiverEP)->LoopBreak();
             }
@@ -161,10 +141,10 @@ namespace dombft
 
         Timer monitor(checkEnd, 10, this);
 
-        measurmentEp_->RegisterMsgHandler(handleMeasurementReply);
-        measurmentEp_->RegisterTimer(&monitor);
+        measurementEp_->RegisterMsgHandler(handleMeasurementReply);
+        measurementEp_->RegisterTimer(&monitor);
 
-        measurmentEp_->LoopRun();
+        measurementEp_->LoopRun();
     }
 
     void Proxy::ForwardRequestsTd(const int thread_id)
@@ -217,12 +197,15 @@ namespace dombft
                     forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
                 }
             }
+            else {
+                LOG(ERROR) << "Unknown message type " << hdr->msgType;
+            }
         };
 
         /* Checks every 10ms to see if we are done*/
         auto checkEnd = [](void *ctx, void *receiverEP)
         {
-            if (((Proxy *)ctx)->running_ == false)
+            if (!((Proxy *) ctx)->running_)
             {
                 ((Endpoint *)receiverEP)->LoopBreak();
             }

@@ -18,7 +18,7 @@
 
 #define FABRIC_CRYPTO 0
 
-#define MAX_SPEC_HIST 20
+#define MAX_SPEC_HIST 200
 
 // Timeouts in us
 #define NORMAL_PATH_TIMEOUT    10000    // 10 ms

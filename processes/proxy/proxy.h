@@ -1,20 +1,26 @@
 // C++ Standard Libs
 #include <fstream>
 #include <thread>
+#include <queue>
 
 // Third party libs
 #include <yaml-cpp/yaml.h>
+#include <openssl/pem.h>
 
 // Own libraries
 #include "lib/protocol_config.h"
 #include "lib/utils.h"
 #include "lib/transport/endpoint.h"
 #include "lib/signature_provider.h"
+#include "lib/message_type.h"
+#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
+#include "processes/config_util.h"
 
 #include "proto/dombft_proto.pb.h"
 
 #include "processes/process_config.h"
-
+#include "owd_calc.h"
 namespace dombft
 {
 
@@ -54,7 +60,7 @@ namespace dombft
         SignatureProvider sigProvider_;
 
 
-        std::unique_ptr<Endpoint> measurmentEp_;
+        std::unique_ptr<Endpoint> measurementEp_;
         std::vector<std::unique_ptr<Endpoint>> forwardEps_;
 
         /** CalculateLatencyBoundTd updates latencyBound_ and concurrently
@@ -78,4 +84,4 @@ namespace dombft
         void terminate();
     };
 
-} // namespace nezha
+} // namespace dombft

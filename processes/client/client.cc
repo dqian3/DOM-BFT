@@ -25,6 +25,14 @@ namespace dombft
         LOG(INFO) << "clientPort=" << clientPort;
 
         f_ = config.replicaIps.size() / 3;
+        normalPathTimeout_ = config.clientNormalPathTimeout;
+        slowPathTimeout_ = config.clientSlowPathTimeout;
+
+        // TODO make this some sort of config
+        LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
+        maxInFlight_ = config.clientMaxRequests;
+        LOG(INFO) << "Sending " << config.clientNumRequests << " requests!";
+        numRequests_ = config.clientNumRequests;
 
         /* Setup keys */
         std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -41,9 +49,6 @@ namespace dombft
             exit(1);
         }
 
-        // TODO make this some sort of config
-        LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
-        maxInFlight_ = config.clientMaxRequests;
 
         /** Setup transport */
         if (config.transport == "nng") {
@@ -97,9 +102,20 @@ namespace dombft
                 ((Client *)ctx)->checkTimeouts();
             },
         5000,
-            this);
+        this);
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
+
+        terminateTimer_ = std::make_unique<Timer>(
+            [config](void *ctx, void *endpoint)
+            {
+                LOG(INFO) << "Exiting before after running for " << config.clientRuntimeSeconds  << " seconds";
+                // TODO print some stats
+                exit(0);
+            },
+            config.clientRuntimeSeconds * 1000000, // timer is in us.
+            this
+        );
 
         if (config.app == AppType::COUNTER)
         {
@@ -248,8 +264,16 @@ namespace dombft
                         << "Took " << GetMicrosecondTimestamp() - requestStates_[cseq].sendTime << " us";
 
                 requestStates_.erase(cseq);
+                numCommitted_++;
+
                 submitRequest();
             }
+        }
+
+
+        if (numCommitted_ >= numRequests_) {
+            LOG(INFO) << "Exiting before after committing " << numRequests_  << " requests";
+            exit(0);
         }
     }
 
@@ -276,10 +300,13 @@ namespace dombft
 #if USE_PROXY && PROTOCOL == DOMBFT
         // TODO how to chhoose proxy
         Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-
+        VLOG(4) << "Begin sending request number " << nextReqSeq_;
         // TODO maybe client should own the memory instead of endpoint.
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+        VLOG(4) << "Serialization Done " << nextReqSeq_;
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        VLOG(4) << "Signature Done " << nextReqSeq_;
+
         endpoint_->SendPreparedMsgTo(addr);
         VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
 
@@ -296,10 +323,7 @@ namespace dombft
 #endif
 
 
-        if (nextReqSeq_ == 1000 + maxInFlight_) {
-            LOG(INFO) << "Exiting after sending " << 1000 + maxInFlight_  << " requests";
-            exit(0);
-        }
+
         nextReqSeq_++;
     }
 
@@ -312,7 +336,7 @@ namespace dombft
             int clientSeq = entry.first;
             RequestState &reqState = entry.second;
 
-            if (reqState.cert.has_value() && now - reqState.certTime > NORMAL_PATH_TIMEOUT)
+            if (reqState.cert.has_value() && now - reqState.certTime > normalPathTimeout_)
             {
                 VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
 
@@ -325,7 +349,7 @@ namespace dombft
 
                 reqState.certTime = now; // timeout again later
             }
-            if (now - reqState.sendTime > RETRY_TIMEOUT)
+            if (now - reqState.sendTime > slowPathTimeout_)
             {
                 LOG(ERROR) << "Client failed on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
                 exit(1);
@@ -371,6 +395,7 @@ namespace dombft
                     << ". Took " << GetMicrosecondTimestamp() - requestStates_[rep1.client_seq()].sendTime << " us";
 
             requestStates_.erase(clientSeq);
+            numCommitted_++;
             submitRequest();
         }
         else

@@ -21,7 +21,8 @@ num_processes = {}
 dirs = {}
 
 for process in config:
-    if process == "transport": continue
+    if process == "transport":
+        continue
     
     pconfig = config[process]
     num_processes[process] = len(pconfig["ips"])

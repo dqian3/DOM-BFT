@@ -7,6 +7,10 @@ client:
   port: 33000
   keysDir: keys/client
   maxRequests: 1
+  numRequests: 1000000
+  runtimeSeconds: 60 
+  normalPathTimeout: 5000
+  slowPathTimeout: 500000
 
 
 # Proxy Info
@@ -18,7 +22,6 @@ proxy:
   forwardPort: 31000
   measurementPort: 32000
   keysDir: keys/proxy
-  initialOwd: 5000 # The initial one-way delay (usecs) between replicas and proxies
   maxOwd: 10000
 
 # Receiver Info

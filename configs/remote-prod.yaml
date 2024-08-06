@@ -1,18 +1,33 @@
+transport: nng
+
 client:
   ips:
+  - 10.128.0.5
   - 10.138.0.6
   - 10.182.0.4
+  - 10.142.0.4
+  - 10.202.0.3
+  - 10.128.0.13
   keysDir: keys/client
-  maxRequests: 1
+  maxRequests: 20
+  numRequests: 1000000
+  runtimeSeconds: 20 
   port: 33000
+  normalPathTimeout: 100000
+  slowPathTimeout:   2000000
+
+
+
 proxy:
   forwardPort: 31000
-  initialOwd: 5000
   ips:
+  - 10.128.0.17
   - 10.138.0.5
   - 10.182.0.3
+  - 10.142.0.3
+  - 10.150.0.2
   keysDir: keys/proxy
-  maxOwd: 10000
+  maxOwd: 200000
   measurementPort: 32000
   shards: 1
 receiver:
@@ -33,4 +48,4 @@ replica:
   - 10.202.0.2
   keysDir: keys/replica
   port: 34000
-transport: nng
+

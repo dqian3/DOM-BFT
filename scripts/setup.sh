@@ -3,6 +3,7 @@ apt-get update && apt-get install -y \
     curl \
     gnupg \
     curl \
+    libboost-all-dev \
     libssl-dev \
     git-all \
     build-essential 
@@ -13,8 +14,3 @@ curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg
     && curl https://bazel.build/bazel-release.pub.gpg | apt-key add - \
     && apt-get update && apt-get install -y bazel=5.2.0 
 
-git clone https://github.com/dqian3/DOM-BFT
-
-cd DOM-BFT
-
-bazel build //processes/...

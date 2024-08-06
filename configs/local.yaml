@@ -1,4 +1,4 @@
-transport: "udp"
+transport: nng
 
 app: "counter"
 
@@ -7,8 +7,11 @@ client:
   - "127.0.1.0"
   port: 33000
   keysDir: keys/client
-  app : "counter"
-  maxRequests: 1
+  maxRequests: 5
+  numRequests: 1000000
+  runtimeSeconds: 60 
+  normalPathTimeout: 5000
+  slowPathTimeout: 50000
 
 
 # Proxy Info
@@ -20,8 +23,7 @@ proxy:
   forwardPort: 31000
   measurementPort: 32000
   keysDir: keys/proxy
-  initialOwd: 1000 # The initial one-way delay (usecs) between replicas and proxies
-  maxOwd: 5000
+  maxOwd: 15000
 
 # Receiver Info
 receiver:

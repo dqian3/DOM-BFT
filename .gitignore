@@ -1,6 +1,9 @@
 /.obj
 /.bin
 /bazel-*
+/.idea
+/.vscode
+/.clwb
 
 
 keys

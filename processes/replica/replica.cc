@@ -73,7 +73,11 @@ namespace dombft
             }
 
             for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
-                // LOG(INFO) << "Replica " << i << ": " <<  addrPairs[i].second.GetIPAsString();
+                LOG(INFO) << "Replica " << i << ": " <<  addrPairs[i].second.GetIPAsString();
+
+                // Skip adding one side of self connection so replica chooses one side to send to
+                // TODO this is very ugly.
+                if (i - (nClients + 1) == replicaId_) continue;
                 replicaAddrs_.push_back(addrPairs[i].second);
             }
         }
@@ -397,11 +401,17 @@ namespace dombft
 
         reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
+
+        VLOG(4) << "Start prepare message";
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+        VLOG(4) << "Finish Serialization, start signature";
+
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        VLOG(4) << "Finish signature";
 
         LOG(INFO) << "Sending reply back to client " << clientId;
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+        LOG(INFO) << "Finish sending";
 
         LOG(INFO) << "Done Sending reply back to client " << clientId;
 
