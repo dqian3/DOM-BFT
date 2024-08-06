@@ -40,7 +40,7 @@ public:
     virtual std::string takeSnapshot() = 0;
 
     // resetting the application state to the committed state
-    virtual bool abort() = 0;
+    virtual bool abort(const uint32_t abort_idx) = 0;
 
 
 };

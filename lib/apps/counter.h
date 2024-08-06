@@ -37,7 +37,7 @@ public:
 
     Counter() : counter(0), counter_stable(0), version_hist() {}
 
-    virtual bool abort() override;
+    virtual bool abort(const uint32_t abort_idx) override;
 
 private:
     std::vector<VersionedValue> version_hist;

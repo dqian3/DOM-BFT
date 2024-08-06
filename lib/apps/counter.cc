@@ -87,9 +87,25 @@ void* CounterTrafficGen::generateAppTraffic()
     return request;
 }
 
-bool Counter::abort()
+bool Counter::abort(const uint32_t abort_idx)
 {
+
+    LOG(INFO) << "Aborting operations at idx: " << abort_idx;
+
+    // Find the last committed value before or at abort_idx
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), 
+        [abort_idx](const VersionedValue& v) { return v.version <= abort_idx; });
+
+    if (it != version_hist.rend()) {
+        // Erase all entries from the point found to the end
+        version_hist.erase(it.base(), version_hist.end());
+    }
+
+    // Revert the counter to the last committed state, for counter, just change to stable
+    // for kv, fancier later. 
     counter = counter_stable;
+    LOG(INFO) << "Counter reverted to stable value: " << counter_stable;
+
     return true;
 }
 
