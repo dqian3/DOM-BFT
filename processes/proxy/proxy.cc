@@ -109,7 +109,7 @@ namespace dombft
     void Proxy::RecvMeasurementsTd()
     {
 
-        OWDCalc::MeasureContext context(numReceivers_, OWDCalc::PercentileStrategy(90, 10, maxOWD_), maxOWD_);
+        OWDCalc::PercentileCtx context(numReceivers_,maxOWD_,10,90, maxOWD_);
         MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender)
         {
             MeasurementReply reply;
