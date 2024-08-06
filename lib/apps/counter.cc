@@ -8,19 +8,18 @@ using namespace dombft::apps;
 Counter::~Counter() {
 }
 
-std::unique_ptr<AppLayerResponse> Counter::execute(const std::string &serialized_request)
+std::string Counter::execute(const std::string &serialized_request, const uint64_t timestamp)
 {    
     LOG(INFO) << "Received request to execute counter operation";
 
     std::unique_ptr<CounterRequest> counterReq = std::make_unique<CounterRequest>();
     if (!counterReq->ParseFromString(serialized_request)) {
         LOG(ERROR) << "Failed to parse CounterRequest";
-        return nullptr; 
+        return ""; 
     }
 
-    std::unique_ptr<AppLayerResponse> ret = std::make_unique<AppLayerResponse>();
-
     CounterOperation op = counterReq->op();
+    CounterResponse response;
 
     if (op == CounterOperation::INCREMENT) {
         LOG(INFO) << "Incrementing counter";
@@ -35,49 +34,56 @@ std::unique_ptr<AppLayerResponse> Counter::execute(const std::string &serialized
         exit(1);
     }
 
-    ret->success = true;
-    ret->response = std::make_unique<byte[]>(INT_SIZE_IN_BYTES);
+    version_hist.push_back({timestamp, counter});
 
-    ret->result_len = INT_SIZE_IN_BYTES;
+    response.set_value(counter); 
 
-    std::memcpy(ret->response.get(), &counter, INT_SIZE_IN_BYTES);
-
-    int return_value;
-    std::memcpy(&return_value, ret->response.get(), INT_SIZE_IN_BYTES);
-    LOG(INFO) << "Return value: " << return_value;
+    std::string ret;
+    if (!response.SerializeToString(&ret)) {
+        LOG(ERROR) << "Failed to serialize CounterResponse";
+        throw std::runtime_error("Failed to serialize CounterResponse message.");
+        return "";
+    }
 
     return ret;
 }
 
-bool Counter::commit(uint32_t commit_idx, byte* committed_value)
+bool Counter::commit(uint32_t commit_idx)
 {
     LOG(INFO) << "Committing counter value at idx: " << commit_idx;
 
-    int value = *reinterpret_cast<int*>(committed_value);
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), 
+        [commit_idx](const VersionedValue& v) { return v.version <= commit_idx; }); 
 
-    counter_stable = value;
+    if (it != version_hist.rend()) {
+        counter_stable = it->value;
+        version_hist.erase(version_hist.begin(), it.base());
 
-    LOG(INFO) << "Committed counter value: " << value;
+        LOG(INFO) << "Committed counter value: " << counter_stable;
+    } else {
+        LOG(ERROR) << "Failed to find versioned value for commit_idx: " << commit_idx;
+        return false;
+    }
 
     return true;
 }
 
-byte* Counter::getDigest(uint32_t digest_idx)
+std::unique_ptr<byte[]> Counter::getDigest(uint32_t digest_idx)
 {
-    std::copy(static_cast<const char*>(static_cast<const void*>(&counter)),
-              static_cast<const char*>(static_cast<const void*>(&counter)) + INT_SIZE_IN_BYTES,
-              commit_digest);
 
-    return commit_digest;
+    auto result = std::make_unique<byte[]>(INT_SIZE_IN_BYTES);
+
+    std::memcpy(result.get(), &counter, INT_SIZE_IN_BYTES);
+
+    return result;
 }
 
-byte* Counter::takeSnapshot()
+std::unique_ptr<byte[]> Counter::takeSnapshot()
 {
-    std::copy(static_cast<const char*>(static_cast<const void*>(&counter_stable)),
-              static_cast<const char*>(static_cast<const void*>(&counter_stable)) + INT_SIZE_IN_BYTES,
-              snapshot_digest);
+    auto result = std::make_unique<byte[]>(INT_SIZE_IN_BYTES);
+    std::memcpy(result.get(), &counter_stable, INT_SIZE_IN_BYTES);
 
-    return snapshot_digest;
+    return result;
 }
 
 void* CounterTrafficGen::generateAppTraffic()

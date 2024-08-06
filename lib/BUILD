@@ -107,13 +107,15 @@ cc_library(
 
 cc_library(
     name = "application",
-    hdrs = ["application.h"] + glob(["apps/*"]),
-    srcs = glob(["apps/*"]),
+    # hdrs = ["application.h"] + glob(["apps/*"]),
+    hdrs = ["application.h", "apps/counter.h"],
+    # srcs = glob(["apps/*"]),
+    srcs = ["apps/counter.cc"],
     deps = [
         "//proto:dombft_apps_cc",
         ":common_struct",
         ":protocol_config",
-         "@openssl//:openssl",
+        "@openssl//:openssl",
         "@com_github_google_glog//:glog",
     ],
     visibility = ["//visibility:public"],

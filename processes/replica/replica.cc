@@ -36,6 +36,8 @@ namespace dombft
             exit(1);
         }
 
+        LOG(INFO) << "private key loaded";
+
         if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir))
         {
             LOG(ERROR) << "Unable to load client public keys!";
@@ -58,9 +60,10 @@ namespace dombft
         f_ = config.replicaIps.size() / 3;
 
 
-
+        LOG(INFO) << "instantiating log";
         log_ = std::make_shared<Log>(config.app);
-
+        LOG(INFO) << "log instantiated";
+        
         if (config.transport == "nng")
         {
             auto addrPairs = getReplicaAddrs(config, replicaId_);

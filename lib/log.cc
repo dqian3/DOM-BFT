@@ -5,8 +5,9 @@
 using namespace dombft::proto;
 
 LogEntry::LogEntry()
-    : seq(0), client_id(0), client_seq(0), raw_request(nullptr), raw_result(nullptr)
+    : seq(0), client_id(0), client_seq(0), raw_request(nullptr)
 {
+    raw_result = "";
     memset(digest, 0, SHA256_DIGEST_LENGTH);
 }
 
@@ -14,9 +15,11 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
                    byte *req, uint32_t req_len, byte *prev_digest)
     : seq(s), client_id(c_id), client_seq(c_seq), raw_request((byte *)malloc(req_len)) // Manually allocate some memory to store the request
       ,
-      raw_result(nullptr), request_len(req_len), result_len(0)
+     request_len(req_len), result_len(0)
 {
     memcpy(raw_request, req, req_len);
+
+    raw_result = "";
 
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
@@ -63,12 +66,15 @@ Log::Log()
 Log::Log(AppType app_type)
     : nextSeq(1), lastExecuted(0)
 {
+    LOG(INFO) << "Initializing log entry";
     // Zero initialize all the entries
     // TODO: there's probably a better way to handle this
     for (uint32_t i = 0; i < log.size(); i++)
     {
         log[i] = std::make_unique<LogEntry>();
     }
+
+    LOG(INFO) << "log entry initialized";
 
     if (app_type == AppType::COUNTER) {
         LOG(INFO) << "Creating a counter application";
@@ -78,7 +84,7 @@ Log::Log(AppType app_type)
         exit(1);
     }
 
-    app_ = std::make_unique<Counter>();
+    LOG(INFO) << "App initialized";
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq,
@@ -123,12 +129,14 @@ bool Log::executeEntry(uint32_t seq, const ClientRequest &request, Reply &reply)
 
     LOG(INFO) << "Executing entry at seq=" << seq << " Sending to app layer";
 
-    auto appResponse = app_->execute(request.req_data());
-    LOG(INFO) << "Get app response for " << seq << " result is: " << *reinterpret_cast<int*>(appResponse.get()->response.get());
+    std::string appResponse = app_->execute(request.req_data(), seq);
 
-    reply.set_result(appResponse.get()->response.get(), sizeof(int));
+    LOG(INFO) << "Got response from app layer: " << appResponse;
 
-    getEntry(seq)->raw_result = std::move(appResponse.get()->response);
+    reply.set_result(appResponse);
+
+
+    getEntry(seq)->raw_result = appResponse;
     // TODO put the exeuction digest to the log entry as well, may need to add a field in the logentry struct. 
 
     // TODO execute and get result back.
@@ -254,8 +262,7 @@ LogEntry* Log::getEntry(uint32_t seq) {
 
 void Log::commit(uint32_t seq) {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
-        uint32_t index = seq % MAX_SPEC_HIST;
-        app_.get()->commit(seq, log[index]->raw_result.get());
+        app_.get()->commit(seq);
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
     }

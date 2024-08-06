@@ -7,7 +7,15 @@
 #include <string>
 #include <glog/logging.h>
 
+#include <vector>
+
 #define INT_SIZE_IN_BYTES (sizeof(int))
+
+
+typedef struct VersionedValue {
+    uint64_t version;
+    int value;
+} VersionedValue;
 
 // TODO instead of requests and responses being raw bytes, have 
 // request and response types that can be serialized/unserialized.
@@ -17,24 +25,24 @@ public:
 
     int counter_stable;
 
-    byte commit_digest[INT_SIZE_IN_BYTES];
-    byte snapshot_digest[INT_SIZE_IN_BYTES];
-
-
-
     virtual ~Counter();
 
-    virtual std::unique_ptr<AppLayerResponse> execute(const std::string &serialized_request) override;
+    virtual std::string execute(const std::string &serialized_request, const uint64_t timestamp) override;
 
-    virtual bool commit(uint32_t commit_idx, byte* committed_value) override;
+    virtual bool commit(uint32_t commit_idx) override;
 
-    virtual byte* getDigest(uint32_t digest_idx) override;
+    virtual std::unique_ptr<byte[]> getDigest(uint32_t digest_idx) override;
 
-    virtual byte* takeSnapshot() override;
+    virtual std::unique_ptr<byte[]> takeSnapshot() override;
 
-    Counter() : counter(0), counter_stable(0) {}
+    Counter() : counter(0), counter_stable(0), version_hist() {}
 
     virtual bool abort() override;
+
+private:
+    std::vector<VersionedValue> version_hist;
+
+    uint64_t committed_idx = 0;
     
 };
 

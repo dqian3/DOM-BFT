@@ -26,7 +26,7 @@ struct LogEntry
     uint32_t client_seq;
 
     byte *raw_request;
-    std::unique_ptr<byte[]> raw_result;
+    std::string raw_result;
 
     uint32_t request_len;
     uint32_t result_len;
