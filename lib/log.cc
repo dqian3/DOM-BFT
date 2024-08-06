@@ -15,7 +15,7 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq,
                    byte *req, uint32_t req_len, byte *prev_digest)
     : seq(s), client_id(c_id), client_seq(c_seq), raw_request((byte *)malloc(req_len)) // Manually allocate some memory to store the request
       ,
-     request_len(req_len), result_len(0)
+     request_len(req_len)
 {
     memcpy(raw_request, req, req_len);
 

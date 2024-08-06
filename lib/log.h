@@ -29,7 +29,6 @@ struct LogEntry
     std::string raw_result;
 
     uint32_t request_len;
-    uint32_t result_len;
 
     byte digest[SHA256_DIGEST_LENGTH];
 
