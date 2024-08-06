@@ -8,7 +8,7 @@ using namespace dombft::apps;
 Counter::~Counter() {
 }
 
-std::string Counter::execute(const std::string &serialized_request, const uint64_t timestamp)
+std::string Counter::execute(const std::string &serialized_request, const uint32_t execute_idx)
 {    
     LOG(INFO) << "Received request to execute counter operation";
 
@@ -34,7 +34,7 @@ std::string Counter::execute(const std::string &serialized_request, const uint64
         exit(1);
     }
 
-    version_hist.push_back({timestamp, counter});
+    version_hist.push_back({execute_idx, counter});
 
     response.set_value(counter); 
 
@@ -61,29 +61,22 @@ bool Counter::commit(uint32_t commit_idx)
 
         LOG(INFO) << "Committed counter value: " << counter_stable;
     } else {
-        LOG(ERROR) << "Failed to find versioned value for commit_idx: " << commit_idx;
-        return false;
+        LOG(INFO) << "No version needs to be cleaned up " << commit_idx;
+        return true;
     }
 
     return true;
 }
 
-std::unique_ptr<byte[]> Counter::getDigest(uint32_t digest_idx)
+std::string Counter::getDigest(uint32_t digest_idx)
 {
 
-    auto result = std::make_unique<byte[]>(INT_SIZE_IN_BYTES);
-
-    std::memcpy(result.get(), &counter, INT_SIZE_IN_BYTES);
-
-    return result;
+    return std::string(reinterpret_cast<const char*>(&counter), INT_SIZE_IN_BYTES);
 }
 
-std::unique_ptr<byte[]> Counter::takeSnapshot()
+std::string Counter::takeSnapshot()
 {
-    auto result = std::make_unique<byte[]>(INT_SIZE_IN_BYTES);
-    std::memcpy(result.get(), &counter_stable, INT_SIZE_IN_BYTES);
-
-    return result;
+    return std::string(reinterpret_cast<const char*>(&counter_stable), INT_SIZE_IN_BYTES);
 }
 
 void* CounterTrafficGen::generateAppTraffic()

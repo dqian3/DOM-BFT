@@ -27,13 +27,13 @@ public:
 
     virtual ~Counter();
 
-    virtual std::string execute(const std::string &serialized_request, const uint64_t timestamp) override;
+    virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
 
     virtual bool commit(uint32_t commit_idx) override;
 
-    virtual std::unique_ptr<byte[]> getDigest(uint32_t digest_idx) override;
+    virtual std::string getDigest(uint32_t digest_idx) override;
 
-    virtual std::unique_ptr<byte[]> takeSnapshot() override;
+    virtual std::string takeSnapshot() override;
 
     Counter() : counter(0), counter_stable(0), version_hist() {}
 
