@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
         UDPEndpoint *ep = (UDPEndpoint *) endpoint;
         
         MessageHeader *hdr = ep->PrepareMsg((const byte *)"Test", 5, 2);
-        sigProvider.appendSignature(hdr, UDP_BUFFER_SIZE); // TODO more elegant way to get UDPBufferSize
+        sigProvider.appendSignature(hdr, SEND_BUFFER_SIZE); // TODO more elegant way to get UDPBufferSize
         LOG(INFO) << hdr->msgLen << " " << hdr->sigLen;
         ep->SendPreparedMsgTo(Address("127.0.0.1", 9000));
     }, 1000000);

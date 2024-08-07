@@ -116,7 +116,7 @@ namespace dombft
             VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
             endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
 
             // Check if request is on time.
@@ -170,7 +170,7 @@ namespace dombft
             // TODO do this while waiting, not in the critical path
 
 #if FABRIC_CRYPTO
-            sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
             endpoint_->SendPreparedMsgTo(replicaAddr_);
         }

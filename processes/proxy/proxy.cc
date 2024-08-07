@@ -192,7 +192,7 @@ namespace dombft
 
                     MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
-                    sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+                    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
                     forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
                 }

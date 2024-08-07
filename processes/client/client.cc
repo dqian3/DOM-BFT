@@ -283,7 +283,7 @@ namespace dombft
         // TODO maybe client should own the memory instead of endpoint.
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
         // VLOG(4) << "Serialization Done " << nextReqSeq_;
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         // VLOG(4) << "Signature Done " << nextReqSeq_;
 
         endpoint_->SendPreparedMsgTo(addr);
@@ -293,7 +293,7 @@ namespace dombft
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
         // TODO check errors for all of these lol
         // TODO do this while waiting, not in the critical path
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
         for (const Address &addr : replicaAddrs_)
         {
@@ -353,7 +353,7 @@ namespace dombft
 
                 // TODO set request data and proof
                 MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
-                sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE); 
+                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE); 
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr);
@@ -473,7 +473,7 @@ namespace dombft
 
                 reqState.sendTime = GetMicrosecondTimestamp();
                 MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
-                sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE); 
+                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE); 
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr);

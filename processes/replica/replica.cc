@@ -120,6 +120,8 @@ namespace dombft
             [this](void *ctx, void *endpoint) 
             {
                 LOG(INFO) << "Fallback for instance=" << instance_ << " failed!";  
+                LOG(INFO) << "Exiting....";  
+                exit(1); // TODO
                 this->startFallback();
             },
             20000,
@@ -512,7 +514,7 @@ namespace dombft
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
         // VLOG(4) << "Finish Serialization, start signature";
 
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         // VLOG(4) << "Finish signature";
 
         LOG(INFO) << "Sending reply back to client " << clientId;
@@ -561,7 +563,7 @@ namespace dombft
 
         // TODO set result
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
     }
 
@@ -689,7 +691,7 @@ namespace dombft
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
         // TODO check errors for all of these lol
         // TODO this sends to self as well, could shortcut this
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_)
         {
             endpoint_->SendPreparedMsgTo(addr);
@@ -745,6 +747,8 @@ namespace dombft
         instance_++;
         LOG(INFO) << "Starting fallback for instance " << instance_;
 
+        // TODO prevent processing of other messsages.
+
         if (endpoint_->isTimerRegistered(fallbackTimer_.get())) {
             endpoint_->ResetTimer(fallbackTimer_.get());
         } else {
@@ -756,14 +760,18 @@ namespace dombft
         fallbackStartMsg.set_instance(instance_);
         log_->toProto(fallbackStartMsg);
 
-        endpoint_->PrepareProtoMsg(fallbackStartMsg, FALLBACK_START);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackStartMsg, FALLBACK_START);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE); 
         endpoint_->SendPreparedMsgTo(replicaAddrs_[instance_ % replicaAddrs_.size()]);
+        
     }
 
     void Replica::handleFalbackStart(const FallbackStart &msg, std::span<byte> sig)
     {
         fallbackHistory[msg.replica_id()] = msg;
         fallbackHistorySigs[msg.replica_id()] = std::string(sig.begin(), sig.end());
+
+        LOG(INFO) << "Received fallback message from " << msg.replica_id();
 
         if (instance_ % replicaAddrs_.size() != replicaId_) {
             return;
