@@ -52,6 +52,7 @@ namespace dombft
         bool fallback_ = false;
         uint32_t fallbackTriggerSeq_ = 0;
         std::map<int, dombft::proto::FallbackStart> fallbackHistory;
+        std::map<int, std::string> fallbackHistorySigs;
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);
@@ -62,9 +63,8 @@ namespace dombft
         void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
         bool verifyCert(const dombft::proto::Cert &cert);
 
-        void handleMessageFallback(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void startFallback();
-        void checkFallbackProposal();
+        void handleFalbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
         void finishFallback(const dombft::proto::FallbackProposal &history);
 
     public:

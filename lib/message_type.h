@@ -22,9 +22,10 @@ enum MessageType {
 
     FALLBACK_TRIGGER = 9,
     FALLBACK_START = 10,
-    FALLBACK_EXECUTED = 11,
+    FALLBACK_PROPOSAL = 11,
+    FALLBACK_EXECUTED = 12,
     
-    DUMMY_PROTO = 12,
+    DUMMY_PROTO = 13
 };
 
 #endif

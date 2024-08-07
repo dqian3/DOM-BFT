@@ -125,7 +125,10 @@ message FallbackStart
 message FallbackProposal
 {
     uint32 instance = 1;
-    repeated FallbackStart logs = 2;
+    uint32 replica_id = 2;
+    
+    repeated FallbackStart logs = 3;
+    repeated bytes signatures = 4;
 }
 
 message FallbackExecuted

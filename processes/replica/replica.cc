@@ -328,12 +328,27 @@ namespace dombft
             }
 
             // TODO handle case where instance is higher
+            handleFalbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+        
+        if (hdr->msgType == FALLBACK_PROPOSAL)
+        {
+            FallbackProposal msg;
 
-            fallbackHistory[msg.replica_id()] = msg;
-
-            if (instance_ % replicaAddrs_.size() == replicaId_) {
-                checkFallbackProposal();
+            if (!msg.ParseFromArray(body, hdr->msgLen))
+            {
+                LOG(ERROR) << "Unable to parse FALLBACK_PROPOSAL message";
+                return;
             }
+
+            if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id()))
+            {
+                LOG(INFO) << "Failed to verify replica signature!";
+                return;
+            }
+            
+            // TODO actually run a protocol instead of assuming this is ok
+            finishFallback(msg);
         }
     }
 
@@ -724,11 +739,6 @@ namespace dombft
     }
 
 
-    void Replica::handleMessageFallback(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
-    {
-
-    }
-
     void Replica::startFallback()
     {
         fallback_ = true;
@@ -750,8 +760,15 @@ namespace dombft
         endpoint_->SendPreparedMsgTo(replicaAddrs_[instance_ % replicaAddrs_.size()]);
     }
 
-    void Replica::checkFallbackProposal()
+    void Replica::handleFalbackStart(const FallbackStart &msg, std::span<byte> sig)
     {
+        fallbackHistory[msg.replica_id()] = msg;
+        fallbackHistorySigs[msg.replica_id()] = std::string(sig.begin(), sig.end());
+
+        if (instance_ % replicaAddrs_.size() != replicaId_) {
+            return;
+        }
+
         // First check if we have 2f + 1 fallback start messages for the same instance
         auto numStartMsgs = std::count_if(fallbackHistory.begin(), fallbackHistory.end(), 
             [this] (auto &startMsg) {
@@ -759,18 +776,20 @@ namespace dombft
             }
         );
 
-        if (numStartMsgs < 2 * f_ + 1) {
-            return;
+        if (numStartMsgs == 2 * f_ + 1) {
+            FallbackProposal proposal;
+
+            proposal.set_replica_id(replicaId_);
+            proposal.set_instance(instance_);
+            for (auto &startMsg : fallbackHistory) {
+                if (startMsg.second.instance() != instance_) continue;
+            
+                *(proposal.add_logs()) = startMsg.second;
+            }
+
+            broadcastToReplicas(proposal, FALLBACK_PROPOSAL);
         }
 
-        FallbackProposal proposal;
-
-        proposal.set_instance(instance_);
-        for (auto &startMsg : fallbackHistory) {
-            if (startMsg.second.instance() != instance_) continue;
-        
-            *(proposal.add_logs()) = startMsg.second;
-        }
     }
 
 
@@ -793,6 +812,9 @@ namespace dombft
             } 
         }
 
+
+        VLOG(4) << "Highest checkpoint is for seq=" << maxCheckpointSeq;
+
         // Find highest request with a cert
         // By quorum intersection there can't be conflicting certificates, unless one is
         // from an old instance (TODO handle this)
@@ -814,6 +836,10 @@ namespace dombft
                 // TODO verify cert
                 if (entry.cert().replies()[0].seq() > maxSeq)
                 {
+                    VLOG(4) << "Cert found for seq=" << entry.seq()
+                        << " c_id=" << entry.cert().replies()[0].client_id()
+                        << " c_seq=" << entry.cert().replies()[0].client_seq();
+
                     maxSeqCert = &entry.cert();
                 }
             }
@@ -839,17 +865,19 @@ namespace dombft
                 matchingEntries[entry.seq()][entry.digest()]++;
 
                 if (matchingEntries[entry.seq()][entry.digest()] == f_ + 1) {
-                    VLOG(4) << "f + 1 matching digests found for " << entry.seq();
+                    VLOG(4) << "f + 1 matching digests found for seq=" << entry.seq()
+                        << " c_id=" << entry.client_id()
+                        << " c_seq=" << entry.client_seq();
+
                 }
             }
         }
 
 
-
-        // See if any requests after cert have f + 1 replies
-
         // Add rest of the requests in.
 
+        LOG(ERROR) << "Finish fallback and exiting";
+        exit(1);
     }
 
 
