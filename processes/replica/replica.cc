@@ -282,7 +282,7 @@ namespace dombft
 
             if (!sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id()))
             {
-                LOG(INFO) << "Failed to verify client signature!";
+                LOG(INFO) << "Failed to verify client signature of c_id=" << fallbackTriggerMsg.client_id();
                 return;
             }
 

@@ -352,7 +352,8 @@ namespace dombft
                 }
 
                 // TODO set request data and proof
-                endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE); 
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr);
@@ -471,7 +472,8 @@ namespace dombft
                 reqState.fallbackAttempts++;
 
                 reqState.sendTime = GetMicrosecondTimestamp();
-                endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE); 
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr);
