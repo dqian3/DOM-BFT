@@ -190,6 +190,16 @@ namespace dombft
             }
 
 
+
+            // TODO TODO get rid of this
+            if (fallback_) 
+            {
+                LOG(INFO) << "Queuing request due to fallback";
+                fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
+                return;
+            }
+
+
             // TODO also pass client request
             handleClientRequest(clientHeader);
         }
@@ -486,16 +496,6 @@ namespace dombft
             return;
         }
 
-
-        // TODO TODO get rid of this
-        if (fallback_) 
-        {
-            LOG(INFO) << "Queuing request due to fallback";
-            fallbackQueuedReqs_.push(request);
-            return;
-        }
-
-
         reply.set_client_id(clientId);
         reply.set_client_seq(request.client_seq());
         reply.set_replica_id(replicaId_);
@@ -781,12 +781,7 @@ namespace dombft
 
 
         // TEMP: dump the logs
-        std::stringstream ss;
-        for (const dombft::proto::LogEntry& entry : fallbackStartMsg.log_entries()) {
-            ss << entry.seq() << ": (" << entry.client_id() << ", " << entry.client_seq() << ") | ";
-        }
-
-        LOG(INFO) << ss.str();
+        LOG(INFO) << "DUMP start fallback instance=" << instance_  << " " << *log_;
     }
 
     void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
@@ -1020,15 +1015,20 @@ namespace dombft
                         << " since already in log at seq=" << entry.seq();
                 continue;
             }
+
             // TODO Rollback application state here!
             if (!rollbackDone) {
                 log_->nextSeq = entry.seq();
             }
 
-
             applyFallbackReq(entry);
-            
         }
+
+        // TODO Rollback application state here!
+        if (!rollbackDone) {
+            log_->nextSeq = logToUseSeq + 1;
+        }
+
 
 
         LOG(INFO) << "Applying rest of requests in histories";
@@ -1050,19 +1050,30 @@ namespace dombft
         endpoint_->UnRegisterTimer(fallbackTimer_.get());
 
 
-        while (!fallbackQueuedReqs_.empty())
+        sort(fallbackQueuedReqs_.begin(), fallbackQueuedReqs_.end(),
+            [](auto &l, auto &r) {
+                return l.first < r.first;
+            }
+        );
+
+        for (auto &[_, request]: fallbackQueuedReqs_)
         {
-            ClientRequest &request = fallbackQueuedReqs_.front();
             if (request.client_seq() < maxAppliedSeq[request.client_id()]) {
                 VLOG(2) << "Skipping c_id=" << request.client_id() << " c_seq=" 
                         << request.client_seq() << " since already applied"; 
-                fallbackQueuedReqs_.pop();
                 continue;
             }
 
-            handleClientRequest(fallbackQueuedReqs_.front());
-            fallbackQueuedReqs_.pop();
+            handleClientRequest(request);
         }
+
+        fallbackQueuedReqs_.clear();
+
+
+        // TEMP: dump the logs
+        LOG(INFO) << "DUMP finish fallback instance=" << instance_
+                    << " " << *log_;
+
 
     }
 

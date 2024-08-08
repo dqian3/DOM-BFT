@@ -234,7 +234,7 @@ namespace dombft
 
             if (requestStates_.count(cseq) == 0)
             {
-                VLOG(2) << "Received certReply for " << cseq << " not in active requests";
+                // VLOG(2) << "Received certReply for " << cseq << " not in active requests";
                 return;
             }
 
@@ -425,7 +425,9 @@ namespace dombft
                     reply.digest(),
                     reply.seq()};
 
-                VLOG(4) << digest_to_hex(reply.digest()).substr(0, 10) << "... " << reply.seq();
+
+
+                VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq();
 
                 matchingReplies[key].insert(replicaId);
                 maxMatching = std::max(maxMatching, matchingReplies[key].size());

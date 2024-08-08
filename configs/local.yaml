@@ -10,7 +10,7 @@ client:
   numRequests: 1000000
   runtimeSeconds: 10 
   normalPathTimeout: 5000
-  slowPathTimeout: 500000
+  slowPathTimeout: 100000
 
 
 # Proxy Info

@@ -55,7 +55,7 @@ namespace dombft
         std::map<int, dombft::proto::FallbackStart> fallbackHistory;
         std::map<int, std::string> fallbackHistorySigs;
 
-        std::queue<dombft::proto::ClientRequest> fallbackQueuedReqs_;
+        std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);

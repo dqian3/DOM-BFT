@@ -1,5 +1,7 @@
 #include "log.h"
 
+#include "utils.h"
+
 #include <glog/logging.h>
 
 LogEntry::LogEntry()
@@ -41,7 +43,8 @@ LogEntry::~LogEntry()
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
 {
-    out << le.seq << ": (" << le.client_id << " ," << le.client_seq << ")";
+    out << le.seq << ": (" << le.client_id << ", " << le.client_seq << ") " 
+        << digest_to_hex(le.digest).substr(56) << " | ";
     return out;
 }
 
@@ -227,10 +230,12 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    for (uint32_t i = l.nextSeq - MAX_SPEC_HIST; i < l.nextSeq; i++)
+    int i = l.nextSeq - MAX_SPEC_HIST;
+    i = i < 0 ? 0 : i; // std::max isn't playing nice
+    for (; i < l.nextSeq; i++)
     {
         int seq = i % MAX_SPEC_HIST;
-        out << l.log[seq].get();
+        out << *l.log[seq];
     }
     return out;
 }
