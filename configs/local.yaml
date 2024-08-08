@@ -1,4 +1,4 @@
-transport: udp
+transport: nng
 
 client:
   ips: 

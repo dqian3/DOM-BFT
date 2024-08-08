@@ -13,6 +13,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <queue>
 #include <span>
 
 #include <yaml-cpp/yaml.h>
@@ -54,6 +55,8 @@ namespace dombft
         std::map<int, dombft::proto::FallbackStart> fallbackHistory;
         std::map<int, std::string> fallbackHistorySigs;
 
+        std::queue<dombft::proto::ClientRequest> fallbackQueuedReqs_;
+
         void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
         void handleClientRequest(const dombft::proto::ClientRequest &request);
         void handleCert(const dombft::proto::Cert &cert);
@@ -64,7 +67,7 @@ namespace dombft
         bool verifyCert(const dombft::proto::Cert &cert);
 
         void startFallback();
-        void handleFalbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
+        void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
         void finishFallback(const dombft::proto::FallbackProposal &history);
 
     public:
