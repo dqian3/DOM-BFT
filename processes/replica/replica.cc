@@ -608,7 +608,7 @@ namespace dombft
         commitCertReplies[reply.replica_id()] = reply;
         commitCertSigs[reply.replica_id()] = std::string(sig.begin(), sig.end());
 
-        std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+        std::map<std::tuple<std::string, int>, std::set<int>> matchingReplies;
 
         for (const auto &entry : commitCertReplies)
         {
@@ -618,9 +618,8 @@ namespace dombft
             // TODO this is ugly lol
             // We don't need client_seq/client_id, these are already checked.
             // We also don't check the result here, that only needs to happen in the fast path
-            std::tuple<std::string, int, int> key = {
+            std::tuple<std::string, int> key = {
                 reply.digest(),
-                reply.instance(),
                 reply.seq()};
 
             matchingReplies[key].insert(replicaId);
@@ -825,6 +824,43 @@ namespace dombft
     }
 
 
+    void Replica::applyFallbackReq(const dombft::proto::LogEntry &entry)
+    {
+        uint32_t clientId = entry.client_id();
+
+        VLOG(2) << log_->nextSeq  << ": c_id=" << clientId << " c_seq=" << entry.client_seq(); 
+
+        log_->addEntry(clientId, entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
+        // TODO add an interface here for adding executed requests!
+
+        Reply reply;
+        
+        reply.set_client_id(clientId);
+        reply.set_client_seq(entry.client_seq());
+        reply.set_replica_id(replicaId_);
+        reply.set_instance(instance_);
+        
+        uint32_t seq = log_->nextSeq - 1;
+        // TODO actually get the result here.
+        log_->executeEntry(seq);
+
+        reply.set_fast(true);
+        reply.set_seq(seq);
+
+        reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+        // VLOG(4) << "Finish Serialization, start signature";
+
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        // VLOG(4) << "Finish signature";
+
+        LOG(INFO) << "Sending reply back to client " << clientId;
+        endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+
+
+    }
+
     void Replica::finishFallback(const FallbackProposal &history)
     {
         // TODO apply FallbackProposal.
@@ -990,10 +1026,7 @@ namespace dombft
             }
 
 
-            VLOG(2) << log_->nextSeq  << ": c_id=" << entry.client_id() << " c_seq=" << entry.client_seq(); 
-
-            log_->addEntry(entry.client_id(), entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
-            // TODO add an interface here for adding executed requests!
+            applyFallbackReq(entry);
             
         }
 
@@ -1005,8 +1038,7 @@ namespace dombft
                 // Already matched
                 if (c_seq <= maxAppliedSeq[c_id]) continue;
                 maxAppliedSeq[c_id] = c_seq; 
-                VLOG(2) << log_->nextSeq << ": c_id=" << c_id << " c_seq=" << c_seq; 
-                log_->addEntry(entry.client_id(), entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
+                applyFallbackReq(entry);
             }
         }
 
@@ -1024,6 +1056,7 @@ namespace dombft
             if (request.client_seq() < maxAppliedSeq[request.client_id()]) {
                 VLOG(2) << "Skipping c_id=" << request.client_id() << " c_seq=" 
                         << request.client_seq() << " since already applied"; 
+                fallbackQueuedReqs_.pop();
                 continue;
             }
 

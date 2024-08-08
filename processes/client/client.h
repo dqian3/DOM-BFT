@@ -26,7 +26,7 @@ namespace dombft
         uint64_t certTime;
         std::set<int> certReplies;
 
-        uint32_t instance_ = 0;
+        uint32_t instance = 0;
 
         std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
         std::optional<dombft::proto::Cert> fallbackProof;

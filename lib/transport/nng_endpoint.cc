@@ -100,7 +100,7 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
         return ret;
     }
 
-    VLOG(4) << "Sending to " << socketToAddr_[addrToSocket_[dstAddr]].GetIPAsString();
+    VLOG(4) << "Sent to " << socketToAddr_[addrToSocket_[dstAddr]].GetIPAsString();
     return 0;
 }
 

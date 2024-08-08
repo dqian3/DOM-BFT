@@ -19,3 +19,13 @@ std::string digest_to_hex(const byte digest[SHA256_DIGEST_LENGTH]) {
     }
     return hexStream.str();
 }
+
+
+std::string digest_to_hex(const std::string &digest) {
+    std::stringstream hexStream;
+    hexStream << std::hex << std::setfill('0');
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        hexStream << std::setw(2) << static_cast<int>(digest[i]);
+    }
+    return hexStream.str();
+}

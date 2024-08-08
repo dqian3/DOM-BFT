@@ -44,25 +44,26 @@ namespace dombft
             exit(1);
         }
 
-
         /** Setup transport */
-        if (config.transport == "nng") {
+        if (config.transport == "nng")
+        {
             auto addrPairs = getClientAddrs(config, clientId_);
 
             endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
 
-            for (size_t i = 0; i < addrPairs.size(); i++) 
+            for (size_t i = 0; i < addrPairs.size(); i++)
             {
             }
 
             size_t nReplicas = config.replicaIps.size();
-            for (size_t i = 0; i < nReplicas; i++) 
+            for (size_t i = 0; i < nReplicas; i++)
                 replicaAddrs_.push_back(addrPairs[i].second);
 
             for (size_t i = nReplicas; i < addrPairs.size(); i++)
                 proxyAddrs_.push_back(addrPairs[i].second);
         }
-        else {
+        else
+        {
             endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
 
             /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
@@ -80,10 +81,10 @@ namespace dombft
                                                 config.replicaPort));
             }
         }
-    
+
         /** Initialize state */
         nextReqSeq_ = 1;
-        
+
         MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
         {
             this->receiveReply(msgHdr, msgBuffer, sender);
@@ -96,22 +97,20 @@ namespace dombft
             {
                 ((Client *)ctx)->checkTimeouts();
             },
-        5000,
-        this);
+            5000,
+            this);
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
 
         terminateTimer_ = std::make_unique<Timer>(
             [config](void *ctx, void *endpoint)
             {
-                LOG(INFO) << "Exiting before after running for " << config.clientRuntimeSeconds  << " seconds";
+                LOG(INFO) << "Exiting before after running for " << config.clientRuntimeSeconds << " seconds";
                 // TODO print some stats
                 exit(0);
             },
             config.clientRuntimeSeconds * 1000000, // timer is in us.
-            this
-        );
-
+            this);
 
         LOG(INFO) << "Client finished initializing";
     }
@@ -162,8 +161,7 @@ namespace dombft
             if (reply.client_id() != clientId_ || requestStates_.count(reply.client_seq()) == 0)
             {
                 // TODO more info?
-                LOG(INFO) << reply.client_id();
-                LOG(INFO) << "Invalid reply!";
+                LOG(INFO) << "Invalid reply! " << reply.client_id() << ", " << reply.client_seq();
                 return;
             }
 
@@ -173,16 +171,18 @@ namespace dombft
                 return;
             }
 
-
             auto &reqState = requestStates_[reply.client_seq()];
 
             VLOG(4) << "Received reply from replica " << reply.replica_id()
+                    << " instance " << reply.instance() 
                     << " for " << reply.client_seq() << " at log pos " << reply.seq()
                     << " after " << GetMicrosecondTimestamp() - reqState.sendTime << " usec";
 
             // TODO handle dups
             reqState.replies[reply.replica_id()] = reply;
             reqState.signatures[reply.replica_id()] = sigProvider_.getSignature(msgHdr, msgBuffer);
+            reqState.instance = std::max(reqState.instance, reply.instance());
+
 
 #if PROTOCOL == PBFT
             if (numReplies_[reply.client_seq()] >= f_ / 3 * 2 + 1)
@@ -226,10 +226,10 @@ namespace dombft
                 return;
             }
 
-            if (certReply.client_id() != clientId_) {
-                VLOG(2) << "Received certReply for client " << certReply.client_id()  << " != " << clientId_;
+            if (certReply.client_id() != clientId_)
+            {
+                VLOG(2) << "Received certReply for client " << certReply.client_id() << " != " << clientId_;
                 return;
- 
             }
 
             if (requestStates_.count(cseq) == 0)
@@ -237,7 +237,7 @@ namespace dombft
                 VLOG(2) << "Received certReply for " << cseq << " not in active requests";
                 return;
             }
-            
+
             auto &reqState = requestStates_[cseq];
 
             reqState.certReplies.insert(certReply.replica_id());
@@ -257,9 +257,9 @@ namespace dombft
             }
         }
 
-
-        if (numCommitted_ >= numRequests_) {
-            LOG(INFO) << "Exiting before after committing " << numRequests_  << " requests";
+        if (numCommitted_ >= numRequests_)
+        {
+            LOG(INFO) << "Exiting before after committing " << numRequests_ << " requests";
             exit(0);
         }
     }
@@ -301,8 +301,6 @@ namespace dombft
         }
 #endif
 
-
-
         nextReqSeq_++;
     }
 
@@ -331,12 +329,15 @@ namespace dombft
 
             if (now - reqState.sendTime > slowPathTimeout_)
             {
-                LOG(INFO) << "Client attempting slow path on request " << clientSeq << " sendTime=" << reqState.sendTime << " now=" << now;
+                LOG(INFO) << "Client attempting fallback on request " << clientSeq
+                          << " sendTime=" << reqState.sendTime << " now=" << now
+                          << "due to timeout";
                 reqState.sendTime = now;
 
                 reqState.fallbackAttempts++;
 
-                if (reqState.fallbackAttempts == 10) {
+                if (reqState.fallbackAttempts == 10)
+                {
                     LOG(ERROR) << "Client failed on request " << clientSeq << " after 10 attempts";
                     exit(1);
                 }
@@ -344,21 +345,23 @@ namespace dombft
                 FallbackTrigger fallbackTriggerMsg;
 
                 fallbackTriggerMsg.set_client_id(clientId_);
-                fallbackTriggerMsg.set_instance(reqState.instance_);
+                fallbackTriggerMsg.set_instance(reqState.instance);
                 fallbackTriggerMsg.set_client_seq(clientSeq);
 
-                if (reqState.fallbackProof.has_value()) {
+                if (reqState.fallbackProof.has_value())
+                {
                     (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
                 }
 
-                // TODO set request data and proof
+                // TODO set request data
                 MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
-                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE); 
+                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr);
                 }
 
+                LOG(ERROR) << "Attempting slow path again in " << slowPathTimeout_ << " usec";
             }
         }
     }
@@ -389,7 +392,7 @@ namespace dombft
             for (; it != reqState.replies.end(); it++)
             {
                 const Reply &rep2 = it->second;
-                if (rep1.instance() != rep2.instance() || rep1.seq() != rep2.seq() || rep1.digest() != rep2.digest() || rep1.result() != rep2.result())
+                if (rep1.seq() != rep2.seq() || rep1.digest() != rep2.digest() || rep1.result() != rep2.result())
                     return;
             }
 
@@ -405,10 +408,10 @@ namespace dombft
         }
         else
         {
-            
+
             // Try and find a certificate or proof of divergent histories
-            std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
-            size_t maxMatching = 0;;
+            std::map<std::tuple<std::string, int>, std::set<int>> matchingReplies;
+            size_t maxMatching = 0;
 
             for (const auto &entry : reqState.replies)
             {
@@ -418,10 +421,11 @@ namespace dombft
                 // TODO this is ugly lol
                 // We don't need client_seq/client_id, these are already checked.
                 // We also don't check the result here, that only needs to happen in the fast path
-                std::tuple<std::string, int, int> key = {
+                std::tuple<std::string, int> key = {
                     reply.digest(),
-                    reply.instance(),
                     reply.seq()};
+
+                VLOG(4) << digest_to_hex(reply.digest()).substr(0, 10) << "... " << reply.seq();
 
                 matchingReplies[key].insert(replicaId);
                 maxMatching = std::max(maxMatching, matchingReplies[key].size());
@@ -439,24 +443,24 @@ namespace dombft
                     }
 
                     reqState.certTime = GetMicrosecondTimestamp();
-                    
+
                     VLOG(1) << "Created cert for request number " << clientSeq;
 
                     return;
-
                 }
             }
 
             // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
-            // we have a proof of inconsistency. 
-            if (reqState.fallbackAttempts == 0 && 3 * f_ + 1 - reqState.replies.size() < 2 * f_ + 1 - maxMatching) {
+            // we have a proof of inconsistency.
+            if (reqState.fallbackAttempts == 0 && 3 * f_ + 1 - reqState.replies.size() < 2 * f_ + 1 - maxMatching)
+            {
                 LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
                 reqState.fallbackProof = Cert();
                 FallbackTrigger fallbackTriggerMsg;
 
                 fallbackTriggerMsg.set_client_id(clientId_);
-                fallbackTriggerMsg.set_instance(reqState.instance_);
+                fallbackTriggerMsg.set_instance(reqState.instance);
                 fallbackTriggerMsg.set_client_seq(clientSeq);
 
                 // TODO check if fast path is not posssible, and we can send cert right away
@@ -473,13 +477,12 @@ namespace dombft
 
                 reqState.sendTime = GetMicrosecondTimestamp();
                 MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
-                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE); 
+                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
                 for (const Address &addr : replicaAddrs_)
                 {
                     endpoint_->SendPreparedMsgTo(addr);
                 }
             }
-
         }
     }
 
