@@ -546,6 +546,10 @@ namespace dombft
                 commitCertReplies.clear();
                 commitCertSigs.clear();
                 log_->createCommitPoint(seq);
+
+
+                memcpy(log_->tentativeCommitPoint->logDigest, log_->getDigest(seq), SHA256_DIGEST_LENGTH);
+                memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
             }
         }
     }
@@ -587,6 +591,11 @@ namespace dombft
             commitCertReplies.clear();
             commitCertSigs.clear();
             log_->createCommitPoint(reply.seq());
+
+
+            // TODO set these yourself later
+            memcpy(log_->tentativeCommitPoint->logDigest, reply.digest().c_str(), SHA256_DIGEST_LENGTH);
+            memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
         }
 
         if (reply.seq() != log_->tentativeCommitPoint->seq)
@@ -681,7 +690,7 @@ namespace dombft
             LOG(INFO) << "Commit message from " << commitMsg.replica_id() << " does not match current commit!";
 
             VLOG(3) << "commitMsg.seq=" << commitMsg.seq() << " point.seq=" << point.seq << 
-                "\ncommitMsg.log_digest: " << digest_to_hex((const byte *) commitMsg.log_digest().c_str()) << 
+                "\ncommitMsg.log_digest: " << digest_to_hex(commitMsg.log_digest()) << 
                 "\n    point.log_digest: " << digest_to_hex(point.logDigest);
 
             return;
@@ -1004,7 +1013,7 @@ namespace dombft
             // TODO fix namespaces lol
             std::shared_ptr<::LogEntry> myEntry = log_->log[entry.seq() % MAX_SPEC_HIST];
             if (myEntry->seq != entry.seq()) {
-                LOG(ERROR) << "attempt to access log seq not in my log!";
+                LOG(ERROR) << "attempt to access log seq not in my log!" << myEntry->seq << " " << entry.seq() ;
                 exit(1);
             }
 

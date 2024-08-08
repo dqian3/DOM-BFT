@@ -32,23 +32,30 @@ def local(c, config_file):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
-            hdl = arun(
-                f"./bazel-bin/processes/replica/dombft_replica -v {5} -config {config_file} -replicaId {id} &>logs/replica{id}.log")
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {5} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
+            hdl = arun(cmd)
+            print(cmd)
             other_handles.append(hdl)
 
         for id in range(n_receivers):
-            hdl = arun(
-                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log")
+            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log"
+            hdl = arun(cmd)
+            print(cmd)
+
             other_handles.append(hdl)
 
         for id in range(n_proxies):
-            hdl = arun(
-                f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log")
+            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log"
+            hdl = arun(cmd)
+            print(cmd)
+
             other_handles.append(hdl)
 
         for id in range(n_clients):
-            hdl = arun(
-                f"./bazel-bin/processes/client/dombft_client -v {5} -config {config_file} -clientId {id} &>logs/client{id}.log")
+            cmd = f"./bazel-bin/processes/client/dombft_client -v {5} -config {config_file} -clientId {id} &>logs/client{id}.log"
+            hdl = arun(cmd)
+            print(cmd)
+
             client_handles.append(hdl)
 
     try:
