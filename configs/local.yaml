@@ -45,3 +45,6 @@ replica:
   - "127.0.0.4"
   port: 34000
   keysDir: "keys/replica"
+  fallbackTimeout: 200000
+  fallbackStartTimeout: 50000
+

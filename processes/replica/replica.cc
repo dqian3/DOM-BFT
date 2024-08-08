@@ -112,7 +112,7 @@ namespace dombft
                 endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
                 this->startFallback();
             },
-            10000,
+            config.replicaFallbackStartTimeout,
             this
         );
 
@@ -125,7 +125,7 @@ namespace dombft
                 exit(1); // TODO
                 this->startFallback();
             },
-            20000,
+            config.replicaFallbackTimeout,
             this
         );
     }
