@@ -30,6 +30,7 @@ struct ProcessConfig
     int clientRuntimeSeconds;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
+    int clientSendRate; 
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -101,6 +102,7 @@ struct ProcessConfig
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
+            clientSendRate = parseField<int>(clientNode, "sendRate");
 
         }
         

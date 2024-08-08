@@ -11,6 +11,7 @@ client:
   runtimeSeconds: 60 
   normalPathTimeout: 5000
   slowPathTimeout: 500000
+  sendRate: 100
 
 
 # Proxy Info

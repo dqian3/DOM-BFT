@@ -24,10 +24,11 @@ namespace dombft
         slowPathTimeout_ = config.clientSlowPathTimeout;
 
         // TODO make this some sort of config
-        LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
-        maxInFlight_ = config.clientMaxRequests;
         LOG(INFO) << "Sending " << config.clientNumRequests << " requests!";
         numRequests_ = config.clientNumRequests;
+
+        clientSendRate_ = config.clientSendRate;
+        LOG(INFO) << "Send rate: " << clientSendRate_;
 
         /* Setup keys */
         std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -101,6 +102,18 @@ namespace dombft
 
         endpoint_->RegisterTimer(timeoutTimer_.get());
 
+        sendTimer_ = std::make_unique<Timer>(
+            [](void *ctx, void *endpoint)
+            {
+                LOG(INFO) << "send timer triggered";
+                ((Client *)ctx)->submitRequest();
+            },
+            1000000 / clientSendRate_,
+            this
+        );  
+
+        endpoint_->RegisterTimer(sendTimer_.get());
+
         terminateTimer_ = std::make_unique<Timer>(
             [config](void *ctx, void *endpoint)
             {
@@ -123,11 +136,6 @@ namespace dombft
 
     void Client::run()
     {
-        // Submit first request
-        for (uint32_t i = 0; i < maxInFlight_; i++)
-        {
-            submitRequest();
-        }
         endpoint_->LoopRun();
     }
 
@@ -200,7 +208,6 @@ namespace dombft
                     exit(0);
                 }
 
-                SubmitRequest();
             }
 
 #else
@@ -253,7 +260,6 @@ namespace dombft
                 requestStates_.erase(cseq);
                 numCommitted_++;
 
-                submitRequest();
             }
         }
 
@@ -375,7 +381,6 @@ namespace dombft
 
             requestStates_.erase(clientSeq);
             numCommitted_++;
-            submitRequest();
         }
         else
         {
