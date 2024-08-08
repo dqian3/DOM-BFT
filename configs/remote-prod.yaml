@@ -1,4 +1,4 @@
-transport: nng
+transport: udp
 
 client:
   ips:
@@ -7,7 +7,7 @@ client:
   - 10.142.0.4
   - 10.202.0.3
   keysDir: keys/client
-  maxRequests: 20
+  maxRequests: 5
   numRequests: 1000000
   runtimeSeconds: 20 
   port: 33000
@@ -24,7 +24,7 @@ proxy:
   - 10.142.0.3
   - 10.150.0.2
   keysDir: keys/proxy
-  maxOwd: 200000
+  maxOwd: 100000
   measurementPort: 32000
   shards: 1
 

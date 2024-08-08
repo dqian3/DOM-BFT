@@ -122,12 +122,11 @@ namespace dombft
             }
             VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd();
 
-            if (reply.owd() > 0)
-            {
-                context.addMeasure(reply.receiver_id(), reply.owd());
-                latencyBound_.store(context.getOWD());
-                VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
-            }
+            context.addMeasure(reply.receiver_id(), reply.owd());
+            // TODO a little buffer :)
+            latencyBound_.store(context.getOWD() * 1.5);
+            VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
+        
         };
 
         /* Checks every 10ms to see if we are done*/
