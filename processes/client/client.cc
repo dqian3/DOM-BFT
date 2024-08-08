@@ -111,7 +111,7 @@ namespace dombft
             config.clientRuntimeSeconds * 1000000, // timer is in us.
             this
         );
-
+        endpoint_->RegisterTimer(terminateTimer_.get());
 
         LOG(INFO) << "Client finished initializing";
     }
