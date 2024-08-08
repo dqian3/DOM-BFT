@@ -110,7 +110,9 @@ namespace dombft
                 exit(0);
             },
             config.clientRuntimeSeconds * 1000000, // timer is in us.
-            this);
+            this
+        );
+        endpoint_->RegisterTimer(terminateTimer_.get());
 
         LOG(INFO) << "Client finished initializing";
     }
