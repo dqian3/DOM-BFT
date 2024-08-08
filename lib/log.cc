@@ -202,7 +202,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
     }
 
 
-    for (uint32_t i = commitPoint.seq + 1; i < nextSeq; i++) {
+    for (int i = commitPoint.seq + 1; i < nextSeq; i++) {
         dombft::proto::LogEntry* entryProto = msg.add_log_entries();
         LogEntry &entry = *log[i % log.size()];
         

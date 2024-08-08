@@ -854,6 +854,10 @@ namespace dombft
 
 
         uint32_t maxSeq = 0;
+
+        // Idx of log we will use to match our logs to the fallback agreed upon logs.
+        uint32_t logToUseIdx = 0;
+
         const Cert* maxSeqCert = nullptr;
 
         for (int i = 0; i < history.logs().size(); i++)
@@ -874,6 +878,7 @@ namespace dombft
                         << " c_seq=" << entry.cert().replies()[0].client_seq();
 
                     maxSeqCert = &entry.cert();
+                    logToUseIdx = i;
                 }
             }
         }
@@ -886,6 +891,7 @@ namespace dombft
         // Counts of matching digests for each seq coming after max cert
         std::map<uint32_t, std::map<std::string, int>> matchingEntries;
         std::map<uint32_t, uint32_t> maxMatchSeq;
+        std::map<uint32_t, uint32_t> maxAppliedSeq;
 
         // TODO save this info in the checkpoint
         std::map<uint32_t, std::map<uint32_t, const LogEntry&>> clientReqs;
@@ -895,13 +901,11 @@ namespace dombft
             auto &log  = history.logs()[i];
             // TODO verify each checkpoint 
 
-            auto &reqs = clientReqs[log.replica_id()];
-
             for (const dombft::proto::LogEntry& entry : log.log_entries()) {
                 if (entry.seq() <= certSeq) continue;
 
                 matchingEntries[entry.seq()][entry.digest()]++;
-                reqs.emplace(entry.client_seq(), entry);
+                clientReqs[entry.client_id()].emplace(entry.client_seq(), entry);
 
                 if (matchingEntries[entry.seq()][entry.digest()] == f_ + 1) {
                     VLOG(4) << "f + 1 matching digests found for seq=" << entry.seq()
@@ -909,8 +913,9 @@ namespace dombft
                         << " c_seq=" << entry.client_seq();
 
                     maxMatchSeq[entry.client_id()] = std::max(maxMatchSeq[entry.client_id()], entry.client_seq());
+                    maxAppliedSeq[entry.client_id()] = maxMatchSeq[entry.client_id()]; 
+                    logToUseIdx = i;
                 }
-
             }
         }
 
@@ -926,7 +931,7 @@ namespace dombft
 
         const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
         std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
-        if (maxCheckpoint.log_digest() != myDigest)
+        if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest)
         {
             LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq() 
                 << "). state transfer is not implemented, exiting...";
@@ -950,25 +955,64 @@ namespace dombft
         }
 
 
-        LOG(INFO) << "Applying requests up to cert";
+        LOG(INFO) << "Applying requests up to cert and with f + 1 requests";
+
+        // TODO rollback
+
+        auto &logToUse = history.logs()[logToUseIdx].log_entries();
+        for (const dombft::proto::LogEntry &entry : logToUse) {
+            if (entry.seq() <= maxCheckpointSeq) continue;
+
+            // TODO skip ones already in our log.
+            // TODO access entry needs to be cleaner than this
+            // TODO fix namespaces lol
+            std::shared_ptr<::LogEntry> myEntry = log_->log[entry.seq() % MAX_SPEC_HIST];
+            if (myEntry->seq != entry.seq()) {
+                LOG(ERROR) << "attempt to access log seq not in my log!";
+                exit(1);
+            }
 
 
+            std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
+            if (myDigest == entry.digest()) {
+                VLOG(2) << "Skipping c_id=" << entry.client_id() << " c_seq=" << entry.client_seq()
+                        << " since already in log at seq=" << entry.seq();
+                continue;
+            }
 
 
-        LOG(INFO) << "Applying requests with f + 1";
-
+            VLOG(2) << "c_id=" << entry.client_id() << " c_seq=" << entry.client_seq(); 
+        }
 
 
         LOG(INFO) << "Applying rest of requests in histories";
+
+        for (auto &[c_id, reqs] : clientReqs) {
+            for (auto &[c_seq, request] : reqs) {
+                // Already matched
+                if (c_seq <= maxMatchSeq[c_id]) continue;
+                maxAppliedSeq[c_id] = c_seq; 
+                VLOG(2) << "c_id=" << c_id << " c_seq=" << c_seq; 
+            }
+        }
 
 
         // Add rest of the requests in.
 
         LOG(INFO) << "Finishing fallback by applying the rest of the queued requests!";
-
         fallback_ = false;
+        endpoint_->UnRegisterTimer(fallbackTimer_.get());
+
+
         while (!fallbackQueuedReqs_.empty())
         {
+            ClientRequest &request = fallbackQueuedReqs_.front();
+            if (request.client_seq() < maxAppliedSeq[request.client_id()]) {
+                VLOG(2) << "Skipping c_id=" << request.client_id() << " c_seq=" 
+                        << request.client_seq() << " since already applied"; 
+                continue;
+            }
+
             handleClientRequest(fallbackQueuedReqs_.front());
             fallbackQueuedReqs_.pop();
         }
