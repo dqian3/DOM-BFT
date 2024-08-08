@@ -1012,8 +1012,8 @@ namespace dombft
             // TODO access entry needs to be cleaner than this
             // TODO fix namespaces lol
             std::shared_ptr<::LogEntry> myEntry = log_->log[entry.seq() % MAX_SPEC_HIST];
-            if (myEntry->seq != entry.seq()) {
-                LOG(ERROR) << "attempt to access log seq not in my log!" << myEntry->seq << " " << entry.seq() ;
+            if (entry.seq() < log_->nextSeq && myEntry->seq != entry.seq()) {
+                LOG(ERROR) << "attempt to access log seq not in my log! " << myEntry->seq << " " << entry.seq() ;
                 exit(1);
             }
 
@@ -1067,7 +1067,7 @@ namespace dombft
 
         for (auto &[_, request]: fallbackQueuedReqs_)
         {
-            if (request.client_seq() < maxAppliedSeq[request.client_id()]) {
+            if (request.client_seq() <= maxAppliedSeq[request.client_id()]) {
                 VLOG(2) << "Skipping c_id=" << request.client_id() << " c_seq=" 
                         << request.client_seq() << " since already applied"; 
                 continue;
