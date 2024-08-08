@@ -857,6 +857,7 @@ namespace dombft
 
         // Idx of log we will use to match our logs to the fallback agreed upon logs.
         uint32_t logToUseIdx = 0;
+        uint32_t logToUseSeq = 0;
 
         const Cert* maxSeqCert = nullptr;
 
@@ -871,7 +872,7 @@ namespace dombft
                 if (entry.seq() <= maxCheckpointSeq) continue;
 
                 // TODO verify cert
-                if (entry.cert().replies()[0].seq() > maxSeq)
+                if (entry.seq() > maxSeq)
                 {
                     VLOG(4) << "Cert found for seq=" << entry.seq()
                         << " c_id=" << entry.cert().replies()[0].client_id()
@@ -879,6 +880,7 @@ namespace dombft
 
                     maxSeqCert = &entry.cert();
                     logToUseIdx = i;
+                    logToUseSeq = entry.seq();
                 }
             }
         }
@@ -915,6 +917,7 @@ namespace dombft
                     maxMatchSeq[entry.client_id()] = std::max(maxMatchSeq[entry.client_id()], entry.client_seq());
                     maxAppliedSeq[entry.client_id()] = maxMatchSeq[entry.client_id()]; 
                     logToUseIdx = i;
+                    logToUseSeq = entry.seq();
                 }
             }
         }
@@ -959,10 +962,12 @@ namespace dombft
 
         // TODO rollback
 
+        bool rollbackDone = false;
+
         auto &logToUse = history.logs()[logToUseIdx].log_entries();
         for (const dombft::proto::LogEntry &entry : logToUse) {
             if (entry.seq() <= maxCheckpointSeq) continue;
-
+            if (entry.seq() > logToUseSeq) break;
             // TODO skip ones already in our log.
             // TODO access entry needs to be cleaner than this
             // TODO fix namespaces lol
@@ -979,20 +984,29 @@ namespace dombft
                         << " since already in log at seq=" << entry.seq();
                 continue;
             }
+            // TODO Rollback application state here!
+            if (!rollbackDone) {
+                log_->nextSeq = entry.seq();
+            }
 
 
-            VLOG(2) << "c_id=" << entry.client_id() << " c_seq=" << entry.client_seq(); 
+            VLOG(2) << log_->nextSeq  << ": c_id=" << entry.client_id() << " c_seq=" << entry.client_seq(); 
+
+            log_->addEntry(entry.client_id(), entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
+            // TODO add an interface here for adding executed requests!
+            
         }
 
 
         LOG(INFO) << "Applying rest of requests in histories";
 
         for (auto &[c_id, reqs] : clientReqs) {
-            for (auto &[c_seq, request] : reqs) {
+            for (auto &[c_seq, entry] : reqs) {
                 // Already matched
-                if (c_seq <= maxMatchSeq[c_id]) continue;
+                if (c_seq <= maxAppliedSeq[c_id]) continue;
                 maxAppliedSeq[c_id] = c_seq; 
-                VLOG(2) << "c_id=" << c_id << " c_seq=" << c_seq; 
+                VLOG(2) << log_->nextSeq << ": c_id=" << c_id << " c_seq=" << c_seq; 
+                log_->addEntry(entry.client_id(), entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
             }
         }
 
@@ -1019,5 +1033,5 @@ namespace dombft
 
     }
 
-
+ 
 } // namespace dombft
