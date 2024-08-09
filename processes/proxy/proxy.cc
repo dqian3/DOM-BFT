@@ -37,7 +37,7 @@ namespace dombft
             forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
             measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
 
-            for (int i = nClients; i < forwardAddrs.size(); i++)
+            for (uint32_t i = nClients; i < forwardAddrs.size(); i++)
             {
                 receiverAddrs_.push_back(forwardAddrs[i].second);
             }
@@ -108,9 +108,16 @@ namespace dombft
 
     void Proxy::RecvMeasurementsTd()
     {
-
-        OWDCalc::MeasureContext context(numReceivers_, OWDCalc::PercentileStrategy(90, 10, maxOWD_), maxOWD_);
-        MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender)
+        /// START PROFILE DIFF
+        std::string fname = "diff.csv";
+        std::ofstream ofs(fname, std::ofstream::out);
+        fname = "queue_len.csv";
+        std::ofstream ofs_1(fname, std::ofstream::out);
+        ofs_1 << "time,queue_len"<<std::endl;
+        /// END PROFILE DIFF
+        // OWDCalc::PercentileCtx context(numReceivers_,maxOWD_,10,90, maxOWD_);
+        OWDCalc::MaxCtx context(numReceivers_,maxOWD_);
+        MessageHandlerFunc handleMeasurementReply = [this, &context, &ofs, &ofs_1](MessageHeader *hdr, void *body, Address *sender)
         {
             MeasurementReply reply;
 
@@ -120,12 +127,15 @@ namespace dombft
                 LOG(ERROR) << "Unable to parse Measurement_Reply message";
                 return;
             }
+            ofs<< reply.diff()<<std::endl;
+            ofs_1<<reply.send_time() << ","<<reply.queue_len()<<std::endl;
             VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd();
+
 
             if (reply.owd() > 0)
             {
                 context.addMeasure(reply.receiver_id(), reply.owd());
-                latencyBound_.store(context.getOWD());
+                latencyBound_.store(context.getCappedMaxOWD());
                 VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
             }
         };

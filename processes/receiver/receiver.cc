@@ -112,6 +112,9 @@ namespace dombft
             MeasurementReply mReply;
             mReply.set_receiver_id(receiverId_);
             mReply.set_owd(recv_time - request.send_time());
+            mReply.set_diff(request.deadline() - recv_time);
+            mReply.set_queue_len(deadlineQueue_.size());
+            mReply.set_send_time(recv_time);
             VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
@@ -123,6 +126,7 @@ namespace dombft
 
             VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
                     << " deadline=" << request.deadline() << " now=" << recv_time;
+
 
             if (request.late())
             {
@@ -154,7 +158,7 @@ namespace dombft
             VLOG(1) << "Forwarding Request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
                     << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+            endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
             // TODO check errors for all of these lol
             // TODO do this while waiting, not in the critical path
 
