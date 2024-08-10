@@ -1,4 +1,4 @@
-transport: udp
+transport: nng
 
 client:
   ips:
@@ -13,8 +13,6 @@ client:
   port: 33000
   normalPathTimeout: 100000
   slowPathTimeout:   2000000
-
-
 
 proxy:
   forwardPort: 31000

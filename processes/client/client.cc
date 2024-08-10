@@ -326,6 +326,7 @@ namespace dombft
                     endpoint_->SendPreparedMsgTo(addr);
                 }
 
+                VLOG(1) << "Cert sent!";
                 reqState.certTime = now; // timeout again later
             }
 

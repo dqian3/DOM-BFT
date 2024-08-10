@@ -330,7 +330,7 @@ namespace dombft
                 return;
             }
 
-            if (msg.instance() != replicaId_ % replicaAddrs_.size()) {
+            if (msg.instance() != (replicaId_ % replicaAddrs_.size())) {
                 LOG(INFO) << "Received FALLBACK_START for instance where I am not leader";
                 return;
             }
