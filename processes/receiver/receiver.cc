@@ -99,7 +99,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
 
         // Check if request is on time.
@@ -119,6 +119,15 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
             VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
                     << request.deadline() - recv_time << "us";
             deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+
+            // Check if timer is firing before deadline
+            uint64_t now = GetMicrosecondTimestamp();
+            uint64_t nextCheck = request.deadline() - now;
+
+            if (nextCheck <= endpoint_->GetTimerRemaining(fwdTimer_.get())) {
+                endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+                VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
+            }
         }
     }
 }
@@ -138,18 +147,19 @@ void Receiver::forwardRequest(const DOMRequest &request)
         // TODO do this while waiting, not in the critical path
 
 #if FABRIC_CRYPTO
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
         endpoint_->SendPreparedMsgTo(replicaAddr_);
     }
 }
 
-// TODO: there is probably a smarter way than just having this poll every so often
 void Receiver::checkDeadlines()
 {
     uint64_t now = GetMicrosecondTimestamp();
 
     auto it = deadlineQueue_.begin();
+
+    VLOG(3) << "Checking deadlines";
 
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
@@ -159,6 +169,11 @@ void Receiver::checkDeadlines()
         deadlineQueue_.erase(it);
         it = temp;
     }
+
+    uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
+    VLOG(3) << "Next deadline check in " << nextCheck << "us";
+
+    endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 
 }   // namespace dombft
