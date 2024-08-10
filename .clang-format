@@ -1,0 +1,24 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+# Must be 120 characters or less!
+ColumnLimit: 120
+# does (int) x instead of (int)x
+SpaceAfterCStyleCast: true
+# spaces, not tabs!
+UseTab: Never
+AlignTrailingComments: true
+SpacesBeforeTrailingComments: 3
+
+AlignConsecutiveMacros: Consecutive
+AlignAfterOpenBrack: BlockIndent
+# Makes functions clearer
+BreakConstructorInitializers: BeforeComma
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+
+UseCRLF: false
+
+NamespaceIndentation: None
+
+AccessModifierOffset: -4
