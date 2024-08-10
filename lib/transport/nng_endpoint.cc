@@ -2,41 +2,36 @@
 
 #include <nng/protocol/pair0/pair.h>
 
-NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, const Address &otherAddr, byte *recvBuffer)
+NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, const Address &otherAddr,
+                                     byte *recvBuffer)
     : handlerFunc_(msghdl)
     , sock_(s)
     , srcAddr_(otherAddr)
     , recvBuffer_(recvBuffer)
     , evWatcher_(std::make_unique<ev_io>())
 {
-    evWatcher_->data = (void *)this;
+    evWatcher_->data = (void *) this;
 
     ev_init(evWatcher_.get(), [](struct ev_loop *loop, struct ev_io *w, int revents) {
-        NngMessageHandler* m = (NngMessageHandler*)(w->data);
+        NngMessageHandler *m = (NngMessageHandler *) (w->data);
         int ret;
         size_t len = NNG_BUFFER_SIZE;
-        
+
         if ((ret = nng_recv(m->sock_, m->recvBuffer_, &len, 0)) != 0) {
             LOG(ERROR) << "nng_recv failure: " << nng_strerror(ret);
             return;
         }
-        
-        
-        if (len > sizeof(MessageHeader)) 
-        {
-            MessageHeader* hdr = (MessageHeader*)(void*)(m->recvBuffer_);
-            if (len >= sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen) 
-            {
-                m->handlerFunc_(hdr, m->recvBuffer_ + sizeof(MessageHeader),
-                                &(m->srcAddr_));
+
+        if (len > sizeof(MessageHeader)) {
+            MessageHeader *hdr = (MessageHeader *) (void *) (m->recvBuffer_);
+            if (len >= sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen) {
+                m->handlerFunc_(hdr, m->recvBuffer_ + sizeof(MessageHeader), &(m->srcAddr_));
             }
         }
-
     });
 }
 
-NngMessageHandler::~NngMessageHandler() {
-}
+NngMessageHandler::~NngMessageHandler() {}
 
 NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPairs, bool isMasterReceiver)
     : Endpoint(isMasterReceiver)
@@ -70,12 +65,11 @@ NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPai
         socks_.push_back(sock);
         addrToSocket_[connAddr] = socks_.size() - 1;
         socketToAddr_[socks_.size() - 1] = connAddr;
-
-    } 
-
+    }
 }
 
-NngEndpoint::~NngEndpoint() {
+NngEndpoint::~NngEndpoint()
+{
     for (nng_socket sock : socks_) {
         nng_close(sock);
     }
@@ -83,19 +77,16 @@ NngEndpoint::~NngEndpoint() {
 
 int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
 {
-    MessageHeader *hdr = (MessageHeader *)sendBuffer_;
+    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
 
-    if (addrToSocket_.count(dstAddr) == 0)
-    {
-        LOG(ERROR) << "Attempt to send to unregistered address " << dstAddr.ip_ 
-            << ":" << dstAddr.port_;
+    if (addrToSocket_.count(dstAddr) == 0) {
+        LOG(ERROR) << "Attempt to send to unregistered address " << dstAddr.ip_ << ":" << dstAddr.port_;
         return -1;
     }
 
     nng_socket s = socks_[addrToSocket_[dstAddr]];
     int ret = nng_send(s, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0);
-    if (ret != 0)
-    {
+    if (ret != 0) {
         VLOG(1) << "\tSend Fail " << nng_strerror(ret);
         return ret;
     }
@@ -108,8 +99,8 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
 {
     int ret;
 
-    // We bind separate NngMessageHandler to each socket, each with a different context, 
-    // so that the handler can identify which socket it 
+    // We bind separate NngMessageHandler to each socket, each with a different context,
+    // so that the handler can identify which socket it
     for (int i = 0; i < socks_.size(); i++) {
         nng_socket sock = socks_[i];
         Address &connAddr = socketToAddr_[i];
@@ -119,17 +110,14 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
         int fd;
         if ((ret = nng_socket_get_int(sock, NNG_OPT_RECVFD, &fd)) != 0) {
             nng_close(sock);
-            LOG(ERROR) << "Error getting recv fd: "  << nng_strerror(ret);
+            LOG(ERROR) << "Error getting recv fd: " << nng_strerror(ret);
         }
 
         // TODO recvBuffer is passed as a raw pointer here
         handlers_.push_back(std::make_unique<NngMessageHandler>(hdl, sock, connAddr, recvBuffer_));
         ev_io_set(handlers_.back()->evWatcher_.get(), fd, EV_READ);
         ev_io_start(evLoop_, handlers_.back()->evWatcher_.get());
-
-
     }
-
 
     return true;
 }

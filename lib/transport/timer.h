@@ -1,16 +1,16 @@
 #ifndef TIMER_H
 #define TIMER_H
 
+#include "lib/transport/address.h"
 #include <arpa/inet.h>
 #include <ev.h>
 #include <fcntl.h>
+#include <functional>
 #include <glog/logging.h>
 #include <google/protobuf/message.h>
 #include <netinet/in.h>
-#include <functional>
 #include <set>
 #include <string>
-#include "lib/transport/address.h"
 
 /**
  * Timer is an encapsulation of libev-based message handler (i.e.
@@ -33,26 +33,24 @@
 
 typedef std::function<void(void *, void *)> TimerFunc;
 
-struct Timer
-{
+struct Timer {
     std::function<void(void *, void *)> timerFunc_;
     void *context_;
     void *attachedEndpoint_;
     struct ev_timer *evTimer_;
 
-    Timer(TimerFunc timerf, uint32_t periodUs = 1, void *ctx = NULL,
-          void *aep = NULL)
-        : timerFunc_(timerf), context_(ctx), attachedEndpoint_(aep)
+    Timer(TimerFunc timerf, uint32_t periodUs = 1, void *ctx = NULL, void *aep = NULL)
+        : timerFunc_(timerf)
+        , context_(ctx)
+        , attachedEndpoint_(aep)
     {
         evTimer_ = new ev_timer();
-        evTimer_->data = (void *)this;
+        evTimer_->data = (void *) this;
         evTimer_->repeat = periodUs * 1e-6;
-        ev_init(evTimer_,
-                [](struct ev_loop *loop, struct ev_timer *w, int revents)
-                {
-                    Timer *t = (Timer *)(w->data);
-                    t->timerFunc_(t->context_, t->attachedEndpoint_);
-                });
+        ev_init(evTimer_, [](struct ev_loop *loop, struct ev_timer *w, int revents) {
+            Timer *t = (Timer *) (w->data);
+            t->timerFunc_(t->context_, t->attachedEndpoint_);
+        });
     }
     ~Timer() { delete evTimer_; }
 };

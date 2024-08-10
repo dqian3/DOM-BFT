@@ -24,7 +24,7 @@ enum MessageType {
     FALLBACK_START = 10,
     FALLBACK_PROPOSAL = 11,
     FALLBACK_EXECUTED = 12,
-    
+
     DUMMY_PROTO = 13
 };
 

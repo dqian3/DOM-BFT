@@ -1,19 +1,19 @@
 #ifndef ENDPOINT_H
 #define ENDPOINT_H
 
+#include "lib/common_struct.h"
+#include "lib/transport/address.h"
+#include "lib/transport/message_handler.h"
+#include "lib/transport/timer.h"
 #include <arpa/inet.h>
 #include <ev.h>
 #include <fcntl.h>
+#include <functional>
 #include <glog/logging.h>
 #include <google/protobuf/message.h>
 #include <netinet/in.h>
-#include <functional>
 #include <set>
 #include <string>
-#include "lib/transport/address.h"
-#include "lib/common_struct.h"
-#include "lib/transport/message_handler.h"
-#include "lib/transport/timer.h"
 
 /**
  * Endpoint is the basic abstraction we use for communcation, and can be
@@ -27,12 +27,11 @@
  * message handler
  * (3) Conduct periodic actions according to (pre-registered)
  * customized timer functions.
- * 
- * For convenience, we also have the endpoint 
+ *
+ * For convenience, we also have the endpoint
  * (4) Provide a buffer and an interface for sending a message to a specified address
  */
-class Endpoint
-{
+class Endpoint {
 protected:
     /** The ev_loop struct from libev, which uses to handle io/timer events */
     struct ev_loop *evLoop_;
@@ -44,11 +43,10 @@ protected:
     byte sendBuffer_[SEND_BUFFER_SIZE];
 
 public:
-    int epId_; // The id of the endpoint, mainly for debug
+    int epId_;   // The id of the endpoint, mainly for debug
 
     Endpoint(const bool isMasterReceiver = false);
     virtual ~Endpoint();
-
 
     // -------------------- Socket/IO Handling --------------------
 
@@ -58,9 +56,8 @@ public:
      */
     virtual bool RegisterMsgHandler(MessageHandlerFunc msgHdl) = 0;
 
-
     // -------------------- Timer Handling --------------------
-    // The timer handling is slightly more complicated, since we may need to 
+    // The timer handling is slightly more complicated, since we may need to
     // register and destroy timers
 
     /** Return true if the timer is successfully registered, otherwise (e.g. it
@@ -68,8 +65,8 @@ public:
     bool RegisterTimer(Timer *timer);
 
     bool ResetTimer(Timer *timer);
-    bool ResetTimer(Timer *timer, uint32_t timeout_us); 
-    
+    bool ResetTimer(Timer *timer, uint32_t timeout_us);
+
     /** Return true if the timer is successfully unregistered, otherwise (e.g. the
      * timer has not been registered before), return false */
     bool UnRegisterTimer(Timer *timer);
@@ -80,18 +77,13 @@ public:
 
     void UnRegisterAllTimers();
 
-
     // -------------------- Message Sending --------------------
 
     // Loads message with header prepended into buffer and sets
     // bufReady to true. TODO get some info about buffer size.
-    MessageHeader *PrepareMsg(const byte *msg,
-                  u_int32_t msgLen,
-                  byte msgType);
+    MessageHeader *PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType);
 
-    MessageHeader *PrepareProtoMsg(
-        const google::protobuf::Message &msg,
-        const byte msgType);
+    MessageHeader *PrepareProtoMsg(const google::protobuf::Message &msg, const byte msgType);
 
     // Sends message in buffer to address specifed in dstAddr.
     // Note that the MessageHeader that PrepareMsg creates contains

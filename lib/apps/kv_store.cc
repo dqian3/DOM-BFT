@@ -2,15 +2,12 @@
 
 #include "proto/dombft_apps.pb.h"
 
-
 using namespace dombft::apps;
 
-KVStore::~KVStore() {
-    
-}
+KVStore::~KVStore() {}
 
 std::unique_ptr<AppResponse> KVStore::execute(const AppRequest &request)
-{    
+{
     KVRequest *kvReq = (KVRequest *) &request;
     std::unique_ptr<KVResponse> ret = std::make_unique<KVResponse>();
 
@@ -25,19 +22,18 @@ std::unique_ptr<AppResponse> KVStore::execute(const AppRequest &request)
         }
 
     } else if (kvReq->msg_type() == KVRequestType::SET) {
-        data[key] = kvReq->value(); // TODO check value is there            
-        ret->set_ok(true);    
+        data[key] = kvReq->value();   // TODO check value is there
+        ret->set_ok(true);
     } else if (kvReq->msg_type() == KVRequestType::DELETE) {
         if (data.count(key)) {
             data.erase(key);
             ret->set_ok(true);
         } else {
             ret->set_ok(false);
-        } 
-    } 
-    else {
+        }
+    } else {
         return nullptr;
     }
-    
-    return ret;    
+
+    return ret;
 }
