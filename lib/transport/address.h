@@ -21,7 +21,7 @@
  */
 
 class Address {
-  public:
+public:
     std::string ip_;
     int port_;
     struct sockaddr_in addr_;

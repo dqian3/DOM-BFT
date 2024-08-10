@@ -32,7 +32,7 @@
  * (4) Provide a buffer and an interface for sending a message to a specified address
  */
 class Endpoint {
-  protected:
+protected:
     /** The ev_loop struct from libev, which uses to handle io/timer events */
     struct ev_loop *evLoop_;
     /** One endpoint can have multiple timers registered. We maintain a set to
@@ -42,7 +42,7 @@ class Endpoint {
 
     byte sendBuffer_[SEND_BUFFER_SIZE];
 
-  public:
+public:
     int epId_;   // The id of the endpoint, mainly for debug
 
     Endpoint(const bool isMasterReceiver = false);

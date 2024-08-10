@@ -1,4 +1,4 @@
-#include "processes/process_config.h"
+t#include "processes/process_config.h"
 #include "replica.h"
 
 DEFINE_string(config, "configs/replica.yaml", "The config file for the replica");

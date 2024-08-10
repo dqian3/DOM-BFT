@@ -14,14 +14,14 @@ struct UDPMessageHandler {
 };
 
 class UDPEndpoint : public Endpoint {
-  protected:
+protected:
     /** The socket fd it uses to send/recv messages */
     int fd_;
     /* data */
     std::unique_ptr<UDPMessageHandler> msgHandler_;
     bool bound_ = false;
 
-  public:
+public:
     UDPEndpoint(const std::string &ip, const int port, const bool isMasterReceiver = false);
     ~UDPEndpoint();
     // Sends message in buffer

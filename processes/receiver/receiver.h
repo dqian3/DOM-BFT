@@ -16,7 +16,7 @@
 
 namespace dombft {
 class Receiver {
-  private:
+private:
     SignatureProvider sigProvider_;
 
     /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
@@ -40,7 +40,7 @@ class Receiver {
     uint32_t proxyMeasurementPort_;
     Address replicaAddr_;
 
-  public:
+public:
     Receiver(const ProcessConfig &config, uint32_t receiverId);
     ~Receiver();
     void run();

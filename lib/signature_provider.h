@@ -8,13 +8,13 @@
 // TODO make this also tied to addresses?
 
 class SignatureProvider {
-  protected:
+protected:
     EVP_PKEY *privKey_;
 
     // Stores public keys for different types of processes by id
     std::map<std::string, std::map<uint32_t, EVP_PKEY *>> pubKeys_;
 
-  public:
+public:
     SignatureProvider();
     ~SignatureProvider();
 

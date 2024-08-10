@@ -29,7 +29,7 @@ struct RequestState {
 };
 
 class Client {
-  private:
+private:
     /* Config parameters that need to be saved */
     uint32_t clientId_;
     std::vector<Address> proxyAddrs_;
@@ -68,7 +68,7 @@ class Client {
 
     void checkTimeouts();
 
-  public:
+public:
     /** Client accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */

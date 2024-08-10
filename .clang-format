@@ -20,3 +20,5 @@ BraceWrapping:
 UseCRLF: false
 
 NamespaceIndentation: None
+
+AccessModifierOffset: -4

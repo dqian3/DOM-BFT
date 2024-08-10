@@ -7,7 +7,7 @@
 #include <yaml-cpp/yaml.h>
 
 class ConfigParseException : public std::runtime_error {
-  public:
+public:
     ConfigParseException(const std::string &msg)
         : std::runtime_error(msg)
     {

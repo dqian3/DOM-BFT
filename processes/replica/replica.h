@@ -19,7 +19,7 @@
 
 namespace dombft {
 class Replica {
-  private:
+private:
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
 
@@ -54,7 +54,7 @@ class Replica {
 
     bool verifyCert(const dombft::proto::Cert &cert);
 
-  public:
+public:
     Replica(const ProcessConfig &config, uint32_t replicaId);
     ~Replica();
 

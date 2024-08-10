@@ -65,7 +65,7 @@ class Proxy {
     std::atomic<uint32_t> latencyBound_;
 
     uint32_t proxyId_;
-    uint32_t maxOWD_;
+    uint32_t tmaxOWD_;
     uint64_t lastDeadline_;
     int numShards_;
     int numReceivers_;

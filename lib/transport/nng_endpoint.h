@@ -25,7 +25,7 @@ struct NngMessageHandler {
 };
 
 class NngEndpoint : public Endpoint {
-  protected:
+protected:
     /* data */
     std::vector<std::unique_ptr<NngMessageHandler>> handlers_;
     std::vector<nng_socket> socks_;
@@ -34,7 +34,7 @@ class NngEndpoint : public Endpoint {
 
     byte recvBuffer_[NNG_BUFFER_SIZE];
 
-  public:
+public:
     // Takes a number of addresses
     NngEndpoint(const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false);
     ~NngEndpoint();

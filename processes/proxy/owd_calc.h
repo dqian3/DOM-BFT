@@ -12,7 +12,7 @@ namespace dombft {
 namespace OWDCalc {
 // A Strategy pattern
 class BaseCalcStrategy {
-  public:
+public:
     virtual ~BaseCalcStrategy() = default;
 
     virtual void addMeasure(uint32_t measure) = 0;
@@ -21,7 +21,7 @@ class BaseCalcStrategy {
 };
 
 class MeanStrategy : public BaseCalcStrategy {
-  public:
+public:
     explicit MeanStrategy(uint32_t windowSize, uint32_t initialMeasure)
         : windowSize_(windowSize)
         , windowIndex_(0)
@@ -44,14 +44,14 @@ class MeanStrategy : public BaseCalcStrategy {
         return sum / storedMeasure_.size();
     }
 
-  private:
+private:
     uint32_t windowSize_;
     uint32_t windowIndex_;
     std::vector<uint32_t> storedMeasure_;
 };
 
 class MaxStrategy : public BaseCalcStrategy {
-  public:
+public:
     MaxStrategy(uint32_t initialMeasure)
         : storedMeasure_(initialMeasure)
     {
@@ -61,12 +61,12 @@ class MaxStrategy : public BaseCalcStrategy {
 
     inline uint32_t getOWD() const override { return storedMeasure_; }
 
-  private:
+private:
     uint32_t storedMeasure_;
 };
 
 class PercentileStrategy : public BaseCalcStrategy {
-  public:
+public:
     explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize, uint32_t initialMeasure)
         : windowSize_(windowSize)
         , percentile_(percentile)
@@ -88,7 +88,7 @@ class PercentileStrategy : public BaseCalcStrategy {
         return sortedMeasure[(sortedMeasure.size() - 1) * percentile_ / 100];
     }
 
-  private:
+private:
     uint32_t windowSize_;
     uint32_t percentile_;
     uint32_t windowIndex_;
@@ -96,7 +96,7 @@ class PercentileStrategy : public BaseCalcStrategy {
 };
 
 template <typename T> class MeasureContext {
-  public:
+public:
     MeasureContext(uint32_t numReceivers, T strategy, uint32_t cap)
         : numReceivers_(numReceivers)
         , cap_(cap)
@@ -120,7 +120,7 @@ template <typename T> class MeasureContext {
         return maxOWD;
     }
 
-  private:
+private:
     uint32_t numReceivers_;
     uint32_t cap_;
     std::vector<std::unique_ptr<BaseCalcStrategy>> receiverOWDs_;

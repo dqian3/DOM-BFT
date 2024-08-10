@@ -11,7 +11,7 @@
 class KVStore : public Application {
     std::unordered_map<std::string, std::string> data;
 
-  public:
+public:
     virtual ~KVStore();
 
     virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) override;

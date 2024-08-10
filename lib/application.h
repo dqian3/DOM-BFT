@@ -13,7 +13,7 @@ typedef google::protobuf::Message AppResponse;
 
 class Application {
 
-  public:
+public:
     virtual ~Application() {};
 
     virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) = 0;
