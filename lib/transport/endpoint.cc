@@ -3,8 +3,7 @@
 Endpoint::Endpoint(const bool isMasterReceiver)
 {
     evLoop_ = isMasterReceiver ? ev_default_loop() : ev_loop_new();
-    if (!evLoop_)
-    {
+    if (!evLoop_) {
         LOG(ERROR) << "Event Loop error";
         return;
     }
@@ -18,14 +17,12 @@ Endpoint::~Endpoint()
 
 bool Endpoint::RegisterTimer(Timer *timer)
 {
-    if (evLoop_ == NULL)
-    {
+    if (evLoop_ == NULL) {
         LOG(ERROR) << "No evLoop!";
         return false;
     }
 
-    if (isTimerRegistered(timer))
-    {
+    if (isTimerRegistered(timer)) {
         LOG(ERROR) << "This timer has already been registered";
         return false;
     }
@@ -38,13 +35,11 @@ bool Endpoint::RegisterTimer(Timer *timer)
 
 bool Endpoint::UnRegisterTimer(Timer *timer)
 {
-    if (evLoop_ == NULL)
-    {
+    if (evLoop_ == NULL) {
         LOG(ERROR) << "No evLoop!";
         return false;
     }
-    if (!isTimerRegistered(timer))
-    {
+    if (!isTimerRegistered(timer)) {
         LOG(ERROR) << "The timer has not been registered ";
         return false;
     }
@@ -55,53 +50,41 @@ bool Endpoint::UnRegisterTimer(Timer *timer)
 
 void Endpoint::UnRegisterAllTimers()
 {
-    for (auto &t : eventTimers_)
-    {
+    for (auto &t : eventTimers_) {
         ev_timer_stop(evLoop_, t->evTimer_);
     }
     eventTimers_.clear();
 }
 
-bool Endpoint::isTimerRegistered(Timer *timer)
-{
-    return (eventTimers_.find(timer) != eventTimers_.end());
-}
+bool Endpoint::isTimerRegistered(Timer *timer) { return (eventTimers_.find(timer) != eventTimers_.end()); }
 
-MessageHeader *Endpoint::PrepareMsg(const byte *msg,
-                                    u_int32_t msgLen,
-                                    byte msgType)
+MessageHeader *Endpoint::PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType)
 {
-    MessageHeader *hdr = (MessageHeader *)sendBuffer_;
+    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
     hdr->msgType = msgType;
     hdr->msgLen = msgLen;
     hdr->sigLen = 0;
-    if (msgLen + sizeof(MessageHeader) > SEND_BUFFER_SIZE)
-    {
-        LOG(ERROR) << "Msg too large " << (uint32_t)msgType
-                   << "\t length=" << msgLen;
+    if (msgLen + sizeof(MessageHeader) > SEND_BUFFER_SIZE) {
+        LOG(ERROR) << "Msg too large " << (uint32_t) msgType << "\t length=" << msgLen;
         return nullptr;
     }
 
-    memcpy(sendBuffer_ + sizeof(MessageHeader), msg,
-           hdr->msgLen);
+    memcpy(sendBuffer_ + sizeof(MessageHeader), msg, hdr->msgLen);
 
     return hdr;
 }
 
-MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg,
-                                         byte msgType)
+MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg, byte msgType)
 {
-    MessageHeader *hdr = (MessageHeader *)sendBuffer_;
+    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
     hdr->msgType = msgType;
     hdr->msgLen = msg.ByteSizeLong();
     hdr->sigLen = 0;
 
-    if (hdr->msgLen + sizeof(MessageHeader) > SEND_BUFFER_SIZE)
-    {
-        LOG(ERROR) << "Msg too large " << (uint32_t)msgType
-                   << "\t length=" << hdr->msgLen;
+    if (hdr->msgLen + sizeof(MessageHeader) > SEND_BUFFER_SIZE) {
+        LOG(ERROR) << "Msg too large " << (uint32_t) msgType << "\t length=" << hdr->msgLen;
         return nullptr;
-    } 
+    }
     msg.SerializeToArray(sendBuffer_ + sizeof(MessageHeader), hdr->msgLen);
 
     return hdr;

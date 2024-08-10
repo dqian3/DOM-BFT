@@ -3,10 +3,10 @@
 
 #include "lib/application.h"
 
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
 
-// TODO instead of requests and responses being raw bytes, have 
+// TODO instead of requests and responses being raw bytes, have
 // request and response types that can be serialized/unserialized.
 class KVStore : public Application {
     std::unordered_map<std::string, std::string> data;
