@@ -1,5 +1,5 @@
-#include "proxy.h"
 #include "processes/process_config.h"
+#include "proxy.h"
 
 #include <memory>
 
@@ -7,11 +7,10 @@ DEFINE_string(config, "configs/config.yaml", "The config file for the proxy");
 DEFINE_uint32(proxyId, 0, "The proxy id.");
 
 std::unique_ptr<dombft::Proxy> proxy;
-void terminate(int para) {
-    proxy->terminate();
-}
+void terminate(int para) { proxy->terminate(); }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
     signal(SIGINT, terminate);

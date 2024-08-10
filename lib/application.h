@@ -11,17 +11,15 @@
 typedef google::protobuf::Message AppRequest;
 typedef google::protobuf::Message AppResponse;
 
-class Application
-{
+class Application {
 
-public:
+  public:
     virtual ~Application() {};
 
     virtual std::unique_ptr<AppResponse> execute(const AppRequest &request) = 0;
 
     // virtual uint32_t takeSnapshot() = 0;
     // virtual bool restoreSnapshot() = 0;
-
 };
 
 #endif

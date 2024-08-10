@@ -7,7 +7,6 @@
  * byte* is the payload of the message
  * Address* is the address of the sender
  */
-typedef std::function<void(MessageHeader *, byte *, Address *)>
-    MessageHandlerFunc;
+typedef std::function<void(MessageHeader *, byte *, Address *)> MessageHandlerFunc;
 
 #endif
