@@ -11,8 +11,7 @@
 typedef google::protobuf::Message AppRequest;
 typedef google::protobuf::Message AppResponse;
 
-class Application
-{
+class Application {
 
 public:
     virtual ~Application() {};
@@ -21,7 +20,6 @@ public:
 
     // virtual uint32_t takeSnapshot() = 0;
     // virtual bool restoreSnapshot() = 0;
-
 };
 
 #endif
