@@ -127,7 +127,7 @@ bool Log::createCommitPoint(uint32_t seq)
     // }
     LOG(INFO) << "Creating tentative commit point for " << seq;
 
-    tentativeCommitPoint = LogCommitPoint();   // TODO use a constructor?
+    tentativeCommitPoint = LogCheckpoint();   // TODO use a constructor?
 
     tentativeCommitPoint->seq = seq;
 

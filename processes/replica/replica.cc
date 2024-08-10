@@ -589,7 +589,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
 
     VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
 
-    LogCommitPoint &point = *log_->tentativeCommitPoint;
+    LogCheckpoint &point = *log_->tentativeCommitPoint;
 
     // Convert to string for comparison
     std::string lDigest(point.logDigest, point.logDigest + SHA256_DIGEST_LENGTH);
