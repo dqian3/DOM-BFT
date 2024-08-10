@@ -3,10 +3,10 @@
 
 #include "lib/application.h"
 
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
 
-// TODO instead of requests and responses being raw bytes, have 
+// TODO instead of requests and responses being raw bytes, have
 // request and response types that can be serialized/unserialized.
 class KVStore : public Application {
     std::unordered_map<std::string, std::string> data;
@@ -16,11 +16,11 @@ public:
 
     virtual std::unique_ptr<AppLayerResponse> execute(const std::string &serialized_request) override;
 
-    virtual bool commit(uint32_t commit_idx, byte* committed_value) override { return true; }
+    virtual bool commit(uint32_t commit_idx, byte *committed_value) override { return true; }
 
-    virtual byte* getDigest(uint32_t digest_idx) override { return nullptr; }
+    virtual byte *getDigest(uint32_t digest_idx) override { return nullptr; }
 
-    virtual byte* takeSnapshot() override { return nullptr; }
+    virtual byte *takeSnapshot() override { return nullptr; }
 
     virtual bool abort() override { return true; }
 };

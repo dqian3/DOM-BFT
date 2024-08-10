@@ -2,20 +2,18 @@
 
 #include "proto/dombft_apps.pb.h"
 
-
 using namespace dombft::apps;
 
-Counter::~Counter() {
-}
+Counter::~Counter() {}
 
 std::string Counter::execute(const std::string &serialized_request, const uint32_t execute_idx)
-{    
+{
     LOG(INFO) << "Received request to execute counter operation";
 
     std::unique_ptr<CounterRequest> counterReq = std::make_unique<CounterRequest>();
     if (!counterReq->ParseFromString(serialized_request)) {
         LOG(ERROR) << "Failed to parse CounterRequest";
-        return ""; 
+        return "";
     }
 
     CounterOperation op = counterReq->op();
@@ -36,7 +34,7 @@ std::string Counter::execute(const std::string &serialized_request, const uint32
 
     version_hist.push_back({execute_idx, counter});
 
-    response.set_value(counter); 
+    response.set_value(counter);
 
     std::string ret;
     if (!response.SerializeToString(&ret)) {
@@ -52,8 +50,8 @@ bool Counter::commit(uint32_t commit_idx)
 {
     LOG(INFO) << "Committing counter value at idx: " << commit_idx;
 
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), 
-        [commit_idx](const VersionedValue& v) { return v.version <= commit_idx; }); 
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
+                           [commit_idx](const VersionedValue &v) { return v.version <= commit_idx; });
 
     if (it != version_hist.rend()) {
         counter_stable = it->value;
@@ -71,15 +69,15 @@ bool Counter::commit(uint32_t commit_idx)
 std::string Counter::getDigest(uint32_t digest_idx)
 {
 
-    return std::string(reinterpret_cast<const char*>(&counter), INT_SIZE_IN_BYTES);
+    return std::string(reinterpret_cast<const char *>(&counter), INT_SIZE_IN_BYTES);
 }
 
 std::string Counter::takeSnapshot()
 {
-    return std::string(reinterpret_cast<const char*>(&counter_stable), INT_SIZE_IN_BYTES);
+    return std::string(reinterpret_cast<const char *>(&counter_stable), INT_SIZE_IN_BYTES);
 }
 
-void* CounterTrafficGen::generateAppTraffic()
+void *CounterTrafficGen::generateAppTraffic()
 {
     CounterRequest *request = new CounterRequest();
     request->set_op(CounterOperation::INCREMENT);
@@ -93,8 +91,8 @@ bool Counter::abort(const uint32_t abort_idx)
     LOG(INFO) << "Aborting operations at idx: " << abort_idx;
 
     // Find the last committed value before or at abort_idx
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), 
-        [abort_idx](const VersionedValue& v) { return v.version <= abort_idx; });
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
+                           [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
 
     if (it != version_hist.rend()) {
         // Erase all entries from the point found to the end
@@ -102,10 +100,9 @@ bool Counter::abort(const uint32_t abort_idx)
     }
 
     // Revert the counter to the last committed state, for counter, just change to stable
-    // for kv, fancier later. 
+    // for kv, fancier later.
     counter = counter_stable;
     LOG(INFO) << "Counter reverted to stable value: " << counter_stable;
 
     return true;
 }
-

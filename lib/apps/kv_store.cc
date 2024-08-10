@@ -2,19 +2,16 @@
 
 #include "proto/dombft_apps.pb.h"
 
-
 using namespace dombft::apps;
 
-KVStore::~KVStore() {
-    
-}
+KVStore::~KVStore() {}
 
 std::unique_ptr<AppLayerResponse> KVStore::execute(const std::string &serialized_request)
-{    
+{
     std::unique_ptr<KVRequest> kvReq = std::make_unique<KVRequest>();
     if (!kvReq->ParseFromString(serialized_request)) {
         LOG(ERROR) << "Failed to parse KVRequest";
-        return nullptr; 
+        return nullptr;
     }
     std::unique_ptr<KVResponse> ret = std::make_unique<KVResponse>();
 
@@ -29,19 +26,18 @@ std::unique_ptr<AppLayerResponse> KVStore::execute(const std::string &serialized
         }
 
     } else if (kvReq->msg_type() == KVRequestType::SET) {
-        data[key] = kvReq->value(); // TODO check value is there            
-        ret->set_ok(true);    
+        data[key] = kvReq->value();   // TODO check value is there
+        ret->set_ok(true);
     } else if (kvReq->msg_type() == KVRequestType::DELETE) {
         if (data.count(key)) {
             data.erase(key);
             ret->set_ok(true);
         } else {
             ret->set_ok(false);
-        } 
-    } 
-    else {
+        }
+    } else {
         return nullptr;
     }
-    
-    return NULL;    
+
+    return NULL;
 }
