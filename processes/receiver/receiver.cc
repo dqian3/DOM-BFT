@@ -164,7 +164,8 @@ void Receiver::checkDeadlines()
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
-        forwardRequest(it->second);
+        // comment out for reorder exp
+        //forwardRequest(it->second);
         auto temp = std::next(it);
         deadlineQueue_.erase(it);
         it = temp;

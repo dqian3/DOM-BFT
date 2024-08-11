@@ -46,6 +46,7 @@ private:
      */
     void LaunchThreads();
     void ForwardRequestsTd(const int id = -1);
+    void MimicClientRequest();
     void RecvMeasurementsTd();
 
     /** LogTd is just used to collect some performance stats. It is not necessary
@@ -70,6 +71,9 @@ private:
     int numShards_;
     int numReceivers_;
     std::vector<Address> receiverAddrs_;
+    // reorder exp
+    bool selfGenClientReq_;
+    std::vector<uint32_t> proxySimmedClients_;
 
 public:
     /** Proxy accept a config file, which contains all the necessary information

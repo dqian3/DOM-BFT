@@ -1,0 +1,52 @@
+transport: nng
+
+client:
+  ips:
+    - "127.0.1.0"
+    - "127.0.1.1"
+  port: 33000
+  keysDir: keys/client
+  maxRequests: 5
+  numRequests: 1000000
+  runtimeSeconds: 10
+  normalPathTimeout: 5000
+  slowPathTimeout: 100000
+
+
+# Proxy Info
+proxy:
+  ips:
+    - "127.0.0.9"
+    - "127.0.0.10"
+  shards: 1
+  forwardPort: 31000
+  measurementPort: 32000
+  keysDir: keys/proxy
+  maxOwd: 15000
+  selfGenClientReq: true
+  simmedClients: 5 # per proxy
+
+# Receiver Info
+receiver:
+  ips:
+    - "127.0.0.5"
+    - "127.0.0.6"
+    - "127.0.0.7"
+    - "127.0.0.8"
+  port: 33000
+  keysDir: keys/receiver
+  shards: 1 # The number of threads to receive threads
+  local: false # Although it's local, we actually use distinct loopback addresses for localhost experiments
+
+# Replica Info
+replica:
+  ips:
+    - "127.0.0.1"
+    - "127.0.0.2"
+    - "127.0.0.3"
+    - "127.0.0.4"
+  port: 34000
+  keysDir: "keys/replica"
+  fallbackTimeout: 200000
+  fallbackStartTimeout: 50000
+

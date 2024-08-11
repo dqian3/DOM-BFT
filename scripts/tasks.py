@@ -10,6 +10,53 @@ from invoke import task
 
 
 @task
+def local_reorder_exp(c, config_file):
+    def arun(*args, **kwargs):
+        return c.run(*args, **kwargs, asynchronous=True, warn=True)
+
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    n_proxies = len(config["proxy"]["ips"])
+    n_receivers = len(config["receiver"]["ips"])
+    proxy_handles = []
+    other_handles = []
+
+    with c.cd(".."):
+        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
+        c.run("mkdir -p logs")
+
+        for id in range(n_receivers):
+            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log"
+            hdl = arun(cmd)
+            print(cmd)
+
+            other_handles.append(hdl)
+
+        for id in range(n_proxies):
+            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log"
+            hdl = arun(cmd)
+            print(cmd)
+
+            proxy_handles.append(hdl)
+
+
+    try:
+        # join on the proxy processes, which should end
+        for hdl in proxy_handles:
+            hdl.join()
+
+    finally:
+        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
+
+        # kill these processes and then join
+        for hdl in other_handles:
+            hdl.runner.kill()
+            hdl.join()
+
+@task
 def local(c, config_file):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
