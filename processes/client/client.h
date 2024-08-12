@@ -22,9 +22,13 @@ struct RequestState {
     std::optional<dombft::proto::Cert> cert;
     uint64_t sendTime;
     uint64_t certTime;
-
     std::set<int> certReplies;
 
+    uint32_t instance = 0;
+
+    std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
+    std::optional<dombft::proto::Cert> fallbackProof;
+    uint32_t fallbackAttempts = 0;
     bool fastPathPossible = true;
 };
 

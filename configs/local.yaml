@@ -7,7 +7,7 @@ client:
   keysDir: keys/client
   maxRequests: 5
   numRequests: 1000000
-  runtimeSeconds: 60 
+  runtimeSeconds: 10 
   normalPathTimeout: 5000
   slowPathTimeout: 50000
   sendRate: 100
@@ -45,3 +45,6 @@ replica:
   - "127.0.0.4"
   port: 34000
   keysDir: "keys/replica"
+  fallbackTimeout: 200000
+  fallbackStartTimeout: 50000
+

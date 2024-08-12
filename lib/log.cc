@@ -1,8 +1,8 @@
 #include "log.h"
 
-#include <glog/logging.h>
+#include "utils.h"
 
-using namespace dombft::proto;
+#include <glog/logging.h>
 
 LogEntry::LogEntry()
     : seq(0)
@@ -48,7 +48,8 @@ LogEntry::~LogEntry()
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
 {
-    out << le.seq << ": (" << le.client_id << " ," << le.client_seq << ")";
+    out << le.seq << ": (" << le.client_id << ", " << le.client_seq << ") " << digest_to_hex(le.digest).substr(56)
+        << " | ";
     return out;
 }
 
@@ -92,7 +93,10 @@ bool Log::executeEntry(uint32_t seq)
     return true;
 }
 
-void Log::addCert(uint32_t seq, const Cert &cert) { certs[seq] = std::make_unique<Cert>(cert); }
+void Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
+{
+    certs[seq] = std::make_shared<dombft::proto::Cert>(cert);
+}
 
 const byte *Log::getDigest() const
 {
@@ -164,19 +168,63 @@ bool Log::commitCommitPoint()
         return false;
     }
 
+    // TODO truncate log/commit application state
+
     commitPoint = tentativeCommitPoint.value();
     tentativeCommitPoint.reset();
 
     return true;
 }
 
+void Log::toProto(dombft::proto::FallbackStart &msg)
+{
+    dombft::proto::LogCheckpoint *checkpoint = msg.mutable_checkpoint();
+
+    if (commitPoint.seq > 0) {
+        checkpoint->set_seq(commitPoint.seq);
+        checkpoint->set_app_digest((const char *) commitPoint.appDigest, SHA256_DIGEST_LENGTH);
+        checkpoint->set_log_digest((const char *) commitPoint.logDigest, SHA256_DIGEST_LENGTH);
+
+        for (auto x : commitPoint.commitMessages) {
+            (*checkpoint->add_commits()) = x.second;
+            checkpoint->add_signatures(commitPoint.signatures[x.first]);
+        }
+
+        if (!commitPoint.cert.has_value()) {
+            LOG(ERROR) << "commitPoint cert is null!";
+        }
+
+        (*checkpoint->mutable_cert()) = commitPoint.cert.value();
+    }
+
+    for (int i = commitPoint.seq + 1; i < nextSeq; i++) {
+        dombft::proto::LogEntry *entryProto = msg.add_log_entries();
+        LogEntry &entry = *log[i % log.size()];
+
+        assert(i == entry.seq);
+
+        if (certs.count(i)) {
+            (*checkpoint->mutable_cert()) = *certs[i];
+        }
+
+        entryProto->set_seq(i);
+        entryProto->set_client_id(entry.client_id);
+        entryProto->set_client_seq(entry.client_seq);
+        entryProto->set_digest(entry.digest, SHA256_DIGEST_LENGTH);
+        entryProto->set_request(entry.raw_request, entry.request_len);
+        entryProto->set_result(entry.raw_result, entry.result_len);
+    }
+}
+
 std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    for (uint32_t i = l.nextSeq - MAX_SPEC_HIST; i < l.nextSeq; i++) {
+    int i = l.nextSeq - MAX_SPEC_HIST;
+    i = i < 0 ? 0 : i;   // std::max isn't playing nice
+    for (; i < l.nextSeq; i++) {
         int seq = i % MAX_SPEC_HIST;
-        out << l.log[seq].get();
+        out << *l.log[seq];
     }
     return out;
 }

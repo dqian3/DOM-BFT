@@ -47,6 +47,8 @@ struct ProcessConfig {
 
     std::vector<std::string> replicaIps;
     int replicaPort;
+    int replicaFallbackStartTimeout;
+    int replicaFallbackTimeout;
     std::string replicaKeysDir;
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
@@ -142,6 +144,10 @@ struct ProcessConfig {
             parseStringVector(replicaIps, replicaNode, "ips");
             replicaPort = parseField<int>(replicaNode, "port");
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
+
+            replicaFallbackStartTimeout = parseField<int>(replicaNode, "fallbackStartTimeout");
+            replicaFallbackTimeout = parseField<int>(replicaNode, "fallbackTimeout");
+
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing replica " + std::string(e.what()));
         }

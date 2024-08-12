@@ -47,3 +47,6 @@ replica:
   - "10.128.0.9"
   port: 34000
   keysDir: "keys/replica"
+  fallbackTimeout: 2000000
+  fallbackStartTimeout: 500000
+

@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <queue>
 #include <span>
 #include <thread>
 
@@ -22,11 +23,10 @@ class Replica {
 private:
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
-
     std::vector<Address> clientAddrs_;
-    uint32_t clientPort_;
 
     uint32_t f_;
+    uint32_t instance_ = 0;
 
 #if PROTOCOL == PBFT
     std::map<std::pair<int, int>, int> prepareCount;
@@ -37,12 +37,22 @@ private:
     SignatureProvider sigProvider_;
 
     std::unique_ptr<Endpoint> endpoint_;
+    std::unique_ptr<Timer> fallbackStartTimer_;
+    std::unique_ptr<Timer> fallbackTimer_;
     std::unique_ptr<Log> log_;
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
     std::map<int, dombft::proto::Reply> commitCertReplies;
     std::map<int, std::string> commitCertSigs;
+
+    // State for fallback
+    bool fallback_ = false;
+    uint32_t fallbackTriggerSeq_ = 0;
+    std::map<int, dombft::proto::FallbackStart> fallbackHistory;
+    std::map<int, std::string> fallbackHistorySigs;
+
+    std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void handleClientRequest(const dombft::proto::ClientRequest &request);
@@ -51,8 +61,14 @@ private:
     void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
     void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
-
     bool verifyCert(const dombft::proto::Cert &cert);
+
+    void startFallback();
+
+    void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
+    void applyFallbackReq(const dombft::proto::LogEntry &entry);
+
+    void finishFallback(const dombft::proto::FallbackProposal &history);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId);
