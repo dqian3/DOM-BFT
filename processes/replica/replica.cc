@@ -571,6 +571,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
 
     if (log_->checkpoint.seq >= commitMsg.seq()) {
         VLOG(4) << "Checkpoint: already committed for seq=" << commitMsg.seq() << ", skipping";
+        return;
     }
 
     // DO something simpler than client, just match everything to my commit

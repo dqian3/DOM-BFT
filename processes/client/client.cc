@@ -87,7 +87,7 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
-            LOG(INFO) << "Exiting before after running for " << config.clientRuntimeSeconds << " seconds";
+            LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
             exit(0);
         },
