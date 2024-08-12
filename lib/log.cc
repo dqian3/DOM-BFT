@@ -69,8 +69,8 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
     byte *prevDigest = log[prevSeqIdx]->digest;
 
-    if (nextSeq > commitPoint.seq + MAX_SPEC_HIST) {
-        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << commitPoint.seq;
+    if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
+        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         return false;
     }
 
@@ -103,6 +103,7 @@ const byte *Log::getDigest() const
     if (nextSeq == 0) {
         return nullptr;
     }
+
     uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
     return log[prevSeq]->digest;
 }
@@ -117,94 +118,31 @@ const byte *Log::getDigest(uint32_t seq) const
     return log[seqIdx]->digest;
 }
 
-// Create a new commit point given the existence of a certificate at seq
-bool Log::createCommitPoint(uint32_t seq)
-{
-    // if (certs.count(seq) == 0)
-    // {
-    //     LOG(ERROR) << "Attempt to create a commit point at seq " << seq
-    //                << " but no cert exists!";
-    // }
-    LOG(INFO) << "Creating tentative commit point for " << seq;
-
-    tentativeCommitPoint = LogCheckpoint();   // TODO use a constructor?
-
-    tentativeCommitPoint->seq = seq;
-
-    // Note, CERT, logDigest, appDigest get added later
-    // TODO maybe don't create one without these?
-    memset(tentativeCommitPoint->logDigest, 0, SHA256_DIGEST_LENGTH);
-    memset(tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
-
-    tentativeCommitPoint->commitMessages.clear();
-    tentativeCommitPoint->signatures.clear();
-
-    LOG(INFO) << "Created tentative commit point for " << seq;
-
-    return true;
-}
-
-bool Log::addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int sigLen)
-{
-    int from = commit.replica_id();
-
-    if (!tentativeCommitPoint.has_value()) {
-        LOG(ERROR) << "Trying to add commit message to empty commit point!";
-        return false;
-    }
-
-    // TODO check match?
-
-    tentativeCommitPoint->commitMessages[from] = commit;
-    tentativeCommitPoint->signatures[from] = std::string(sig, sig + sigLen);
-
-    return true;
-}
-
-bool Log::commitCommitPoint()
-{
-    if (!tentativeCommitPoint.has_value()) {
-        LOG(ERROR) << "Trying to commit with empty tentative commit point!";
-        return false;
-    }
-
-    // TODO truncate log/commit application state
-
-    commitPoint = tentativeCommitPoint.value();
-    tentativeCommitPoint.reset();
-
-    return true;
-}
-
 void Log::toProto(dombft::proto::FallbackStart &msg)
 {
-    dombft::proto::LogCheckpoint *checkpoint = msg.mutable_checkpoint();
+    dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    if (commitPoint.seq > 0) {
-        checkpoint->set_seq(commitPoint.seq);
-        checkpoint->set_app_digest((const char *) commitPoint.appDigest, SHA256_DIGEST_LENGTH);
-        checkpoint->set_log_digest((const char *) commitPoint.logDigest, SHA256_DIGEST_LENGTH);
+    if (checkpoint.seq > 0) {
+        checkpointProto->set_seq(checkpoint.seq);
+        checkpointProto->set_app_digest((const char *) checkpoint.appDigest, SHA256_DIGEST_LENGTH);
+        checkpointProto->set_log_digest((const char *) checkpoint.logDigest, SHA256_DIGEST_LENGTH);
 
-        for (auto x : commitPoint.commitMessages) {
-            (*checkpoint->add_commits()) = x.second;
-            checkpoint->add_signatures(commitPoint.signatures[x.first]);
+        for (auto x : checkpoint.commitMessages) {
+            (*checkpointProto->add_commits()) = x.second;
+            checkpointProto->add_signatures(checkpoint.signatures[x.first]);
         }
 
-        if (!commitPoint.cert.has_value()) {
-            LOG(ERROR) << "commitPoint cert is null!";
-        }
-
-        (*checkpoint->mutable_cert()) = commitPoint.cert.value();
+        (*checkpointProto->mutable_cert()) = checkpoint.cert;
     }
 
-    for (int i = commitPoint.seq + 1; i < nextSeq; i++) {
+    for (int i = checkpoint.seq + 1; i < nextSeq; i++) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
         LogEntry &entry = *log[i % log.size()];
 
         assert(i == entry.seq);
 
         if (certs.count(i)) {
-            (*checkpoint->mutable_cert()) = *certs[i];
+            (*checkpointProto->mutable_cert()) = *certs[i];
         }
 
         entryProto->set_seq(i);

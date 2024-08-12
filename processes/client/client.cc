@@ -380,6 +380,7 @@ void Client::checkReqState(uint32_t clientSeq)
 
             if (matchingReplies[key].size() >= 2 * f_ + 1) {
                 reqState.cert = Cert();
+                reqState.cert.set_seq(std::get<2>(key));
 
                 // TODO check if fast path is not posssible, and we can send cert right away
                 for (auto repId : matchingReplies[key]) {
