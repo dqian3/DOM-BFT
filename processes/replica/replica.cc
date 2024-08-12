@@ -511,17 +511,19 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         return;
     }
 
-    if (checkpointCert_.has_value() && checkpointCert_.seq() >= reply.seq()) {
+    if (checkpointCert_.has_value() && checkpointCert_->seq() >= reply.seq()) {
         VLOG(4) << "Checkpoint: already have cert for seq=" << reply.seq() << ", skipping";
         return;
     }
+
+    std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
 
     // Find a cert among a set of replies
     for (const auto &entry : checkpointReplies_) {
         int replicaId = entry.first;
         const Reply &reply = entry.second;
 
-        std::tuple<std::string, int> key = {reply.digest(), reply.instance(), reply.seq()};
+        std::tuple<std::string, int, int> key = {reply.digest(), reply.instance(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
 
@@ -529,11 +531,11 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         if (matchingReplies[key].size() >= 2 * f_ + 1 && checkpointReplies_.count(replicaId_)) {
 
             checkpointCert_ = Cert();
-            checkpointCert_.set_seq(std::get<2>(key));
+            checkpointCert_->set_seq(std::get<2>(key));
 
             for (auto repId : matchingReplies[key]) {
-                checkpointCert_.add_signatures(commitCertSigs[repId]);
-                (*checkpointCert_.add_replies()) = checkpointReplies_[repId];
+                checkpointCert_->add_signatures(checkpointReplySigs_[repId]);
+                (*checkpointCert_->add_replies()) = checkpointReplies_[repId];
             }
 
             VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
@@ -559,7 +561,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
 
     checkpointCommits_[commitMsg.replica_id()] = commitMsg;
-    checkpointCommitSigs_[commitMsg.replica_id()] = sig;
+    checkpointCommitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
 
     // Don't try finishing the commit if our log hasn't reached the seq being committed
     if (checkpointCommits_[replicaId_].seq() != checkpointSeq_) {
@@ -568,7 +570,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     }
 
     if (log_->checkpoint.seq >= commitMsg.seq()) {
-        VLOG(4) << "Checkpoint: already committed for seq=" << reply.seq() << ", skipping";
+        VLOG(4) << "Checkpoint: already committed for seq=" << commitMsg.seq() << ", skipping";
     }
 
     // DO something simpler than client, just match everything to my commit
@@ -854,8 +856,6 @@ void Replica::finishFallback(const FallbackProposal &history)
 
     // Now we know the logCheckpoint is usable
     // TODO implement this more nicely by making an interface in the log.
-    log_->tentativeCommitPoint.reset();
-
     log_->checkpoint.seq = maxCheckpoint.seq();
     memcpy(log_->checkpoint.appDigest, maxCheckpoint.app_digest().c_str(), maxCheckpoint.app_digest().size());
     memcpy(log_->checkpoint.logDigest, maxCheckpoint.log_digest().c_str(), maxCheckpoint.log_digest().size());
