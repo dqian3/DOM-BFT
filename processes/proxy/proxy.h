@@ -46,8 +46,10 @@ private:
      */
     void LaunchThreads();
     void ForwardRequestsTd(const int id = -1);
-    void MimicClientRequest();
     void RecvMeasurementsTd();
+
+    void SendMimicClientRequest(uint32_t client_id, uint32_t seq_num);
+    void FrequencyClientRequest(uint32_t freq, uint32_t seconds);
 
     /** LogTd is just used to collect some performance stats. It is not necessary
      * in the release version */

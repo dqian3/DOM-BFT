@@ -94,11 +94,10 @@ Proxy::~Proxy()
 
 void Proxy::LaunchThreads()
 {
+    threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
     if(selfGenClientReq_){
-        MimicClientRequest();
+        threads_["ClientRequestGenerateTd"] = new std::thread(&Proxy::FrequencyClientRequest, this, 1, 10);
     }else{
-        threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
-
         for (int i = 0; i < numShards_; i++) {
             std::string key = "ForwardRequestsTd-" + std::to_string(i);
             threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
@@ -141,40 +140,44 @@ void Proxy::RecvMeasurementsTd()
     measurementEp_->LoopRun();
 }
 
-//TODO(HAO): make load configurable..
-void Proxy::MimicClientRequest(){
-    // package 100 DOMRequest for now...
-    for(auto client_id : proxySimmedClients_) {
-        for (int i = 0; i < 100; i++) {
-            ClientRequest inReq;
-            inReq.set_client_id(client_id);
-            inReq.set_client_seq(i);
-
-            uint64_t now = GetMicrosecondTimestamp();
-            uint64_t deadline = now + latencyBound_;
-            deadline = std::max(deadline, lastDeadline_ + 1);
-            lastDeadline_ = deadline;
-
-            DOMRequest outReq;
-            outReq.set_send_time(now);
-            outReq.set_deadline(deadline);
-            outReq.set_proxy_id(proxyId_);
-
-            outReq.set_deadline_set_size(numReceivers_);
-            outReq.set_late(false);
-
-            outReq.set_client_id(inReq.client_id());
-            outReq.set_client_seq(inReq.client_seq());
-
-            for (int i = 0; i < numReceivers_; i++) {
-                VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
-                        << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
-                        << " now=" << GetMicrosecondTimestamp();
-
-                MessageHeader *hdr = forwardEps_[0]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
-                forwardEps_[0]->SendPreparedMsgTo(receiverAddrs_[i]);
-            }
+void Proxy::FrequencyClientRequest(uint32_t freq, uint32_t seconds){
+    uint64_t gap = 1/freq * 1000;
+    auto frequencyClientRequest = [this,gap](uint32_t client_id, uint32_t total_requests){
+        uint32_t seq_num = 0;
+        while(seq_num++ < total_requests){
+            SendMimicClientRequest(client_id, total_requests);
+            std::this_thread::sleep_for(std::chrono::milliseconds(gap));
         }
+        VLOG(1) << "Client " << client_id << " finished sending " << total_requests << " requests";
+    };
+    // fire a thread for each mimic client in proxySimmedClients_
+    for(auto client_id: proxySimmedClients_){
+        threads_["FrequencyClientRequest-" + std::to_string(client_id)] = new std::thread(frequencyClientRequest, client_id, seconds);
+    }
+}
+void Proxy::SendMimicClientRequest(uint32_t client_id, uint32_t seq_num){
+    uint64_t now = GetMicrosecondTimestamp();
+    uint64_t deadline = now + latencyBound_;
+    deadline = std::max(deadline, lastDeadline_ + 1);
+    lastDeadline_ = deadline;
+
+    DOMRequest outReq;
+    outReq.set_send_time(now);
+    outReq.set_deadline(deadline);
+    outReq.set_proxy_id(proxyId_);
+
+    outReq.set_deadline_set_size(numReceivers_);
+    outReq.set_late(false);
+
+    outReq.set_client_id(client_id);
+
+    for (int i = 0; i < numReceivers_; i++) {
+        VLOG(2) << "Forwarding (" << client_id << ", " << i << ") to "
+                << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
+                << " now=" << GetMicrosecondTimestamp();
+
+        MessageHeader *hdr = forwardEps_[0]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+        forwardEps_[0]->SendPreparedMsgTo(receiverAddrs_[i]);
     }
 
 }
