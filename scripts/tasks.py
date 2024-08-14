@@ -30,14 +30,14 @@ def local_reorder_exp(c, config_file):
 
         # TODO(Hao): such param setting is messy and cannot be easily configured as different roles require different config..
         for id in range(n_receivers):
-            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id}&>logs/receiver{id}.log"
+            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} -proxySimmedCliReq true &>logs/receiver{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
             other_handles.append(hdl)
 
         for id in range(n_proxies):
-            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id}&>logs/proxy{id}.log"
+            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} -proxySimmedCliReq true &>logs/proxy{id}.log"
             hdl = arun(cmd)
             print(cmd)
 

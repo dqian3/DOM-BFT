@@ -10,6 +10,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     maxOWD_ = config.proxyMaxOwd;
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
     proxyId_ = proxyId;
+    selfGenClientReq_ = false;
 
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
     LOG(INFO) << "Loading key from " << proxyKey;
@@ -191,9 +192,21 @@ void Proxy::FrequencyClientRequest(uint32_t freq, uint32_t seconds){
         VLOG(1) << "Client " << client_id << " finished sending " << total_requests << " requests";
     };
     // fire a thread for each mimic client in proxySimmedClients_
-    for(auto client_id: proxySimmedClients_){
-        threads_["FrequencyClientRequest-" + std::to_string(client_id)] = new std::thread(frequencyClientRequest, client_id, seconds * freq);
+    std::map<std::string, std::thread*> threads;
+    for(auto client_id: proxySimmedClients_) {
+        std::string key = "FrequencyClientRequest-" + std::to_string(client_id);
+        threads[key] = new std::thread(frequencyClientRequest,client_id, seconds * freq);
     }
+    for (auto &kv : threads) {
+        kv.second->join();
+        delete kv.second;
+    }
+    LOG(INFO) << "FrequencyClientRequest Terminated ";
+
+    terminate();
+
+
+
 }
 void Proxy::SendSimClientRequest(uint32_t client_id, uint32_t seq_num){
     uint64_t now = GetMicrosecondTimestamp();

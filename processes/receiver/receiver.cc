@@ -116,7 +116,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
             checkDeadlines();
 
             if(!proxySimmedRequest_){
-                forwardRequest(it->second);
+                forwardRequest(request);
             }
         } else {
             VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
