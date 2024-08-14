@@ -138,7 +138,7 @@ void Proxy::RecvMeasurementsTd()
         }
     };
 
-    Timer monitor(checkEnd, 10, this);
+    Timer monitor(checkEnd, 10000, this);
 
     measurementEp_->RegisterMsgHandler(handleMeasurementReply);
     measurementEp_->RegisterTimer(&monitor);
@@ -201,7 +201,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
         }
     };
 
-    Timer monitor(checkEnd, 10, this);
+    Timer monitor(checkEnd, 10000, this);
 
     forwardEps_[thread_id]->RegisterMsgHandler(handleClientRequest);
     forwardEps_[thread_id]->RegisterTimer(&monitor);
@@ -240,6 +240,8 @@ void Proxy::GenerateRequestsTd()
             outReq.set_client_id(proxyId_);
             outReq.set_client_seq(seq);
 
+            seq++;
+
             for (int i = 0; i < numReceivers_; i++) {
                 VLOG(2) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to " << receiverAddrs_[i].ip_
                         << " deadline=" << deadline << " latencyBound=" << latencyBound_
@@ -254,21 +256,33 @@ void Proxy::GenerateRequestsTd()
             // convert to microseconds
             uint32_t interval_us = interval * 1000000;
 
+            VLOG(4) << "Waiting for " << interval_us << " usec";
             ep->ResetTimer(&timer, interval_us);
         },
         1000, this);   // initial time doesn't matter, since it's reset
 
     Timer endExperiment(
-        [this](void *ctx, void *endpoint) {
+        [&seq, this](void *ctx, void *endpoint) {
             running_ = false;
             LOG(INFO) << "Ending experiment";
+            LOG(INFO) << "Sent " << seq << " requests";
             ((Endpoint *) endpoint)->LoopBreak();
         },
         genReqDuration_ * 1000000, this);
 
-    forwardEps_[0]->RegisterTimer(&timer);
-    forwardEps_[0]->RegisterTimer(&endExperiment);
+    /* Checks every 10ms to see if we are done*/
+    auto checkEnd = [](void *ctx, void *receiverEP) {
+        if (!((Proxy *) ctx)->running_) {
+            ((Endpoint *) receiverEP)->LoopBreak();
+        }
+    };
 
+    Timer monitor(checkEnd, 10000, this);
+
+    forwardEps_[0]->RegisterTimer(&timer);
+    forwardEps_[0]->RegisterTimer(&monitor);
+
+    forwardEps_[0]->RegisterTimer(&endExperiment);
     forwardEps_[0]->LoopRun();
 }
 

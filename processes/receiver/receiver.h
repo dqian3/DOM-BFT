@@ -40,10 +40,12 @@ private:
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;
     Address replicaAddr_;
-    bool proxySimmedRequest_;
+
+    // Skip forwarding, for running experiemnts.
+    bool skipForwarding_;
 
 public:
-    Receiver(const ProcessConfig &config, uint32_t receiverId, bool proxySimmedRequest = false);
+    Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false);
     ~Receiver();
     void run();
 };

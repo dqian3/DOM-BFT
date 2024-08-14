@@ -10,7 +10,7 @@ from invoke import task
 
 
 @task
-def local_reorder_exp(c, config_file):
+def local_reorder_exp(c, config_file, poisson=False):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 
@@ -28,28 +28,36 @@ def local_reorder_exp(c, config_file):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
 
-        # TODO(Hao): such param setting is messy and cannot be easily configured as different roles require different config..
         for id in range(n_receivers):
-            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} -proxySimmedCliReq true &>logs/receiver{id}.log"
+            cmd = (
+                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file}"
+                + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
+            )
             hdl = arun(cmd)
-            print(cmd)
 
             other_handles.append(hdl)
 
         for id in range(n_proxies):
-            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} -proxySimmedCliReq true &>logs/proxy{id}.log"
+            cmd = (
+                f"./bazel-bin/processes/proxy/dombft_proxy -v {5} " +
+                f"-config {config_file} -proxyId {id} -genRequests " +
+                f"{'-poisson' if poisson else ''} &>logs/proxy{id}.log"
+            )
+
             hdl = arun(cmd)
-            print(cmd)
 
             proxy_handles.append(hdl)
-
 
     try:
         # join on the proxy processes, which should end
         for hdl in proxy_handles:
             hdl.join()
 
+        print("Proxies done, waiting 5 sec for receivers to finish...")
+        time.sleep(5)
+
     finally:
+
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
 
         # kill these processes and then join

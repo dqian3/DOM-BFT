@@ -9,10 +9,10 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool proxySimmedRequest)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
-    , proxySimmedRequest_(proxySimmedRequest)
+    , skipForwarding_(skipForwarding)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -115,7 +115,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
             VLOG(3) << "Checking deadlines before forwarding late message";
             checkDeadlines();
 
-            if(!proxySimmedRequest_){
+            if (!skipForwarding_) {
                 forwardRequest(request);
             }
         } else {
@@ -142,7 +142,7 @@ void Receiver::forwardRequest(const DOMRequest &request)
         // TODO
         throw "IPC communciation not implemented";
     } else {
-        VLOG(1) << "Forwarding Request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
+        VLOG(1) << "Forwarding request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
                 << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
@@ -168,7 +168,7 @@ void Receiver::checkDeadlines()
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
         // reorder exp
-        if(!proxySimmedRequest_){
+        if (!skipForwarding_) {
             forwardRequest(it->second);
         }
         auto temp = std::next(it);
