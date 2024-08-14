@@ -10,7 +10,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     maxOWD_ = config.proxyMaxOwd;
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
     proxyId_ = proxyId;
-    selfGenClientReq_ = false;
+    selfGenReqs_ = false;
 
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
     LOG(INFO) << "Loading key from " << proxyKey;
@@ -58,17 +58,54 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     }
 }
 
-Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedClientNum, uint32_t simmedCliReqFreq,
+Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t num, uint32_t simmedCliReqFreq,
              uint32_t simmedCliReqDuration)
     : Proxy(config, proxyId)
 {
-    // Setup some parameters for reordering experiments
-    selfGenClientReq_ = true;
-    simmedCliReqFreq_ = simmedCliReqFreq;
-    simmedCliReqDuration_ = simmedCliReqDuration;
-    uint32_t startClient = proxyId * simmedClientNum;
-    for (size_t i = startClient; i < startClient + simmedClientNum; i++) {
-        proxySimmedClients_.push_back(i);
+    // reorder exp
+    selfGenReqs_ = true;
+    genReqFreq_ = simmedCliReqFreq;
+    genReqDuration_ = simmedCliReqDuration;
+}
+
+void Proxy::terminate()
+{
+    LOG(INFO) << "Terminating...";
+    running_ = false;
+}
+
+void Proxy::run()
+{
+    running_ = true;
+
+    LaunchThreads();
+    for (auto &kv : threads_) {
+        LOG(INFO) << "Join " << kv.first;
+        kv.second->join();
+        LOG(INFO) << "Join Complete " << kv.first;
+    }
+    LOG(INFO) << "Run Terminated ";
+}
+
+Proxy::~Proxy()
+{
+    for (auto &kv : threads_) {
+        delete kv.second;
+    }
+
+    // TODO Cleanup more
+}
+
+void Proxy::LaunchThreads()
+{
+    threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
+    if (selfGenReqs_) {
+        threads_["GenerateRequestsTd"] = new std::thread(&Proxy::GenerateRequests, this, genReqFreq_, genReqDuration_);
+    } else {
+        for (int i = 0; i < numShards_; i++) {
+            std::string key = "ForwardRequestsTd-" + std::to_string(i);
+            threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
+        }
     }
 }
 
@@ -107,61 +144,8 @@ void Proxy::RecvMeasurementsTd()
     measurementEp_->LoopRun();
 }
 
-void Proxy::FrequencyClientRequest(uint32_t freq, uint32_t seconds)
-{
-    uint64_t gap = 1 / freq * 1000;
-    auto frequencyClientRequest = [this, gap](uint32_t client_id, uint32_t total_requests) {
-        uint32_t seq_num = 0;
-        while (seq_num < total_requests) {
-            SendSimClientRequest(client_id, seq_num++);
-            std::this_thread::sleep_for(std::chrono::milliseconds(gap));
-        }
-        VLOG(1) << "Client " << client_id << " finished sending " << total_requests << " requests";
-    };
-    // fire a thread for each mimic client in proxySimmedClients_
-    std::map<std::string, std::thread *> threads;
-    for (auto client_id : proxySimmedClients_) {
-        std::string key = "FrequencyClientRequest-" + std::to_string(client_id);
-        threads[key] = new std::thread(frequencyClientRequest, client_id, seconds * freq);
-    }
-    for (auto &kv : threads) {
-        kv.second->join();
-        delete kv.second;
-    }
-    LOG(INFO) << "FrequencyClientRequest Terminated ";
-
-    terminate();
-}
-void Proxy::SendSimClientRequest(uint32_t client_id, uint32_t seq_num)
-{
-    uint64_t now = GetMicrosecondTimestamp();
-    uint64_t deadline = now + latencyBound_;
-    deadline = std::max(deadline, lastDeadline_ + 1);
-    lastDeadline_ = deadline;
-
-    DOMRequest outReq;
-    outReq.set_send_time(now);
-    outReq.set_deadline(deadline);
-    outReq.set_proxy_id(proxyId_);
-
-    outReq.set_deadline_set_size(numReceivers_);
-    outReq.set_late(false);
-
-    outReq.set_client_id(client_id);
-    outReq.set_client_seq(seq_num);
-
-    for (int i = 0; i < numReceivers_; i++) {
-        VLOG(2) << "Issuing simmed client req (" << client_id << ", " << i << ") to " << receiverAddrs_[i].ip_
-                << " deadline=" << deadline << " latencyBound=" << latencyBound_
-                << " now=" << GetMicrosecondTimestamp();
-
-        MessageHeader *hdr = forwardEps_[0]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
-        forwardEps_[0]->SendPreparedMsgTo(receiverAddrs_[i]);
-    }
-}
 void Proxy::ForwardRequestsTd(const int thread_id)
 {
-    VLOG(1) << "TEST";
     MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender) {
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
@@ -221,6 +205,57 @@ void Proxy::ForwardRequestsTd(const int thread_id)
     forwardEps_[thread_id]->RegisterTimer(&monitor);
 
     forwardEps_[thread_id]->LoopRun();
+}
+
+void Proxy::GenerateRequests()
+{
+    int seq = 0;
+
+    Timer timer(
+        [&timer, &seq, this](void *ctx, void *endpoint) {
+            Endpoint *ep = (Endpoint *) endpoint;
+
+            uint64_t now = GetMicrosecondTimestamp();
+            uint64_t deadline = now + latencyBound_;
+            deadline = std::max(deadline, lastDeadline_ + 1);
+            lastDeadline_ = deadline;
+
+            DOMRequest outReq;
+            outReq.set_send_time(now);
+            outReq.set_deadline(deadline);
+            outReq.set_proxy_id(proxyId_);
+
+            outReq.set_deadline_set_size(numReceivers_);
+            outReq.set_late(false);
+
+            outReq.set_client_id(proxyId_);
+            outReq.set_client_seq(seq);
+
+            for (int i = 0; i < numReceivers_; i++) {
+                VLOG(2) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to " << receiverAddrs_[i].ip_
+                        << " deadline=" << deadline << " latencyBound=" << latencyBound_
+                        << " now=" << GetMicrosecondTimestamp();
+
+                MessageHeader *hdr = ep->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+                ep->SendPreparedMsgTo(receiverAddrs_[i]);
+            }
+
+            ep->ResetTimer(&timer, genReqFreq_);
+        },
+        genReqFreq_, this);
+
+    Timer endExperiment(
+        [this](void *ctx, void *endpoint) {
+            running_ = false;
+            LOG(INFO) << "Ending experiment";
+            ((Endpoint *) endpoint)->LoopBreak();
+        },
+        genReqDuration_ * 1000000, this);
+
+    forwardEps_[0]->RegisterTimer(&timer);
+    forwardEps_[0]->RegisterTimer(&endExperiment);
+
+    forwardEps_[0]->LoopRun();
 }
 
 }   // namespace dombft

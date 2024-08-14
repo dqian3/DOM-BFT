@@ -48,12 +48,7 @@ private:
     void ForwardRequestsTd(const int id = -1);
     void RecvMeasurementsTd();
 
-    void SendSimClientRequest(uint32_t client_id, uint32_t seq_num);
-    void FrequencyClientRequest(uint32_t freq, uint32_t seconds);
-
-    /** LogTd is just used to collect some performance stats. It is not necessary
-     * in the release version */
-    void LogTd();
+    void GenerateRequests(uint32_t freq, uint32_t duration);
 
     /** Flag to Run/Terminate threads */
     std::atomic<bool> running_;
@@ -73,17 +68,20 @@ private:
     int numShards_;
     int numReceivers_;
     std::vector<Address> receiverAddrs_;
-    // reorder exp
-    bool selfGenClientReq_;
-    std::vector<uint32_t> proxySimmedClients_;
-    uint32_t simmedCliReqFreq_;
-    uint32_t simmedCliReqDuration_;
+
+    // Reordering Experiments
+    bool selfGenReqs_;
+    uint32_t genReqFreq_;
+    double genReqLambda_ = 0;
+    uint32_t genReqDuration_;
 
 public:
-    /** Proxy accept a config file, which contains all the necessary information
+    /** Proxy accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */
     Proxy(const ProcessConfig &config, uint32_t proxyId_);
+
+    // Create a proxy that generates requests on its own, for DOM experiments
     Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedCliNum, uint32_t simmedCliReqFreq,
           uint32_t simmedCliReqDuration);
     ~Proxy();
