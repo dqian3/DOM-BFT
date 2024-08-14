@@ -72,8 +72,8 @@ private:
     // Reordering Experiments
     bool selfGenReqs_;
     uint32_t genReqFreq_;
-    double genReqLambda_ = 0;
     uint32_t genReqDuration_;
+    bool genReqPoisson_;
 
 public:
     /** Proxy accepts a config file, which contains all the necessary information
@@ -82,8 +82,8 @@ public:
     Proxy(const ProcessConfig &config, uint32_t proxyId_);
 
     // Create a proxy that generates requests on its own, for DOM experiments
-    Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedCliNum, uint32_t simmedCliReqFreq,
-          uint32_t simmedCliReqDuration);
+    Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t genReqFreq, uint32_t genReqDuration,
+          bool genReqPoisson);
     ~Proxy();
 
     void run();

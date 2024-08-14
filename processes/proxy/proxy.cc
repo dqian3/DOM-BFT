@@ -1,5 +1,7 @@
 #include "proxy.h"
 
+#include <random>
+
 namespace dombft {
 using namespace dombft::proto;
 
@@ -58,14 +60,14 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     }
 }
 
-Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t num, uint32_t simmedCliReqFreq,
-             uint32_t simmedCliReqDuration)
+Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t freq, uint32_t duration, bool poisson)
     : Proxy(config, proxyId)
 {
-    // reorder exp
+    // Setup experimental parameters
     selfGenReqs_ = true;
-    genReqFreq_ = simmedCliReqFreq;
-    genReqDuration_ = simmedCliReqDuration;
+    genReqFreq_ = freq;
+    genReqDuration_ = duration;
+    genReqPoisson_ = poisson;
 }
 
 void Proxy::terminate()
@@ -211,8 +213,15 @@ void Proxy::GenerateRequests()
 {
     int seq = 0;
 
+    // If we want to generate requests according to a poisson process with an average
+    // rate of genReqFreq_, the lambda parameter should just be 1/avg interval, which
+    // is just the freq.
+    std::random_device rd;    // uniformly-distributed integer random number generator
+    std::mt19937 rng(rd());   // mt19937: Pseudo-random number generation
+    std::exponential_distribution<double> exp(genReqFreq_);
+
     Timer timer(
-        [&timer, &seq, this](void *ctx, void *endpoint) {
+        [&, this](void *ctx, void *endpoint) {
             Endpoint *ep = (Endpoint *) endpoint;
 
             uint64_t now = GetMicrosecondTimestamp();
@@ -240,9 +249,14 @@ void Proxy::GenerateRequests()
                 ep->SendPreparedMsgTo(receiverAddrs_[i]);
             }
 
-            ep->ResetTimer(&timer, genReqFreq_);
+            // interval in seconds between requests
+            double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
+            // convert to microseconds
+            uint32_t interval_us = interval * 1000000;
+
+            ep->ResetTimer(&timer, interval_us);
         },
-        genReqFreq_, this);
+        1000, this);   // initial time doesn't matter, since it's reset
 
     Timer endExperiment(
         [this](void *ctx, void *endpoint) {
