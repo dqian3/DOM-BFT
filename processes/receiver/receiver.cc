@@ -9,9 +9,10 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool proxySimmedRequest)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
+    , proxySimmedRequest_(proxySimmedRequest)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -114,7 +115,9 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
             VLOG(3) << "Checking deadlines before forwarding late message";
             checkDeadlines();
 
-            forwardRequest(request);
+            if(!proxySimmedRequest_){
+                forwardRequest(it->second);
+            }
         } else {
             VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
                     << request.deadline() - recv_time << "us";
@@ -164,8 +167,10 @@ void Receiver::checkDeadlines()
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
-        // comment out for reorder exp
-        //forwardRequest(it->second);
+        // reorder exp
+        if(!proxySimmedRequest_){
+            forwardRequest(it->second);
+        }
         auto temp = std::next(it);
         deadlineQueue_.erase(it);
         it = temp;

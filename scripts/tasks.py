@@ -28,15 +28,16 @@ def local_reorder_exp(c, config_file):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
 
+        # TODO(Hao): such param setting is messy and cannot be easily configured as different roles require different config..
         for id in range(n_receivers):
-            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log"
+            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id}&>logs/receiver{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
             other_handles.append(hdl)
 
         for id in range(n_proxies):
-            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log"
+            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id}&>logs/proxy{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
@@ -114,6 +115,7 @@ def local(c, config_file):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
 
         # kill these processes and then join
+        # TODO(Hao) there should be a graceful way to do it..
         for hdl in other_handles:
             hdl.runner.kill()
             hdl.join()

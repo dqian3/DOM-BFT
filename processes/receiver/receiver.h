@@ -40,9 +40,10 @@ private:
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;
     Address replicaAddr_;
+    bool proxySimmedRequest_;
 
 public:
-    Receiver(const ProcessConfig &config, uint32_t receiverId);
+    Receiver(const ProcessConfig &config, uint32_t receiverId, bool proxySimmedRequest = false);
     ~Receiver();
     void run();
 };

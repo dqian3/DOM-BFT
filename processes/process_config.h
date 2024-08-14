@@ -37,9 +37,6 @@ struct ProcessConfig {
     int proxyShards;
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
-    // For reorder experiment
-    bool selfGenClientReq;
-    uint32_t proxySimmedClients;
 
     std::vector<std::string> receiverIps;
     int receiverPort;
@@ -115,8 +112,6 @@ struct ProcessConfig {
             proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
-            selfGenClientReq = parseField<bool>(proxyNode, "selfGenClientReq");
-            proxySimmedClients = parseField<int>(proxyNode, "simmedClients");
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing proxy " + std::string(e.what()));
         }

@@ -11,13 +11,6 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
     proxyId_ = proxyId;
 
-    // reorder exp
-    selfGenClientReq_ = config.selfGenClientReq;
-    uint32_t simmedClientNum = config.proxySimmedClients;
-    for (size_t i = proxyId * simmedClientNum; i < simmedClientNum; i++) {
-        proxySimmedClients_.push_back(i);
-    }
-
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
     LOG(INFO) << "Loading key from " << proxyKey;
     if (!sigProvider_.loadPrivateKey(proxyKey)) {
@@ -64,6 +57,53 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     }
 }
 
+Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedClientNum, uint32_t simmedCliReqFreq, uint32_t simmedCliReqDuration)
+    {
+        lastDeadline_ = GetMicrosecondTimestamp();
+        maxOWD_ = config.proxyMaxOwd;
+        latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
+        proxyId_ = proxyId;
+
+        // reorder exp
+        selfGenClientReq_ = true;
+        simmedCliReqFreq_ = simmedCliReqFreq;
+        simmedCliReqDuration_ = simmedCliReqDuration;
+        uint32_t startClient = proxyId * simmedClientNum;
+        for (size_t i = startClient; i < startClient+simmedClientNum; i++) {
+            proxySimmedClients_.push_back(i);
+        }
+
+        std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
+        LOG(INFO) << "Loading key from " << proxyKey;
+        if (!sigProvider_.loadPrivateKey(proxyKey)) {
+            LOG(ERROR) << "Unable to load private key!";
+            exit(1);
+        }
+
+        numReceivers_ = config.receiverIps.size();
+
+        // TODO(Hao): stick to nng rn
+        numShards_ = 1;
+        if (config.transport == "nng") {
+            auto addrPairs = getProxyAddrs(config, proxyId);
+            size_t nClients = config.clientIps.size();
+            std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(),
+                                                                  addrPairs.end() - config.receiverIps.size());
+            std::vector<std::pair<Address, Address>> measurmentAddrs(addrPairs.end() - config.receiverIps.size(),
+                                                                     addrPairs.end());
+
+            forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
+            measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
+
+            for (size_t i = nClients; i < forwardAddrs.size(); i++) {
+                receiverAddrs_.push_back(forwardAddrs[i].second);
+            }
+
+        } else {
+            VLOG(1) << "NOT SUPPORTED IN REORDER EXP SETUP";
+        }
+    }
+
 void Proxy::terminate()
 {
     LOG(INFO) << "Terminating...";
@@ -96,7 +136,7 @@ void Proxy::LaunchThreads()
 {
     threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
     if(selfGenClientReq_){
-        threads_["ClientRequestGenerateTd"] = new std::thread(&Proxy::FrequencyClientRequest, this, 1, 10);
+        threads_["ClientRequestGenerateTd"] = new std::thread(&Proxy::FrequencyClientRequest, this, simmedCliReqFreq_, simmedCliReqDuration_);
     }else{
         for (int i = 0; i < numShards_; i++) {
             std::string key = "ForwardRequestsTd-" + std::to_string(i);
@@ -144,18 +184,18 @@ void Proxy::FrequencyClientRequest(uint32_t freq, uint32_t seconds){
     uint64_t gap = 1/freq * 1000;
     auto frequencyClientRequest = [this,gap](uint32_t client_id, uint32_t total_requests){
         uint32_t seq_num = 0;
-        while(seq_num++ < total_requests){
-            SendMimicClientRequest(client_id, total_requests);
+        while(seq_num < total_requests){
+            SendSimClientRequest(client_id, seq_num++);
             std::this_thread::sleep_for(std::chrono::milliseconds(gap));
         }
         VLOG(1) << "Client " << client_id << " finished sending " << total_requests << " requests";
     };
     // fire a thread for each mimic client in proxySimmedClients_
     for(auto client_id: proxySimmedClients_){
-        threads_["FrequencyClientRequest-" + std::to_string(client_id)] = new std::thread(frequencyClientRequest, client_id, seconds);
+        threads_["FrequencyClientRequest-" + std::to_string(client_id)] = new std::thread(frequencyClientRequest, client_id, seconds * freq);
     }
 }
-void Proxy::SendMimicClientRequest(uint32_t client_id, uint32_t seq_num){
+void Proxy::SendSimClientRequest(uint32_t client_id, uint32_t seq_num){
     uint64_t now = GetMicrosecondTimestamp();
     uint64_t deadline = now + latencyBound_;
     deadline = std::max(deadline, lastDeadline_ + 1);
@@ -170,9 +210,10 @@ void Proxy::SendMimicClientRequest(uint32_t client_id, uint32_t seq_num){
     outReq.set_late(false);
 
     outReq.set_client_id(client_id);
+    outReq.set_client_seq(seq_num);
 
     for (int i = 0; i < numReceivers_; i++) {
-        VLOG(2) << "Forwarding (" << client_id << ", " << i << ") to "
+        VLOG(2) << "Issuing simmed client req (" << client_id << ", " << i << ") to "
                 << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
                 << " now=" << GetMicrosecondTimestamp();
 
@@ -183,6 +224,7 @@ void Proxy::SendMimicClientRequest(uint32_t client_id, uint32_t seq_num){
 }
 void Proxy::ForwardRequestsTd(const int thread_id)
 {
+    VLOG(1) << "TEST";
     MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender) {
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
