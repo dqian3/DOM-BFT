@@ -87,6 +87,7 @@ public:
     Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedCliNum, uint32_t simmedCliReqFreq,
           uint32_t simmedCliReqDuration);
     ~Proxy();
+
     void run();
     void terminate();
 };

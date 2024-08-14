@@ -60,91 +60,15 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
 
 Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedClientNum, uint32_t simmedCliReqFreq,
              uint32_t simmedCliReqDuration)
+    : Proxy(config, proxyId)
 {
-    lastDeadline_ = GetMicrosecondTimestamp();
-    maxOWD_ = config.proxyMaxOwd;
-    latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
-    proxyId_ = proxyId;
-
-    // reorder exp
+    // Setup some parameters for reordering experiments
     selfGenClientReq_ = true;
     simmedCliReqFreq_ = simmedCliReqFreq;
     simmedCliReqDuration_ = simmedCliReqDuration;
     uint32_t startClient = proxyId * simmedClientNum;
     for (size_t i = startClient; i < startClient + simmedClientNum; i++) {
         proxySimmedClients_.push_back(i);
-    }
-
-    std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
-    LOG(INFO) << "Loading key from " << proxyKey;
-    if (!sigProvider_.loadPrivateKey(proxyKey)) {
-        LOG(ERROR) << "Unable to load private key!";
-        exit(1);
-    }
-
-    numReceivers_ = config.receiverIps.size();
-
-    // TODO(Hao): stick to nng rn
-    numShards_ = 1;
-    if (config.transport == "nng") {
-        auto addrPairs = getProxyAddrs(config, proxyId);
-        size_t nClients = config.clientIps.size();
-        std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(),
-                                                              addrPairs.end() - config.receiverIps.size());
-        std::vector<std::pair<Address, Address>> measurmentAddrs(addrPairs.end() - config.receiverIps.size(),
-                                                                 addrPairs.end());
-
-        forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
-        measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
-
-        for (size_t i = nClients; i < forwardAddrs.size(); i++) {
-            receiverAddrs_.push_back(forwardAddrs[i].second);
-        }
-
-    } else {
-        VLOG(1) << "NOT SUPPORTED IN REORDER EXP SETUP";
-    }
-}
-
-void Proxy::terminate()
-{
-    LOG(INFO) << "Terminating...";
-    running_ = false;
-}
-
-void Proxy::run()
-{
-    running_ = true;
-
-    LaunchThreads();
-    for (auto &kv : threads_) {
-        LOG(INFO) << "Join " << kv.first;
-        kv.second->join();
-        LOG(INFO) << "Join Complete " << kv.first;
-    }
-    LOG(INFO) << "Run Terminated ";
-}
-
-Proxy::~Proxy()
-{
-    for (auto &kv : threads_) {
-        delete kv.second;
-    }
-
-    // TODO Cleanup more
-}
-
-void Proxy::LaunchThreads()
-{
-    threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
-    if (selfGenClientReq_) {
-        threads_["ClientRequestGenerateTd"] =
-            new std::thread(&Proxy::FrequencyClientRequest, this, simmedCliReqFreq_, simmedCliReqDuration_);
-    } else {
-        for (int i = 0; i < numShards_; i++) {
-            std::string key = "ForwardRequestsTd-" + std::to_string(i);
-            threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
-        }
     }
 }
 
