@@ -48,7 +48,7 @@ private:
     void ForwardRequestsTd(const int id = -1);
     void RecvMeasurementsTd();
 
-    void GenerateRequests(uint32_t freq, uint32_t duration);
+    void GenerateRequestsTd();
 
     /** Flag to Run/Terminate threads */
     std::atomic<bool> running_;

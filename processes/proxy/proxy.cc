@@ -102,7 +102,7 @@ void Proxy::LaunchThreads()
 {
     threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
     if (selfGenReqs_) {
-        threads_["GenerateRequestsTd"] = new std::thread(&Proxy::GenerateRequests, this, genReqFreq_, genReqDuration_);
+        threads_["GenerateRequestsTd"] = new std::thread(&Proxy::GenerateRequestsTd, this);
     } else {
         for (int i = 0; i < numShards_; i++) {
             std::string key = "ForwardRequestsTd-" + std::to_string(i);
@@ -209,7 +209,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
     forwardEps_[thread_id]->LoopRun();
 }
 
-void Proxy::GenerateRequests()
+void Proxy::GenerateRequestsTd()
 {
     int seq = 0;
 
