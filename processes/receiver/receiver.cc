@@ -114,10 +114,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
                     << recv_time - request.deadline() << "us";
             VLOG(3) << "Checking deadlines before forwarding late message";
             checkDeadlines();
-
-            if (!skipForwarding_) {
-                forwardRequest(request);
-            }
+            forwardRequest(request);
         } else {
             VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
                     << request.deadline() - recv_time << "us";
@@ -142,8 +139,14 @@ void Receiver::forwardRequest(const DOMRequest &request)
         // TODO
         throw "IPC communciation not implemented";
     } else {
-        VLOG(1) << "Forwarding request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
+        uint64_t now = GetMicrosecondTimestamp();
+
+        VLOG(1) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
                 << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+
+        if (skipForwarding_) {
+            return;
+        }
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
         // TODO check errors for all of these lol
@@ -165,10 +168,7 @@ void Receiver::checkDeadlines()
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
-        // reorder exp
-        if (!skipForwarding_) {
-            forwardRequest(it->second);
-        }
+        forwardRequest(it->second);
         auto temp = std::next(it);
         deadlineQueue_.erase(it);
         it = temp;
