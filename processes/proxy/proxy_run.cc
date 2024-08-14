@@ -25,9 +25,10 @@ int main(int argc, char *argv[])
     LOG(INFO) << "Loading config from " << FLAGS_config;
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
-    if (FLAGS_proxySimmedCliReq){
-        proxy = std::make_unique<dombft::Proxy>(config, FLAGS_proxyId, FLAGS_simmedCliNum, FLAGS_proxySimmedCliReqFreq, FLAGS_proxySimmedCliReqDuration);
-    }else{
+    if (FLAGS_proxySimmedCliReq) {
+        proxy = std::make_unique<dombft::Proxy>(config, FLAGS_proxyId, FLAGS_simmedCliNum, FLAGS_proxySimmedCliReqFreq,
+                                                FLAGS_proxySimmedCliReqDuration);
+    } else {
         proxy = std::make_unique<dombft::Proxy>(config, FLAGS_proxyId);
     }
     proxy->run();

@@ -84,7 +84,8 @@ public:
      * to instantiate the object, then it can call Run method
      *  */
     Proxy(const ProcessConfig &config, uint32_t proxyId_);
-    Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedCliNum, uint32_t simmedCliReqFreq, uint32_t simmedCliReqDuration);
+    Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t simmedCliNum, uint32_t simmedCliReqFreq,
+          uint32_t simmedCliReqDuration);
     ~Proxy();
     void run();
     void terminate();
