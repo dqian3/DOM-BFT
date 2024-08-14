@@ -29,17 +29,18 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             exit(1);
         }
         auto addrPairs = getProxyAddrs(config, proxyId);
+
         // This is rather messy, but the last nReceivers addresses in this return value are for the measurement
         // connections
         size_t nClients = config.clientIps.size();
         size_t nReplicas = config.replicaIps.size();
         std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(),
                                                               addrPairs.end() - config.receiverIps.size());
-        std::vector<std::pair<Address, Address>> measurmentAddrs(addrPairs.end() - config.receiverIps.size(),
-                                                                 addrPairs.end());
+        std::vector<std::pair<Address, Address>> measurementAddrs(addrPairs.end() - config.receiverIps.size(),
+                                                                  addrPairs.end());
 
         forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
-        measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
+        measurementEp_ = std::make_unique<NngEndpoint>(measurementAddrs);
 
         for (size_t i = nClients; i < forwardAddrs.size(); i++) {
             receiverAddrs_.push_back(forwardAddrs[i].second);

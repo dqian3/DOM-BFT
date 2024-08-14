@@ -162,8 +162,6 @@ void Receiver::checkDeadlines()
 
     auto it = deadlineQueue_.begin();
 
-    VLOG(3) << "Checking deadlines";
-
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
@@ -177,8 +175,6 @@ void Receiver::checkDeadlines()
     }
 
     uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
-    VLOG(3) << "Next deadline check in " << nextCheck << "us";
-
     endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 
