@@ -43,9 +43,11 @@ private:
 
     // Skip forwarding, for running experiemnts.
     bool skipForwarding_;
+    bool ignoreDeadlines_;
 
 public:
-    Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false);
+    Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false,
+             bool ignoreDeadlines_ = false);
     ~Receiver();
     void run();
 };

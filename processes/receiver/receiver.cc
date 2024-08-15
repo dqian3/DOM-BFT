@@ -9,10 +9,11 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
+    , ignoreDeadlines_(ignoreDeadlines)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -109,7 +110,9 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
                 << " deadline=" << request.deadline() << " now=" << recv_time;
 
-        if (request.late()) {
+        if (ignoreDeadlines_) {
+            forwardRequest(request);
+        } else if (request.late()) {
             VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
                     << recv_time - request.deadline() << "us";
             VLOG(3) << "Checking deadlines before forwarding late message";
