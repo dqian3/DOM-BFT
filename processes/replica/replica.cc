@@ -302,6 +302,13 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
+        if (msg.instance() < instance_) {
+
+            LOG(INFO) << "Received old fallback proposal from instance=" << msg.instance() << " own instance is "
+                      << instance_;
+            return;
+        }
+
         // TODO actually run a protocol instead of assuming this is ok
         finishFallback(msg);
     }
@@ -748,8 +755,9 @@ void Replica::applyFallbackReq(const dombft::proto::LogEntry &entry)
 
 void Replica::finishFallback(const FallbackProposal &history)
 {
-    // TODO apply FallbackProposal.
+    LOG(INFO) << "Applying fallback for instance=" << history.instance() << " from instance=" << instance_;
     fallback_ = false;
+    instance_ = history.instance();
 
     // TODO verify message so this isn't unsafe
     uint32_t maxCheckpointSeq = 0;
@@ -869,6 +877,8 @@ void Replica::finishFallback(const FallbackProposal &history)
         log_->checkpoint.signatures[commit.replica_id()] = maxCheckpoint.signatures()[i];
     }
 
+    LOG(INFO) << "Checkpoint digest=" << digest_to_hex(log_->checkpoint.logDigest).substr(56);
+
     LOG(INFO) << "Applying requests up to cert and with f + 1 requests";
 
     // TODO rollback
@@ -899,6 +909,7 @@ void Replica::finishFallback(const FallbackProposal &history)
         // TODO Rollback application state here!
         if (!rollbackDone) {
             log_->nextSeq = entry.seq();
+            rollbackDone = true;
         }
 
         applyFallbackReq(entry);
