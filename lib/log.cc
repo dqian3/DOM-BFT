@@ -70,7 +70,8 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
 
     byte *prevDigest = nullptr;
-    if (prevSeqIdx == checkpoint.seq) {
+    if (nextSeq - 1 == checkpoint.seq) {
+        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
         prevDigest = checkpoint.logDigest;
     } else {
         prevDigest = log[prevSeqIdx]->digest;

@@ -373,7 +373,7 @@ void Client::checkReqState(uint32_t clientSeq)
             // We also don't check the result here, that only needs to happen in the fast path
             std::tuple<std::string, int> key = {reply.digest(), reply.seq()};
 
-            VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq();
+            VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
 
             matchingReplies[key].insert(replicaId);
             maxMatching = std::max(maxMatching, matchingReplies[key].size());
@@ -400,6 +400,17 @@ void Client::checkReqState(uint32_t clientSeq)
         // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
         // we have a proof of inconsistency.
         if (reqState.fallbackAttempts == 0 && 3 * f_ + 1 - reqState.replies.size() < 2 * f_ + 1 - maxMatching) {
+
+            // TODO check instances better
+            std::set<int> instances;
+            for (auto &replyEntry : reqState.replies) {
+                instances.insert(replyEntry.second.instance());
+            }
+            if (instances.size() > 1) {
+                LOG(INFO) << "Skipping proof due to multiple instances";
+                return;
+            }
+
             LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
             reqState.fallbackProof = Cert();
@@ -410,7 +421,7 @@ void Client::checkReqState(uint32_t clientSeq)
             fallbackTriggerMsg.set_client_seq(clientSeq);
 
             // TODO check if fast path is not posssible, and we can send cert right away
-            for (auto replyEntry : reqState.replies) {
+            for (auto &replyEntry : reqState.replies) {
                 reqState.fallbackProof->add_signatures(reqState.signatures[replyEntry.first]);
                 (*reqState.fallbackProof->add_replies()) = replyEntry.second;
             }
