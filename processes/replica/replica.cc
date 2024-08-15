@@ -62,8 +62,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
         }
 
         for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
-            LOG(INFO) << "Replica " << i << ": " << addrPairs[i].second.GetIPAsString();
-
             // Skip adding one side of self connection so replica chooses one side to send to
             // TODO this is very ugly.
             if (i - (nClients + 1) == replicaId_)
@@ -277,8 +275,8 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (msg.instance() != (replicaId_ % replicaAddrs_.size())) {
-            LOG(INFO) << "Received FALLBACK_START for instance where I am not leader";
+        if ((msg.instance() % replicaAddrs_.size()) != replicaId_) {
+            LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " where I am not leader";
             return;
         }
 
@@ -478,10 +476,6 @@ void Replica::handleCert(const Cert &cert)
 
     const Reply &r = cert.replies()[0];
     log_->addCert(r.seq(), cert);
-
-    if (log_->lastExecuted < r.seq()) {
-        // Execute up to seq;
-    }
 
     CertReply reply;
     reply.set_client_id(r.client_id());
@@ -764,9 +758,8 @@ void Replica::finishFallback(const FallbackProposal &history)
     // First find highest commit point
     for (int i = 0; i < history.logs().size(); i++) {
         auto &log = history.logs()[i];
-        // TODO verify each checkpoint
         if (log.checkpoint().seq() > maxCheckpointSeq) {
-            maxCheckpointSeq = 0;
+            maxCheckpointSeq = log.checkpoint().seq();
             maxCheckpointIdx = i;
         }
     }
@@ -848,19 +841,19 @@ void Replica::finishFallback(const FallbackProposal &history)
 
     const LogCheckpoint &maxCheckpoint = history.logs()[maxCheckpointIdx].checkpoint();
 
-    if (maxCheckpoint.seq() >= log_->nextSeq) {
-        LOG(ERROR) << "Fallback checkpoint too far ahead (seq= " << maxCheckpoint.seq()
-                   << "). state transfer is not implemented, exiting...";
-        exit(1);
-    }
+    // if (maxCheckpoint.seq() >= log_->nextSeq) {
+    //     LOG(ERROR) << "Fallback checkpoint too far ahead (seq= " << maxCheckpoint.seq()
+    //                << "). state transfer is not implemented, exiting...";
+    //     exit(1);
+    // }
 
-    const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
-    std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
-    if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest) {
-        LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq()
-                   << "). state transfer is not implemented, exiting...";
-        exit(1);
-    }
+    // const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
+    // std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
+    // if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest) {
+    //     LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq()
+    //                << "). state transfer is not implemented, exiting...";
+    //     exit(1);
+    // }
 
     // Now we know the logCheckpoint is usable
     // TODO implement this more nicely by making an interface in the log.
@@ -879,7 +872,6 @@ void Replica::finishFallback(const FallbackProposal &history)
     LOG(INFO) << "Applying requests up to cert and with f + 1 requests";
 
     // TODO rollback
-
     bool rollbackDone = false;
 
     auto &logToUse = history.logs()[logToUseIdx].log_entries();

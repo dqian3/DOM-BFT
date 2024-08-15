@@ -67,7 +67,13 @@ Log::Log()
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
 {
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
-    byte *prevDigest = log[prevSeqIdx]->digest;
+
+    byte *prevDigest = nullptr;
+    if (prevSeqIdx == checkpoint.seq) {
+        prevDigest = checkpoint.logDigest;
+    } else {
+        prevDigest = log[prevSeqIdx]->digest;
+    }
 
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
@@ -76,7 +82,8 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
 
-    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq;
+    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
+            << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
     nextSeq++;
 
     return true;

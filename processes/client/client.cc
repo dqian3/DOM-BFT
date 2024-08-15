@@ -135,7 +135,7 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
         // Check validity
         //  1. Not for the same client
         //  2. Client doesn't have state for this request
-        if (reply.client_id() != clientId_ || requestStates_.count(reply.client_seq()) == 0) {
+        if (reply.client_id() != clientId_) {
             // TODO more info?
             LOG(INFO) << "Invalid reply! " << reply.client_id() << ", " << reply.client_seq();
             return;
