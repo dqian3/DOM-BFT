@@ -425,7 +425,8 @@ def local_reorder_exp(c, config_file, poisson=False):
 
 
 @task
-def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", poisson=False):
+def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
+                    poisson=False, ignore_deadlines=False, duration=20, rate=100):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -465,7 +466,10 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", poisson=False):
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = local_log_arun(f"../logs/receiver{id}.log", ip)
-        hdl = arun(f"{receiver_path}  -v {5} -config {remote_config_file} -skipForwarding -receiverId {id} 2>&1")
+        hdl = arun(
+                f"{receiver_path}  -v {5} -receiverId {id} -config {remote_config_file}" 
+                + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''} 2>&1"
+        )
 
         other_handles.append(hdl)
 
@@ -475,7 +479,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", poisson=False):
     for id, ip in enumerate(proxies):
         arun = local_log_arun(f"../logs/proxy{id}.log", ip)
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
-                f"{'-poisson' if poisson else ''} -duration 20 -rate 100 2>&1")
+                f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate} 2>&1")
         
         proxy_handles.append(hdl)
 
