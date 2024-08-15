@@ -100,8 +100,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
     fallbackTimer_ = std::make_unique<Timer>(
         [this](void *ctx, void *endpoint) {
             LOG(INFO) << "Fallback for instance=" << instance_ << " failed!";
-            LOG(INFO) << "Exiting....";
-            exit(1);   // TODO
             this->startFallback();
         },
         config.replicaFallbackTimeout, this);
@@ -522,6 +520,10 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
     for (const auto &entry : checkpointReplies_) {
         int replicaId = entry.first;
         const Reply &reply = entry.second;
+
+        // Already committed
+        if (reply.seq() <= log_->checkpoint.seq)
+            continue;
 
         std::tuple<std::string, int, int> key = {reply.digest(), reply.instance(), reply.seq()};
 

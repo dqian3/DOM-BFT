@@ -290,7 +290,7 @@ void Client::checkTimeouts()
 
         if (now - reqState.sendTime > slowPathTimeout_) {
             LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
-                      << " now=" << now << "due to timeout";
+                      << " now=" << now << " due to timeout";
             reqState.sendTime = now;
 
             reqState.fallbackAttempts++;

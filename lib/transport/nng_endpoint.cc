@@ -87,7 +87,7 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
     nng_socket s = socks_[addrToSocket_[dstAddr]];
     int ret = nng_send(s, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, NNG_FLAG_NONBLOCK);
     if (ret != 0) {
-        VLOG(1) << "\tSend fto " << dstAddr.ip_ << " failed: " << nng_strerror(ret);
+        VLOG(1) << "\tSend to " << dstAddr.ip_ << " failed: " << nng_strerror(ret);
         return ret;
     }
 

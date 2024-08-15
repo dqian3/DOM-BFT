@@ -161,8 +161,13 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     int i = l.nextSeq - MAX_SPEC_HIST;
     i = i < 0 ? 0 : i;   // std::max isn't playing nice
     for (; i < l.nextSeq; i++) {
-        int seq = i % MAX_SPEC_HIST;
-        out << *l.log[seq];
+        int idx = i % MAX_SPEC_HIST;
+
+        // Skip any committed/truncated logs
+        if (l.log[idx]->seq <= l.checkpoint.seq)
+            continue;
+
+        out << *l.log[idx];
     }
     return out;
 }
