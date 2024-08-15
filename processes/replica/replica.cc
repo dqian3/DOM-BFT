@@ -580,6 +580,11 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     std::vector<uint32_t> matches = {replicaId_};
 
     for (auto &[r, commit] : checkpointCommits_) {
+        if (r == replicaId_) {
+            // Skip processing own checkpoint, we assume it is good
+            continue;
+        }
+
         if (commit.seq() != myCommit.seq()) {
             continue;
         }
