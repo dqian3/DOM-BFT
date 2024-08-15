@@ -88,7 +88,6 @@ def get_gcloud_process_group(config, ext_ips):
         if process == "transport": continue
         int_ips |= set([ip for ip in config[process]["ips"]])
 
-    # TODO transfer keys and configs
     ips = []
     for ip in int_ips:  # TODO non local receivers?
         ips.append(ext_ips[ip])
@@ -400,12 +399,11 @@ def local_reorder_exp(c, config_file, poisson=False):
         for id in range(n_proxies):
             cmd = (
                 f"./bazel-bin/processes/proxy/dombft_proxy -v {5} " +
-                f"-config {config_file} -proxyId {id} -genRequests " +
+                f"-config {config_file} -proxyId {id} -genRequests  -duration 10 " +
                 f"{'-poisson' if poisson else ''} &>logs/proxy{id}.log"
             )
 
             hdl = arun(cmd)
-
             proxy_handles.append(hdl)
 
     try:
@@ -467,7 +465,8 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", poisson=False):
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = local_log_arun(f"../logs/receiver{id}.log", ip)
-        hdl = arun(f"{receiver_path}  -v {5} -config {remote_config_file} -receiverId {id} 2>&1")
+        hdl = arun(f"{receiver_path}  -v {5} -config {remote_config_file} -skipForwarding -receiverId {id} 2>&1")
+
         other_handles.append(hdl)
 
     time.sleep(5)
@@ -476,14 +475,17 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", poisson=False):
     for id, ip in enumerate(proxies):
         arun = local_log_arun(f"../logs/proxy{id}.log", ip)
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
-                f"{'-poisson' if poisson else ''} -duration 20 2>&1")
+                f"{'-poisson' if poisson else ''} -duration 20 -rate 100 2>&1")
         
-        other_handles.append(hdl)
+        proxy_handles.append(hdl)
 
     try:
         # join on the client processes, which should end
         for hdl in proxy_handles:
             hdl.join()
+
+        print("Proxies done, waiting 5 sec for receivers to finish...")
+        time.sleep(5)
 
     finally:
         # kill these processes and then join

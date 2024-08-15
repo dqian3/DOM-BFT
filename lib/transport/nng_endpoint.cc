@@ -17,7 +17,7 @@ NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, co
         int ret;
         size_t len = NNG_BUFFER_SIZE;
 
-        if ((ret = nng_recv(m->sock_, m->recvBuffer_, &len, 0)) != 0) {
+        if ((ret = nng_recv(m->sock_, m->recvBuffer_, &len, NNG_FLAG_NONBLOCK)) != 0) {
             LOG(ERROR) << "nng_recv failure: " << nng_strerror(ret);
             return;
         }
@@ -85,7 +85,7 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
     }
 
     nng_socket s = socks_[addrToSocket_[dstAddr]];
-    int ret = nng_send(s, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0);
+    int ret = nng_send(s, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, NNG_FLAG_NONBLOCK);
     if (ret != 0) {
         VLOG(1) << "\tSend Fail " << nng_strerror(ret);
         return ret;
