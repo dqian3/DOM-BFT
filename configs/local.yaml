@@ -3,14 +3,17 @@ transport: nng
 client:
   ips: 
   - "127.0.1.0"
-  - "127.0.1.1"
   port: 33000
   keysDir: keys/client
   maxRequests: 5
   numRequests: 1000000
   runtimeSeconds: 10 
   normalPathTimeout: 5000
-  slowPathTimeout: 100000
+  slowPathTimeout: 50000
+  sendRate: 100
+  # the sendmode can be either using sendRate or maxRequests in flight. 
+  # sendMode: "sendRate"
+  sendMode: "maxRequests"
 
 
 # Proxy Info

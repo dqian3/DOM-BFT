@@ -32,6 +32,12 @@ struct RequestState {
     bool fastPathPossible = true;
 };
 
+enum clientSendMode 
+{
+    rateBased = 0,
+    maxInFlightBased = 1
+};
+
 class Client {
 private:
     /* Config parameters that need to be saved */
@@ -43,6 +49,8 @@ private:
     uint32_t numRequests_;
     uint32_t numCommitted_ = 0;
 
+    uint32_t clientSendRate_;
+
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
 
@@ -50,6 +58,10 @@ private:
     std::unique_ptr<Endpoint> endpoint_;
     /** Timer to handle request timeouts  (TODO timeouts vs repeated timer would maybe be better)*/
     std::unique_ptr<Timer> timeoutTimer_;
+
+    // timer to control sending rate of the client
+    std::unique_ptr<Timer> sendTimer_;
+    dombft::clientSendMode sendMode_;
 
     /** Timer to stop client after running for configured time */
     std::unique_ptr<Timer> terminateTimer_;
