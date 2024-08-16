@@ -11,6 +11,9 @@ client:
   normalPathTimeout: 5000
   slowPathTimeout: 50000
   sendRate: 100
+  # the sendmode can be either using sendRate or maxRequests in flight. 
+  # sendMode: "sendRate"
+  sendMode: "maxRequests"
 
 
 # Proxy Info

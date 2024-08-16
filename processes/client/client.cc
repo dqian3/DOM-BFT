@@ -23,6 +23,9 @@ Client::Client(const ProcessConfig &config, size_t id)
     slowPathTimeout_ = config.clientSlowPathTimeout;
 
     // TODO make this some sort of config
+    LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
+    maxInFlight_ = config.clientMaxRequests;
+
     LOG(INFO) << "Sending " << config.clientNumRequests << " requests!";
     numRequests_ = config.clientNumRequests;
 
@@ -86,14 +89,23 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
-    sendTimer_ = std::make_unique<Timer>(
-        [](void *ctx, void *endpoint) {
-            LOG(INFO) << "send timer triggered";
-            ((Client *) ctx)->submitRequest();
-        },
-        1000000 / clientSendRate_, this);
+    if (config.clientSendMode == "sendRate") {
+        sendMode_ = dombft::rateBased;
+    } else if (config.clientSendMode == "maxRequests") {
+        sendMode_ = dombft::maxInFlightBased;
+    }
 
-    endpoint_->RegisterTimer(sendTimer_.get());
+    if (sendMode_ == dombft::rateBased)
+    {
+        sendTimer_ = std::make_unique<Timer>(
+            [](void *ctx, void *endpoint) {
+                LOG(INFO) << "send timer triggered";
+                ((Client *) ctx)->submitRequest();
+            },
+            1000000 / clientSendRate_, this);
+
+        endpoint_->RegisterTimer(sendTimer_.get());
+    }
 
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
@@ -113,7 +125,14 @@ Client::~Client()
     // TODO cleanup... though we don't really reuse this
 }
 
-void Client::run() { endpoint_->LoopRun(); }
+void Client::run() { 
+    if (sendMode_ == dombft::maxInFlightBased) {
+        for (uint32_t i = 0; i < maxInFlight_; i++) {
+            submitRequest();
+        }
+    }
+    endpoint_->LoopRun(); 
+}
 
 void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
@@ -173,6 +192,11 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
             if (numExecuted_ >= 1000) {
                 exit(0);
             }
+
+            if (sendMode_ == dombft::maxInFlightBased) {
+                submitRequest();
+            }
+            
         }
 
 #else
@@ -218,6 +242,10 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
 
             requestStates_.erase(cseq);
             numCommitted_++;
+
+            if (sendMode_ == dombft::maxInFlightBased) {
+                submitRequest();
+            }
         }
     }
 
@@ -356,6 +384,10 @@ void Client::checkReqState(uint32_t clientSeq)
 
         requestStates_.erase(clientSeq);
         numCommitted_++;
+
+        if (sendMode_ == dombft::maxInFlightBased) {
+            submitRequest();
+        }
     } else {
 
         // Try and find a certificate or proof of divergent histories
