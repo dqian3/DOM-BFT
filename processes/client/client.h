@@ -38,6 +38,13 @@ enum clientSendMode
     maxInFlightBased = 1
 };
 
+enum backpressureMode
+{
+    none = 0,
+    sleep = 1,
+    adjust = 2
+};
+
 class Client {
 private:
     /* Config parameters that need to be saved */
@@ -61,6 +68,9 @@ private:
 
     // timer to control sending rate of the client
     std::unique_ptr<Timer> sendTimer_;
+
+    std::unique_ptr<Timer> restartSendTimer_;
+
     dombft::clientSendMode sendMode_;
 
     /** Timer to stop client after running for configured time */
@@ -73,6 +83,8 @@ private:
     uint32_t inFlight_ = 0;
     uint32_t numExecuted_ = 0;
 
+    dombft::backpressureMode backpressureMode_;
+
     /* State for the currently pending request */
     std::map<int, RequestState> requestStates_;
 
@@ -83,6 +95,8 @@ private:
     void submitRequest();
 
     void checkTimeouts();
+
+    void adjustSendRate();
 
 public:
     /** Client accepts a config file, which contains all the necessary information

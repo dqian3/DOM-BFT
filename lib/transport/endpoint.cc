@@ -68,6 +68,42 @@ bool Endpoint::UnRegisterTimer(Timer *timer)
     return true;
 }
 
+
+// the restart timer will restart the timerToPause when the timer expires. 
+bool Endpoint::PauseTimer(Timer *timerToPause, uint32_t pauseTime)
+{
+    if (evLoop_ == NULL) {
+        LOG(ERROR) << "No evLoop!";
+        return false;
+    } 
+
+    if (!isTimerRegistered(timerToPause)) {
+        LOG(ERROR) << "The timer to pause here has not been registered ";
+        return false; 
+    }
+
+    ev_timer_stop(evLoop_, timerToPause->evTimer_);
+
+    std::unique_ptr<ev_timer> restartTimer = std::make_unique<ev_timer>();
+
+    restartTimer->data = timerToPause;
+
+    auto resume_callback = [](struct ev_loop *loop, ev_timer *w, int revents) {
+        LOG(INFO) << "resuming the paused timer";
+
+        Timer* timerToResume = static_cast<Timer*>(w->data);
+        ev_timer_again(loop, timerToResume->evTimer_);
+        ev_timer_stop(loop, w);
+    };
+
+    ev_timer_init(restartTimer.get(), resume_callback, pauseTime * 1e-6, 0);
+
+    ev_timer_start(evLoop_, restartTimer.get());
+
+    return true;
+}
+
+
 void Endpoint::UnRegisterAllTimers()
 {
     for (auto &t : eventTimers_) {

@@ -95,6 +95,14 @@ Client::Client(const ProcessConfig &config, size_t id)
         sendMode_ = dombft::maxInFlightBased;
     }
 
+    if (config.clientBackPressureMode == "none") {
+        backpressureMode_ = dombft::none;
+    } else if (config.clientBackPressureMode == "sleep") {
+        backpressureMode_ = dombft::sleep;
+    } else if (config.clientBackPressureMode == "adjust") {
+        backpressureMode_ = dombft::adjust;
+    }
+
     if (sendMode_ == dombft::rateBased)
     {
         sendTimer_ = std::make_unique<Timer>(
@@ -106,6 +114,24 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         endpoint_->RegisterTimer(sendTimer_.get());
     }
+
+    // if (backpressureMode_ == dombft::sleep)
+    // {
+    //     restartSendTimer_ = std::make_unique<Timer>(
+    //         [this](void *ctx, void *endpoint) {
+    //             auto ep = static_cast<Endpoint*>(endpoint);
+    //             if (inFlight_ < maxInFlight_) {
+    //                 ev_timer_again(ep->evLoop_, sendTimer_->evTimer_);
+    //                 ev_timer_stop(ep->evLoop_, evTimer_);
+    //                 LOG(INFO) << "restart timer expires";
+    //             } else {
+    //                 LOG(INFO) << "in flight still >= than maxinflight, does not resume sending";
+    //             }
+    //         }, 1000000, this
+    //     );
+
+    //     endpoint_->RegisterTimer(restartSendTimer_.get());
+    // }
 
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
@@ -242,6 +268,7 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
 
             requestStates_.erase(cseq);
             numCommitted_++;
+            inFlight_--;
 
             if (sendMode_ == dombft::maxInFlightBased) {
                 submitRequest();
@@ -292,6 +319,37 @@ void Client::submitRequest()
 #endif
 
     nextReqSeq_++;
+    inFlight_++;
+
+    if (inFlight_ > maxInFlight_) {
+        adjustSendRate();
+    }
+}
+
+void Client::adjustSendRate() 
+{
+    if (sendMode_ == dombft::maxInFlightBased) {
+        // this mode does not adjusr send rate
+        return;
+    }
+
+    if (backpressureMode_ == dombft::none) {
+        LOG(INFO) << "backpressure mode is none, does not adjust";
+        return;
+    }
+
+    if (backpressureMode_ == dombft::adjust) {
+        LOG(WARNING) << "backpressure mode adjust not yet implemented";
+        return;
+    }
+
+    if (backpressureMode_ == dombft::sleep) {
+        LOG(INFO) << "backpressure mode sleep triggered";
+        endpoint_->PauseTimer(sendTimer_.get(), 1);
+        return;
+    }
+
+    
 }
 
 void Client::checkTimeouts()
@@ -384,6 +442,7 @@ void Client::checkReqState(uint32_t clientSeq)
 
         requestStates_.erase(clientSeq);
         numCommitted_++;
+        inFlight_--;
 
         if (sendMode_ == dombft::maxInFlightBased) {
             submitRequest();
