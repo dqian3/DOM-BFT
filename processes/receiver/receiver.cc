@@ -98,6 +98,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         MeasurementReply mReply;
         mReply.set_receiver_id(receiverId_);
         mReply.set_owd(recv_time - request.send_time());
+        mReply.set_send_time(request.send_time());
         VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);

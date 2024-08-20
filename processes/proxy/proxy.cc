@@ -124,7 +124,9 @@ void Proxy::RecvMeasurementsTd()
             LOG(ERROR) << "Unable to parse Measurement_Reply message";
             return;
         }
-        VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd();
+        uint64_t now = GetMicrosecondTimestamp();
+
+        VLOG(1) << "replica=" << reply.receiver_id() << " owd=" << reply.owd() << " rtt=" << now - reply.send_time();
 
         context.addMeasure(reply.receiver_id(), reply.owd());
         // TODO a little buffer :)
