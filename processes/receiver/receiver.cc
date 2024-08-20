@@ -33,7 +33,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     }
 
     /** Store replica addrs */
-
+    numReceivers_ = config.receiverIps.size();
     if (config.transport == "nng") {
         auto addrPairs = getReceiverAddrs(config, receiverId);
         replicaAddr_ = addrPairs.back().second;
@@ -95,15 +95,19 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         // Send measurement reply right away
         int64_t recv_time = GetMicrosecondTimestamp();
 
-        MeasurementReply mReply;
-        mReply.set_receiver_id(receiverId_);
-        mReply.set_owd(recv_time - request.send_time());
-        mReply.set_send_time(request.send_time());
-        VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
+        // Randomly send measurements only once in a while,
+        if ((request.client_seq() % numReceivers_) == 0) {
+            MeasurementReply mReply;
+            mReply.set_receiver_id(receiverId_);
+            mReply.set_owd(recv_time - request.send_time());
+            mReply.set_send_time(request.send_time());
+            VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd()
+                    << " usec";
 
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+        }
 
         // Check if request is on time.
         request.set_late(recv_time > request.deadline());

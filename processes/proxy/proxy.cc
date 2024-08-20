@@ -126,7 +126,8 @@ void Proxy::RecvMeasurementsTd()
         }
         uint64_t now = GetMicrosecondTimestamp();
 
-        VLOG(1) << "replica=" << reply.receiver_id() << " owd=" << reply.owd() << " rtt=" << now - reply.send_time();
+        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+                << " rtt=" << now - reply.send_time();
 
         context.addMeasure(reply.receiver_id(), reply.owd());
         // TODO a little buffer :)
@@ -256,8 +257,9 @@ void Proxy::GenerateRequestsTd()
 
             // interval in seconds between requests
             double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
-            // convert to microseconds
+            // convert to microseconds, but don't let it go to 0
             uint32_t interval_us = interval * 1000000;
+            interval_us = std::max(1u, interval_us);
 
             VLOG(4) << "Waiting for " << interval_us << " usec";
             ep->ResetTimer(&timer, interval_us);
