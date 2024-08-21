@@ -99,6 +99,8 @@ Client::Client(const ProcessConfig &config, size_t id)
         backpressureMode_ = dombft::none;
     } else if (config.clientBackPressureMode == "sleep") {
         backpressureMode_ = dombft::sleep;
+        clientBackPressureSleepTime = config.clientBackPressureSleepTime;
+        LOG(INFO) << "the backpressure recovery time is " << clientBackPressureSleepTime << " seconds";
     } else if (config.clientBackPressureMode == "adjust") {
         backpressureMode_ = dombft::adjust;
     }
@@ -351,7 +353,7 @@ void Client::adjustSendRate()
 
     if (backpressureMode_ == dombft::sleep) {
         LOG(INFO) << "backpressure mode sleep triggered";
-        endpoint_->PauseTimer(sendTimer_.get(), 0.001);
+        endpoint_->PauseTimer(sendTimer_.get(), clientBackPressureSleepTime);
 
         LOG(INFO) << "adjust timer called";
         return;

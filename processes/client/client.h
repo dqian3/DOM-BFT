@@ -84,6 +84,7 @@ private:
     uint32_t numExecuted_ = 0;
 
     dombft::backpressureMode backpressureMode_;
+    double clientBackPressureSleepTime;
 
     /* State for the currently pending request */
     std::map<int, RequestState> requestStates_;

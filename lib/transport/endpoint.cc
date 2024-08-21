@@ -98,7 +98,7 @@ bool Endpoint::PauseTimer(Timer *timerToPause, uint32_t pauseTime)
         ev_timer_stop(loop, w);
     };
 
-    ev_timer_init(restartTimer, resume_callback, pauseTime * 1e-6, 0);
+    ev_timer_init(restartTimer, resume_callback, pauseTime, 0);
 
     ev_timer_start(evLoop_, restartTimer);
 
