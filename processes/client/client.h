@@ -32,18 +32,9 @@ struct RequestState {
     bool fastPathPossible = true;
 };
 
-enum clientSendMode 
-{
-    rateBased = 0,
-    maxInFlightBased = 1
-};
+enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
 
-enum backpressureMode
-{
-    none = 0,
-    sleep = 1,
-    adjust = 2
-};
+enum BackpressureMode { None = 0, Sleep = 1, Adjust = 2 };
 
 class Client {
 private:
@@ -71,7 +62,7 @@ private:
 
     std::unique_ptr<Timer> restartSendTimer_;
 
-    dombft::clientSendMode sendMode_;
+    dombft::ClientSendMode sendMode_;
 
     /** Timer to stop client after running for configured time */
     std::unique_ptr<Timer> terminateTimer_;
@@ -83,7 +74,7 @@ private:
     uint32_t inFlight_ = 0;
     uint32_t numExecuted_ = 0;
 
-    dombft::backpressureMode backpressureMode_;
+    dombft::BackpressureMode backpressureMode_;
     double clientBackPressureSleepTime;
 
     /* State for the currently pending request */
