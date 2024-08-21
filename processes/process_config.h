@@ -36,6 +36,8 @@ struct ProcessConfig {
     int clientSlowPathTimeout;
     int clientSendRate; 
     std::string clientSendMode;
+    std::string clientBackPressureMode;
+    double clientBackPressureSleepTime;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -100,7 +102,8 @@ struct ProcessConfig {
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
             clientSendRate = parseField<int>(clientNode, "sendRate");
             clientSendMode = parseField<std::string>(clientNode, "sendMode");
-
+            clientBackPressureMode = parseField<std::string>(clientNode, "backPressure");
+            clientBackPressureSleepTime = parseField<double>(clientNode, "sleepTime");
         }
 
         catch (const ConfigParseException &e) {

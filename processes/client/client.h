@@ -32,11 +32,9 @@ struct RequestState {
     bool fastPathPossible = true;
 };
 
-enum clientSendMode 
-{
-    rateBased = 0,
-    maxInFlightBased = 1
-};
+enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
+
+enum BackpressureMode { None = 0, Sleep = 1, Adjust = 2 };
 
 class Client {
 private:
@@ -61,10 +59,17 @@ private:
 
     // timer to control sending rate of the client
     std::unique_ptr<Timer> sendTimer_;
-    dombft::clientSendMode sendMode_;
+
+    std::unique_ptr<Timer> restartSendTimer_;
+
+    dombft::ClientSendMode sendMode_;
 
     /** Timer to stop client after running for configured time */
     std::unique_ptr<Timer> terminateTimer_;
+
+    /* Class for generating requests */
+    std::unique_ptr<AppTrafficGen> trafficGen_;
+    AppType appType_;
 
     SignatureProvider sigProvider_;
 
@@ -72,6 +77,9 @@ private:
     uint32_t nextReqSeq_ = 0;
     uint32_t inFlight_ = 0;
     uint32_t numExecuted_ = 0;
+
+    dombft::BackpressureMode backpressureMode_;
+    double clientBackPressureSleepTime;
 
     /* State for the currently pending request */
     std::map<int, RequestState> requestStates_;
@@ -84,9 +92,7 @@ private:
 
     void checkTimeouts();
 
-    std::unique_ptr<AppTrafficGen> trafficGen_;
-
-    AppType appType_;
+    void adjustSendRate();
 
 public:
     /** Client accepts a config file, which contains all the necessary information
