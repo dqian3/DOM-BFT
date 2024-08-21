@@ -68,7 +68,17 @@ bool Counter::commit(uint32_t commit_idx)
 
 std::string Counter::getDigest(uint32_t digest_idx)
 {
+    // Find the latest versioned value at or before digest_idx
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
+                           [digest_idx](const VersionedValue &v) { return v.version <= digest_idx; });
 
+    int value_digest;
+
+    if (it != version_hist.rend()) {
+        value_digest = it->value;
+    } else {
+        value_digest = counter_stable;
+    }
     return std::string(reinterpret_cast<const char *>(&counter), INT_SIZE_IN_BYTES);
 }
 
@@ -99,9 +109,14 @@ bool Counter::abort(const uint32_t abort_idx)
         version_hist.erase(it.base(), version_hist.end());
     }
 
-    // Revert the counter to the last committed state, for counter, just change to stable
+    // Revert the counter to the last state not yet erased
     // for kv, fancier later.
-    counter = counter_stable;
+    if (!version_hist.empty()) {
+        counter = version_hist.back().value;
+    } else {
+        counter = counter_stable;
+    }
+
     LOG(INFO) << "Counter reverted to stable value: " << counter_stable;
 
     return true;

@@ -107,10 +107,10 @@ cc_library(
 
 cc_library(
     name = "application",
-    # hdrs = ["application.h"] + glob(["apps/*"]),
-    hdrs = ["application.h", "apps/counter.h"],
-    # srcs = glob(["apps/*"]),
-    srcs = ["apps/counter.cc"],
+    hdrs = ["application.h"] + glob(["apps/*"]),
+    # hdrs = ["application.h", "apps/counter.h"],
+    srcs = glob(["apps/*"]),
+    # srcs = ["apps/counter.cc"],
     deps = [
         "//proto:dombft_apps_cc",
         ":common_struct",

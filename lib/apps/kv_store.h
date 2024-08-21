@@ -14,15 +14,15 @@ class KVStore : public Application {
 public:
     virtual ~KVStore();
 
-    virtual std::unique_ptr<AppLayerResponse> execute(const std::string &serialized_request) override;
+    virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
 
-    virtual bool commit(uint32_t commit_idx, byte *committed_value) override { return true; }
+    virtual bool commit(uint32_t commit_idx) override { return true; }
 
-    virtual byte *getDigest(uint32_t digest_idx) override { return nullptr; }
+    virtual std::string getDigest(uint32_t digest_idx) override;
 
-    virtual byte *takeSnapshot() override { return nullptr; }
+    virtual std::string takeSnapshot() override;
 
-    virtual bool abort() override { return true; }
+    virtual bool abort(const uint32_t abort_idx) override;
 };
 
 #endif
