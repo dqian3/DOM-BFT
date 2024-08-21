@@ -10,10 +10,16 @@ client:
   runtimeSeconds: 10 
   normalPathTimeout: 5000
   slowPathTimeout: 50000
-  sendRate: 100
+  sendRate: 1000
   # the sendmode can be either using sendRate or maxRequests in flight. 
-  # sendMode: "sendRate"
-  sendMode: "maxRequests"
+  sendMode: "sendRate"
+  # sendMode: "maxRequests"
+  # there may be 3 backpressure modes: none, sleep, adjust
+  # none means no back pressure, sleep means sleep if outstanding requests are too many,
+  # adjust means having the send rate commensurate with the send rate
+  backPressure: "sleep"
+  # how much time the sending event pause after each backpressure. The unit is in second. 
+  sleepTime: 0.07
 
 
 # Proxy Info
