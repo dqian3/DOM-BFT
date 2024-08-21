@@ -11,6 +11,7 @@ client:
   runtimeSeconds: 60 
   normalPathTimeout: 5000
   slowPathTimeout: 500000
+  sendRate: 100
 
 
 # Proxy Info
@@ -46,3 +47,6 @@ replica:
   - "10.128.0.9"
   port: 34000
   keysDir: "keys/replica"
+  fallbackTimeout: 2000000
+  fallbackStartTimeout: 500000
+

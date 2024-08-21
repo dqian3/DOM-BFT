@@ -96,6 +96,7 @@ cc_library(
 
         ":common_struct",
         ":protocol_config",
+        ":utils",
         "@com_github_google_glog//:glog",
         "@openssl//:openssl",
         "//proto:dombft_proto_cc",

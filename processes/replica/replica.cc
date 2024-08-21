@@ -10,12 +10,14 @@
 
 #include <assert.h>
 #include <openssl/pem.h>
+#include <sstream>
 
 namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
     : replicaId_(replicaId)
+    , instance_(0)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -95,6 +97,22 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
     };
 
     endpoint_->RegisterMsgHandler(handler);
+
+    fallbackStartTimer_ = std::make_unique<Timer>(
+        [this](void *ctx, void *endpoint) {
+            endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
+            this->startFallback();
+        },
+        config.replicaFallbackStartTimeout, this);
+
+    fallbackTimer_ = std::make_unique<Timer>(
+        [this](void *ctx, void *endpoint) {
+            LOG(INFO) << "Fallback for instance=" << instance_ << " failed!";
+            LOG(INFO) << "Exiting....";
+            exit(1);   // TODO
+            this->startFallback();
+        },
+        config.replicaFallbackTimeout, this);
 }
 
 Replica::~Replica()
@@ -146,6 +164,13 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id())) {
             LOG(INFO) << "Failed to verify client signature!";
+            return;
+        }
+
+        // TODO TODO get rid of this
+        if (fallback_) {
+            LOG(INFO) << "Queuing request due to fallback";
+            fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
             return;
         }
 
@@ -212,6 +237,86 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
 
         handleCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
+    }
+
+    if (hdr->msgType == FALLBACK_TRIGGER) {
+        FallbackTrigger fallbackTriggerMsg;
+
+        if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+            return;
+        }
+
+        // Ignore any messages not for your current instance
+        if (fallbackTriggerMsg.instance() != instance_) {
+            return;
+        }
+
+        if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
+            LOG(INFO) << "Received fallback trigger again!";
+            return;
+        }
+
+        if (!sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
+            LOG(INFO) << "Failed to verify client signature of c_id=" << fallbackTriggerMsg.client_id();
+            return;
+        }
+
+        LOG(INFO) << "Received fallback trigger from " << fallbackTriggerMsg.client_id()
+                  << " for cseq=" << fallbackTriggerMsg.client_seq()
+                  << " and instance=" << fallbackTriggerMsg.instance();
+
+        // TODO if attached request has been executed in another view,
+        // send result back
+
+        if (fallbackTriggerMsg.has_proof()) {
+            // TODO verify proof
+            LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+
+            broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
+            startFallback();
+        } else {
+            endpoint_->RegisterTimer(fallbackStartTimer_.get());
+        }
+    }
+
+    if (hdr->msgType == FALLBACK_START) {
+        FallbackStart msg;
+
+        if (!msg.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+            return;
+        }
+
+        if (msg.instance() != (replicaId_ % replicaAddrs_.size())) {
+            LOG(INFO) << "Received FALLBACK_START for instance where I am not leader";
+            return;
+        }
+
+        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+            LOG(INFO) << "Failed to verify replica signature!";
+            return;
+        }
+
+        // TODO handle case where instance is higher
+        handleFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+    }
+
+    if (hdr->msgType == FALLBACK_PROPOSAL) {
+        FallbackProposal msg;
+
+        if (!msg.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse FALLBACK_PROPOSAL message";
+            return;
+        }
+
+        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+            LOG(INFO) << "Failed to verify replica signature!";
+            return;
+        }
+
+        // TODO actually run a protocol instead of assuming this is ok
+        finishFallback(msg);
     }
 }
 
@@ -333,9 +438,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_client_id(clientId);
     reply.set_client_seq(request.client_seq());
     reply.set_replica_id(replicaId_);
-
-    // TODO change this when we implement the slow path
-    reply.set_view(0);
+    reply.set_instance(instance_);
 
     bool success = log_->addEntry(clientId, request.client_seq(), (byte *) request.req_data().c_str(),
                                   request.req_data().length());
@@ -354,16 +457,15 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
-    VLOG(4) << "Start prepare message";
+    // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-    VLOG(4) << "Finish Serialization, start signature";
+    // VLOG(4) << "Finish Serialization, start signature";
 
-    sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-    VLOG(4) << "Finish signature";
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    // VLOG(4) << "Finish signature";
 
     LOG(INFO) << "Sending reply back to client " << clientId;
     endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
-    LOG(INFO) << "Finish sending";
 
     LOG(INFO) << "Done Sending reply back to client " << clientId;
 
@@ -379,6 +481,9 @@ void Replica::handleClientRequest(const ClientRequest &request)
             commitCertReplies.clear();
             commitCertSigs.clear();
             log_->createCommitPoint(seq);
+
+            memcpy(log_->tentativeCommitPoint->logDigest, log_->getDigest(seq), SHA256_DIGEST_LENGTH);
+            memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
         }
     }
 }
@@ -406,7 +511,7 @@ void Replica::handleCert(const Cert &cert)
 
     // TODO set result
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
-    sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
 }
 
@@ -417,6 +522,10 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         commitCertReplies.clear();
         commitCertSigs.clear();
         log_->createCommitPoint(reply.seq());
+
+        // TODO set these yourself later
+        memcpy(log_->tentativeCommitPoint->logDigest, reply.digest().c_str(), SHA256_DIGEST_LENGTH);
+        memset(log_->tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
     }
 
     if (reply.seq() != log_->tentativeCommitPoint->seq) {
@@ -435,7 +544,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
     commitCertReplies[reply.replica_id()] = reply;
     commitCertSigs[reply.replica_id()] = std::string(sig.begin(), sig.end());
 
-    std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+    std::map<std::tuple<std::string, int>, std::set<int>> matchingReplies;
 
     for (const auto &entry : commitCertReplies) {
 
@@ -447,7 +556,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         // TODO this is ugly lol
         // We don't need client_seq/client_id, these are already checked.
         // We also don't check the result here, that only needs to happen in the fast path
-        std::tuple<std::string, int, int> key = {reply.digest(), reply.view(), reply.seq()};
+        std::tuple<std::string, int> key = {reply.digest(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
 
@@ -457,7 +566,6 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             log_->tentativeCommitPoint->cert = Cert();
             dombft::proto::Cert &cert = *log_->tentativeCommitPoint->cert;
 
-            // TODO check if fast path is not posssible, and we can send cert right away
             for (auto repId : matchingReplies[key]) {
                 cert.add_signatures(commitCertSigs[repId]);
                 // THis usage is so weird, is protobuf the right tool?
@@ -507,7 +615,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         LOG(INFO) << "Commit message from " << commitMsg.replica_id() << " does not match current commit!";
 
         VLOG(3) << "commitMsg.seq=" << commitMsg.seq() << " point.seq=" << point.seq
-                << "\ncommitMsg.log_digest: " << digest_to_hex((const byte *) commitMsg.log_digest().c_str())
+                << "\ncommitMsg.log_digest: " << digest_to_hex(commitMsg.log_digest())
                 << "\n    point.log_digest: " << digest_to_hex(point.logDigest);
 
         return;
@@ -531,7 +639,7 @@ void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageT
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
     // TODO check errors for all of these lol
     // TODO this sends to self as well, could shortcut this
-    sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
     }
@@ -564,8 +672,308 @@ bool Replica::verifyCert(const Cert &cert)
     }
 
     // TOOD verify that cert actually contains matching replies...
+    // And that there aren't signatures from the same replica.
 
     return true;
+}
+
+void Replica::startFallback()
+{
+    fallback_ = true;
+    instance_++;
+    LOG(INFO) << "Starting fallback for instance " << instance_;
+
+    // TODO prevent processing of other messsages.
+
+    if (endpoint_->isTimerRegistered(fallbackTimer_.get())) {
+        endpoint_->ResetTimer(fallbackTimer_.get());
+    } else {
+        endpoint_->RegisterTimer(fallbackTimer_.get());
+    }
+
+    // Extract log into start fallback message
+    FallbackStart fallbackStartMsg;
+    fallbackStartMsg.set_instance(instance_);
+    fallbackStartMsg.set_replica_id(replicaId_);
+    log_->toProto(fallbackStartMsg);
+
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackStartMsg, FALLBACK_START);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+    LOG(INFO) << "Sending FALLBACK_START to replica " << instance_ % replicaAddrs_.size();
+    endpoint_->SendPreparedMsgTo(replicaAddrs_[instance_ % replicaAddrs_.size()]);
+
+    // TEMP: dump the logs
+    LOG(INFO) << "DUMP start fallback instance=" << instance_ << " " << *log_;
+}
+
+void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
+{
+    fallbackHistory[msg.replica_id()] = msg;
+    fallbackHistorySigs[msg.replica_id()] = std::string(sig.begin(), sig.end());
+
+    LOG(INFO) << "Received fallback message from " << msg.replica_id();
+
+    if (instance_ % replicaAddrs_.size() != replicaId_) {
+        return;
+    }
+
+    // First check if we have 2f + 1 fallback start messages for the same instance
+    auto numStartMsgs = std::count_if(fallbackHistory.begin(), fallbackHistory.end(),
+                                      [this](auto &startMsg) { return startMsg.second.instance() == instance_; });
+
+    if (numStartMsgs == 2 * f_ + 1) {
+        FallbackProposal proposal;
+
+        proposal.set_replica_id(replicaId_);
+        proposal.set_instance(instance_);
+        for (auto &startMsg : fallbackHistory) {
+            if (startMsg.second.instance() != instance_)
+                continue;
+
+            *(proposal.add_logs()) = startMsg.second;
+        }
+
+        broadcastToReplicas(proposal, FALLBACK_PROPOSAL);
+    }
+}
+
+void Replica::applyFallbackReq(const dombft::proto::LogEntry &entry)
+{
+    uint32_t clientId = entry.client_id();
+
+    VLOG(2) << log_->nextSeq << ": c_id=" << clientId << " c_seq=" << entry.client_seq();
+
+    log_->addEntry(clientId, entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
+    // TODO add an interface here for adding executed requests!
+
+    Reply reply;
+
+    reply.set_client_id(clientId);
+    reply.set_client_seq(entry.client_seq());
+    reply.set_replica_id(replicaId_);
+    reply.set_instance(instance_);
+
+    uint32_t seq = log_->nextSeq - 1;
+    // TODO actually get the result here.
+    log_->executeEntry(seq);
+
+    reply.set_fast(true);
+    reply.set_seq(seq);
+
+    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+    // VLOG(4) << "Finish Serialization, start signature";
+
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    // VLOG(4) << "Finish signature";
+
+    LOG(INFO) << "Sending reply back to client " << clientId;
+    endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+}
+
+void Replica::finishFallback(const FallbackProposal &history)
+{
+    // TODO apply FallbackProposal.
+    fallback_ = false;
+
+    // TODO verify message so this isn't unsafe
+    uint32_t maxCheckpointSeq = 0;
+    uint32_t maxCheckpointIdx = 0;
+
+    // First find highest commit point
+    for (int i = 0; i < history.logs().size(); i++) {
+        auto &log = history.logs()[i];
+        // TODO verify each checkpoint
+        if (log.checkpoint().seq() > maxCheckpointSeq) {
+            maxCheckpointSeq = 0;
+            maxCheckpointIdx = i;
+        }
+    }
+
+    VLOG(4) << "Highest checkpoint is for seq=" << maxCheckpointSeq;
+
+    // Find highest request with a cert
+    // By quorum intersection there can't be conflicting certificates, unless one is
+    // from an old instance (TODO handle this)
+
+    uint32_t maxSeq = 0;
+
+    // Idx of log we will use to match our logs to the fallback agreed upon logs.
+    uint32_t logToUseIdx = 0;
+    uint32_t logToUseSeq = 0;
+
+    const Cert *maxSeqCert = nullptr;
+
+    for (int i = 0; i < history.logs().size(); i++) {
+        auto &log = history.logs()[i];
+        // TODO verify each checkpoint
+
+        for (const dombft::proto::LogEntry &entry : log.log_entries()) {
+            if (!entry.has_cert())
+                continue;
+            // Already included in checkpoint
+            if (entry.seq() <= maxCheckpointSeq)
+                continue;
+
+            // TODO verify cert
+            if (entry.seq() > maxSeq) {
+                VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
+                        << " c_seq=" << entry.cert().replies()[0].client_seq();
+
+                maxSeqCert = &entry.cert();
+                logToUseIdx = i;
+                logToUseSeq = entry.seq();
+            }
+        }
+    }
+
+    // TODO verify first
+    // TODO add some cert util methods
+    // std::string certDigest = maxSeqCert->replies()[0].digest();
+    uint32_t certSeq = maxSeq;
+
+    // Counts of matching digests for each seq coming after max cert
+    std::map<uint32_t, std::map<std::string, int>> matchingEntries;
+    std::map<uint32_t, uint32_t> maxMatchSeq;
+    std::map<uint32_t, uint32_t> maxAppliedSeq;
+
+    // TODO save this info in the checkpoint
+    std::map<uint32_t, std::map<uint32_t, const LogEntry &>> clientReqs;
+
+    for (int i = 0; i < history.logs().size(); i++) {
+        auto &log = history.logs()[i];
+        // TODO verify each checkpoint
+
+        for (const dombft::proto::LogEntry &entry : log.log_entries()) {
+            if (entry.seq() <= certSeq)
+                continue;
+
+            matchingEntries[entry.seq()][entry.digest()]++;
+            clientReqs[entry.client_id()].emplace(entry.client_seq(), entry);
+
+            if (matchingEntries[entry.seq()][entry.digest()] == f_ + 1) {
+                VLOG(4) << "f + 1 matching digests found for seq=" << entry.seq() << " c_id=" << entry.client_id()
+                        << " c_seq=" << entry.client_seq();
+
+                maxMatchSeq[entry.client_id()] = std::max(maxMatchSeq[entry.client_id()], entry.client_seq());
+                maxAppliedSeq[entry.client_id()] = maxMatchSeq[entry.client_id()];
+                logToUseIdx = i;
+                logToUseSeq = entry.seq();
+            }
+        }
+    }
+
+    LOG(INFO) << "Applying checkpoint";
+
+    const LogCheckpoint &maxCheckpoint = history.logs()[maxCheckpointIdx].checkpoint();
+
+    if (maxCheckpoint.seq() >= log_->nextSeq) {
+        LOG(ERROR) << "Fallback checkpoint too far ahead (seq= " << maxCheckpoint.seq()
+                   << "). state transfer is not implemented, exiting...";
+        exit(1);
+    }
+
+    const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
+    std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
+    if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest) {
+        LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq()
+                   << "). state transfer is not implemented, exiting...";
+        exit(1);
+    }
+
+    // Now we know the logCheckpoint is usable
+    // TODO implement this more nicely by making an interface in the log.
+    log_->tentativeCommitPoint.reset();
+
+    log_->commitPoint.seq = maxCheckpoint.seq();
+    memcpy(log_->commitPoint.appDigest, maxCheckpoint.app_digest().c_str(), maxCheckpoint.app_digest().size());
+    memcpy(log_->commitPoint.logDigest, maxCheckpoint.log_digest().c_str(), maxCheckpoint.log_digest().size());
+    log_->commitPoint.cert = maxCheckpoint.cert();
+
+    for (uint32_t i = 0; i < maxCheckpoint.commits().size(); i++) {
+        auto &commit = maxCheckpoint.commits()[i];
+
+        log_->commitPoint.commitMessages[commit.replica_id()] = commit;
+        log_->commitPoint.signatures[commit.replica_id()] = maxCheckpoint.signatures()[i];
+    }
+
+    LOG(INFO) << "Applying requests up to cert and with f + 1 requests";
+
+    // TODO rollback
+
+    bool rollbackDone = false;
+
+    auto &logToUse = history.logs()[logToUseIdx].log_entries();
+    for (const dombft::proto::LogEntry &entry : logToUse) {
+        if (entry.seq() <= maxCheckpointSeq)
+            continue;
+        if (entry.seq() > logToUseSeq)
+            break;
+        // TODO skip ones already in our log.
+        // TODO access entry needs to be cleaner than this
+        // TODO fix namespaces lol
+        std::shared_ptr<::LogEntry> myEntry = log_->log[entry.seq() % MAX_SPEC_HIST];
+        if (entry.seq() < log_->nextSeq && myEntry->seq != entry.seq()) {
+            LOG(ERROR) << "attempt to access log seq not in my log! " << myEntry->seq << " " << entry.seq();
+            exit(1);
+        }
+
+        std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
+        if (myDigest == entry.digest()) {
+            VLOG(2) << "Skipping c_id=" << entry.client_id() << " c_seq=" << entry.client_seq()
+                    << " since already in log at seq=" << entry.seq();
+            continue;
+        }
+
+        // TODO Rollback application state here!
+        if (!rollbackDone) {
+            log_->nextSeq = entry.seq();
+        }
+
+        applyFallbackReq(entry);
+    }
+
+    // TODO Rollback application state here!
+    if (!rollbackDone) {
+        log_->nextSeq = logToUseSeq + 1;
+    }
+
+    LOG(INFO) << "Applying rest of requests in histories";
+
+    for (auto &[c_id, reqs] : clientReqs) {
+        for (auto &[c_seq, entry] : reqs) {
+            // Already matched
+            if (c_seq <= maxAppliedSeq[c_id])
+                continue;
+            maxAppliedSeq[c_id] = c_seq;
+            applyFallbackReq(entry);
+        }
+    }
+
+    // Add rest of the requests in.
+
+    LOG(INFO) << "Finishing fallback by applying the rest of the queued requests!";
+    fallback_ = false;
+    endpoint_->UnRegisterTimer(fallbackTimer_.get());
+
+    sort(fallbackQueuedReqs_.begin(), fallbackQueuedReqs_.end(), [](auto &l, auto &r) { return l.first < r.first; });
+
+    for (auto &[_, request] : fallbackQueuedReqs_) {
+        if (request.client_seq() <= maxAppliedSeq[request.client_id()]) {
+            VLOG(2) << "Skipping c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+                    << " since already applied";
+            continue;
+        }
+
+        handleClientRequest(request);
+    }
+
+    fallbackQueuedReqs_.clear();
+
+    // TEMP: dump the logs
+    LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
 }
 
 }   // namespace dombft

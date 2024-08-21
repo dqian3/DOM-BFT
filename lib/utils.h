@@ -28,4 +28,6 @@ int64_t GetMicrosecondTimestamp();
 
 std::string digest_to_hex(const byte digest[SHA256_DIGEST_LENGTH]);
 
+std::string digest_to_hex(const std::string &digest);
+
 #endif
