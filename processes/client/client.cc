@@ -284,6 +284,10 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
 
 void Client::submitRequest()
 {
+    LOG(INFO) << "Inflight txns (before submitting)  " << inFlight_;
+    if (inFlight_ > maxInFlight_) {
+        adjustSendRate();
+    }
     ClientRequest request;
 
     // submit new request
@@ -321,6 +325,8 @@ void Client::submitRequest()
     nextReqSeq_++;
     inFlight_++;
 
+    LOG(INFO) << "Inflight txns  " << inFlight_;
+
     if (inFlight_ > maxInFlight_) {
         adjustSendRate();
     }
@@ -345,7 +351,7 @@ void Client::adjustSendRate()
 
     if (backpressureMode_ == dombft::sleep) {
         LOG(INFO) << "backpressure mode sleep triggered";
-        endpoint_->PauseTimer(sendTimer_.get(), 1);
+        endpoint_->PauseTimer(sendTimer_.get(), 0.001);
 
         LOG(INFO) << "adjust timer called";
         return;
