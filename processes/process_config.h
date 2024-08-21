@@ -34,7 +34,7 @@ struct ProcessConfig {
     int clientRuntimeSeconds;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
-    int clientSendRate; 
+    int clientSendRate;
     std::string clientSendMode;
     std::string clientBackPressureMode;
     double clientBackPressureSleepTime;
@@ -61,7 +61,20 @@ struct ProcessConfig {
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
         if (!parent[key]) {
-            throw ConfigParseException("'" + key + "' not found");
+            throw ConfigParseException("'" + key + "' not found, required");
+        }
+
+        try {
+            return parent[key].as<T>();
+        } catch (const YAML::BadConversion &e) {
+            throw ConfigParseException("'" + key + "': " + e.msg + ".");
+        }
+    }
+
+    template <class T> T parseField(const YAML::Node &parent, const std::string &key, const T &default_value)
+    {
+        if (!parent[key]) {
+            return default_value;
         }
 
         try {
