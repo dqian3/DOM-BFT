@@ -84,7 +84,9 @@ bool Endpoint::PauseTimer(Timer *timerToPause, uint32_t pauseTime)
 
     ev_timer_stop(evLoop_, timerToPause->evTimer_);
 
-    std::unique_ptr<ev_timer> restartTimer = std::make_unique<ev_timer>();
+    LOG(INFO) << "the timer has been stopeed";
+
+    auto restartTimer = new ev_timer();
 
     restartTimer->data = timerToPause;
 
@@ -96,9 +98,11 @@ bool Endpoint::PauseTimer(Timer *timerToPause, uint32_t pauseTime)
         ev_timer_stop(loop, w);
     };
 
-    ev_timer_init(restartTimer.get(), resume_callback, pauseTime * 1e-6, 0);
+    ev_timer_init(restartTimer, resume_callback, pauseTime * 1e-6, 0);
 
-    ev_timer_start(evLoop_, restartTimer.get());
+    ev_timer_start(evLoop_, restartTimer);
+
+    LOG(INFO) << "restart timer initiated";
 
     return true;
 }

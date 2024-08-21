@@ -346,6 +346,8 @@ void Client::adjustSendRate()
     if (backpressureMode_ == dombft::sleep) {
         LOG(INFO) << "backpressure mode sleep triggered";
         endpoint_->PauseTimer(sendTimer_.get(), 1);
+
+        LOG(INFO) << "adjust timer called";
         return;
     }
 
