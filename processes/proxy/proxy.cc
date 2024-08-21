@@ -127,9 +127,17 @@ void Proxy::RecvMeasurementsTd()
         uint64_t now = GetMicrosecondTimestamp();
 
         VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
-                << " rtt=" << now - reply.send_time();
+                << " rtt=" << now - reply.send_time() << " now=" << now;
 
-        context.addMeasure(reply.receiver_id(), reply.owd());
+        if (reply.owd() > 0) {
+            context.addMeasure(reply.receiver_id(), reply.owd());
+        } else {
+            // THis shouldn't matter too much, since it is ultimately the furtherest/max recevier that determines
+            // the deadline
+            VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
+            context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
+        }
+
         // TODO a little buffer :)
         latencyBound_.store(context.getOWD() * 1.5);
         VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
@@ -244,16 +252,16 @@ void Proxy::GenerateRequestsTd()
             outReq.set_client_id(proxyId_);
             outReq.set_client_seq(seq);
 
-            seq++;
+            VLOG(4) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
+                    << " deadline=" << deadline << " latencyBound=" << latencyBound_
+                    << " now=" << GetMicrosecondTimestamp();
 
             for (int i = 0; i < numReceivers_; i++) {
-                VLOG(2) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to " << receiverAddrs_[i].ip_
-                        << " deadline=" << deadline << " latencyBound=" << latencyBound_
-                        << " now=" << GetMicrosecondTimestamp();
-
                 MessageHeader *hdr = ep->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
                 ep->SendPreparedMsgTo(receiverAddrs_[i]);
             }
+
+            seq++;
 
             // interval in seconds between requests
             double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
@@ -261,7 +269,7 @@ void Proxy::GenerateRequestsTd()
             uint32_t interval_us = interval * 1000000;
             interval_us = std::max(1u, interval_us);
 
-            VLOG(4) << "Waiting for " << interval_us << " usec";
+            VLOG(6) << "Waiting for " << interval_us << " usec";
             ep->ResetTimer(&timer, interval_us);
         },
         1000, this);   // initial time doesn't matter, since it's reset

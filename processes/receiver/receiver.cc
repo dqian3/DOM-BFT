@@ -95,8 +95,8 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         // Send measurement reply right away
         int64_t recv_time = GetMicrosecondTimestamp();
 
-        // Randomly send measurements only once in a while,
-        if ((request.client_seq() % numReceivers_) == 0) {
+        // Randomly send measurements only once in a while, every
+        if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
             MeasurementReply mReply;
             mReply.set_receiver_id(receiverId_);
             mReply.set_owd(recv_time - request.send_time());
