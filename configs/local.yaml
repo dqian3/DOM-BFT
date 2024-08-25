@@ -40,7 +40,7 @@ receiver:
     - "127.0.0.6"
     - "127.0.0.7"
     - "127.0.0.8"
-  port: 33000
+  port: 35000
   keysDir: keys/receiver
   shards: 1 # The number of threads to receive threads 
   local: false # Although it's local, we actually use distinct loopback addresses for localhost experiments

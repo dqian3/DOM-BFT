@@ -37,13 +37,15 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
         replicaAddr_ = addrPairs.back().second;
 
         std::vector<std::pair<Address, Address>> recvAddrs(addrPairs.begin(),
-                                                              addrPairs.end() - config.proxyIps.size());
-        std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.end() - config.proxyIps.size(),
+                                                              addrPairs.end() - 1);
+        std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.end() - 1,
                                                                  addrPairs.end());
+        LOG(INFO) << "Init recv EP...";
 
         recvReqEp_ = std::make_unique<NngEndpoint>(recvAddrs, false);
-
-        forwardReqEp_ = std::make_unique<NngEndpoint>(forwardAddrs, true);
+        LOG(INFO) << "Init forward EP...";
+        LOG(INFO) << "forward addr len: " << forwardAddrs.size();
+        forwardReqEp_ = std::make_unique<NngEndpoint>(forwardAddrs, false);
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
@@ -74,6 +76,12 @@ void Receiver::run()
 
     LaunchThreads();
 
+    for (auto &kv : threads_) {
+        LOG(INFO) << "Join " << kv.first;
+        kv.second->join();
+        LOG(INFO) << "Join Complete " << kv.first;
+    }
+    LOG(INFO) << "Run Terminated ";
 }
 
 void Receiver::LaunchThreads() 
@@ -84,13 +92,17 @@ void Receiver::LaunchThreads()
 
 void Receiver::receiveRequestTd()
 {
+    LOG(INFO) << "recv thread launched";
     auto checkEnd = [](void* ctx, void*receiverEP) {
+        LOG(INFO) << "recv thread still alive";
         if (!((Receiver *) ctx)->running_) {
             ((Endpoint *) receiverEP)->LoopBreak();
         }
     };
 
+    LOG(INFO) << "Installing forward thread monitor";
     Timer monitor(checkEnd, 10, this);
+    LOG(INFO) << "forward thread monitor installed";
 
     recvReqEp_->RegisterMsgHandler([this](MessageHeader *msghdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msghdr, msgBuffer, sender);
@@ -103,6 +115,7 @@ void Receiver::receiveRequestTd()
 
 void Receiver::forwardRequestTd()
 {
+    LOG(INFO) << "forward thread launched";
     fwdTimer_ = std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *)ctx) -> checkDeadlines(); }, 1000, this);
     forwardReqEp_->RegisterTimer(fwdTimer_.get());
 
@@ -110,6 +123,7 @@ void Receiver::forwardRequestTd()
     forwardReqEp_->RegisterTimer(checkQueueTimer_.get());
 
     auto checkEnd = [](void* ctx, void*receiverEP) {
+        LOG(INFO) << "forward thread still alive";
         if (!((Receiver *) ctx)->running_) {
             ((Endpoint *) receiverEP)->LoopBreak();
         }
@@ -125,6 +139,7 @@ void Receiver::forwardRequestTd()
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 {
+    LOG(INFO) << "receiver got a request...";
     if (hdr->msgLen < 0) {
         return;
     }
@@ -198,6 +213,9 @@ void Receiver::forwardRequest(const dombft::proto::DOMRequest &request)
 #endif
         forwardReqEp_->SendPreparedMsgTo(replicaAddr_);
     }
+
+    VLOG(1) << "Request forwarded with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
+                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 }
 
 void Receiver::checkDeadlines()
@@ -221,10 +239,12 @@ void Receiver::checkDeadlines()
     VLOG(3) << "Next deadline check in " << nextCheck << "us";
 
     forwardReqEp_->ResetTimer(fwdTimer_.get(), nextCheck);
+    VLOG(3) << "return from checking deadline";
 }
 
 void Receiver::checkRecvQueue()
 {
+    LOG(INFO) <<"Checking recv queue...";
     dombft::proto::DOMRequest request;
     while (requestsQueue_.try_dequeue(request)) {
         int64_t recv_time = GetMicrosecondTimestamp();
