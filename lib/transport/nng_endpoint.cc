@@ -117,6 +117,8 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
         handlers_.push_back(std::make_unique<NngMessageHandler>(hdl, sock, connAddr, recvBuffer_));
         ev_io_set(handlers_.back()->evWatcher_.get(), fd, EV_READ);
         ev_io_start(evLoop_, handlers_.back()->evWatcher_.get());
+
+        LOG(INFO) << "finish registering handle for "<< connAddr.GetIPAsString() << ":" << connAddr.GetPortAsInt();
     }
 
     return true;
