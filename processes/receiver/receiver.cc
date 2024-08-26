@@ -40,7 +40,8 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
-        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
+        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
+        forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
     }
 
     LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.GetIPAsString() << ":" << replicaAddr_.GetPortAsInt();
@@ -142,14 +143,14 @@ void Receiver::forwardRequest(const DOMRequest &request)
         VLOG(1) << "Forwarding Request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
                 << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+        MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
         // TODO check errors for all of these lol
         // TODO do this while waiting, not in the critical path
 
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(replicaAddr_);
+        forwardEp_->SendPreparedMsgTo(replicaAddr_);
     }
 }
 

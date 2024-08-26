@@ -22,6 +22,8 @@ private:
     /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
     std::unique_ptr<Endpoint> endpoint_;
 
+    std::unique_ptr<Endpoint> forwardEp_;
+
     /** The handler objects for our endpoint library */
     // TODO shared pointer for endpoint and timer??
     std::unique_ptr<Timer> fwdTimer_;
