@@ -172,26 +172,6 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
 
-        // Check if request is on time.
-        request.set_late(recv_time > request.deadline());
-
-        VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
-                << " deadline=" << request.deadline() << " now=" << recv_time;
-
-        // std::lock_guard<std::mutex> lock(deadlineQueueMutex_); 
-        // VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
-        //         << request.deadline() - recv_time << "us";
-        // deadlineQueue_[{request.deadline(), request.client_id()}] = request;
-
-        // // Check if timer is firing before deadline
-        // uint64_t now = GetMicrosecondTimestamp();
-        // uint64_t nextCheck = request.deadline() - now;
-
-        // if (nextCheck <= forwardEp_->GetTimerRemaining(fwdTimer_.get())) {
-        //     forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
-        //     VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
-        // }
-
         requestQueue_.enqueue(request);
         LOG(INFO) << "request enqueued";
     }
