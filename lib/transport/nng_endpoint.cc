@@ -17,7 +17,7 @@ NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, co
         int ret;
         size_t len = NNG_BUFFER_SIZE;
 
-        if ((ret = nng_recv(m->sock_, m->recvBuffer_, &len, 0)) != 0) {
+        if ((ret = nng_recv(m->sock_, m->recvBuffer_, &len, NNG_FLAG_NONBLOCK)) != 0) {
             LOG(ERROR) << "nng_recv failure: " << nng_strerror(ret);
             return;
         }
@@ -101,7 +101,7 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
 
     // We bind separate NngMessageHandler to each socket, each with a different context,
     // so that the handler can identify which socket it
-    for (int i = 0; i < socks_.size(); i++) {
+    for (uint32_t i = 0; i < socks_.size(); i++) {
         nng_socket sock = socks_[i];
         Address &connAddr = socketToAddr_[i];
 

@@ -13,8 +13,8 @@ message ClientRequest {
 }
 
 message DOMRequest {
-    int64  deadline = 1;
-    int64  send_time = 2;
+    uint64  deadline = 1;
+    uint64  send_time = 2;
     uint32  proxy_id = 3;
     bool    late = 4;
     uint32  deadline_set_size = 5;
@@ -27,6 +27,7 @@ message DOMRequest {
 message MeasurementReply {
     uint32 receiver_id = 1;
     int32 owd = 2;
+    uint64 send_time = 3;
 }    
 
 message Reply {

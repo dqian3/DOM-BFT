@@ -30,6 +30,10 @@ struct ProcessConfig {
     int clientRuntimeSeconds;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
+    int clientSendRate;
+    std::string clientSendMode;
+    std::string clientBackPressureMode;
+    double clientBackPressureSleepTime;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -53,7 +57,20 @@ struct ProcessConfig {
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
         if (!parent[key]) {
-            throw ConfigParseException("'" + key + "' not found");
+            throw ConfigParseException("'" + key + "' not found, required");
+        }
+
+        try {
+            return parent[key].as<T>();
+        } catch (const YAML::BadConversion &e) {
+            throw ConfigParseException("'" + key + "': " + e.msg + ".");
+        }
+    }
+
+    template <class T> T parseField(const YAML::Node &parent, const std::string &key, const T &default_value)
+    {
+        if (!parent[key]) {
+            return default_value;
         }
 
         try {
@@ -92,7 +109,10 @@ struct ProcessConfig {
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
-
+            clientSendRate = parseField<int>(clientNode, "sendRate");
+            clientSendMode = parseField<std::string>(clientNode, "sendMode");
+            clientBackPressureMode = parseField<std::string>(clientNode, "backPressure");
+            clientBackPressureSleepTime = parseField<double>(clientNode, "sleepTime");
         }
 
         catch (const ConfigParseException &e) {

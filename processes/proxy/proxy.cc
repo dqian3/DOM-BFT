@@ -1,5 +1,7 @@
 #include "proxy.h"
 
+#include <random>
+
 namespace dombft {
 using namespace dombft::proto;
 
@@ -10,6 +12,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     maxOWD_ = config.proxyMaxOwd;
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
     proxyId_ = proxyId;
+    selfGenReqs_ = false;
 
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
     LOG(INFO) << "Loading key from " << proxyKey;
@@ -26,19 +29,20 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             exit(1);
         }
         auto addrPairs = getProxyAddrs(config, proxyId);
+
         // This is rather messy, but the last nReceivers addresses in this return value are for the measurement
         // connections
         size_t nClients = config.clientIps.size();
         size_t nReplicas = config.replicaIps.size();
         std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(),
                                                               addrPairs.end() - config.receiverIps.size());
-        std::vector<std::pair<Address, Address>> measurmentAddrs(addrPairs.end() - config.receiverIps.size(),
-                                                                 addrPairs.end());
+        std::vector<std::pair<Address, Address>> measurementAddrs(addrPairs.end() - config.receiverIps.size(),
+                                                                  addrPairs.end());
 
         forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
-        measurementEp_ = std::make_unique<NngEndpoint>(measurmentAddrs);
+        measurementEp_ = std::make_unique<NngEndpoint>(measurementAddrs);
 
-        for (int i = nClients; i < forwardAddrs.size(); i++) {
+        for (size_t i = nClients; i < forwardAddrs.size(); i++) {
             receiverAddrs_.push_back(forwardAddrs[i].second);
         }
 
@@ -55,6 +59,16 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
         }
     }
+}
+
+Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t freq, uint32_t duration, bool poisson)
+    : Proxy(config, proxyId)
+{
+    // Setup experimental parameters
+    selfGenReqs_ = true;
+    genReqFreq_ = freq;
+    genReqDuration_ = duration;
+    genReqPoisson_ = poisson;
 }
 
 void Proxy::terminate()
@@ -88,10 +102,13 @@ Proxy::~Proxy()
 void Proxy::LaunchThreads()
 {
     threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
-
-    for (int i = 0; i < numShards_; i++) {
-        std::string key = "ForwardRequestsTd-" + std::to_string(i);
-        threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
+    if (selfGenReqs_) {
+        threads_["GenerateRequestsTd"] = new std::thread(&Proxy::GenerateRequestsTd, this);
+    } else {
+        for (int i = 0; i < numShards_; i++) {
+            std::string key = "ForwardRequestsTd-" + std::to_string(i);
+            threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
+        }
     }
 }
 
@@ -107,9 +124,20 @@ void Proxy::RecvMeasurementsTd()
             LOG(ERROR) << "Unable to parse Measurement_Reply message";
             return;
         }
-        VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd();
+        uint64_t now = GetMicrosecondTimestamp();
 
-        context.addMeasure(reply.receiver_id(), reply.owd());
+        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+                << " rtt=" << now - reply.send_time() << " now=" << now;
+
+        if (reply.owd() > 0) {
+            context.addMeasure(reply.receiver_id(), reply.owd());
+        } else {
+            // THis shouldn't matter too much, since it is ultimately the furtherest/max recevier that determines
+            // the deadline
+            VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
+            context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
+        }
+
         // TODO a little buffer :)
         latencyBound_.store(context.getOWD() * 1.5);
         VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
@@ -122,7 +150,7 @@ void Proxy::RecvMeasurementsTd()
         }
     };
 
-    Timer monitor(checkEnd, 10, this);
+    Timer monitor(checkEnd, 10000, this);
 
     measurementEp_->RegisterMsgHandler(handleMeasurementReply);
     measurementEp_->RegisterTimer(&monitor);
@@ -185,12 +213,90 @@ void Proxy::ForwardRequestsTd(const int thread_id)
         }
     };
 
-    Timer monitor(checkEnd, 10, this);
+    Timer monitor(checkEnd, 10000, this);
 
     forwardEps_[thread_id]->RegisterMsgHandler(handleClientRequest);
     forwardEps_[thread_id]->RegisterTimer(&monitor);
 
     forwardEps_[thread_id]->LoopRun();
+}
+
+void Proxy::GenerateRequestsTd()
+{
+    int seq = 0;
+
+    // If we want to generate requests according to a poisson process with an average
+    // rate of genReqFreq_, the lambda parameter should just be 1/avg interval, which
+    // is just the freq.
+    std::random_device rd;    // uniformly-distributed integer random number generator
+    std::mt19937 rng(rd());   // mt19937: Pseudo-random number generation
+    std::exponential_distribution<double> exp(genReqFreq_);
+
+    Timer timer(
+        [&, this](void *ctx, void *endpoint) {
+            Endpoint *ep = (Endpoint *) endpoint;
+
+            uint64_t now = GetMicrosecondTimestamp();
+            uint64_t deadline = now + latencyBound_;
+            deadline = std::max(deadline, lastDeadline_ + 1);
+            lastDeadline_ = deadline;
+
+            DOMRequest outReq;
+            outReq.set_send_time(now);
+            outReq.set_deadline(deadline);
+            outReq.set_proxy_id(proxyId_);
+
+            outReq.set_deadline_set_size(numReceivers_);
+            outReq.set_late(false);
+
+            outReq.set_client_id(proxyId_);
+            outReq.set_client_seq(seq);
+
+            VLOG(4) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
+                    << " deadline=" << deadline << " latencyBound=" << latencyBound_
+                    << " now=" << GetMicrosecondTimestamp();
+
+            for (int i = 0; i < numReceivers_; i++) {
+                MessageHeader *hdr = ep->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+                ep->SendPreparedMsgTo(receiverAddrs_[i]);
+            }
+
+            seq++;
+
+            // interval in seconds between requests
+            double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
+            // convert to microseconds, but don't let it go to 0
+            uint32_t interval_us = interval * 1000000;
+            interval_us = std::max(1u, interval_us);
+
+            VLOG(6) << "Waiting for " << interval_us << " usec";
+            ep->ResetTimer(&timer, interval_us);
+        },
+        1000, this);   // initial time doesn't matter, since it's reset
+
+    Timer endExperiment(
+        [&seq, this](void *ctx, void *endpoint) {
+            running_ = false;
+            LOG(INFO) << "Ending experiment";
+            LOG(INFO) << "Sent " << seq << " requests";
+            ((Endpoint *) endpoint)->LoopBreak();
+        },
+        genReqDuration_ * 1000000, this);
+
+    /* Checks every 10ms to see if we are done*/
+    auto checkEnd = [](void *ctx, void *receiverEP) {
+        if (!((Proxy *) ctx)->running_) {
+            ((Endpoint *) receiverEP)->LoopBreak();
+        }
+    };
+
+    Timer monitor(checkEnd, 10000, this);
+
+    forwardEps_[0]->RegisterTimer(&timer);
+    forwardEps_[0]->RegisterTimer(&monitor);
+
+    forwardEps_[0]->RegisterTimer(&endExperiment);
+    forwardEps_[0]->LoopRun();
 }
 
 }   // namespace dombft
