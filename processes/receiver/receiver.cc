@@ -66,9 +66,33 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
 void Receiver::addToDeadlineQueue() 
 {
     DOMRequest request;
+    int64_t recv_time = GetMicrosecondTimestamp();
     while (requestQueue_.try_dequeue(request)) {
-        LOG(INFO) << "Pulling from queue";
-        deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+        request.set_late(recv_time > request.deadline());
+        VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+                << " deadline=" << request.deadline() << " now=" << recv_time;
+
+        if (request.late()) {
+            VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
+                    << recv_time - request.deadline() << "us";
+            VLOG(3) << "Checking deadlines before forwarding late message";
+            checkDeadlines();
+
+            forwardRequest(request);
+        } else {
+            VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
+                    << request.deadline() - recv_time << "us";
+            deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+
+            // Check if timer is firing before deadline
+            uint64_t now = GetMicrosecondTimestamp();
+            uint64_t nextCheck = request.deadline() - now;
+
+            if (nextCheck <= endpoint_->GetTimerRemaining(fwdTimer_.get())) {
+                endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+                VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
+            }
+        }
     }
 }
 
