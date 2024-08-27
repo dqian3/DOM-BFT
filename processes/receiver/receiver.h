@@ -26,6 +26,8 @@ private:
 
     std::map<std::string, std::thread *> threads_;
 
+    ConcurrentQueue<dombft::proto::DOMRequest> requestQueue_;
+
     void LaunchThreads();
 
     void ReceiveTd();
@@ -36,6 +38,8 @@ private:
     std::unique_ptr<Timer> fwdTimer_;
 
     std::unique_ptr<Timer> heartbeatTimer_;
+
+    std::unique_ptr<Timer> queueTimer_;
 
     std::mutex deadlineQueueMutex_;
 
@@ -49,6 +53,8 @@ private:
 
     void forwardRequest(const dombft::proto::DOMRequest &request);
     void checkDeadlines();
+
+    void addToDeadlineQueue();
 
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;

@@ -49,11 +49,27 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
     fwdTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->checkDeadlines(); }, 1000, this);
 
+    queueTimer_ = std::make_unique<Timer>(
+        [](void *ctx, void *endpoint) {
+            ((Receiver *) ctx)->addToDeadlineQueue();
+        }, 100, this
+    );
+
     // endpoint_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(fwdTimer_.get());
+    forwardEp_->RegisterTimer(queueTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
     });
+}
+
+void Receiver::addToDeadlineQueue() 
+{
+    DOMRequest request;
+    while (requestQueue_.try_dequeue(request)) {
+        LOG(INFO) << "Pulling from queue";
+        deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+    }
 }
 
 Receiver::~Receiver()
@@ -138,10 +154,10 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
                 << " deadline=" << request.deadline() << " now=" << recv_time;
 
-        std::lock_guard<std::mutex> lock(deadlineQueueMutex_); 
-        VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
-                << request.deadline() - recv_time << "us";
-        deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+        // std::lock_guard<std::mutex> lock(deadlineQueueMutex_); 
+        // VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
+        //         << request.deadline() - recv_time << "us";
+        // deadlineQueue_[{request.deadline(), request.client_id()}] = request;
 
         // // Check if timer is firing before deadline
         // uint64_t now = GetMicrosecondTimestamp();
@@ -151,6 +167,9 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         //     forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
         //     VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
         // }
+
+        requestQueue_.enqueue(request);
+        LOG(INFO) << "request enqueued";
     }
 }
 
