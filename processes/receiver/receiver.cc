@@ -64,7 +64,34 @@ void Receiver::run()
 {
     // Submit first request
     LOG(INFO) << "Starting event loop...";
+    // endpoint_->LoopRun();
+
+    // running_ = true;
+
+    LaunchThreads();
+    for (auto &kv : threads_) {
+        LOG(INFO) << "Join " << kv.first;
+        kv.second->join();
+        LOG(INFO) << "Join Complete " << kv.first;
+    }
+    LOG(INFO) << "Run Terminated ";
+}
+
+void Receiver::LaunchThreads()
+{
+    threads_["ReceiveTd"] = new std::thread(&Receiver::ReceiveTd, this);
+    threads_["ForwardTd"] = new std::thread(&Receiver::ForwardTd, this);
+}
+
+void Receiver::ReceiveTd()
+{
+    LOG(INFO) << "receive td launched";
     endpoint_->LoopRun();
+}
+
+void Receiver::ForwardTd()
+{
+    LOG(INFO) << "foreard td launched";
 }
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)

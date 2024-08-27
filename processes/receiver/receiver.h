@@ -24,6 +24,13 @@ private:
 
     std::unique_ptr<Endpoint> forwardEp_;
 
+    std::map<std::string, std::thread *> threads_;
+
+    void LaunchThreads();
+
+    void ReceiveTd();
+    void ForwardTd();
+
     /** The handler objects for our endpoint library */
     // TODO shared pointer for endpoint and timer??
     std::unique_ptr<Timer> fwdTimer_;
