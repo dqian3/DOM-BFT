@@ -9,9 +9,11 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
+    , skipForwarding_(skipForwarding)
+    , ignoreDeadlines_(ignoreDeadlines)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -31,7 +33,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
     }
 
     /** Store replica addrs */
-
+    numReceivers_ = config.receiverIps.size();
     if (config.transport == "nng") {
         auto addrPairs = getReceiverAddrs(config, receiverId);
         replicaAddr_ = addrPairs.back().second;
@@ -75,12 +77,13 @@ void Receiver::addToDeadlineQueue()
         VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
                 << " deadline=" << request.deadline() << " now=" << recv_time;
 
-        if (request.late()) {
+        if (ignoreDeadlines_) {
+            forwardRequest(request);
+        } else if (request.late()) {
             VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
                     << recv_time - request.deadline() << "us";
             VLOG(3) << "Checking deadlines before forwarding late message";
             checkDeadlines();
-
             forwardRequest(request);
         } else {
             VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
@@ -166,14 +169,19 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         // Send measurement reply right away
         int64_t recv_time = GetMicrosecondTimestamp();
 
-        MeasurementReply mReply;
-        mReply.set_receiver_id(receiverId_);
-        mReply.set_owd(recv_time - request.send_time());
-        VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
+        // Randomly send measurements only once in a while, every
+        if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
+            MeasurementReply mReply;
+            mReply.set_receiver_id(receiverId_);
+            mReply.set_owd(recv_time - request.send_time());
+            mReply.set_send_time(request.send_time());
+            VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd()
+                    << " usec";
 
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+        }
 
         requestQueue_.enqueue(request);
         LOG(INFO) << "request enqueued";
@@ -187,8 +195,15 @@ void Receiver::forwardRequest(const DOMRequest &request)
         // TODO
         throw "IPC communciation not implemented";
     } else {
-        VLOG(1) << "Forwarding Request with deadline " << request.deadline() << " to " << replicaAddr_.GetIPAsString()
+        uint64_t now = GetMicrosecondTimestamp();
+
+        VLOG(1) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
                 << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+
+        MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+        if (skipForwarding_) {
+            return;
+        }
 
         MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
         // TODO check errors for all of these lol
@@ -208,8 +223,6 @@ void Receiver::checkDeadlines()
     std::lock_guard<std::mutex> lock(deadlineQueueMutex_); 
     auto it = deadlineQueue_.begin();
 
-    VLOG(3) << "Checking deadlines";
-
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
@@ -220,8 +233,6 @@ void Receiver::checkDeadlines()
     }
 
     uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
-    VLOG(3) << "Next deadline check in " << nextCheck << "us";
-
     forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 

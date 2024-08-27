@@ -36,10 +36,10 @@ struct LogEntry {
     friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);
 };
 
-struct LogCommitPoint {
+struct LogCheckpoint {
     uint32_t seq = 0;
     // TODO shared ptr here so we don't duplicate it from certs.
-    std::optional<dombft::proto::Cert> cert;
+    dombft::proto::Cert cert;
     byte logDigest[SHA256_DIGEST_LENGTH];
     byte appDigest[SHA256_DIGEST_LENGTH];
 
@@ -47,10 +47,10 @@ struct LogCommitPoint {
     std::map<uint32_t, std::string> signatures;
 
     // Default constructor
-    LogCommitPoint() = default;
+    LogCheckpoint() = default;
 
     // Copy constructor
-    LogCommitPoint(const LogCommitPoint &other)
+    LogCheckpoint(const LogCheckpoint &other)
         : seq(other.seq)
         , cert(other.cert)
         , commitMessages(other.commitMessages)
@@ -69,9 +69,7 @@ struct Log {
     // Map of sequence number to certs
     std::map<uint32_t, std::shared_ptr<dombft::proto::Cert>> certs;
 
-    LogCommitPoint commitPoint;
-    // TODO have more than 1 tentative commit point, in case replicas are trying different ones.
-    std::optional<LogCommitPoint> tentativeCommitPoint;
+    LogCheckpoint checkpoint;
 
     // Map of client ids to sequence numbers, for de-duplicating requests
     std::unordered_map<uint32_t, uint32_t> clientSeqs;
@@ -84,15 +82,6 @@ struct Log {
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len);
     bool executeEntry(uint32_t seq);
-
-    // Create a new commit point given the existence of a certificate at seq
-    bool createCommitPoint(uint32_t seq);
-    // Add a commit message to the commit point,
-    bool addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int sigLen);
-    // Once 2f + 1 commits are reached the commit point is durable and
-    // we can truncate state. The 2f + 1 commits serve as a proof of the commit
-    // points validity as well. (TODO can this be f + 1?)
-    bool commitCommitPoint();
 
     void addCert(uint32_t seq, const dombft::proto::Cert &cert);
 

@@ -58,10 +58,16 @@ private:
 
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;
+    uint32_t numReceivers_;
     Address replicaAddr_;
 
+    // Skip forwarding, for running experiemnts.
+    bool skipForwarding_;
+    bool ignoreDeadlines_;
+
 public:
-    Receiver(const ProcessConfig &config, uint32_t receiverId);
+    Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false,
+             bool ignoreDeadlines_ = false);
     ~Receiver();
     void run();
 };

@@ -5,8 +5,10 @@
 /.vscode
 /.clwb
 
-
 keys
 
 logs
 *.log
+
+.DS_Store
+.idea
