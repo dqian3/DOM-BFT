@@ -49,6 +49,9 @@ message Cert {
     
     // TODO to save space, we would only store 1 copy of each common field. Instead
     // we just repeat them here since it's easier
+    // seq is also just for convenience
+    uint32 seq = 4;
+ 
     repeated Reply replies    = 7;
     repeated bytes signatures = 8;
 }
