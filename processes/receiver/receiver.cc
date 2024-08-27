@@ -41,7 +41,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
         endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
-        forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
+        forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort+100, false);
     }
 
     LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.GetIPAsString() << ":" << replicaAddr_.GetPortAsInt();
