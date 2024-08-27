@@ -37,8 +37,9 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
         replicaAddr_ = addrPairs.back().second;
 
         std::vector<std::pair<Address, Address>> replicaAddrPair = {addrPairs.back()};
+        std::vector<std::pair<Address, Address>> proxyAddrPairs(addrPairs.begin(), addrPairs.end() - 1);
         endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
-        forwardEp_ = std::make_unique<NngEndpoint>(replicaAddrPair, false);
+        forwardEp_ = std::make_unique<NngEndpoint>(proxyAddrPairs, false);
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
