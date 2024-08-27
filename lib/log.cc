@@ -32,7 +32,8 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, byte *req, uint32_
     SHA256_Update(&ctx, &client_id, sizeof(client_id));
     SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
     SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, raw_request, req_len);
+    // TODO add this back in, currently fallback doesnt' work with this
+    // SHA256_Update(&ctx, raw_request, req_len);
     SHA256_Final(digest, &ctx);
 }
 
@@ -94,16 +95,24 @@ Log::Log(AppType app_type)
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
 {
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
-    byte *prevDigest = log[prevSeqIdx]->digest;
 
-    if (nextSeq > commitPoint.seq + MAX_SPEC_HIST) {
-        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << commitPoint.seq;
+    byte *prevDigest = nullptr;
+    if (nextSeq - 1 == checkpoint.seq) {
+        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
+        prevDigest = checkpoint.logDigest;
+    } else {
+        prevDigest = log[prevSeqIdx]->digest;
+    }
+
+    if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
+        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         return false;
     }
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
 
-    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq;
+    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
+            << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
     nextSeq++;
 
     return true;
@@ -154,6 +163,7 @@ const byte *Log::getDigest() const
     if (nextSeq == 0) {
         return nullptr;
     }
+
     uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
     return log[prevSeq]->digest;
 }
@@ -168,96 +178,31 @@ const byte *Log::getDigest(uint32_t seq) const
     return log[seqIdx]->digest;
 }
 
-// Create a new commit point given the existence of a certificate at seq
-bool Log::createCommitPoint(uint32_t seq)
-{
-    // if (certs.count(seq) == 0)
-    // {
-    //     LOG(ERROR) << "Attempt to create a commit point at seq " << seq
-    //                << " but no cert exists!";
-    // }
-    LOG(INFO) << "Creating tentative commit point for " << seq;
-
-    tentativeCommitPoint = LogCommitPoint();   // TODO use a constructor?
-
-    tentativeCommitPoint->seq = seq;
-
-    // Note, CERT, logDigest, appDigest get added later
-    // TODO maybe don't create one without these?
-    memset(tentativeCommitPoint->logDigest, 0, SHA256_DIGEST_LENGTH);
-    memset(tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
-
-    tentativeCommitPoint->commitMessages.clear();
-    tentativeCommitPoint->signatures.clear();
-
-    LOG(INFO) << "Created tentative commit point for " << seq;
-
-    return true;
-}
-
-bool Log::addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int sigLen)
-{
-    int from = commit.replica_id();
-
-    if (!tentativeCommitPoint.has_value()) {
-        LOG(ERROR) << "Trying to add commit message to empty commit point!";
-        return false;
-    }
-
-    // TODO check match?
-
-    tentativeCommitPoint->commitMessages[from] = commit;
-    tentativeCommitPoint->signatures[from] = std::string(sig, sig + sigLen);
-
-    return true;
-}
-
-bool Log::commitCommitPoint()
-{
-    if (!tentativeCommitPoint.has_value()) {
-        LOG(ERROR) << "Trying to commit with empty tentative commit point!";
-        return false;
-    }
-
-    // TODO truncate log/commit application state
-
-    commitPoint = tentativeCommitPoint.value();
-    tentativeCommitPoint.reset();
-
-    LOG(INFO) << "New Stable Commit Point: " << commitPoint.seq;
-
-    return true;
-}
-
 void Log::toProto(dombft::proto::FallbackStart &msg)
 {
-    dombft::proto::LogCheckpoint *checkpoint = msg.mutable_checkpoint();
+    dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    if (commitPoint.seq > 0) {
-        checkpoint->set_seq(commitPoint.seq);
-        checkpoint->set_app_digest((const char *) commitPoint.appDigest, SHA256_DIGEST_LENGTH);
-        checkpoint->set_log_digest((const char *) commitPoint.logDigest, SHA256_DIGEST_LENGTH);
+    if (checkpoint.seq > 0) {
+        checkpointProto->set_seq(checkpoint.seq);
+        checkpointProto->set_app_digest((const char *) checkpoint.appDigest, SHA256_DIGEST_LENGTH);
+        checkpointProto->set_log_digest((const char *) checkpoint.logDigest, SHA256_DIGEST_LENGTH);
 
-        for (auto x : commitPoint.commitMessages) {
-            (*checkpoint->add_commits()) = x.second;
-            checkpoint->add_signatures(commitPoint.signatures[x.first]);
+        for (auto x : checkpoint.commitMessages) {
+            (*checkpointProto->add_commits()) = x.second;
+            checkpointProto->add_signatures(checkpoint.signatures[x.first]);
         }
 
-        if (!commitPoint.cert.has_value()) {
-            LOG(ERROR) << "commitPoint cert is null!";
-        }
-
-        (*checkpoint->mutable_cert()) = commitPoint.cert.value();
+        (*checkpointProto->mutable_cert()) = checkpoint.cert;
     }
 
-    for (int i = commitPoint.seq + 1; i < nextSeq; i++) {
+    for (int i = checkpoint.seq + 1; i < nextSeq; i++) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
         LogEntry &entry = *log[i % log.size()];
 
         assert(i == entry.seq);
 
         if (certs.count(i)) {
-            (*checkpoint->mutable_cert()) = *certs[i];
+            (*checkpointProto->mutable_cert()) = *certs[i];
         }
 
         entryProto->set_seq(i);
@@ -276,8 +221,13 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     int i = l.nextSeq - MAX_SPEC_HIST;
     i = i < 0 ? 0 : i;   // std::max isn't playing nice
     for (; i < l.nextSeq; i++) {
-        int seq = i % MAX_SPEC_HIST;
-        out << *l.log[seq];
+        int idx = i % MAX_SPEC_HIST;
+
+        // Skip any committed/truncated logs
+        if (l.log[idx]->seq <= l.checkpoint.seq)
+            continue;
+
+        out << *l.log[idx];
     }
     return out;
 }

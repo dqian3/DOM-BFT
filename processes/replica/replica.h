@@ -43,14 +43,20 @@ private:
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
-    std::map<int, dombft::proto::Reply> commitCertReplies;
-    std::map<int, std::string> commitCertSigs;
+    // TODO this assumes non-overlapping checkpoint protocol
+    uint32_t checkpointSeq_ = 0;
+    std::map<int, dombft::proto::Reply> checkpointReplies_;
+    std::map<int, std::string> checkpointReplySigs_;
+    std::optional<dombft::proto::Cert> checkpointCert_;
+
+    std::map<int, dombft::proto::Commit> checkpointCommits_;
+    std::map<int, std::string> checkpointCommitSigs_;
 
     // State for fallback
     bool fallback_ = false;
     uint32_t fallbackTriggerSeq_ = 0;
-    std::map<int, dombft::proto::FallbackStart> fallbackHistory;
-    std::map<int, std::string> fallbackHistorySigs;
+    std::map<int, dombft::proto::FallbackStart> fallbackHistory_;
+    std::map<int, std::string> fallbackHistorySigs_;
 
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
