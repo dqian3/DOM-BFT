@@ -49,7 +49,8 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId)
     fwdTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->checkDeadlines(); }, 1000, this);
 
-    endpoint_->RegisterTimer(fwdTimer_.get());
+    // endpoint_->RegisterTimer(fwdTimer_.get());
+    forwardEp_->RegisterTimer(fwdTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
     });
@@ -92,6 +93,7 @@ void Receiver::ReceiveTd()
 void Receiver::ForwardTd()
 {
     LOG(INFO) << "foreard td launched";
+    forwardEp_->LoopRun();
 }
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
@@ -136,27 +138,19 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         VLOG(4) << "Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
                 << " deadline=" << request.deadline() << " now=" << recv_time;
 
-        if (request.late()) {
-            VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
-                    << recv_time - request.deadline() << "us";
-            VLOG(3) << "Checking deadlines before forwarding late message";
-            checkDeadlines();
+        std::lock_guard<std::mutex> lock(deadlineQueueMutex_); 
+        VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
+                << request.deadline() - recv_time << "us";
+        deadlineQueue_[{request.deadline(), request.client_id()}] = request;
 
-            forwardRequest(request);
-        } else {
-            VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
-                    << request.deadline() - recv_time << "us";
-            deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+        // // Check if timer is firing before deadline
+        // uint64_t now = GetMicrosecondTimestamp();
+        // uint64_t nextCheck = request.deadline() - now;
 
-            // Check if timer is firing before deadline
-            uint64_t now = GetMicrosecondTimestamp();
-            uint64_t nextCheck = request.deadline() - now;
-
-            if (nextCheck <= endpoint_->GetTimerRemaining(fwdTimer_.get())) {
-                endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
-                VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
-            }
-        }
+        // if (nextCheck <= forwardEp_->GetTimerRemaining(fwdTimer_.get())) {
+        //     forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
+        //     VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
+        // }
     }
 }
 
@@ -185,6 +179,7 @@ void Receiver::checkDeadlines()
 {
     uint64_t now = GetMicrosecondTimestamp();
 
+    std::lock_guard<std::mutex> lock(deadlineQueueMutex_); 
     auto it = deadlineQueue_.begin();
 
     VLOG(3) << "Checking deadlines";
@@ -201,7 +196,7 @@ void Receiver::checkDeadlines()
     uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
     VLOG(3) << "Next deadline check in " << nextCheck << "us";
 
-    endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+    forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 
 }   // namespace dombft

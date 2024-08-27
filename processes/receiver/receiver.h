@@ -35,6 +35,10 @@ private:
     // TODO shared pointer for endpoint and timer??
     std::unique_ptr<Timer> fwdTimer_;
 
+    std::unique_ptr<Timer> heartbeatTimer_;
+
+    std::mutex deadlineQueueMutex_;
+
     // TODO storing these protobuf objects like this might not be great performance wise
     // couldn't find much about this.
     std::map<std::pair<uint64_t, uint32_t>, dombft::proto::DOMRequest> deadlineQueue_;
