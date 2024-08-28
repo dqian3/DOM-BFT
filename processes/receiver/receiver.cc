@@ -205,7 +205,6 @@ void Receiver::forwardRequest(const DOMRequest &request)
             return;
         }
 
-        MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
         // TODO check errors for all of these lol
         // TODO do this while waiting, not in the critical path
 
