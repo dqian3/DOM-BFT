@@ -215,8 +215,6 @@ void Receiver::forwardRequest(const DOMRequest &request)
 void Receiver::checkDeadlines()
 {
     uint64_t now = GetMicrosecondTimestamp();
-
-    std::lock_guard<std::mutex> lock(deadlineQueueMutex_);
     auto it = deadlineQueue_.begin();
 
     // ->first gets the key of {deadline, client_id}, second .first gets deadline

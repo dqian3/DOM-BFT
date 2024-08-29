@@ -1,7 +1,7 @@
-transport: "nng"
+transport: "udp"
 
 client:
-  ips: 
+  ips:
   - "10.128.0.13"
   - "10.128.0.5"
   port: 33000

@@ -361,6 +361,12 @@ def arun_on(ip, logfile, local_log=False):
         return arun
 
 
+def get_logs(c, ips, log_prefix):
+    for id, ip in enumerate(ips):
+        conn = Connection(ip)
+        conn.get(f"{log_prefix}{id}.log", "../logs/")
+ 
+
 # local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
 def gcloud_run(c, config_file="../configs/remote.yaml",
@@ -435,6 +441,16 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
             hdl.runner.kill()
             hdl.join()
 
+        print("Clients done, waiting 5 sec for other processes to finish...")
+        time.sleep(5)
+
+
+        if not local_log:
+            get_logs(c, replicas, "replica")
+            get_logs(c, receivers, "receiver")
+            get_logs(c, proxies, "proxy")
+            get_logs(c, clients, "client")
+
 
 
 @task
@@ -470,7 +486,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
         hdl = arun(
-            f"{receiver_path}  -v {0} -receiverId {id} -config {remote_config_file}" 
+            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
             + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
         )
 
@@ -481,7 +497,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     print("Starting proxies")
     for id, ip in enumerate(proxies):
         arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
-        hdl = arun(f"{proxy_path} -v {1} -config {remote_config_file} -proxyId {id} -genRequests " +
+        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
                 f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
         
         proxy_handles.append(hdl)
@@ -490,7 +506,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
         # join on the client processes, which should end
         for hdl in proxy_handles:
             hdl.join()
-
+            
         print("Proxies done, waiting 5 sec for receivers to finish...")
         time.sleep(5)
 
@@ -499,3 +515,8 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
         for hdl in other_handles:
             hdl.runner.kill()
             hdl.join()
+
+        if not local_log:
+            get_logs(c, receivers, "receiver")
+            get_logs(c, proxies, "proxy")
+
