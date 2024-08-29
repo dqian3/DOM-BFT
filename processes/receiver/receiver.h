@@ -24,7 +24,7 @@ private:
 
     std::unique_ptr<Endpoint> forwardEp_;
 
-    std::map<std::string, std::thread *> threads_;
+    std::map<std::string, std::thread> threads_;
 
     ConcurrentQueue<dombft::proto::DOMRequest> requestQueue_;
 
@@ -40,8 +40,6 @@ private:
     std::unique_ptr<Timer> heartbeatTimer_;
 
     std::unique_ptr<Timer> queueTimer_;
-
-    std::mutex deadlineQueueMutex_;
 
     // TODO storing these protobuf objects like this might not be great performance wise
     // couldn't find much about this.

@@ -115,7 +115,7 @@ void Receiver::run()
     LaunchThreads();
     for (auto &kv : threads_) {
         LOG(INFO) << "Join " << kv.first;
-        kv.second->join();
+        kv.second.join();
         LOG(INFO) << "Join Complete " << kv.first;
     }
     LOG(INFO) << "Run Terminated ";
@@ -123,8 +123,8 @@ void Receiver::run()
 
 void Receiver::LaunchThreads()
 {
-    threads_["ReceiveTd"] = new std::thread(&Receiver::ReceiveTd, this);
-    threads_["ForwardTd"] = new std::thread(&Receiver::ForwardTd, this);
+    threads_["ReceiveTd"] = std::thread(&Receiver::ReceiveTd, this);
+    threads_["ForwardTd"] = std::thread(&Receiver::ForwardTd, this);
 }
 
 void Receiver::ReceiveTd()
