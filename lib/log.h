@@ -85,9 +85,7 @@ struct Log {
     Log(AppType app_type);
 
     // Adds an entry and returns whether it is successful.
-    bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req);
-    bool executeEntry(uint32_t seq);
-    bool executeEntry(uint32_t seq, const dombft::proto::ClientRequest &request, dombft::proto::Reply &reply);
+    std::string addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req);
 
     void commit(uint32_t seq);
 

@@ -443,16 +443,14 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
 
-    bool success = log_->addEntry(clientId, request.client_seq(), request.req_data());
+    std::string result = log_->addEntry(clientId, request.client_seq(), request.req_data());
+    reply.set_result(result);
 
-    if (!success) {
-        // TODO Handle this more gracefully by queuing requests
-        LOG(ERROR) << "Could not add request to log!";
-        return;
-    }
-
-    uint32_t seq = log_->nextSeq - 1;
-    log_->executeEntry(seq, request, reply);
+    // TODO Handle failed requests better
+    // if (!success) {
+    //     LOG(ERROR) << "Could not add request to log!";
+    //     return;
+    // }
 
     reply.set_fast(true);
     reply.set_seq(seq);
@@ -918,6 +916,8 @@ void Replica::finishFallback(const FallbackProposal &history)
         // TODO Rollback application state here!
         if (!rollbackDone) {
             log_->nextSeq = entry.seq();
+            log_->app_->abort(entry.seq());
+
             rollbackDone = true;
         }
 
