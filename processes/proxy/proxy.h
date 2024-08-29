@@ -48,6 +48,7 @@ private:
     void ForwardRequestsTd(const int id = -1);
     void RecvMeasurementsTd();
 
+    void sendReq(uint32_t seq);
     void GenerateRequestsTd();
 
     /** Flag to Run/Terminate threads */

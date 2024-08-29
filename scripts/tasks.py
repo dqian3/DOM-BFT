@@ -71,6 +71,62 @@ def local(c, config_file):
             hdl.join()
 
 
+@task
+def local_reorder_exp(c, config_file, poisson=False):
+    def arun(*args, **kwargs):
+        return c.run(*args, **kwargs, asynchronous=True, warn=True)
+
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    n_proxies = len(config["proxy"]["ips"])
+    n_receivers = len(config["receiver"]["ips"])
+    proxy_handles = []
+    other_handles = []
+
+    with c.cd(".."):
+        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
+        c.run("mkdir -p logs")
+
+        for id in range(n_receivers):
+            cmd = (
+                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file}"
+                + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
+            )
+            hdl = arun(cmd)
+
+            other_handles.append(hdl)
+
+        for id in range(n_proxies):
+            cmd = (
+                f"./bazel-bin/processes/proxy/dombft_proxy -v {5} " +
+                f"-config {config_file} -proxyId {id} -genRequests  -duration 10 " +
+                f"{'-poisson' if poisson else ''} &>logs/proxy{id}.log"
+            )
+
+            hdl = arun(cmd)
+            proxy_handles.append(hdl)
+
+    try:
+        # join on the proxy processes, which should end
+        for hdl in proxy_handles:
+            hdl.join()
+
+        print("Proxies done, waiting 5 sec for receivers to finish...")
+        time.sleep(5)
+
+    finally:
+
+        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
+
+        # kill these processes and then join
+        for hdl in other_handles:
+            hdl.runner.kill()
+            hdl.join()
+
+
 def get_gcloud_ext_ips(c):
     # parse gcloud CLI to get internalIP -> externalIP mapping    
     gcloud_output = c.run("gcloud compute instances list").stdout[1:].splitlines()
@@ -90,6 +146,7 @@ def get_gcloud_process_group(config, ext_ips):
 
     ips = []
     for ip in int_ips:  # TODO non local receivers?
+        if (ip not in ext_ips): continue
         ips.append(ext_ips[ip])
 
     group = ThreadingGroup(
@@ -221,89 +278,6 @@ def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
     print("Copied client")
 
 
-@task
-def gcloud_run(c, config_file="../configs/remote.yaml"):
-    config_file = os.path.abspath(config_file)
-
-    with open(config_file) as cfg_file:
-        config = yaml.load(cfg_file, Loader=yaml.Loader)
-
-    ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
-    group.put(config_file)
-    group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
-
-    # ips of each process 
-    replicas = config["replica"]["ips"]
-    receivers = config["receiver"]["ips"]
-    proxies = config["proxy"]["ips"]
-    clients = config["client"]["ips"]
-
-    replica_path = "./dombft_replica"
-    receiver_path = "./dombft_receiver"
-    proxy_path = "./dombft_proxy"
-    client_path = "./dombft_client"
-
-    replicas = [ext_ips[ip] for ip in replicas]
-    receivers = [ext_ips[ip] for ip in receivers]
-    proxies = [ext_ips[ip] for ip in proxies]
-    clients = [ext_ips[ip] for ip in clients]
-
-    remote_config_file = os.path.basename(config_file)
-
-    client_handles = []
-    other_handles = []
-
-    def local_log_arun(logfile, ip):
-        def arun(*args, **kwargs):
-            log = open(logfile, "w")
-            conn = Connection(ip)
-
-            # print(f"Running {args}")
-            print(f"Running {args} on {ip}")
-            return conn.run(*args, **kwargs, asynchronous=True, warn=True, out_stream=log)
-
-        return arun
-
-    c.run("mkdir -p ../logs")
-    print("Starting replicas")
-    for id, ip in enumerate(replicas):
-        arun = local_log_arun(f"../logs/replica{id}.log", ip)
-        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} 2>&1")
-        other_handles.append(hdl)
-
-    print("Starting receivers")
-    for id, ip in enumerate(receivers):
-        arun = local_log_arun(f"../logs/receiver{id}.log", ip)
-        hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id} 2>&1")
-        other_handles.append(hdl)
-
-    print("Starting proxies")
-    for id, ip in enumerate(proxies):
-        arun = local_log_arun(f"../logs/proxy{id}.log", ip)
-        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} 2>&1")
-        other_handles.append(hdl)
-
-    time.sleep(5)
-
-    print("Starting clients")
-    for id, ip in enumerate(clients):
-        arun = local_log_arun(f"../logs/client{id}.log", ip)
-        hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id} 2>&1")
-        client_handles.append(hdl)
-
-    try:
-        # join on the client processes, which should end
-        for hdl in client_handles:
-            hdl.join()
-
-    finally:
-        # kill these processes and then join
-        for hdl in other_handles:
-            hdl.runner.kill()
-            hdl.join()
-
-
 def get_gcloud_process_ips(c, filter):
     gcloud_output = c.run(f"gcloud compute instances list | grep {filter}").stdout.splitlines()
     gcloud_output = map(lambda s : s.split(), gcloud_output)
@@ -364,69 +338,125 @@ gcloud compute instances create {} \
     yaml.dump(config, open(filename + "-prod" + ext, "w"))
 
 
-# Reordering exp
+
+def arun_on(ip, logfile, local_log=False):
+
+    if local_log:
+        logfile = os.path.join("../logs/", logfile)
+        def arun_local_log(command, **kwargs):
+            log = open(logfile, "w")
+            conn = Connection(ip)
+
+            print(f"Running {args} on {ip}, logging to local {logfile}")
+            return conn.run(command + " 2>&1", **kwargs, asynchronous=True, warn=True, out_stream=log)
+
+        return arun_local_log
+
+    else:
+        def arun(command, **kwargs):
+            conn = Connection(ip)
+
+            print(f"Running {command} on {ip}, logging on remote machine {logfile}" )
+            return conn.run(command + f" &>{logfile}", **kwargs, asynchronous=True, warn=True)
+        return arun
 
 
+def get_logs(c, ips, log_prefix):
+    for id, ip in enumerate(ips):
+        conn = Connection(ip)
+        conn.get(f"{log_prefix}{id}.log", "../logs/")
+ 
 
+# local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
-def local_reorder_exp(c, config_file, poisson=False):
-    def arun(*args, **kwargs):
-        return c.run(*args, **kwargs, asynchronous=True, warn=True)
-
+def gcloud_run(c, config_file="../configs/remote.yaml",
+               local_log=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
-    n_proxies = len(config["proxy"]["ips"])
-    n_receivers = len(config["receiver"]["ips"])
-    proxy_handles = []
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
+    group.put(config_file)
+    group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+
+    # ips of each process 
+    replicas = config["replica"]["ips"]
+    receivers = config["receiver"]["ips"]
+    proxies = config["proxy"]["ips"]
+    clients = config["client"]["ips"]
+
+    replica_path = "./dombft_replica"
+    receiver_path = "./dombft_receiver"
+    proxy_path = "./dombft_proxy"
+    client_path = "./dombft_client"
+
+    replicas = [ext_ips[ip] for ip in replicas]
+    receivers = [ext_ips[ip] for ip in receivers]
+    proxies = [ext_ips[ip] for ip in proxies]
+    clients = [ext_ips[ip] for ip in clients]
+
+    remote_config_file = os.path.basename(config_file)
+
+    client_handles = []
     other_handles = []
 
-    with c.cd(".."):
-        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
-        c.run("mkdir -p logs")
 
-        for id in range(n_receivers):
-            cmd = (
-                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file}"
-                + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
-            )
-            hdl = arun(cmd)
+    c.run("mkdir -p ../logs")
+    print("Starting replicas")
+    for id, ip in enumerate(replicas):
+        arun = arun_on(ip, f"replica{id}.log", local_log=local_log)
+        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id}")
+        other_handles.append(hdl)
 
-            other_handles.append(hdl)
+    print("Starting receivers")
+    for id, ip in enumerate(receivers):
+        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
+        hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id}")
+        other_handles.append(hdl)
 
-        for id in range(n_proxies):
-            cmd = (
-                f"./bazel-bin/processes/proxy/dombft_proxy -v {5} " +
-                f"-config {config_file} -proxyId {id} -genRequests  -duration 10 " +
-                f"{'-poisson' if poisson else ''} &>logs/proxy{id}.log"
-            )
+    print("Starting proxies")
+    for id, ip in enumerate(proxies):
+        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
+        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id}")
+        other_handles.append(hdl)
 
-            hdl = arun(cmd)
-            proxy_handles.append(hdl)
+    time.sleep(5)
+
+    print("Starting clients")
+    for id, ip in enumerate(clients):
+        arun = arun_on(ip, f"client{id}.log", local_log=local_log)
+        hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id}")
+        client_handles.append(hdl)
 
     try:
-        # join on the proxy processes, which should end
-        for hdl in proxy_handles:
+        # join on the client processes, which should end
+        for hdl in client_handles:
             hdl.join()
 
-        print("Proxies done, waiting 5 sec for receivers to finish...")
-        time.sleep(5)
-
     finally:
-
-        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
-
         # kill these processes and then join
         for hdl in other_handles:
             hdl.runner.kill()
             hdl.join()
 
+        print("Clients done, waiting 5 sec for other processes to finish...")
+        time.sleep(5)
+
+
+        if not local_log:
+            get_logs(c, replicas, "replica")
+            get_logs(c, receivers, "receiver")
+            get_logs(c, proxies, "proxy")
+            get_logs(c, clients, "client")
+
+
 
 @task
 def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100):
+                    poisson=False, ignore_deadlines=False, duration=20, rate=100,
+                    local_log=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -452,23 +482,12 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     proxy_handles = []
     other_handles = []
 
-    def local_log_arun(logfile, ip):
-        def arun(*args, **kwargs):
-            log = open(logfile, "w")
-            conn = Connection(ip)
-
-            # print(f"Running {args}")
-            print(f"Running {args} on {ip}")
-            return conn.run(*args, **kwargs, asynchronous=True, warn=True, out_stream=log)
-
-        return arun
-
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = local_log_arun(f"../logs/receiver{id}.log", ip)
+        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
         hdl = arun(
-                f"{receiver_path}  -v {5} -receiverId {id} -config {remote_config_file}" 
-                + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''} 2>&1"
+            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+            + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
         )
 
         other_handles.append(hdl)
@@ -477,9 +496,9 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = local_log_arun(f"../logs/proxy{id}.log", ip)
+        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
-                f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate} 2>&1")
+                f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
         
         proxy_handles.append(hdl)
 
@@ -487,7 +506,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
         # join on the client processes, which should end
         for hdl in proxy_handles:
             hdl.join()
-
+            
         print("Proxies done, waiting 5 sec for receivers to finish...")
         time.sleep(5)
 
@@ -496,3 +515,8 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
         for hdl in other_handles:
             hdl.runner.kill()
             hdl.join()
+
+        if not local_log:
+            get_logs(c, receivers, "receiver")
+            get_logs(c, proxies, "proxy")
+
