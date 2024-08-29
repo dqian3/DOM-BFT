@@ -221,9 +221,36 @@ void Proxy::ForwardRequestsTd(const int thread_id)
     forwardEps_[thread_id]->LoopRun();
 }
 
+void Proxy::sendReq(uint32_t seq)
+{
+    uint64_t now = GetMicrosecondTimestamp();
+    uint64_t deadline = now + latencyBound_;
+    deadline = std::max(deadline, lastDeadline_ + 1);
+    lastDeadline_ = deadline;
+
+    DOMRequest outReq;
+    outReq.set_send_time(now);
+    outReq.set_deadline(deadline);
+    outReq.set_proxy_id(proxyId_);
+
+    outReq.set_deadline_set_size(numReceivers_);
+    outReq.set_late(false);
+
+    outReq.set_client_id(proxyId_);
+    outReq.set_client_seq(seq);
+
+    VLOG(1) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
+            << " deadline=" << deadline << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
+
+    for (int i = 0; i < numReceivers_; i++) {
+        MessageHeader *hdr = forwardEps_[0]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+        forwardEps_[0]->SendPreparedMsgTo(receiverAddrs_[i]);
+    }
+}
+
 void Proxy::GenerateRequestsTd()
 {
-    int seq = 0;
+    uint32_t seq = 0;
 
     // If we want to generate requests according to a poisson process with an average
     // rate of genReqFreq_, the lambda parameter should just be 1/avg interval, which
@@ -232,71 +259,80 @@ void Proxy::GenerateRequestsTd()
     std::mt19937 rng(rd());   // mt19937: Pseudo-random number generation
     std::exponential_distribution<double> exp(genReqFreq_);
 
-    Timer timer(
-        [&, this](void *ctx, void *endpoint) {
-            Endpoint *ep = (Endpoint *) endpoint;
+    // If request frequency is high enough, don't rely on event library, and just busy wait for next time
+    // Since at frequencies above 1000/s, the timers don't trigger fast enough
+    if (genReqFreq_ > 1000) {
 
-            uint64_t now = GetMicrosecondTimestamp();
-            uint64_t deadline = now + latencyBound_;
-            deadline = std::max(deadline, lastDeadline_ + 1);
-            lastDeadline_ = deadline;
+        uint64_t now = GetMicrosecondTimestamp();
+        uint64_t start = now;
+        uint64_t lastSent = now;
+        uint64_t nextSend = 0;
 
-            DOMRequest outReq;
-            outReq.set_send_time(now);
-            outReq.set_deadline(deadline);
-            outReq.set_proxy_id(proxyId_);
+        while (now - start < genReqDuration_ * 1000000) {
+            now = GetMicrosecondTimestamp();
 
-            outReq.set_deadline_set_size(numReceivers_);
-            outReq.set_late(false);
-
-            outReq.set_client_id(proxyId_);
-            outReq.set_client_seq(seq);
-
-            VLOG(4) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
-                    << " deadline=" << deadline << " latencyBound=" << latencyBound_
-                    << " now=" << GetMicrosecondTimestamp();
-
-            for (int i = 0; i < numReceivers_; i++) {
-                MessageHeader *hdr = ep->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
-                ep->SendPreparedMsgTo(receiverAddrs_[i]);
+            if (now - lastSent < nextSend) {
+                continue;
             }
 
+            sendReq(seq);
             seq++;
+            lastSent = now;
 
             // interval in seconds between requests
             double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
             // convert to microseconds, but don't let it go to 0
             uint32_t interval_us = interval * 1000000;
             interval_us = std::max(1u, interval_us);
-
-            VLOG(6) << "Waiting for " << interval_us << " usec";
-            ep->ResetTimer(&timer, interval_us);
-        },
-        1000, this);   // initial time doesn't matter, since it's reset
-
-    Timer endExperiment(
-        [&seq, this](void *ctx, void *endpoint) {
-            running_ = false;
-            LOG(INFO) << "Ending experiment";
-            LOG(INFO) << "Sent " << seq << " requests";
-            ((Endpoint *) endpoint)->LoopBreak();
-        },
-        genReqDuration_ * 1000000, this);
-
-    /* Checks every 10ms to see if we are done*/
-    auto checkEnd = [](void *ctx, void *receiverEP) {
-        if (!((Proxy *) ctx)->running_) {
-            ((Endpoint *) receiverEP)->LoopBreak();
+            nextSend = interval_us;
         }
-    };
 
-    Timer monitor(checkEnd, 10000, this);
+        running_ = false;
+        LOG(INFO) << "Ending experiment after busy-waiting";
+        LOG(INFO) << "Sent " << seq << " requests";
 
-    forwardEps_[0]->RegisterTimer(&timer);
-    forwardEps_[0]->RegisterTimer(&monitor);
+    } else {
+        Timer timer(
+            [&, this](void *ctx, void *endpoint) {
+                Endpoint *ep = (Endpoint *) endpoint;
+                sendReq(seq);
+                seq++;
 
-    forwardEps_[0]->RegisterTimer(&endExperiment);
-    forwardEps_[0]->LoopRun();
+                // interval in seconds between requests
+                double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
+                // convert to microseconds, but don't let it go to 0
+                uint32_t interval_us = interval * 1000000;
+                interval_us = std::max(1u, interval_us);
+
+                VLOG(1) << "Waiting for " << interval_us << " usec";
+                ep->ResetTimer(&timer, interval_us);
+            },
+            1000, this);   // initial time doesn't matter, since it's reset
+
+        Timer endExperiment(
+            [&seq, this](void *ctx, void *endpoint) {
+                running_ = false;
+                LOG(INFO) << "Ending experiment";
+                LOG(INFO) << "Sent " << seq << " requests";
+                ((Endpoint *) endpoint)->LoopBreak();
+            },
+            genReqDuration_ * 1000000, this);
+
+        /* Checks every 10ms to see if we are done*/
+        auto checkEnd = [](void *ctx, void *receiverEP) {
+            if (!((Proxy *) ctx)->running_) {
+                ((Endpoint *) receiverEP)->LoopBreak();
+            }
+        };
+
+        Timer monitor(checkEnd, 10000, this);
+
+        forwardEps_[0]->RegisterTimer(&timer);
+        forwardEps_[0]->RegisterTimer(&monitor);
+
+        forwardEps_[0]->RegisterTimer(&endExperiment);
+        forwardEps_[0]->LoopRun();
+    }
 }
 
 }   // namespace dombft

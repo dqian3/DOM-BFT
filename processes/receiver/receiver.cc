@@ -46,7 +46,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
         endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
-        forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort+100, false);
+        forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort + 100, false);
     }
 
     LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.GetIPAsString() << ":" << replicaAddr_.GetPortAsInt();
@@ -54,11 +54,8 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     fwdTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->checkDeadlines(); }, 1000, this);
 
-    queueTimer_ = std::make_unique<Timer>(
-        [](void *ctx, void *endpoint) {
-            ((Receiver *) ctx)->addToDeadlineQueue();
-        }, 100, this
-    );
+    queueTimer_ =
+        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->addToDeadlineQueue(); }, 100, this);
 
     // endpoint_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(fwdTimer_.get());
@@ -68,7 +65,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     });
 }
 
-void Receiver::addToDeadlineQueue() 
+void Receiver::addToDeadlineQueue()
 {
     DOMRequest request;
     int64_t recv_time = GetMicrosecondTimestamp();
@@ -94,8 +91,8 @@ void Receiver::addToDeadlineQueue()
             uint64_t now = GetMicrosecondTimestamp();
             uint64_t nextCheck = request.deadline() - now;
 
-            if (nextCheck <= endpoint_->GetTimerRemaining(fwdTimer_.get())) {
-                endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+            if (nextCheck <= forwardEp_->GetTimerRemaining(fwdTimer_.get())) {
+                forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
                 VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
             }
         }
@@ -138,7 +135,7 @@ void Receiver::ReceiveTd()
 
 void Receiver::ForwardTd()
 {
-    LOG(INFO) << "foreard td launched";
+    LOG(INFO) << "forward td launched";
     forwardEp_->LoopRun();
 }
 
@@ -169,14 +166,15 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         // Send measurement reply right away
         int64_t recv_time = GetMicrosecondTimestamp();
 
-        // Randomly send measurements only once in a while, every
+        VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+                << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
+
+        // Randomly send measurements only once in a whil
         if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
             MeasurementReply mReply;
             mReply.set_receiver_id(receiverId_);
             mReply.set_owd(recv_time - request.send_time());
             mReply.set_send_time(request.send_time());
-            VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd()
-                    << " usec";
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
@@ -184,7 +182,6 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         }
 
         requestQueue_.enqueue(request);
-        LOG(INFO) << "request enqueued";
     }
 }
 
@@ -197,8 +194,8 @@ void Receiver::forwardRequest(const DOMRequest &request)
     } else {
         uint64_t now = GetMicrosecondTimestamp();
 
-        VLOG(1) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
-                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+        LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
+                  << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
         MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
         if (skipForwarding_) {
@@ -219,7 +216,7 @@ void Receiver::checkDeadlines()
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    std::lock_guard<std::mutex> lock(deadlineQueueMutex_); 
+    std::lock_guard<std::mutex> lock(deadlineQueueMutex_);
     auto it = deadlineQueue_.begin();
 
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
