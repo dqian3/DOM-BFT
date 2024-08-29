@@ -443,8 +443,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
 
-    bool success = log_->addEntry(clientId, request.client_seq(), (byte *) request.req_data().c_str(),
-                                  request.req_data().length());
+    bool success = log_->addEntry(clientId, request.client_seq(), request.req_data());
 
     if (!success) {
         // TODO Handle this more gracefully by queuing requests
@@ -734,7 +733,7 @@ void Replica::applyFallbackReq(const dombft::proto::LogEntry &entry)
 
     VLOG(2) << log_->nextSeq << ": c_id=" << clientId << " c_seq=" << entry.client_seq();
 
-    log_->addEntry(clientId, entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
+    log_->addEntry(clientId, entry.client_seq(), entry.request());
     // TODO add an interface here for adding executed requests!
 
     Reply reply;

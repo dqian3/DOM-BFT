@@ -23,16 +23,14 @@ struct LogEntry {
     uint32_t client_id;
     uint32_t client_seq;
 
-    byte *raw_request;
-    std::string raw_result;
-
-    uint32_t request_len;
+    std::string request;
+    std::string result;
 
     byte digest[SHA256_DIGEST_LENGTH];
 
     LogEntry();
 
-    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len, byte *prev_digest);
+    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, byte *prev_digest);
     ~LogEntry();
 
     friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);
@@ -87,7 +85,7 @@ struct Log {
     Log(AppType app_type);
 
     // Adds an entry and returns whether it is successful.
-    bool addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len);
+    bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req);
     bool executeEntry(uint32_t seq);
     bool executeEntry(uint32_t seq, const dombft::proto::ClientRequest &request, dombft::proto::Reply &reply);
 
