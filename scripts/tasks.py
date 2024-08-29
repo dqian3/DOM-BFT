@@ -426,7 +426,8 @@ def local_reorder_exp(c, config_file, poisson=False):
 
 @task
 def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100):
+                    poisson=False, ignore_deadlines=False, duration=20, rate=100,
+                    local_log_file=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -452,14 +453,22 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     proxy_handles = []
     other_handles = []
 
-    def local_log_arun(logfile, ip):
+    def local_log_arun(logfile, ip, local_log=True):
         def arun(*args, **kwargs):
-            log = open(logfile, "w")
+
+            if (local_log_file):
+                log = open(logfile, "w")
             conn = Connection(ip)
 
             # print(f"Running {args}")
+
+            
             print(f"Running {args} on {ip}")
-            return conn.run(*args, **kwargs, asynchronous=True, warn=True, out_stream=log)
+            
+            if (local_log_file):
+                return conn.run(*args, **kwargs, asynchronous=True, warn=True, out_stream=log)
+            else:
+                return conn.run(*args, **kwargs, asynchronous=True, warn=True) 
 
         return arun
 
@@ -467,8 +476,8 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     for id, ip in enumerate(receivers):
         arun = local_log_arun(f"../logs/receiver{id}.log", ip)
         hdl = arun(
-                f"{receiver_path}  -v {5} -receiverId {id} -config {remote_config_file}" 
-                + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''} 2>&1"
+            f"{receiver_path}  -v {0} -receiverId {id} -config {remote_config_file}" 
+            + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''} &>receiver{id}.log"
         )
 
         other_handles.append(hdl)
@@ -478,8 +487,8 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     print("Starting proxies")
     for id, ip in enumerate(proxies):
         arun = local_log_arun(f"../logs/proxy{id}.log", ip)
-        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
-                f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate} 2>&1")
+        hdl = arun(f"{proxy_path} -v {1} -config {remote_config_file} -proxyId {id} -genRequests " +
+                f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate} &>proxy{id}.log")
         
         proxy_handles.append(hdl)
 
