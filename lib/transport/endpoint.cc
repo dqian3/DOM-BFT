@@ -68,45 +68,16 @@ bool Endpoint::UnRegisterTimer(Timer *timer)
     return true;
 }
 
-
-// the restart timer will restart the timerToPause when the timer expires. 
-bool Endpoint::PauseTimer(Timer *timerToPause, uint32_t pauseTime)
+bool Endpoint::PauseTimer(Timer *timerToPause, uint32_t pauseTime_us)
 {
-    if (evLoop_ == NULL) {
-        LOG(ERROR) << "No evLoop!";
-        return false;
-    } 
+    uint64_t remaining = GetTimerRemaining(timerToPause);
 
-    if (!isTimerRegistered(timerToPause)) {
-        LOG(ERROR) << "The timer to pause here has not been registered ";
-        return false; 
+    if (remaining == 0) {
+        return false;
     }
 
-    ev_timer_stop(evLoop_, timerToPause->evTimer_);
-
-    LOG(INFO) << "the timer has been stopeed";
-
-    auto restartTimer = new ev_timer();
-
-    restartTimer->data = timerToPause;
-
-    auto resume_callback = [](struct ev_loop *loop, ev_timer *w, int revents) {
-        LOG(INFO) << "resuming the paused timer";
-
-        Timer* timerToResume = static_cast<Timer*>(w->data);
-        ev_timer_again(loop, timerToResume->evTimer_);
-        ev_timer_stop(loop, w);
-    };
-
-    ev_timer_init(restartTimer, resume_callback, pauseTime, 0);
-
-    ev_timer_start(evLoop_, restartTimer);
-
-    LOG(INFO) << "restart timer initiated";
-
-    return true;
+    return ResetTimer(timerToPause, remaining + pauseTime_us);
 }
-
 
 void Endpoint::UnRegisterAllTimers()
 {
@@ -120,11 +91,11 @@ uint64_t Endpoint::GetTimerRemaining(Timer *t)
 {
     if (evLoop_ == NULL) {
         LOG(ERROR) << "No evLoop!";
-        return false;
+        return 0;
     }
     if (!isTimerRegistered(t)) {
         LOG(ERROR) << "The timer has not been registered ";
-        return false;
+        return 0;
     }
     return 1e+6 * ev_timer_remaining(evLoop_, t->evTimer_);
 }
