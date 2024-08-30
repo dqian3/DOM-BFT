@@ -141,7 +141,7 @@ def get_gcloud_ext_ips(c):
 def get_gcloud_process_group(config, ext_ips):
     int_ips = set()
     for process in config:
-        if process == "transport": continue
+        if process == "transport" or process == "app": continue
         int_ips |= set([ip for ip in config[process]["ips"]])
 
     ips = []
