@@ -22,7 +22,7 @@ client:
   # adjust means having the send rate commensurate with the send rate
   backPressure: "sleep"
   # how much time the sending event pause after each backpressure. The unit is in second. 
-  sleepTime: 0.07  
+  sleepTime: 20000 
 
 # Proxy Info
 proxy:

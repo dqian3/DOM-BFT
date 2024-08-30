@@ -63,8 +63,6 @@ Log::Log(AppType app_type)
         log[i] = std::make_unique<LogEntry>();
     }
 
-    LOG(INFO) << "log entry initialized";
-
     if (app_type == AppType::COUNTER) {
         LOG(INFO) << "Creating a counter application";
         app_ = std::make_unique<Counter>();
@@ -72,8 +70,6 @@ Log::Log(AppType app_type)
         LOG(ERROR) << "Unsupported application type";
         exit(1);
     }
-
-    LOG(INFO) << "App initialized";
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
@@ -100,7 +96,6 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
             << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
 
     res = app_->execute(req, nextSeq);
-    LOG(INFO) << "Got response from app layer: " << res;
     log[nextSeq % log.size()]->result = res;
 
     nextSeq++;

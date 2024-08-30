@@ -10,7 +10,7 @@ client:
   keysDir: keys/client
   maxRequests: 1
   numRequests: 100
-  runtimeSeconds: 10 
+  runtimeSeconds: 2 
   normalPathTimeout: 5000
   slowPathTimeout: 50000
   sendRate: 10
@@ -21,8 +21,8 @@ client:
   # none means no back pressure, sleep means sleep if outstanding requests are too many,
   # adjust means having the send rate commensurate with the send rate
   backPressure: "sleep"
-  # how much time the sending event pause after each backpressure. The unit is in second. 
-  sleepTime: 0.07
+  # how much time the sending event pause after each backpressure. The unit is in microsecond. 
+  sleepTime: 20000
 
 
 # Proxy Info

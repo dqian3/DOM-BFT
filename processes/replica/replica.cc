@@ -474,7 +474,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
     // Try and commit every 10 replies (half of the way before
     // we can't speculatively execute anymore)
-    if (seq % (MAX_SPEC_HIST / 2) == 0) {
+    if (seq % CHECKPOINT_INTERVAL == 0) {
         LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
 
         checkpointSeq_ = seq;

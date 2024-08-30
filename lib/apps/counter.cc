@@ -8,8 +8,6 @@ Counter::~Counter() {}
 
 std::string Counter::execute(const std::string &serialized_request, const uint32_t execute_idx)
 {
-    LOG(INFO) << "Received request to execute counter operation";
-
     std::unique_ptr<CounterRequest> counterReq = std::make_unique<CounterRequest>();
     if (!counterReq->ParseFromString(serialized_request)) {
         LOG(ERROR) << "Failed to parse CounterRequest";
@@ -20,13 +18,13 @@ std::string Counter::execute(const std::string &serialized_request, const uint32
     CounterResponse response;
 
     if (op == CounterOperation::INCREMENT) {
-        LOG(INFO) << "Incrementing counter";
+        VLOG(6) << "Incrementing counter";
         counter++;
-        LOG(INFO) << "Counter value: " << counter;
+        VLOG(6) << "Counter value: " << counter;
     } else if (op == CounterOperation::DECREMENT) {
-        LOG(INFO) << "Decrementing counter";
+        VLOG(6) << "Decrementing counter";
         counter--;
-        LOG(INFO) << "Counter value: " << counter;
+        VLOG(6) << "Counter value: " << counter;
     } else {
         LOG(ERROR) << "Invalid operation";
         exit(1);

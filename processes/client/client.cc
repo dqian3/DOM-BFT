@@ -26,15 +26,21 @@ Client::Client(const ProcessConfig &config, size_t id)
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;
 
-    // TODO make this some sort of config
-    LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
-    maxInFlight_ = config.clientMaxRequests;
-
-    LOG(INFO) << "Sending " << config.clientNumRequests << " requests!";
+    LOG(INFO) << "Sending " << config.clientNumRequests << " requests for at most " << config.clientRuntimeSeconds
+              << " seconds";
     numRequests_ = config.clientNumRequests;
 
+    LOG(INFO) << "Sending at most " << config.clientMaxRequests << " requests at once";
+
+    maxInFlight_ = config.clientMaxRequests;
     clientSendRate_ = config.clientSendRate;
-    LOG(INFO) << "Send rate: " << clientSendRate_;
+
+    if (config.clientSendMode == "sendRate") {
+        sendMode_ = dombft::RateBased;
+    } else if (config.clientSendMode == "maxRequests") {
+        LOG(INFO) << "Send rate: " << clientSendRate_;
+        sendMode_ = dombft::MaxInFlightBased;
+    }
 
     /* Setup keys */
     std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -93,12 +99,6 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
-    if (config.clientSendMode == "sendRate") {
-        sendMode_ = dombft::RateBased;
-    } else if (config.clientSendMode == "maxRequests") {
-        sendMode_ = dombft::MaxInFlightBased;
-    }
-
     if (config.clientBackPressureMode == "none") {
         backpressureMode_ = dombft::None;
     } else if (config.clientBackPressureMode == "sleep") {
@@ -110,33 +110,11 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     if (sendMode_ == dombft::RateBased) {
-        sendTimer_ = std::make_unique<Timer>(
-            [](void *ctx, void *endpoint) {
-                LOG(INFO) << "send timer triggered";
-                ((Client *) ctx)->submitRequest();
-            },
-            1000000 / clientSendRate_, this);
+        sendTimer_ = std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Client *) ctx)->submitRequest(); },
+                                             1000000 / clientSendRate_, this);
 
         endpoint_->RegisterTimer(sendTimer_.get());
     }
-
-    // if (backpressureMode_ == dombft::sleep)
-    // {
-    //     restartSendTimer_ = std::make_unique<Timer>(
-    //         [this](void *ctx, void *endpoint) {
-    //             auto ep = static_cast<Endpoint*>(endpoint);
-    //             if (inFlight_ < maxInFlight_) {
-    //                 ev_timer_again(ep->evLoop_, sendTimer_->evTimer_);
-    //                 ev_timer_stop(ep->evLoop_, evTimer_);
-    //                 LOG(INFO) << "restart timer expires";
-    //             } else {
-    //                 LOG(INFO) << "in flight still >= than maxinflight, does not resume sending";
-    //             }
-    //         }, 1000000, this
-    //     );
-
-    //     endpoint_->RegisterTimer(restartSendTimer_.get());
-    // }
 
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
@@ -146,6 +124,8 @@ Client::Client(const ProcessConfig &config, size_t id)
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
         this);
+
+    endpoint_->RegisterTimer(terminateTimer_.get());
 
     if (config.app == AppType::COUNTER) {
         trafficGen_ = std::make_unique<CounterTrafficGen>();

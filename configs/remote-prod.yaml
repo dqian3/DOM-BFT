@@ -9,16 +9,16 @@ client:
   - 10.142.0.4
   - 10.202.0.3
   keysDir: keys/client
-  maxRequests: 5
+  maxRequests: 20
   numRequests: 1000000
   runtimeSeconds: 20 
   port: 33000
   normalPathTimeout: 100000
   slowPathTimeout:   2000000
-  sendRate: 100
-  sendMode: "sendRate"
-  backPressure: "sleep"
-  sleepTime: 0.07  
+  sendRate: 50
+  sendMode: "maxRequests"
+  backPressure: "none"
+  sleepTime: 20000  
 
 
 proxy:

@@ -364,8 +364,35 @@ def arun_on(ip, logfile, local_log=False):
 def get_logs(c, ips, log_prefix):
     for id, ip in enumerate(ips):
         conn = Connection(ip)
+        print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
  
+
+@task
+def gcloud_logs(c, config_file="../configs/remote.yaml"):
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
+
+    # ips of each process 
+    replicas = config["replica"]["ips"]
+    receivers = config["receiver"]["ips"]
+    proxies = config["proxy"]["ips"]
+    clients = config["client"]["ips"]
+
+    replicas = [ext_ips[ip] for ip in replicas]
+    receivers = [ext_ips[ip] for ip in receivers]
+    proxies = [ext_ips[ip] for ip in proxies]
+    clients = [ext_ips[ip] for ip in clients]
+
+    get_logs(c, replicas, "replica")
+    get_logs(c, receivers, "receiver")
+    get_logs(c, proxies, "proxy")
+    get_logs(c, clients, "client")
+
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
@@ -439,17 +466,20 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
         # kill these processes and then join
         for hdl in other_handles:
             hdl.runner.kill()
+
+        for hdl in other_handles:
             hdl.join()
+
 
         print("Clients done, waiting 5 sec for other processes to finish...")
         time.sleep(5)
 
 
         if not local_log:
+            get_logs(c, clients, "client")
             get_logs(c, replicas, "replica")
             get_logs(c, receivers, "receiver")
             get_logs(c, proxies, "proxy")
-            get_logs(c, clients, "client")
 
 
 
