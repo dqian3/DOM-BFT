@@ -8,22 +8,17 @@ LogEntry::LogEntry()
     : seq(0)
     , client_id(0)
     , client_seq(0)
-    , raw_request(nullptr)
-    , raw_result(nullptr)
 {
     memset(digest, 0, SHA256_DIGEST_LENGTH);
 }
 
-LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len, byte *prev_digest)
+LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &req, byte *prev_digest)
     : seq(s)
     , client_id(c_id)
     , client_seq(c_seq)
-    , raw_request((byte *) malloc(req_len))   // Manually allocate some memory to store the request
-    , raw_result(nullptr)
-    , request_len(req_len)
-    , result_len(0)
+    , request(req)   // Manually allocate some memory to store the request
 {
-    memcpy(raw_request, req, req_len);
+    result = "";
 
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
@@ -33,19 +28,11 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, byte *req, uint32_
     SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
     SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
     // TODO add this back in, currently fallback doesnt' work with this
-    // SHA256_Update(&ctx, raw_request, req_len);
+    SHA256_Update(&ctx, request.c_str(), request.length());
     SHA256_Final(digest, &ctx);
 }
 
-LogEntry::~LogEntry()
-{
-    if (raw_request != nullptr) {
-        free(raw_request);
-    }
-    if (raw_result != nullptr) {
-        free(raw_result);
-    }
-}
+LogEntry::~LogEntry() {}
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
 {
@@ -65,7 +52,31 @@ Log::Log()
     }
 }
 
-bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
+Log::Log(AppType app_type)
+    : nextSeq(1)
+    , lastExecuted(0)
+{
+    LOG(INFO) << "Initializing log entries";
+    // Zero initialize all the entries
+    // TODO: there's probably a better way to handle this
+    for (uint32_t i = 0; i < log.size(); i++) {
+        log[i] = std::make_unique<LogEntry>();
+    }
+
+    LOG(INFO) << "log entry initialized";
+
+    if (app_type == AppType::COUNTER) {
+        LOG(INFO) << "Creating a counter application";
+        app_ = std::make_unique<Counter>();
+    } else {
+        LOG(ERROR) << "Unsupported application type";
+        exit(1);
+    }
+
+    LOG(INFO) << "App initialized";
+}
+
+bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
 
@@ -79,26 +90,20 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
 
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
+        // TODO error out properly
         return false;
     }
 
-    log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
+    log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
 
     VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
             << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
+
+    res = app_->execute(req, nextSeq);
+    LOG(INFO) << "Got response from app layer: " << res;
+    log[nextSeq % log.size()]->result = res;
+
     nextSeq++;
-
-    return true;
-}
-
-bool Log::executeEntry(uint32_t seq)
-{
-    if (lastExecuted != seq - 1) {
-        return false;
-    }
-
-    // TODO execute and get result back.
-    lastExecuted++;
     return true;
 }
 
@@ -158,8 +163,8 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
         entryProto->set_client_id(entry.client_id);
         entryProto->set_client_seq(entry.client_seq);
         entryProto->set_digest(entry.digest, SHA256_DIGEST_LENGTH);
-        entryProto->set_request(entry.raw_request, entry.request_len);
-        entryProto->set_result(entry.raw_result, entry.result_len);
+        entryProto->set_request(entry.request);
+        entryProto->set_result(entry.result);
     }
 }
 
@@ -179,4 +184,24 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
         out << *l.log[idx];
     }
     return out;
+}
+
+LogEntry *Log::getEntry(uint32_t seq)
+{
+    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+        uint32_t index = seq % MAX_SPEC_HIST;
+        return log[index].get();
+    } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
+        return nullptr;
+    }
+}
+
+void Log::commit(uint32_t seq)
+{
+    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+        app_.get()->commit(seq);
+    } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
+    }
 }

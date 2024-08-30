@@ -6,6 +6,8 @@
 #include <vector>
 #include <yaml-cpp/yaml.h>
 
+#include "lib/application.h"
+
 class ConfigParseException : public std::runtime_error {
 public:
     ConfigParseException(const std::string &msg)
@@ -21,6 +23,8 @@ public:
 
 struct ProcessConfig {
     std::string transport;
+    AppType app;
+    std::string appStr;
 
     std::vector<std::string> clientIps;
     int clientPort;
@@ -182,6 +186,13 @@ struct ProcessConfig {
         }
 
         transport = parseField<std::string>(config, "transport");
+        app = parseField<std::string>(config, "app") == "counter" ? AppType::COUNTER : AppType::KV_STORE;
+        appStr = parseField<std::string>(config, "app");
+        if (appStr == "counter") {
+            app = AppType::COUNTER;
+        } else {
+            throw ConfigParseException("Invalid app type");
+        }
 
         parseClientConfig(config);
         parseProxyConfig(config);

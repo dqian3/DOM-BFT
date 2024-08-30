@@ -1,5 +1,7 @@
 transport: udp
 
+app: "counter"
+
 client:
   ips: 
   - "127.0.1.0"
@@ -11,7 +13,7 @@ client:
   runtimeSeconds: 10 
   normalPathTimeout: 5000
   slowPathTimeout: 50000
-  sendRate: 1000
+  sendRate: 10
   # the sendmode can be either using sendRate or maxRequests in flight. 
   sendMode: "sendRate"
   # sendMode: "maxRequests"
@@ -54,6 +56,7 @@ replica:
   - "127.0.0.3"
   - "127.0.0.4"
   port: 34000
+  app: "counter"
   keysDir: "keys/replica"
   fallbackTimeout: 200000
   fallbackStartTimeout: 50000

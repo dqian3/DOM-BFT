@@ -4,6 +4,10 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
+#include "lib/application.h"
+
+#include "lib/apps/counter.h"
+
 #include <assert.h>
 #include <openssl/pem.h>
 #include <sstream>
@@ -32,6 +36,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
         exit(1);
     }
 
+    LOG(INFO) << "private key loaded";
+
     if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
@@ -49,7 +55,9 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
 
     f_ = config.replicaIps.size() / 3;
 
-    log_ = std::make_unique<Log>();
+    LOG(INFO) << "instantiating log";
+    log_ = std::make_shared<Log>(config.app);
+    LOG(INFO) << "log instantiated";
 
     if (config.transport == "nng") {
         auto addrPairs = getReplicaAddrs(config, replicaId_);
@@ -164,6 +172,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         // TODO also pass client request
         handleClientRequest(clientHeader);
+        LOG(INFO) << "Received and processed DOM_REQUEST message";
     }
 #else
     if (hdr->msgType == CLIENT_REQUEST) {
@@ -434,8 +443,9 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
 
-    bool success = log_->addEntry(clientId, request.client_seq(), (byte *) request.req_data().c_str(),
-                                  request.req_data().length());
+    std::string result;
+
+    bool success = log_->addEntry(clientId, request.client_seq(), request.req_data(), result);
 
     if (!success) {
         // TODO Handle this more gracefully by queuing requests
@@ -444,9 +454,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
     }
 
     uint32_t seq = log_->nextSeq - 1;
-    // TODO actually get the result here.
-    log_->executeEntry(seq);
-
+    reply.set_result(result);
     reply.set_fast(true);
     reply.set_seq(seq);
 
@@ -461,6 +469,8 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
     LOG(INFO) << "Sending reply back to client " << clientId;
     endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+
+    LOG(INFO) << "Done Sending reply back to client " << clientId;
 
     // Try and commit every 10 replies (half of the way before
     // we can't speculatively execute anymore)
@@ -724,20 +734,22 @@ void Replica::applyFallbackReq(const dombft::proto::LogEntry &entry)
 
     VLOG(2) << log_->nextSeq << ": c_id=" << clientId << " c_seq=" << entry.client_seq();
 
-    log_->addEntry(clientId, entry.client_seq(), (byte *) entry.request().c_str(), entry.request().size());
-    // TODO add an interface here for adding executed requests!
-
     Reply reply;
+    std::string result;
+
+    if (!log_->addEntry(clientId, entry.client_seq(), entry.request(), result)) {
+        LOG(ERROR) << "Failure to add logg entry!";
+    }
+    // TODO add an interface here for adding executed requests!
 
     reply.set_client_id(clientId);
     reply.set_client_seq(entry.client_seq());
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
+    reply.set_result(result);
 
     uint32_t seq = log_->nextSeq - 1;
     // TODO actually get the result here.
-    log_->executeEntry(seq);
-
     reply.set_fast(true);
     reply.set_seq(seq);
 
@@ -909,6 +921,8 @@ void Replica::finishFallback(const FallbackProposal &history)
         // TODO Rollback application state here!
         if (!rollbackDone) {
             log_->nextSeq = entry.seq();
+            log_->app_->abort(entry.seq() - 1);
+
             rollbackDone = true;
         }
 

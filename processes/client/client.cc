@@ -4,6 +4,10 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
+#include "lib/application.h"
+#include "lib/apps/counter.h"
+#include "proto/dombft_apps.pb.h"
+
 #define NUM_CLIENTS 100
 
 namespace dombft {
@@ -142,7 +146,14 @@ Client::Client(const ProcessConfig &config, size_t id)
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
         this);
-    endpoint_->RegisterTimer(terminateTimer_.get());
+
+    if (config.app == AppType::COUNTER) {
+        trafficGen_ = std::make_unique<CounterTrafficGen>();
+        appType_ = AppType::COUNTER;
+    } else {
+        LOG(ERROR) << "Unknown application type for client!";
+        exit(1);
+    }
 
     LOG(INFO) << "Client finished initializing";
 }
@@ -296,6 +307,13 @@ void Client::submitRequest()
     request.set_client_seq(nextReqSeq_);
     request.set_send_time(GetMicrosecondTimestamp());
     request.set_is_write(true);   // TODO modify this based on some random chance
+
+    auto appRequest = trafficGen_->generateAppTraffic();
+    // TODO: this has to be hard coded in an inelegant way. May imporve this later
+    if (appType_ == AppType::COUNTER) {
+        dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+        request.set_req_data(counterReq->SerializeAsString());
+    }
 
     requestStates_[nextReqSeq_].sendTime = request.send_time();
 

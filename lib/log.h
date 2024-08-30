@@ -14,23 +14,23 @@
 #include <unordered_map>
 #include <utility>
 
+#include "lib/application.h"
+#include "lib/apps/counter.h"
+
 struct LogEntry {
     uint32_t seq;
 
     uint32_t client_id;
     uint32_t client_seq;
 
-    byte *raw_request;
-    byte *raw_result;
-
-    uint32_t request_len;
-    uint32_t result_len;
+    std::string request;
+    std::string result;
 
     byte digest[SHA256_DIGEST_LENGTH];
 
     LogEntry();
 
-    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len, byte *prev_digest);
+    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, byte *prev_digest);
     ~LogEntry();
 
     friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);
@@ -77,11 +77,17 @@ struct Log {
     uint32_t nextSeq;
     uint32_t lastExecuted;
 
+    // The log claims ownership of the application, instead of the replica
+    std::unique_ptr<Application> app_;
+
     Log();
 
+    Log(AppType app_type);
+
     // Adds an entry and returns whether it is successful.
-    bool addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len);
-    bool executeEntry(uint32_t seq);
+    bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
+
+    void commit(uint32_t seq);
 
     void addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
@@ -91,6 +97,8 @@ struct Log {
     void toProto(dombft::proto::FallbackStart &msg);
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
+
+    LogEntry *getEntry(uint32_t seq);
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);

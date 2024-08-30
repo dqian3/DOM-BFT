@@ -39,7 +39,7 @@ private:
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
     std::unique_ptr<Timer> fallbackTimer_;
-    std::unique_ptr<Log> log_;
+    std::shared_ptr<Log> log_;
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?

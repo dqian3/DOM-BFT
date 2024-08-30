@@ -4,6 +4,7 @@ cc_library(
     hdrs = ["process_config.h"],
     deps = [
         "@com_github_jbeder_yaml_cpp//:yaml-cpp",
+        "//lib:application",
     ],
     visibility = ["//visibility:public"],
 )
