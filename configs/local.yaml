@@ -13,7 +13,7 @@ client:
   runtimeSeconds: 10 
   normalPathTimeout: 5000
   slowPathTimeout: 50000
-  sendRate: 1000
+  sendRate: 10
   # the sendmode can be either using sendRate or maxRequests in flight. 
   sendMode: "sendRate"
   # sendMode: "maxRequests"

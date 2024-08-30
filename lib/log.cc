@@ -8,9 +8,7 @@ LogEntry::LogEntry()
     : seq(0)
     , client_id(0)
     , client_seq(0)
-    , request(nullptr)
 {
-    result = "";
     memset(digest, 0, SHA256_DIGEST_LENGTH);
 }
 
@@ -58,7 +56,7 @@ Log::Log(AppType app_type)
     : nextSeq(1)
     , lastExecuted(0)
 {
-    LOG(INFO) << "Initializing log entry";
+    LOG(INFO) << "Initializing log entries";
     // Zero initialize all the entries
     // TODO: there's probably a better way to handle this
     for (uint32_t i = 0; i < log.size(); i++) {

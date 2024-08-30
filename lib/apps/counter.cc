@@ -98,7 +98,7 @@ void *CounterTrafficGen::generateAppTraffic()
 bool Counter::abort(const uint32_t abort_idx)
 {
 
-    LOG(INFO) << "Aborting operations at idx: " << abort_idx;
+    LOG(INFO) << "Aborting operations after idx: " << abort_idx;
 
     // Find the last committed value before or at abort_idx
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),

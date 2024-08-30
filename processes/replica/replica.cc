@@ -921,7 +921,7 @@ void Replica::finishFallback(const FallbackProposal &history)
         // TODO Rollback application state here!
         if (!rollbackDone) {
             log_->nextSeq = entry.seq();
-            log_->app_->abort(entry.seq());
+            log_->app_->abort(entry.seq() - 1);
 
             rollbackDone = true;
         }
