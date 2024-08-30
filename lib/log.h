@@ -85,7 +85,7 @@ struct Log {
     Log(AppType app_type);
 
     // Adds an entry and returns whether it is successful.
-    std::string addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req);
+    bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
 
     void commit(uint32_t seq);
 

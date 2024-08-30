@@ -78,7 +78,7 @@ Log::Log(AppType app_type)
     LOG(INFO) << "App initialized";
 }
 
-std::string Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req)
+bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
 
@@ -93,7 +93,7 @@ std::string Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req)
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         // TODO error out properly
-        return "";
+        return false;
     }
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
@@ -101,28 +101,11 @@ std::string Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req)
     VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
             << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
 
-    std::string appResponse = app_->execute(req, nextSeq);
-    LOG(INFO) << "Got response from app layer: " << appResponse;
-    log[nextSeq % log.size()]->result = appResponse;
+    res = app_->execute(req, nextSeq);
+    LOG(INFO) << "Got response from app layer: " << res;
+    log[nextSeq % log.size()]->result = res;
 
     nextSeq++;
-    return appResponse;
-}
-
-bool Log::executeEntry(uint32_t seq, const dombft::proto::ClientRequest &request, dombft::proto::Reply &reply)
-{
-
-    if (lastExecuted != seq - 1) {
-        return false;
-    }
-
-    LOG(INFO) << "Executing entry at seq=" << seq << " Sending to app layer";
-
-    // TODO put the exeuction digest to the log entry as well, may need to add a field in the logentry struct.
-
-    // TODO execute and get result back.
-    lastExecuted++;
-
     return true;
 }
 

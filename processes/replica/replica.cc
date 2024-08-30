@@ -443,15 +443,18 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
 
-    std::string result = log_->addEntry(clientId, request.client_seq(), request.req_data());
+    std::string result;
+
+    bool success = log_->addEntry(clientId, request.client_seq(), request.req_data(), result);
+
+    if (!success) {
+        // TODO Handle this more gracefully by queuing requests
+        LOG(ERROR) << "Could not add request to log!";
+        return;
+    }
+
+    uint32_t seq = log_->nextSeq - 1;
     reply.set_result(result);
-
-    // TODO Handle failed requests better
-    // if (!success) {
-    //     LOG(ERROR) << "Could not add request to log!";
-    //     return;
-    // }
-
     reply.set_fast(true);
     reply.set_seq(seq);
 
@@ -731,20 +734,22 @@ void Replica::applyFallbackReq(const dombft::proto::LogEntry &entry)
 
     VLOG(2) << log_->nextSeq << ": c_id=" << clientId << " c_seq=" << entry.client_seq();
 
-    log_->addEntry(clientId, entry.client_seq(), entry.request());
-    // TODO add an interface here for adding executed requests!
-
     Reply reply;
+    std::string result;
+
+    if (!log_->addEntry(clientId, entry.client_seq(), entry.request(), result)) {
+        LOG(ERROR) << "Failure to add logg entry!";
+    }
+    // TODO add an interface here for adding executed requests!
 
     reply.set_client_id(clientId);
     reply.set_client_seq(entry.client_seq());
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
+    reply.set_result(result);
 
     uint32_t seq = log_->nextSeq - 1;
     // TODO actually get the result here.
-    log_->executeEntry(seq);
-
     reply.set_fast(true);
     reply.set_seq(seq);
 
