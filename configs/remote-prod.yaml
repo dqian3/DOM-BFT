@@ -1,4 +1,4 @@
-transport: udp
+transport: nng 
 
 app: "counter"
 
@@ -9,14 +9,14 @@ client:
   - 10.142.0.4
   - 10.202.0.3
   keysDir: keys/client
-  maxRequests: 20
+  maxRequests: 200
   numRequests: 1000000
   runtimeSeconds: 20 
   port: 33000
   normalPathTimeout: 100000
   slowPathTimeout:   2000000
-  sendRate: 50
-  sendMode: "maxRequests"
+  sendRate: 200
+  sendMode: "sendRate"
   backPressure: "none"
   sleepTime: 20000  
 

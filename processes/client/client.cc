@@ -276,9 +276,9 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
 
 void Client::submitRequest()
 {
-    LOG(INFO) << "Inflight txns (before submitting)  " << inFlight_;
     if (inFlight_ > maxInFlight_) {
         adjustSendRate();
+        return;   // TODO temp fix while we fix backpressure.
     }
     ClientRequest request;
 
@@ -308,8 +308,6 @@ void Client::submitRequest()
     // VLOG(4) << "Signature Done " << nextReqSeq_;
 
     endpoint_->SendPreparedMsgTo(addr);
-    VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
-
 #else
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
     // TODO check errors for all of these lol
@@ -324,7 +322,8 @@ void Client::submitRequest()
     nextReqSeq_++;
     inFlight_++;
 
-    LOG(INFO) << "Inflight txns  " << inFlight_;
+    VLOG(1) << "Sent request number " << nextReqSeq_ << " to Proxy at " << addr.GetIPAsString() << ", inflight txns  "
+            << inFlight_;
 
     if (inFlight_ > maxInFlight_) {
         adjustSendRate();

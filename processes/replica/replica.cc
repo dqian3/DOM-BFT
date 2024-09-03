@@ -532,6 +532,8 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         int replicaId = entry.first;
         const Reply &reply = entry.second;
 
+        VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
+
         // Already committed
         if (reply.seq() <= log_->checkpoint.seq)
             continue;

@@ -139,7 +139,7 @@ void Proxy::RecvMeasurementsTd()
         }
 
         // TODO a little buffer :)
-        latencyBound_.store(context.getOWD() * 1.5);
+        latencyBound_.store(context.getOWD());
         VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
     };
 
