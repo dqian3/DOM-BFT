@@ -22,11 +22,19 @@ struct RequestState {
     std::optional<dombft::proto::Cert> cert;
     uint64_t sendTime;
     uint64_t certTime;
-
     std::set<int> certReplies;
 
+    uint32_t instance = 0;
+
+    std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
+    std::optional<dombft::proto::Cert> fallbackProof;
+    uint32_t fallbackAttempts = 0;
     bool fastPathPossible = true;
 };
+
+enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
+
+enum BackpressureMode { None = 0, Sleep = 1, Adjust = 2 };
 
 class Client {
 private:
@@ -39,6 +47,8 @@ private:
     uint32_t numRequests_;
     uint32_t numCommitted_ = 0;
 
+    uint32_t clientSendRate_;
+
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
 
@@ -47,8 +57,19 @@ private:
     /** Timer to handle request timeouts  (TODO timeouts vs repeated timer would maybe be better)*/
     std::unique_ptr<Timer> timeoutTimer_;
 
+    // timer to control sending rate of the client
+    std::unique_ptr<Timer> sendTimer_;
+
+    std::unique_ptr<Timer> restartSendTimer_;
+
+    dombft::ClientSendMode sendMode_;
+
     /** Timer to stop client after running for configured time */
     std::unique_ptr<Timer> terminateTimer_;
+
+    /* Class for generating requests */
+    std::unique_ptr<AppTrafficGen> trafficGen_;
+    AppType appType_;
 
     SignatureProvider sigProvider_;
 
@@ -56,6 +77,9 @@ private:
     uint32_t nextReqSeq_ = 0;
     uint32_t inFlight_ = 0;
     uint32_t numExecuted_ = 0;
+
+    dombft::BackpressureMode backpressureMode_;
+    double clientBackPressureSleepTime;
 
     /* State for the currently pending request */
     std::map<int, RequestState> requestStates_;
@@ -67,6 +91,8 @@ private:
     void submitRequest();
 
     void checkTimeouts();
+
+    void adjustSendRate();
 
 public:
     /** Client accepts a config file, which contains all the necessary information

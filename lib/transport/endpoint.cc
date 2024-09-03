@@ -33,6 +33,26 @@ bool Endpoint::RegisterTimer(Timer *timer)
     return true;
 }
 
+bool Endpoint::ResetTimer(Timer *timer)
+{
+    if (evLoop_ == NULL) {
+        LOG(ERROR) << "No evLoop!";
+        return false;
+    }
+    if (!isTimerRegistered(timer)) {
+        LOG(ERROR) << "The timer has not been registered ";
+        return false;
+    }
+    ev_timer_again(evLoop_, timer->evTimer_);
+    return true;
+}
+
+bool Endpoint::ResetTimer(Timer *timer, uint32_t timeout_us)
+{
+    timer->evTimer_->repeat = timeout_us * 1e-6;
+    return ResetTimer(timer);
+}
+
 bool Endpoint::UnRegisterTimer(Timer *timer)
 {
     if (evLoop_ == NULL) {
@@ -48,12 +68,36 @@ bool Endpoint::UnRegisterTimer(Timer *timer)
     return true;
 }
 
+bool Endpoint::PauseTimer(Timer *timerToPause, uint32_t pauseTime_us)
+{
+    uint64_t remaining = GetTimerRemaining(timerToPause);
+
+    if (remaining == 0) {
+        return false;
+    }
+
+    return ResetTimer(timerToPause, remaining + pauseTime_us);
+}
+
 void Endpoint::UnRegisterAllTimers()
 {
     for (auto &t : eventTimers_) {
         ev_timer_stop(evLoop_, t->evTimer_);
     }
     eventTimers_.clear();
+}
+
+uint64_t Endpoint::GetTimerRemaining(Timer *t)
+{
+    if (evLoop_ == NULL) {
+        LOG(ERROR) << "No evLoop!";
+        return 0;
+    }
+    if (!isTimerRegistered(t)) {
+        LOG(ERROR) << "The timer has not been registered ";
+        return 0;
+    }
+    return 1e+6 * ev_timer_remaining(evLoop_, t->evTimer_);
 }
 
 bool Endpoint::isTimerRegistered(Timer *timer) { return (eventTimers_.find(timer) != eventTimers_.end()); }

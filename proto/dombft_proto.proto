@@ -4,15 +4,17 @@ package dombft.proto;
 message ClientRequest {
     uint32 client_id = 1;
     uint32 client_seq = 2;
-    uint64 send_time = 3;
-    bool is_write = 4;
+    uint32 instance = 3;
 
-    bytes req_data = 5;
+    uint64 send_time = 4;
+    bool is_write = 5;
+
+    bytes req_data = 6;
 }
 
 message DOMRequest {
-    int64  deadline = 1;
-    int64  send_time = 2;
+    uint64  deadline = 1;
+    uint64  send_time = 2;
     uint32  proxy_id = 3;
     bool    late = 4;
     uint32  deadline_set_size = 5;
@@ -27,15 +29,15 @@ message MeasurementReply {
     int32 owd = 2;
     int64 diff = 3;
     uint32 queue_len = 4;
-    uint32 send_time = 5;
-}    
+    uint64 send_time = 5;
+}
 
 message Reply {
     uint32 client_id = 1;
     uint32 client_seq = 2;
 
     // Tentative global ordering
-    uint32 view = 3;
+    uint32 instance = 3;
     uint32 seq = 4;
 
     uint32 replica_id = 5;
@@ -49,6 +51,9 @@ message Cert {
     
     // TODO to save space, we would only store 1 copy of each common field. Instead
     // we just repeat them here since it's easier
+    // seq is also just for convenience
+    uint32 seq = 4;
+
     repeated Reply replies    = 7;
     repeated bytes signatures = 8;
 }
@@ -58,34 +63,82 @@ message CertReply {
     uint32 replica_id = 1;
     uint32 client_id = 2;
     uint32 client_seq = 3;
+    uint32 instance = 4;
 
-    bytes result = 4; 
+    bytes result = 5;
 }
 
 message Commit {
     uint32 replica_id = 1;
-    uint32 seq = 2;
+    uint32 instance = 2;
+    uint32 seq = 3;
 
-    bytes log_digest = 3;  
-    bytes app_digest = 4;
+    bytes log_digest = 4;
+    bytes app_digest = 5;
 }
 
-message TransferRequest {
-    // TODO
-}
-
-message TransferResponse {
-    // TODO should look like a log suffix, but with app state
-}
-
-message TriggerFallback
+message FallbackTrigger
 {
-    // More TODO
+    uint32 client_id = 2;
+    uint32 client_seq = 3;
+
+    uint32 instance = 4;
+
+    bytes req_data = 6;
+
+    // Reuse Cert message here, since it is just a set of replies.
+    optional Cert proof = 7;
 }
 
-message StartFallback 
+
+message LogEntry
 {
-    // LogSuffix struct
+    uint32 seq = 4;
+    uint32 client_id = 5;
+    uint32 client_seq = 6;
+
+    bytes digest = 7;
+
+    // TODO is this needed?
+    bytes request = 8;
+    bytes result = 9;
+
+    optional Cert cert = 10;
+}
+
+
+message LogCheckpoint
+{
+    uint32 seq = 4;
+    bytes app_digest = 5;
+    bytes log_digest = 6;
+
+    repeated Commit commits   = 7;
+    repeated bytes signatures = 8;
+    Cert cert = 10;
+}
+
+
+message FallbackStart
+{
+    uint32 replica_id = 1;
+    uint32 instance = 2;
+
+    repeated LogEntry log_entries = 3;
+    LogCheckpoint checkpoint = 4;
+}
+
+message FallbackProposal
+{
+    uint32 instance = 1;
+    uint32 replica_id = 2;
+
+    repeated FallbackStart logs = 3;
+    repeated bytes signatures = 4;
+}
+
+message FallbackExecuted
+{
 }
 
 

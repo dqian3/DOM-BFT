@@ -1,15 +1,28 @@
-transport: nng
+transport: udp
+
+app: "counter"
 
 client:
   ips: 
   - "127.0.1.0"
+  - "127.0.1.1"
   port: 33000
   keysDir: keys/client
-  maxRequests: 5
-  numRequests: 1000
-  runtimeSeconds: 60
-  normalPathTimeout: 5000000
-  slowPathTimeout: 5000000
+  maxRequests: 1
+  numRequests: 100
+  runtimeSeconds: 2
+  normalPathTimeout: 5000
+  slowPathTimeout: 50000
+  sendRate: 10
+  # the sendmode can be either using sendRate or maxRequests in flight.
+  sendMode: "sendRate"
+  # sendMode: "maxRequests"
+  # there may be 3 backpressure modes: none, sleep, adjust
+  # none means no back pressure, sleep means sleep if outstanding requests are too many,
+  # adjust means having the send rate commensurate with the send rate
+  backPressure: "sleep"
+  # how much time the sending event pause after each backpressure. The unit is in microsecond.
+  sleepTime: 20000
 
 
 # Proxy Info
@@ -43,4 +56,8 @@ replica:
   - "127.0.0.3"
   - "127.0.0.4"
   port: 34000
+  app: "counter"
   keysDir: "keys/replica"
+  fallbackTimeout: 200000
+  fallbackStartTimeout: 50000
+

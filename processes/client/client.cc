@@ -4,6 +4,10 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
+#include "lib/application.h"
+#include "lib/apps/counter.h"
+#include "proto/dombft_apps.pb.h"
+
 #define NUM_CLIENTS 100
 
 namespace dombft {
@@ -22,11 +26,21 @@ Client::Client(const ProcessConfig &config, size_t id)
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;
 
-    // TODO make this some sort of config
-    LOG(INFO) << "Simulating " << config.clientMaxRequests << " simultaneous clients!";
-    maxInFlight_ = config.clientMaxRequests;
-    LOG(INFO) << "Sending " << config.clientNumRequests << " requests!";
+    LOG(INFO) << "Sending " << config.clientNumRequests << " requests for at most " << config.clientRuntimeSeconds
+              << " seconds";
     numRequests_ = config.clientNumRequests;
+
+    LOG(INFO) << "Sending at most " << config.clientMaxRequests << " requests at once";
+
+    maxInFlight_ = config.clientMaxRequests;
+    clientSendRate_ = config.clientSendRate;
+
+    if (config.clientSendMode == "sendRate") {
+        sendMode_ = dombft::RateBased;
+    } else if (config.clientSendMode == "maxRequests") {
+        LOG(INFO) << "Send rate: " << clientSendRate_;
+        sendMode_ = dombft::MaxInFlightBased;
+    }
 
     /* Setup keys */
     std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -85,15 +99,41 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
+    if (config.clientBackPressureMode == "none") {
+        backpressureMode_ = dombft::None;
+    } else if (config.clientBackPressureMode == "sleep") {
+        backpressureMode_ = dombft::Sleep;
+        clientBackPressureSleepTime = config.clientBackPressureSleepTime;
+        LOG(INFO) << "the backpressure recovery time is " << clientBackPressureSleepTime << " seconds";
+    } else if (config.clientBackPressureMode == "adjust") {
+        backpressureMode_ = dombft::Adjust;
+    }
+
+    if (sendMode_ == dombft::RateBased) {
+        sendTimer_ = std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Client *) ctx)->submitRequest(); },
+                                             1000000 / clientSendRate_, this);
+
+        endpoint_->RegisterTimer(sendTimer_.get());
+    }
+
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
-            LOG(INFO) << "Exiting before after running for " << config.clientRuntimeSeconds << " seconds";
+            LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
             exit(0);
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
         this);
+
     endpoint_->RegisterTimer(terminateTimer_.get());
+
+    if (config.app == AppType::COUNTER) {
+        trafficGen_ = std::make_unique<CounterTrafficGen>();
+        appType_ = AppType::COUNTER;
+    } else {
+        LOG(ERROR) << "Unknown application type for client!";
+        exit(1);
+    }
 
     LOG(INFO) << "Client finished initializing";
 }
@@ -105,9 +145,10 @@ Client::~Client()
 
 void Client::run()
 {
-    // Submit first request
-    for (uint32_t i = 0; i < maxInFlight_; i++) {
-        submitRequest();
+    if (sendMode_ == dombft::MaxInFlightBased) {
+        for (uint32_t i = 0; i < maxInFlight_; i++) {
+            submitRequest();
+        }
     }
     endpoint_->LoopRun();
 }
@@ -135,10 +176,9 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
         // Check validity
         //  1. Not for the same client
         //  2. Client doesn't have state for this request
-        if (reply.client_id() != clientId_ || requestStates_.count(reply.client_seq()) == 0) {
+        if (reply.client_id() != clientId_) {
             // TODO more info?
-            LOG(INFO) << reply.client_id();
-            LOG(INFO) << "Invalid reply!";
+            LOG(INFO) << "Invalid reply! " << reply.client_id() << ", " << reply.client_seq();
             return;
         }
 
@@ -149,13 +189,14 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
 
         auto &reqState = requestStates_[reply.client_seq()];
 
-        VLOG(4) << "Received reply from replica " << reply.replica_id() << " for " << reply.client_seq()
-                << " at log pos " << reply.seq() << " after " << GetMicrosecondTimestamp() - reqState.sendTime
-                << " usec";
+        VLOG(4) << "Received reply from replica " << reply.replica_id() << " instance " << reply.instance() << " for "
+                << reply.client_seq() << " at log pos " << reply.seq() << " after "
+                << GetMicrosecondTimestamp() - reqState.sendTime << " usec";
 
         // TODO handle dups
         reqState.replies[reply.replica_id()] = reply;
         reqState.signatures[reply.replica_id()] = sigProvider_.getSignature(msgHdr, msgBuffer);
+        reqState.instance = std::max(reqState.instance, reply.instance());
 
 #if PROTOCOL == PBFT
         if (numReplies_[reply.client_seq()] >= f_ / 3 * 2 + 1) {
@@ -171,7 +212,9 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
                 exit(0);
             }
 
-            SubmitRequest();
+            if (sendMode_ == dombft::maxInFlightBased) {
+                submitRequest();
+            }
         }
 
 #else
@@ -200,7 +243,7 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
         }
 
         if (requestStates_.count(cseq) == 0) {
-            VLOG(2) << "Received certReply for " << cseq << " not in active requests";
+            // VLOG(2) << "Received certReply for " << cseq << " not in active requests";
             return;
         }
 
@@ -217,8 +260,11 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
 
             requestStates_.erase(cseq);
             numCommitted_++;
+            inFlight_--;
 
-            submitRequest();
+            if (sendMode_ == dombft::MaxInFlightBased) {
+                submitRequest();
+            }
         }
     }
 
@@ -230,6 +276,10 @@ void Client::receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sende
 
 void Client::submitRequest()
 {
+    LOG(INFO) << "Inflight txns (before submitting)  " << inFlight_;
+    if (inFlight_ > maxInFlight_) {
+        adjustSendRate();
+    }
     ClientRequest request;
 
     // submit new request
@@ -238,17 +288,24 @@ void Client::submitRequest()
     request.set_send_time(GetMicrosecondTimestamp());
     request.set_is_write(true);   // TODO modify this based on some random chance
 
+    auto appRequest = trafficGen_->generateAppTraffic();
+    // TODO: this has to be hard coded in an inelegant way. May imporve this later
+    if (appType_ == AppType::COUNTER) {
+        dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+        request.set_req_data(counterReq->SerializeAsString());
+    }
+
     requestStates_[nextReqSeq_].sendTime = request.send_time();
 
 #if USE_PROXY && PROTOCOL == DOMBFT
-    // TODO how to chhoose proxy
+    // TODO how to choose proxy, perhaps by IP or config
+    // VLOG(4) << "Begin sending request number " << nextReqSeq_;
     Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-    VLOG(4) << "Begin sending request number " << nextReqSeq_;
     // TODO maybe client should own the memory instead of endpoint.
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
-    VLOG(4) << "Serialization Done " << nextReqSeq_;
-    sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
-    VLOG(4) << "Signature Done " << nextReqSeq_;
+    // VLOG(4) << "Serialization Done " << nextReqSeq_;
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    // VLOG(4) << "Signature Done " << nextReqSeq_;
 
     endpoint_->SendPreparedMsgTo(addr);
     VLOG(1) << "Sent request number " << nextReqSeq_ << " to " << addr.GetIPAsString();
@@ -257,7 +314,7 @@ void Client::submitRequest()
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
     // TODO check errors for all of these lol
     // TODO do this while waiting, not in the critical path
-    sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
@@ -265,6 +322,39 @@ void Client::submitRequest()
 #endif
 
     nextReqSeq_++;
+    inFlight_++;
+
+    LOG(INFO) << "Inflight txns  " << inFlight_;
+
+    if (inFlight_ > maxInFlight_) {
+        adjustSendRate();
+    }
+}
+
+void Client::adjustSendRate()
+{
+    if (sendMode_ == dombft::MaxInFlightBased) {
+        // this mode does not adjusr send rate
+        return;
+    }
+
+    if (backpressureMode_ == dombft::None) {
+        LOG(INFO) << "backpressure mode is none, does not adjust";
+        return;
+    }
+
+    if (backpressureMode_ == dombft::Adjust) {
+        LOG(WARNING) << "backpressure mode adjust not yet implemented";
+        return;
+    }
+
+    if (backpressureMode_ == dombft::Sleep) {
+        LOG(INFO) << "backpressure mode sleep triggered";
+        endpoint_->PauseTimer(sendTimer_.get(), clientBackPressureSleepTime);
+
+        LOG(INFO) << "adjust timer called";
+        return;
+    }
 }
 
 void Client::checkTimeouts()
@@ -284,12 +374,40 @@ void Client::checkTimeouts()
                 endpoint_->SendPreparedMsgTo(addr);
             }
 
+            VLOG(1) << "Cert sent!";
             reqState.certTime = now;   // timeout again later
         }
+
         if (now - reqState.sendTime > slowPathTimeout_) {
-            LOG(ERROR) << "Client failed on request " << clientSeq << " sendTime=" << reqState.sendTime
-                       << " now=" << now;
-            exit(1);
+            LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
+                      << " now=" << now << " due to timeout";
+            reqState.sendTime = now;
+
+            reqState.fallbackAttempts++;
+
+            if (reqState.fallbackAttempts == 10) {
+                LOG(ERROR) << "Client failed on request " << clientSeq << " after 10 attempts";
+                exit(1);
+            }
+
+            FallbackTrigger fallbackTriggerMsg;
+
+            fallbackTriggerMsg.set_client_id(clientId_);
+            fallbackTriggerMsg.set_instance(reqState.instance);
+            fallbackTriggerMsg.set_client_seq(clientSeq);
+
+            if (reqState.fallbackProof.has_value()) {
+                (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
+            }
+
+            // TODO set request data
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            for (const Address &addr : replicaAddrs_) {
+                endpoint_->SendPreparedMsgTo(addr);
+            }
+
+            LOG(ERROR) << "Attempting slow path again in " << slowPathTimeout_ << " usec";
         }
     }
 }
@@ -303,7 +421,6 @@ void Client::checkReqState(uint32_t clientSeq)
         // TODO check if fast path is not posssible and prevent extra work
         // TODO this fast path is quite basic, since it just checks for 3 f + 1 fast replies
         // we want it to do a bit more, specifically
-        // 1. Check if we can still take the fast path if there are some normal replies
         // 2. Send certs to replicas with normal path to catch them up
 
         auto it = reqState.replies.begin();
@@ -318,8 +435,7 @@ void Client::checkReqState(uint32_t clientSeq)
         it++;
         for (; it != reqState.replies.end(); it++) {
             const Reply &rep2 = it->second;
-            if (rep1.view() != rep2.view() || rep1.seq() != rep2.seq() || rep1.digest() != rep2.digest() ||
-                rep1.result() != rep2.result())
+            if (rep1.seq() != rep2.seq() || rep1.digest() != rep2.digest() || rep1.result() != rep2.result())
                 return;
         }
 
@@ -331,10 +447,16 @@ void Client::checkReqState(uint32_t clientSeq)
 
         requestStates_.erase(clientSeq);
         numCommitted_++;
-        submitRequest();
+        inFlight_--;
+
+        if (sendMode_ == dombft::MaxInFlightBased) {
+            submitRequest();
+        }
     } else {
-        // Try and find a certificate
-        std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
+
+        // Try and find a certificate or proof of divergent histories
+        std::map<std::tuple<std::string, int>, std::set<int>> matchingReplies;
+        size_t maxMatching = 0;
 
         for (const auto &entry : reqState.replies) {
             int replicaId = entry.first;
@@ -343,12 +465,16 @@ void Client::checkReqState(uint32_t clientSeq)
             // TODO this is ugly lol
             // We don't need client_seq/client_id, these are already checked.
             // We also don't check the result here, that only needs to happen in the fast path
-            std::tuple<std::string, int, int> key = {reply.digest(), reply.view(), reply.seq()};
+            std::tuple<std::string, int> key = {reply.digest(), reply.seq()};
+
+            VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
 
             matchingReplies[key].insert(replicaId);
+            maxMatching = std::max(maxMatching, matchingReplies[key].size());
 
             if (matchingReplies[key].size() >= 2 * f_ + 1) {
                 reqState.cert = Cert();
+                reqState.cert->set_seq(std::get<1>(key));
 
                 // TODO check if fast path is not posssible, and we can send cert right away
                 for (auto repId : matchingReplies[key]) {
@@ -360,25 +486,50 @@ void Client::checkReqState(uint32_t clientSeq)
                 reqState.certTime = GetMicrosecondTimestamp();
 
                 VLOG(1) << "Created cert for request number " << clientSeq;
-#if IMMEDIATE_CERT
-
-                // if ( GetMicrosecondTimestamp() - reqState.certTime < NORMAL_PATH_TIMEOUT) {
-                //     return;
-                // }
-
-                VLOG(1) << "Sending cert immediately for request number " << clientSeq << " ";
-
-                // Send cert to replicas;
-                endpoint_->PrepareProtoMsg(reqState.cert.value(), CERT);
-                for (const Address &addr : replicaAddrs_) {
-                    endpoint_->SendPreparedMsgTo(addr);
-                }
-
-                reqState.certTime = GetMicrosecondTimestamp();   // timeout again later
-
-#endif
 
                 return;
+            }
+        }
+
+        // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
+        // we have a proof of inconsistency.
+        if (reqState.fallbackAttempts == 0 && 3 * f_ + 1 - reqState.replies.size() < 2 * f_ + 1 - maxMatching) {
+
+            // TODO check instances better
+            std::set<int> instances;
+            for (auto &replyEntry : reqState.replies) {
+                instances.insert(replyEntry.second.instance());
+            }
+            if (instances.size() > 1) {
+                LOG(INFO) << "Skipping proof due to multiple instances";
+                return;
+            }
+
+            LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
+
+            reqState.fallbackProof = Cert();
+            FallbackTrigger fallbackTriggerMsg;
+
+            fallbackTriggerMsg.set_client_id(clientId_);
+            fallbackTriggerMsg.set_instance(reqState.instance);
+            fallbackTriggerMsg.set_client_seq(clientSeq);
+
+            // TODO check if fast path is not posssible, and we can send cert right away
+            for (auto &replyEntry : reqState.replies) {
+                reqState.fallbackProof->add_signatures(reqState.signatures[replyEntry.first]);
+                (*reqState.fallbackProof->add_replies()) = replyEntry.second;
+            }
+
+            // I think this is right, or we could do set_allocated_foo if fallbackProof was dynamically allcoated.
+            (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
+
+            reqState.fallbackAttempts++;
+
+            reqState.sendTime = GetMicrosecondTimestamp();
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            for (const Address &addr : replicaAddrs_) {
+                endpoint_->SendPreparedMsgTo(addr);
             }
         }
     }

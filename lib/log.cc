@@ -1,29 +1,24 @@
 #include "log.h"
 
-#include <glog/logging.h>
+#include "utils.h"
 
-using namespace dombft::proto;
+#include <glog/logging.h>
 
 LogEntry::LogEntry()
     : seq(0)
     , client_id(0)
     , client_seq(0)
-    , raw_request(nullptr)
-    , raw_result(nullptr)
 {
     memset(digest, 0, SHA256_DIGEST_LENGTH);
 }
 
-LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len, byte *prev_digest)
+LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &req, byte *prev_digest)
     : seq(s)
     , client_id(c_id)
     , client_seq(c_seq)
-    , raw_request((byte *) malloc(req_len))   // Manually allocate some memory to store the request
-    , raw_result(nullptr)
-    , request_len(req_len)
-    , result_len(0)
+    , request(req)   // Manually allocate some memory to store the request
 {
-    memcpy(raw_request, req, req_len);
+    result = "";
 
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
@@ -32,23 +27,17 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, byte *req, uint32_
     SHA256_Update(&ctx, &client_id, sizeof(client_id));
     SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
     SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, raw_request, req_len);
+    // TODO add this back in, currently fallback doesnt' work with this
+    SHA256_Update(&ctx, request.c_str(), request.length());
     SHA256_Final(digest, &ctx);
 }
 
-LogEntry::~LogEntry()
-{
-    if (raw_request != nullptr) {
-        free(raw_request);
-    }
-    if (raw_result != nullptr) {
-        free(raw_result);
-    }
-}
+LogEntry::~LogEntry() {}
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
 {
-    out << le.seq << ": (" << le.client_id << " ," << le.client_seq << ")";
+    out << le.seq << ": (" << le.client_id << ", " << le.client_seq << ") " << digest_to_hex(le.digest).substr(56)
+        << " | ";
     return out;
 }
 
@@ -63,42 +52,67 @@ Log::Log()
     }
 }
 
-bool Log::addEntry(uint32_t c_id, uint32_t c_seq, byte *req, uint32_t req_len)
+Log::Log(AppType app_type)
+    : nextSeq(1)
+    , lastExecuted(0)
+{
+    LOG(INFO) << "Initializing log entries";
+    // Zero initialize all the entries
+    // TODO: there's probably a better way to handle this
+    for (uint32_t i = 0; i < log.size(); i++) {
+        log[i] = std::make_unique<LogEntry>();
+    }
+
+    if (app_type == AppType::COUNTER) {
+        LOG(INFO) << "Creating a counter application";
+        app_ = std::make_unique<Counter>();
+    } else {
+        LOG(ERROR) << "Unsupported application type";
+        exit(1);
+    }
+}
+
+bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
     uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
-    byte *prevDigest = log[prevSeqIdx]->digest;
 
-    if (nextSeq > commitPoint.seq + MAX_SPEC_HIST) {
-        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << commitPoint.seq;
+    byte *prevDigest = nullptr;
+    if (nextSeq - 1 == checkpoint.seq) {
+        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
+        prevDigest = checkpoint.logDigest;
+    } else {
+        prevDigest = log[prevSeqIdx]->digest;
+    }
+
+    if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
+        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
+        // TODO error out properly
         return false;
     }
 
-    log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, req_len, prevDigest);
+    log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
 
-    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq;
+    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
+            << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
+
+    res = app_->execute(req, nextSeq);
+    log[nextSeq % log.size()]->result = res;
+
     nextSeq++;
-
     return true;
 }
 
-bool Log::executeEntry(uint32_t seq)
+void Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 {
-    if (lastExecuted != seq - 1) {
-        return false;
-    }
-
-    // TODO execute and get result back.
-    lastExecuted++;
-    return true;
+    certs[seq] = std::make_shared<dombft::proto::Cert>(cert);
 }
-
-void Log::addCert(uint32_t seq, const Cert &cert) { certs[seq] = std::make_unique<Cert>(cert); }
 
 const byte *Log::getDigest() const
 {
     if (nextSeq == 0) {
         return nullptr;
     }
+
     uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
     return log[prevSeq]->digest;
 }
@@ -113,70 +127,76 @@ const byte *Log::getDigest(uint32_t seq) const
     return log[seqIdx]->digest;
 }
 
-// Create a new commit point given the existence of a certificate at seq
-bool Log::createCommitPoint(uint32_t seq)
+void Log::toProto(dombft::proto::FallbackStart &msg)
 {
-    // if (certs.count(seq) == 0)
-    // {
-    //     LOG(ERROR) << "Attempt to create a commit point at seq " << seq
-    //                << " but no cert exists!";
-    // }
-    LOG(INFO) << "Creating tentative commit point for " << seq;
+    dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    tentativeCommitPoint = LogCommitPoint();   // TODO use a constructor?
+    if (checkpoint.seq > 0) {
+        checkpointProto->set_seq(checkpoint.seq);
+        checkpointProto->set_app_digest((const char *) checkpoint.appDigest, SHA256_DIGEST_LENGTH);
+        checkpointProto->set_log_digest((const char *) checkpoint.logDigest, SHA256_DIGEST_LENGTH);
 
-    tentativeCommitPoint->seq = seq;
+        for (auto x : checkpoint.commitMessages) {
+            (*checkpointProto->add_commits()) = x.second;
+            checkpointProto->add_signatures(checkpoint.signatures[x.first]);
+        }
 
-    // Note, CERT, logDigest, appDigest get added later
-    // TODO maybe don't create one without these?
-    memset(tentativeCommitPoint->logDigest, 0, SHA256_DIGEST_LENGTH);
-    memset(tentativeCommitPoint->appDigest, 0, SHA256_DIGEST_LENGTH);
-
-    tentativeCommitPoint->commitMessages.clear();
-    tentativeCommitPoint->signatures.clear();
-
-    LOG(INFO) << "Created tentative commit point for " << seq;
-
-    return true;
-}
-
-bool Log::addCommitMessage(const dombft::proto::Commit &commit, byte *sig, int sigLen)
-{
-    int from = commit.replica_id();
-
-    if (!tentativeCommitPoint.has_value()) {
-        LOG(ERROR) << "Trying to add commit message to empty commit point!";
-        return false;
+        (*checkpointProto->mutable_cert()) = checkpoint.cert;
     }
 
-    // TODO check match?
+    for (int i = checkpoint.seq + 1; i < nextSeq; i++) {
+        dombft::proto::LogEntry *entryProto = msg.add_log_entries();
+        LogEntry &entry = *log[i % log.size()];
 
-    tentativeCommitPoint->commitMessages[from] = commit;
-    tentativeCommitPoint->signatures[from] = std::string(sig, sig + sigLen);
+        assert(i == entry.seq);
 
-    return true;
-}
+        if (certs.count(i)) {
+            (*checkpointProto->mutable_cert()) = *certs[i];
+        }
 
-bool Log::commitCommitPoint()
-{
-    if (!tentativeCommitPoint.has_value()) {
-        LOG(ERROR) << "Trying to commit with empty tentative commit point!";
-        return false;
+        entryProto->set_seq(i);
+        entryProto->set_client_id(entry.client_id);
+        entryProto->set_client_seq(entry.client_seq);
+        entryProto->set_digest(entry.digest, SHA256_DIGEST_LENGTH);
+        entryProto->set_request(entry.request);
+        entryProto->set_result(entry.result);
     }
-
-    commitPoint = tentativeCommitPoint.value();
-    tentativeCommitPoint.reset();
-
-    return true;
 }
 
 std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    for (uint32_t i = l.nextSeq - MAX_SPEC_HIST; i < l.nextSeq; i++) {
-        int seq = i % MAX_SPEC_HIST;
-        out << l.log[seq].get();
+    int i = l.nextSeq - MAX_SPEC_HIST;
+    i = i < 0 ? 0 : i;   // std::max isn't playing nice
+    for (; i < l.nextSeq; i++) {
+        int idx = i % MAX_SPEC_HIST;
+
+        // Skip any committed/truncated logs
+        if (l.log[idx]->seq <= l.checkpoint.seq)
+            continue;
+
+        out << *l.log[idx];
     }
     return out;
+}
+
+LogEntry *Log::getEntry(uint32_t seq)
+{
+    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+        uint32_t index = seq % MAX_SPEC_HIST;
+        return log[index].get();
+    } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
+        return nullptr;
+    }
+}
+
+void Log::commit(uint32_t seq)
+{
+    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+        app_.get()->commit(seq);
+    } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
+    }
 }

@@ -21,7 +21,7 @@ num_processes = {}
 dirs = {}
 
 for process in config:
-    if process == "transport":
+    if process == "transport" or process == "app":
         continue
     
     pconfig = config[process]

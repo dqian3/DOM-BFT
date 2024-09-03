@@ -48,9 +48,8 @@ private:
     void ForwardRequestsTd(const int id = -1);
     void RecvMeasurementsTd();
 
-    /** LogTd is just used to collect some performance stats. It is not necessary
-     * in the release version */
-    void LogTd();
+    void sendReq(uint32_t seq);
+    void GenerateRequestsTd();
 
     /** Flag to Run/Terminate threads */
     std::atomic<bool> running_;
@@ -71,12 +70,23 @@ private:
     int numReceivers_;
     std::vector<Address> receiverAddrs_;
 
+    // Reordering Experiments
+    bool selfGenReqs_;
+    uint32_t genReqFreq_;
+    uint32_t genReqDuration_;
+    bool genReqPoisson_;
+
 public:
-    /** Proxy accept a config file, which contains all the necessary information
+    /** Proxy accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */
     Proxy(const ProcessConfig &config, uint32_t proxyId_);
+
+    // Create a proxy that generates requests on its own, for DOM experiments
+    Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t genReqFreq, uint32_t genReqDuration,
+          bool genReqPoisson);
     ~Proxy();
+
     void run();
     void terminate();
 };

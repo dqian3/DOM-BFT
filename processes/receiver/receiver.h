@@ -22,8 +22,24 @@ private:
     /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
     std::unique_ptr<Endpoint> endpoint_;
 
+    std::unique_ptr<Endpoint> forwardEp_;
+
+    std::map<std::string, std::thread> threads_;
+
+    ConcurrentQueue<dombft::proto::DOMRequest> requestQueue_;
+
+    void LaunchThreads();
+
+    void ReceiveTd();
+    void ForwardTd();
+
     /** The handler objects for our endpoint library */
+    // TODO shared pointer for endpoint and timer??
     std::unique_ptr<Timer> fwdTimer_;
+
+    std::unique_ptr<Timer> heartbeatTimer_;
+
+    std::unique_ptr<Timer> queueTimer_;
 
     // TODO storing these protobuf objects like this might not be great performance wise
     // couldn't find much about this.
@@ -36,12 +52,20 @@ private:
     void forwardRequest(const dombft::proto::DOMRequest &request);
     void checkDeadlines();
 
+    void addToDeadlineQueue();
+
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;
+    uint32_t numReceivers_;
     Address replicaAddr_;
 
+    // Skip forwarding, for running experiemnts.
+    bool skipForwarding_;
+    bool ignoreDeadlines_;
+
 public:
-    Receiver(const ProcessConfig &config, uint32_t receiverId);
+    Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false,
+             bool ignoreDeadlines_ = false);
     ~Receiver();
     void run();
 };

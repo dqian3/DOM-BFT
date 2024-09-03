@@ -1,13 +1,13 @@
-transport: nng
+transport: udp
+
+app: "counter"
 
 client:
-  ips:
-  - 10.128.0.5
+  ips: 
   - 10.138.0.6
   - 10.182.0.4
   - 10.142.0.4
   - 10.202.0.3
-  - 10.128.0.13
   keysDir: keys/client
   maxRequests: 20
   numRequests: 1000000
@@ -15,37 +15,42 @@ client:
   port: 33000
   normalPathTimeout: 100000
   slowPathTimeout:   2000000
-
+  sendRate: 50
+  sendMode: "maxRequests"
+  backPressure: "none"
+  sleepTime: 20000  
 
 
 proxy:
   forwardPort: 31000
   ips:
-  - 10.128.0.17
-  - 10.138.0.5
-  - 10.182.0.3
-  - 10.142.0.3
-  - 10.150.0.2
+  - 10.138.0.7
+  - 10.182.0.5
+  - 10.142.0.5
+  - 10.202.0.4
   keysDir: keys/proxy
-  maxOwd: 200000
+  maxOwd: 100000
   measurementPort: 32000
   shards: 1
+
 receiver:
   ips:
   - 10.138.0.4
-  - 10.142.0.2
   - 10.182.0.2
+  - 10.142.0.2
   - 10.202.0.2
   keysDir: keys/receiver
   local: true
   port: 33000
   shards: 1
+
 replica:
   ips:
   - 10.138.0.4
-  - 10.142.0.2
   - 10.182.0.2
+  - 10.142.0.2
   - 10.202.0.2
   keysDir: keys/replica
   port: 34000
-
+  fallbackTimeout: 2000000
+  fallbackStartTimeout: 500000
