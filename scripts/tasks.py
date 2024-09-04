@@ -554,8 +554,8 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
             
 @task
 def gcloud_reorder_exp_submission_rate(c, config_file="../configs/remote.yaml", 
-                    poisson=True, ignore_deadlines=True, duration=20, 
-                    local_log=False, proxy_number=2, submission_rate="2,4,6,8,10, 20, 40, 60, 80, 100"):
+                    poisson=True, ignore_deadlines=False, duration=20, 
+                    local_log=False, proxy_number=2, submission_rate="20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000, 20000, 40000, 60000, 80000, 100000"):
     
     print("doing submission rate experiment")
     config_file = os.path.abspath(config_file)
@@ -570,7 +570,7 @@ def gcloud_reorder_exp_submission_rate(c, config_file="../configs/remote.yaml",
     print(len(submission_rate))
     
     for i in range(len(submission_rate)):
-        rate = submission_rate[i] * 10
+        rate = submission_rate[i]
         print(f"Running with submission rate {rate}")
         group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
 
