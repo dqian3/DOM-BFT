@@ -150,7 +150,7 @@ def get_gcloud_process_group(config, ext_ips):
         ips.append(ext_ips[ip])
 
     group = ThreadingGroup(
-        *ips
+        *ips, user="yy4108"
     )
     return group
 
@@ -167,7 +167,7 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
     # Only need to do this on proxies and receivers
     group = ThreadingGroup(
-        *(ext_ips[ip] for ip in int_ips)
+        *(ext_ips[ip] for ip in int_ips), user="yy4108"
     )
 
     if install:
@@ -179,11 +179,11 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
     ip = int_ips[0]
     ttcs_config = ttcs_template.format(ip, ip, 10, "false")
-    Connection(ext_ips[ip]).run(f"echo '{ttcs_config}' | sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
+    Connection(ext_ips[ip], user="yy4108").run(f"echo '{ttcs_config}' | sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
 
     for ip in int_ips[1:]:
         ttcs_config = ttcs_template.format(ip, ip, 1, "true")
-        Connection(ext_ips[ip]).run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
+        Connection(ext_ips[ip], user="yy4108").run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
 
     group.run("sudo systemctl stop ntp", warn=True)
     group.run("sudo systemctl disable ntp", warn=True)
@@ -257,10 +257,10 @@ def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
     proxies = config["proxy"]["ips"]
     clients = config["client"]["ips"]
 
-    replicas = SerialGroup(*[ext_ips[ip] for ip in replicas])
-    receivers = SerialGroup(*[ext_ips[ip] for ip in receivers])
-    proxies = SerialGroup(*[ext_ips[ip] for ip in proxies])
-    clients = SerialGroup(*[ext_ips[ip] for ip in clients])
+    replicas = SerialGroup(*[ext_ips[ip] for ip in replicas], user="yy4108")
+    receivers = SerialGroup(*[ext_ips[ip] for ip in receivers], user="yy4108")
+    proxies = SerialGroup(*[ext_ips[ip] for ip in proxies], user="yy4108")
+    clients = SerialGroup(*[ext_ips[ip] for ip in clients], user="yy4108")
 
     print("Copying binaries over...")
     group.run("rm dombft_*", warn=True)
@@ -345,7 +345,7 @@ def arun_on(ip, logfile, local_log=False):
         logfile = os.path.join("../logs/", logfile)
         def arun_local_log(command, **kwargs):
             log = open(logfile, "w")
-            conn = Connection(ip)
+            conn = Connection(ip, user="yy4108")
 
             print(f"Running {args} on {ip}, logging to local {logfile}")
             return conn.run(command + " 2>&1", **kwargs, asynchronous=True, warn=True, out_stream=log)
@@ -354,7 +354,7 @@ def arun_on(ip, logfile, local_log=False):
 
     else:
         def arun(command, **kwargs):
-            conn = Connection(ip)
+            conn = Connection(ip, user="yy4108")
 
             print(f"Running {command} on {ip}, logging on remote machine {logfile}" )
             return conn.run(command + f" &>{logfile}", **kwargs, asynchronous=True, warn=True)
@@ -363,7 +363,7 @@ def arun_on(ip, logfile, local_log=False):
 
 def get_logs(c, ips, log_prefix):
     for id, ip in enumerate(ips):
-        conn = Connection(ip)
+        conn = Connection(ip, user="yy4108")
         print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
  
