@@ -1,5 +1,7 @@
 #include "proxy.h"
 
+#include <random>
+
 namespace dombft {
 using namespace dombft::proto;
 
@@ -100,10 +102,13 @@ Proxy::~Proxy()
 void Proxy::LaunchThreads()
 {
     threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
-
-    for (int i = 0; i < numShards_; i++) {
-        std::string key = "ForwardRequestsTd-" + std::to_string(i);
-        threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
+    if (selfGenReqs_) {
+        threads_["GenerateRequestsTd"] = new std::thread(&Proxy::GenerateRequestsTd, this);
+    } else {
+        for (int i = 0; i < numShards_; i++) {
+            std::string key = "ForwardRequestsTd-" + std::to_string(i);
+            threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
+        }
     }
 }
 
@@ -128,15 +133,24 @@ void Proxy::RecvMeasurementsTd()
             LOG(ERROR) << "Unable to parse Measurement_Reply message";
             return;
         }
+        uint64_t now = GetMicrosecondTimestamp();
         ofs << reply.diff() << std::endl;
         ofs_1 << reply.send_time() << "," << reply.queue_len() << std::endl;
-        VLOG(1) << "replica=" << reply.receiver_id() << "\towd=" << reply.owd();
+
+        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+                << " rtt=" << now - reply.send_time() << " now=" << now;
 
         if (reply.owd() > 0) {
             context.addMeasure(reply.receiver_id(), reply.owd());
-            latencyBound_.store(context.getCappedMaxOWD());
-            VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
+        } else {
+            // THis shouldn't matter too much, since it is ultimately the furtherest/max recevier that determines
+            // the deadline
+            VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
+            context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
         }
+
+        latencyBound_.store(context.getCappedMaxOWD());
+        VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
     };
 
     /* Checks every 10ms to see if we are done*/

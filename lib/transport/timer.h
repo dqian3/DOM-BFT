@@ -25,7 +25,7 @@
 /**
  * Para-1: The first void* points to the context, that may be needed by the
  * callback function(i.e., TimerFunc)
- * Para-2: The first void* points to the endpoint that this timer is attached
+ * Para-2: The second void* points to the endpoint that this timer is attached
  * to. It can be passed into the function as NULL if the TimerFunc does not need
  * it. But some TimerFunc (e.g., monitorTimer in replica) callback needs to know
  * the endpoint it has attached to.
