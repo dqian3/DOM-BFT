@@ -361,11 +361,11 @@ def arun_on(ip, logfile, local_log=False):
         return arun
 
 
-def get_logs(c, ips, log_prefix):
+def get_logs(c, ips, log_prefix, new_name_prefix=""):
     for id, ip in enumerate(ips):
         conn = Connection(ip, user="yy4108")
         print(f"Getting {log_prefix}{id}.log")
-        conn.get(f"{log_prefix}{id}.log", "../logs/")
+        conn.get(f"{log_prefix}{id}.log", f"../logs/{new_name_prefix}{id}.log")
  
 
 @task
@@ -485,8 +485,8 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
 @task
 def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100,
-                    local_log=False):
+                    poisson=False, ignore_deadlines=False, duration=20, rate=60000,
+                    local_log=False, proxy_number=2):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -504,8 +504,8 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     receiver_path = "./dombft_receiver"
     proxy_path = "./dombft_proxy"
 
-    receivers = [ext_ips[ip] for ip in receivers]
-    proxies = [ext_ips[ip] for ip in proxies]
+    receivers = [ext_ips[ip] for ip in receivers[:proxy_number]]
+    proxies = [ext_ips[ip] for ip in proxies[:proxy_number]]
 
     remote_config_file = os.path.basename(config_file)
 
@@ -547,6 +547,158 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
             hdl.join()
 
         if not local_log:
-            get_logs(c, receivers, "receiver")
-            get_logs(c, proxies, "proxy")
+            get_logs(c, receivers, "receiver", new_name_prefix=f"receiver_submit_rate_{rate}_")
+            # get_logs(c, proxies, "proxy")
+            
+   
+            
+@task
+def gcloud_reorder_exp_submission_rate(c, config_file="../configs/remote.yaml", 
+                    poisson=True, ignore_deadlines=True, duration=20, 
+                    local_log=False, proxy_number=2, submission_rate="2,4,6,8,10, 20, 40, 60, 80, 100"):
+    
+    print("doing submission rate experiment")
+    config_file = os.path.abspath(config_file)
 
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
+    group.put(config_file)
+    submission_rate = list(map(int, submission_rate.split(',')))
+    print(len(submission_rate))
+    
+    for i in range(len(submission_rate)):
+        rate = submission_rate[i] * 10
+        print(f"Running with submission rate {rate}")
+        group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+
+        # ips of each process 
+        receivers = config["receiver"]["ips"]
+        proxies = config["proxy"]["ips"]
+
+        receiver_path = "./dombft_receiver"
+        proxy_path = "./dombft_proxy"
+
+        receivers = [ext_ips[ip] for ip in receivers[:proxy_number]]
+        proxies = [ext_ips[ip] for ip in proxies[:proxy_number]]
+
+        remote_config_file = os.path.basename(config_file)
+
+        proxy_handles = []
+        other_handles = []
+
+        print("Starting receivers")
+        for id, ip in enumerate(receivers):
+            arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
+            hdl = arun(
+                f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+                + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
+            )
+
+            other_handles.append(hdl)
+
+        time.sleep(5)
+
+        print("Starting proxies")
+        for id, ip in enumerate(proxies):
+            arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
+            hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
+                    f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
+            
+            proxy_handles.append(hdl)
+
+        try:
+            # join on the client processes, which should end
+            for hdl in proxy_handles:
+                hdl.join()
+                
+            print("Proxies done, waiting 5 sec for receivers to finish...")
+            time.sleep(5)
+
+        finally:
+            # kill these processes and then join
+            for hdl in other_handles:
+                hdl.runner.kill()
+                hdl.join()
+
+            if not local_log:
+                get_logs(c, receivers, "receiver", new_name_prefix=f"receiver_submit_rate_{rate}_")
+                # get_logs(c, proxies, "proxy")
+
+
+@task
+def gcloud_reorder_exp_num_clients(c, config_file="../configs/remote.yaml", 
+                    poisson=True, ignore_deadlines=True, duration=20, 
+                    local_log=False, proxy_number="2, 4"):
+    
+    print("doing submission rate experiment")
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = get_gcloud_process_group(config, ext_ips)
+    group.put(config_file)
+    proxy_count = list(map(int, proxy_number.split(',')))
+    print(len(proxy_count))
+    
+    for i in range(len(proxy_count)):
+        rate = 2000
+        print(f"Running with submission rate {rate}")
+        group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+
+        # ips of each process 
+        receivers = config["receiver"]["ips"]
+        proxies = config["proxy"]["ips"]
+
+        receiver_path = "./dombft_receiver"
+        proxy_path = "./dombft_proxy"
+
+        receivers = [ext_ips[ip] for ip in receivers[:proxy_number]]
+        proxies = [ext_ips[ip] for ip in proxies[:proxy_number]]
+
+        remote_config_file = os.path.basename(config_file)
+
+        proxy_handles = []
+        other_handles = []
+
+        print("Starting receivers")
+        for id, ip in enumerate(receivers):
+            arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
+            hdl = arun(
+                f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+                + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
+            )
+
+            other_handles.append(hdl)
+
+        time.sleep(5)
+
+        print("Starting proxies")
+        for id, ip in enumerate(proxies):
+            arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
+            hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
+                    f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
+            
+            proxy_handles.append(hdl)
+
+        try:
+            # join on the client processes, which should end
+            for hdl in proxy_handles:
+                hdl.join()
+                
+            print("Proxies done, waiting 5 sec for receivers to finish...")
+            time.sleep(5)
+
+        finally:
+            # kill these processes and then join
+            for hdl in other_handles:
+                hdl.runner.kill()
+                hdl.join()
+
+            if not local_log:
+                get_logs(c, receivers, "receiver", new_name_prefix=f"receiver_submit_rate_{rate}_")
+                # get_logs(c, proxies, "proxy")
