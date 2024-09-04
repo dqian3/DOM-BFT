@@ -150,9 +150,6 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
 
-        // Check if request is on time.
-        request.set_late(recv_time > request.deadline());
-
         requestQueue_.enqueue(request);
     }
 }

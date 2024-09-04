@@ -2,6 +2,7 @@
 #include <fstream>
 #include <queue>
 #include <thread>
+#include <random>
 
 // Third party libs
 #include <openssl/pem.h>
