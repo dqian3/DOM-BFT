@@ -108,7 +108,35 @@ void Receiver::run()
 {
     // Submit first request
     LOG(INFO) << "Starting event loop...";
+    // endpoint_->LoopRun();
+
+    // running_ = true;
+
+    LaunchThreads();
+    for (auto &kv : threads_) {
+        LOG(INFO) << "Join " << kv.first;
+        kv.second.join();
+        LOG(INFO) << "Join Complete " << kv.first;
+    }
+    LOG(INFO) << "Run Terminated ";
+}
+
+void Receiver::LaunchThreads()
+{
+    threads_["ReceiveTd"] = std::thread(&Receiver::ReceiveTd, this);
+    threads_["ForwardTd"] = std::thread(&Receiver::ForwardTd, this);
+}
+
+void Receiver::ReceiveTd()
+{
+    LOG(INFO) << "receive td launched";
     endpoint_->LoopRun();
+}
+
+void Receiver::ForwardTd()
+{
+    LOG(INFO) << "forward td launched";
+    forwardEp_->LoopRun();
 }
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
@@ -138,6 +166,8 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         // Send measurement reply right away
         int64_t recv_time = GetMicrosecondTimestamp();
 
+        VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+                << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
         MeasurementReply mReply;
         mReply.set_receiver_id(receiverId_);
         mReply.set_owd(recv_time - request.send_time());
@@ -147,7 +177,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-        sigProvider_.appendSignature(hdr, UDP_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
 
         requestQueue_.enqueue(request);

@@ -1,6 +1,5 @@
 #include "proxy.h"
 
-#include <random>
 
 namespace dombft {
 using namespace dombft::proto;
