@@ -199,7 +199,7 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
 
 @task
-def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
+def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -216,6 +216,7 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
+    group.run("sudo apt update && sudo apt install bazel-5.2.0")
     group.run("cd DOM-BFT && git pull && bazel build //processes/...")
 
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
@@ -225,7 +226,7 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
 
 
 @task
-def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
+def gcloud_copy_keys(c, config_file="../configs/remote-prod.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -484,7 +485,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
 
 @task
-def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
+def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml", 
                     poisson=False, ignore_deadlines=False, duration=20, rate=60000,
                     local_log=False, proxy_number=2):
     config_file = os.path.abspath(config_file)
@@ -553,7 +554,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
    
             
 @task
-def gcloud_reorder_exp_submission_rate(c, config_file="../configs/remote.yaml", 
+def gcloud_reorder_exp_submission_rate(c, config_file="../configs/remote-prod.yaml", 
                     poisson=True, ignore_deadlines=False, duration=20, 
                     local_log=False, proxy_number=2, submission_rate="20, 40, 60, 80, 100, 200, 400, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000, 20000, 40000, 60000, 80000, 100000"):
     
@@ -629,9 +630,9 @@ def gcloud_reorder_exp_submission_rate(c, config_file="../configs/remote.yaml",
 
 
 @task
-def gcloud_reorder_exp_num_clients(c, config_file="../configs/remote.yaml", 
+def gcloud_reorder_exp_num_clients(c, config_file="../configs/remote-prod.yaml", 
                     poisson=True, ignore_deadlines=True, duration=20, 
-                    local_log=False, proxy_number="2, 4"):
+                    local_log=False, proxy_number="1,2,3,4"):
     
     print("doing submission rate experiment")
     config_file = os.path.abspath(config_file)
@@ -646,7 +647,8 @@ def gcloud_reorder_exp_num_clients(c, config_file="../configs/remote.yaml",
     print(len(proxy_count))
     
     for i in range(len(proxy_count)):
-        rate = 2000
+        rate = 4000
+        proxy_number = proxy_count[i]
         print(f"Running with submission rate {rate}")
         group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
 
@@ -657,7 +659,7 @@ def gcloud_reorder_exp_num_clients(c, config_file="../configs/remote.yaml",
         receiver_path = "./dombft_receiver"
         proxy_path = "./dombft_proxy"
 
-        receivers = [ext_ips[ip] for ip in receivers[:proxy_number]]
+        receivers = [ext_ips[ip] for ip in receivers[:2]]
         proxies = [ext_ips[ip] for ip in proxies[:proxy_number]]
 
         remote_config_file = os.path.basename(config_file)
@@ -700,5 +702,5 @@ def gcloud_reorder_exp_num_clients(c, config_file="../configs/remote.yaml",
                 hdl.join()
 
             if not local_log:
-                get_logs(c, receivers, "receiver", new_name_prefix=f"receiver_submit_rate_{rate}_")
+                get_logs(c, receivers, "receiver", new_name_prefix=f"{proxy_number}_clients_receiver_submit_rate_{rate}_")
                 # get_logs(c, proxies, "proxy")
