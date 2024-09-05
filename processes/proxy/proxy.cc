@@ -113,18 +113,10 @@ void Proxy::LaunchThreads()
 
 void Proxy::RecvMeasurementsTd()
 {
+    OWDCalc::PercentileCtx context(numReceivers_,maxOWD_,10,90, maxOWD_);
+    //OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
 
-    /// START PROFILE DIFF
-    std::string fname = "diff.csv";
-    std::ofstream ofs(fname, std::ofstream::out);
-    fname = "queue_len.csv";
-    std::ofstream ofs_1(fname, std::ofstream::out);
-    ofs_1 << "time,queue_len" << std::endl;
-    /// END PROFILE DIFF
-    // OWDCalc::PercentileCtx context(numReceivers_,maxOWD_,10,90, maxOWD_);
-    OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
-
-    MessageHandlerFunc handleMeasurementReply = [this, &context, &ofs, &ofs_1](MessageHeader *hdr, void *body, Address *sender) {
+    MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
         MeasurementReply reply;
 
         // TODO verify and handle signed header better
@@ -133,9 +125,6 @@ void Proxy::RecvMeasurementsTd()
             return;
         }
         uint64_t now = GetMicrosecondTimestamp();
-        ofs << reply.diff() << std::endl;
-        ofs_1 << reply.send_time() << "," << reply.queue_len() << std::endl;
-
         VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
                 << " rtt=" << now - reply.send_time() << " now=" << now;
 

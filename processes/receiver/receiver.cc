@@ -173,9 +173,6 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 	        MeasurementReply mReply;
 	        mReply.set_receiver_id(receiverId_);
 	        mReply.set_owd(recv_time - request.send_time());
-			//TODO(Hao): remove after analysis
-	        //mReply.set_diff(request.deadline() - recv_time);
-	        //mReply.set_queue_len(deadlineQueue_.size());
             mReply.set_send_time(request.send_time());
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);

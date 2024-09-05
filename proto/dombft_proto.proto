@@ -27,9 +27,7 @@ message DOMRequest {
 message MeasurementReply {
     uint32 receiver_id = 1;
     int32 owd = 2;
-    int64 diff = 3;
-    uint32 queue_len = 4;
-    uint64 send_time = 5;
+    uint64 send_time = 3;
 }
 
 message Reply {
