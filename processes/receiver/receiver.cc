@@ -168,17 +168,19 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
         VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
                 << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
-        MeasurementReply mReply;
-        mReply.set_receiver_id(receiverId_);
-        mReply.set_owd(recv_time - request.send_time());
-        mReply.set_diff(request.deadline() - recv_time);
-        mReply.set_queue_len(deadlineQueue_.size());
-        mReply.set_send_time(recv_time);
-        VLOG(3) << "Measured delay " << recv_time << " - " << request.send_time() << " = " << mReply.owd() << " usec";
-
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+        // Randomly send measurements only once in a whil
+        if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
+	        MeasurementReply mReply;
+	        mReply.set_receiver_id(receiverId_);
+	        mReply.set_owd(recv_time - request.send_time());
+			//TODO(Hao): remove after analysis
+	        //mReply.set_diff(request.deadline() - recv_time);
+	        //mReply.set_queue_len(deadlineQueue_.size());
+            mReply.set_send_time(request.send_time());
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+        }
 
         requestQueue_.enqueue(request);
     }
