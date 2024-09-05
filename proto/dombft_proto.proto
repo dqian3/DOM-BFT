@@ -28,7 +28,7 @@ message MeasurementReply {
     uint32 receiver_id = 1;
     int32 owd = 2;
     uint64 send_time = 3;
-}    
+}
 
 message Reply {
     uint32 client_id = 1;
@@ -51,7 +51,7 @@ message Cert {
     // we just repeat them here since it's easier
     // seq is also just for convenience
     uint32 seq = 4;
- 
+
     repeated Reply replies    = 7;
     repeated bytes signatures = 8;
 }
@@ -71,11 +71,11 @@ message Commit {
     uint32 instance = 2;
     uint32 seq = 3;
 
-    bytes log_digest = 4;  
+    bytes log_digest = 4;
     bytes app_digest = 5;
 }
 
-message FallbackTrigger 
+message FallbackTrigger
 {
     uint32 client_id = 2;
     uint32 client_seq = 3;
@@ -117,7 +117,7 @@ message LogCheckpoint
 }
 
 
-message FallbackStart 
+message FallbackStart
 {
     uint32 replica_id = 1;
     uint32 instance = 2;
@@ -130,7 +130,7 @@ message FallbackProposal
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
-    
+
     repeated FallbackStart logs = 3;
     repeated bytes signatures = 4;
 }

@@ -1,6 +1,5 @@
 #include "proxy.h"
 
-#include <random>
 
 namespace dombft {
 using namespace dombft::proto;
@@ -114,8 +113,9 @@ void Proxy::LaunchThreads()
 
 void Proxy::RecvMeasurementsTd()
 {
+    OWDCalc::PercentileCtx context(numReceivers_,maxOWD_,10,90, maxOWD_);
+    //OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
 
-    OWDCalc::MeasureContext context(numReceivers_, OWDCalc::PercentileStrategy(90, 10, maxOWD_), maxOWD_);
     MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
         MeasurementReply reply;
 
@@ -125,7 +125,6 @@ void Proxy::RecvMeasurementsTd()
             return;
         }
         uint64_t now = GetMicrosecondTimestamp();
-
         VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
                 << " rtt=" << now - reply.send_time() << " now=" << now;
 
@@ -138,8 +137,7 @@ void Proxy::RecvMeasurementsTd()
             context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
         }
 
-        // TODO a little buffer :)
-        latencyBound_.store(context.getOWD());
+        latencyBound_.store(context.getCappedMaxOWD());
         VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
     };
 

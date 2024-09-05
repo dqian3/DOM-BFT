@@ -1,132 +1,121 @@
 #ifndef OWD_CALC_H
 #define OWD_CALC_H
 
-// TODO get rid of templates here..
-// The main issue with this design is that the Strategy class acts as both
-// a template for constructing per-receiver strategies and a calculator for
-// those strategies. It works for now though.
-
 #include <algorithm>
 #include <vector>
-namespace dombft {
-namespace OWDCalc {
-// A Strategy pattern
-class BaseCalcStrategy {
+
+namespace dombft::OWDCalc {
+
+class BaseCalcCtx {
 public:
-    virtual ~BaseCalcStrategy() = default;
-
-    virtual void addMeasure(uint32_t measure) = 0;
-
-    virtual uint32_t getOWD() const = 0;
-};
-
-class MeanStrategy : public BaseCalcStrategy {
-public:
-    explicit MeanStrategy(uint32_t windowSize, uint32_t initialMeasure)
-        : windowSize_(windowSize)
+    BaseCalcCtx(uint32_t numReceivers, uint32_t cap, uint32_t windowSize, uint32_t initialMeasure = 0)
+        : numReceivers_(numReceivers)
+        , cap_(cap)
+        , windowSize_(windowSize)
         , windowIndex_(0)
     {
-        storedMeasure_.resize(windowSize, initialMeasure);
-    }
-
-    inline void addMeasure(uint32_t measure) override
-    {
-        storedMeasure_[windowIndex_] = measure;
-        windowIndex_ = windowSize_ ? (windowIndex_ + 1) % windowSize_ : windowIndex_ + 1;
-    }
-
-    inline uint32_t getOWD() const override
-    {
-        uint32_t sum = 0;
-        for (auto &measure : storedMeasure_) {
-            sum += measure;
+        recvrMeasures_.resize(numReceivers_);
+        for (auto &measures : recvrMeasures_) {
+            measures.resize(windowSize, initialMeasure);
         }
-        return sum / storedMeasure_.size();
+    };
+
+    virtual inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) = 0;
+
+    uint32_t getCappedMaxOWD() const
+    {
+        uint32_t maxOWD = 0;
+        for (auto &measures : recvrMeasures_) {
+            maxOWD = std::min(cap_, std::max(maxOWD, getRcvrOWD(measures)));
+        }
+        return maxOWD;
+    }
+    uint32_t getPercentileOWD(uint32_t percentile) const
+    {
+        uint32_t percentileOWD = 0;
+        std::vector<uint32_t> sortedMeasure;
+        for (auto &measures : recvrMeasures_) {
+            sortedMeasure.push_back(getRcvrOWD(measures));
+        }
+        std::sort(sortedMeasure.begin(), sortedMeasure.end());
+        percentileOWD = sortedMeasure[(sortedMeasure.size() - 1) * percentile / 100];
+        return percentileOWD;
     }
 
-private:
+protected:
+    virtual uint32_t getRcvrOWD(const std::vector<uint32_t> &rcvrMeasures) const = 0;
+
+protected:
+    uint32_t numReceivers_;
+    uint32_t cap_;
     uint32_t windowSize_;
     uint32_t windowIndex_;
-    std::vector<uint32_t> storedMeasure_;
+    std::vector<std::vector<uint32_t>> recvrMeasures_;
 };
 
-class MaxStrategy : public BaseCalcStrategy {
+class MeanCtx : public BaseCalcCtx {
 public:
-    MaxStrategy(uint32_t initialMeasure)
-        : storedMeasure_(initialMeasure)
+    explicit MeanCtx(uint32_t numReceivers, uint32_t cap, uint32_t windowSize, uint32_t initialMeasure = 0)
+        : BaseCalcCtx(numReceivers, cap, windowSize, initialMeasure)
     {
     }
 
-    inline void addMeasure(uint32_t measure) override { storedMeasure_ = std::max(storedMeasure_, measure); }
-
-    inline uint32_t getOWD() const override { return storedMeasure_; }
-
-private:
-    uint32_t storedMeasure_;
-};
-
-class PercentileStrategy : public BaseCalcStrategy {
-public:
-    explicit PercentileStrategy(uint32_t percentile, uint32_t windowSize, uint32_t initialMeasure)
-        : windowSize_(windowSize)
-        , percentile_(percentile)
-        , windowIndex_(0)
+    inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override
     {
-        storedMeasure_.resize(windowSize, initialMeasure);
-    }
-
-    inline void addMeasure(uint32_t measure) override
-    {
-        storedMeasure_[windowIndex_] = measure;
+        recvrMeasures_[rcvrIndex][windowIndex_] = measure;
         windowIndex_ = windowSize_ ? (windowIndex_ + 1) % windowSize_ : windowIndex_ + 1;
     }
 
-    inline uint32_t getOWD() const override
+private:
+    inline uint32_t getRcvrOWD(const std::vector<uint32_t> &measures) const
     {
-        std::vector<uint32_t> sortedMeasure = storedMeasure_;
+        uint32_t sum = 0;
+        for (auto &measure : measures) {
+            sum += measure;
+        }
+        return sum / measures.size();
+    }
+};
+
+class MaxCtx : public BaseCalcCtx {
+public:
+    explicit MaxCtx(uint32_t numReceivers, uint32_t cap, uint32_t initialMeasure = 0)
+        : BaseCalcCtx(numReceivers, cap, 1, initialMeasure)
+    {
+    }
+
+    inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override
+    {
+        recvrMeasures_[rcvrIndex][0] = std::max(recvrMeasures_[rcvrIndex][0], measure);
+    }
+
+private:
+    inline uint32_t getRcvrOWD(const std::vector<uint32_t> &measures) const override { return measures[0]; }
+};
+
+class PercentileCtx : public BaseCalcCtx {
+public:
+    explicit PercentileCtx(uint32_t numReceivers, uint32_t cap, uint32_t windowSize, uint32_t percentile,
+                           uint32_t initialMeasure = 0)
+        : BaseCalcCtx(numReceivers, cap, windowSize, initialMeasure)
+        , percentile_(percentile)
+    {
+    }
+
+    inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override
+    {
+        recvrMeasures_[rcvrIndex][windowIndex_] = measure;
+        windowIndex_ = windowSize_ ? (windowIndex_ + 1) % windowSize_ : windowIndex_ + 1;
+    }
+
+private:
+    uint32_t percentile_;
+    uint32_t getRcvrOWD(const std::vector<uint32_t> &measures) const override
+    {
+        std::vector<uint32_t> sortedMeasure = measures;
         std::sort(sortedMeasure.begin(), sortedMeasure.end());
         return sortedMeasure[(sortedMeasure.size() - 1) * percentile_ / 100];
     }
-
-private:
-    uint32_t windowSize_;
-    uint32_t percentile_;
-    uint32_t windowIndex_;
-    std::vector<uint32_t> storedMeasure_;
 };
-
-template <typename T> class MeasureContext {
-public:
-    MeasureContext(uint32_t numReceivers, T strategy, uint32_t cap)
-        : numReceivers_(numReceivers)
-        , cap_(cap)
-    {
-        for (uint32_t i = 0; i < numReceivers_; i++) {
-            receiverOWDs_.push_back(std::make_unique<T>(strategy));
-        }
-    }
-
-    inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) { receiverOWDs_[rcvrIndex]->addMeasure(measure); }
-
-    inline uint32_t getOWD() const
-    {
-        // find the largest OWD among all receivers that is smaller than cap
-        uint32_t maxOWD = 0;
-        for (uint32_t i = 0; i < numReceivers_; i++) {
-            uint32_t curOWD = receiverOWDs_[i]->getOWD();
-            maxOWD = std::min(cap_, std::max(maxOWD, curOWD));
-        }
-
-        return maxOWD;
-    }
-
-private:
-    uint32_t numReceivers_;
-    uint32_t cap_;
-    std::vector<std::unique_ptr<BaseCalcStrategy>> receiverOWDs_;
-};
-
-}   // namespace OWDCalc
-}   // namespace dombft
-
+}   // namespace dombft::OWDCalc
 #endif
