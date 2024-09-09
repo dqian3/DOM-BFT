@@ -8,8 +8,8 @@ client:
   - "127.0.1.1"
   port: 33000
   keysDir: keys/client
-  maxRequests: 1
-  numRequests: 100
+  maxRequests: 5
+  numRequests: 10000
   runtimeSeconds: 6
   normalPathTimeout: 5000
   slowPathTimeout: 50000

@@ -747,7 +747,7 @@ void Replica::applyFallbackReq(const dombft::proto::LogEntry &entry)
     reply.set_client_id(clientId);
     reply.set_client_seq(entry.client_seq());
     reply.set_replica_id(replicaId_);
-    reply.set_instance(instance_);
+    reply.set_instance(instance_ - 1);   // Fallback is wrapping up the previous instance
     reply.set_result(result);
 
     uint32_t seq = log_->nextSeq - 1;
@@ -863,19 +863,19 @@ void Replica::finishFallback(const FallbackProposal &history)
 
     const LogCheckpoint &maxCheckpoint = history.logs()[maxCheckpointIdx].checkpoint();
 
-    // if (maxCheckpoint.seq() >= log_->nextSeq) {
-    //     LOG(ERROR) << "Fallback checkpoint too far ahead (seq= " << maxCheckpoint.seq()
-    //                << "). state transfer is not implemented, exiting...";
-    //     exit(1);
-    // }
+    if (maxCheckpoint.seq() >= log_->nextSeq) {
+        LOG(ERROR) << "Fallback checkpoint too far ahead (seq= " << maxCheckpoint.seq()
+                   << "). state transfer is not implemented, exiting...";
+        exit(1);
+    }
 
-    // const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
-    // std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
-    // if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest) {
-    //     LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq()
-    //                << "). state transfer is not implemented, exiting...";
-    //     exit(1);
-    // }
+    const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
+    std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
+    if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest) {
+        LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq()
+                   << "). state transfer is not implemented, exiting...";
+        exit(1);
+    }
 
     // Now we know the logCheckpoint is usable
     // TODO implement this more nicely by making an interface in the log.

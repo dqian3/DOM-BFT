@@ -454,7 +454,7 @@ void Client::checkReqState(uint32_t clientSeq)
     } else {
 
         // Try and find a certificate or proof of divergent histories
-        std::map<std::tuple<std::string, int>, std::set<int>> matchingReplies;
+        std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
         size_t maxMatching = 0;
 
         for (const auto &entry : reqState.replies) {
@@ -464,7 +464,7 @@ void Client::checkReqState(uint32_t clientSeq)
             // TODO this is ugly lol
             // We don't need client_seq/client_id, these are already checked.
             // We also don't check the result here, that only needs to happen in the fast path
-            std::tuple<std::string, int> key = {reply.digest(), reply.seq()};
+            std::tuple<std::string, int, int> key = {reply.digest(), reply.instance(), reply.seq()};
 
             VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
 
