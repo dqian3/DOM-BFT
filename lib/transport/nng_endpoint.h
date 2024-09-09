@@ -37,7 +37,7 @@ protected:
 public:
     // Takes a number of addresses
     NngEndpoint(const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false);
-    ~NngEndpoint();
+    virtual ~NngEndpoint();
 
     // Sends message in buffer
     virtual int SendPreparedMsgTo(const Address &dstAddr) override;

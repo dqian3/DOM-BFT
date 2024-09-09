@@ -55,14 +55,15 @@ cc_library(
 
 cc_library(
     name = "endpoint",
-    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc"],
-    hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h"],
+    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc", "transport/nng_endpoint_threaded.cc"],
+    hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h" , "transport/nng_endpoint_threaded.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",
         ":common_struct",
         ":timer",
         ":signature_provider",
+        ":utils",
         "@com_github_enki_libev//:libev",
         "@com_github_google_glog//:glog",
         "@com_google_protobuf//:protobuf",
@@ -82,6 +83,7 @@ cc_library(
         "@com_github_gflags_gflags//:gflags",
         "@com_github_google_glog//:glog",
         "@com_github_cameron314_concurrentqueue//:concurrentqueue",
+        "@com_github_cameron314_readerwriterqueue//:readerwriterqueue",
         "@com_github_preshing_junction//:libjunction",
         "@openssl//:openssl",
     ],
@@ -108,10 +110,8 @@ cc_library(
 
 cc_library(
     name = "application",
-    hdrs = ["application.h"] + glob(["apps/*"]),
-    # hdrs = ["application.h", "apps/counter.h"],
-    srcs = glob(["apps/*"]),
-    # srcs = ["apps/counter.cc"],
+    hdrs = ["application.h"] + glob(["apps/*.h"]),
+    srcs = glob(["apps/*.cc"]),
     deps = [
         "//proto:dombft_apps_cc",
         ":common_struct",

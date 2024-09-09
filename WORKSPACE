@@ -38,6 +38,12 @@ new_git_repository(
 )
 
 new_git_repository(
+    name = "com_github_cameron314_readerwriterqueue",
+    build_file = "//third_party/readerwriterqueue:BUILD.bazel",
+    remote = "https://github.com/cameron314/readerwriterqueue.git",
+)
+
+new_git_repository(
     name = "com_github_preshing_junction",
     commit = "5ad3be7ce1d3f16b9f7ed6065bbfeacd2d629a08",
     shallow_since = "1518982100 -0500",
