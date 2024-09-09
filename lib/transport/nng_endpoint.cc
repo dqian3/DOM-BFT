@@ -66,8 +66,8 @@ NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPai
         nng_setopt_ms(sock, NNG_OPT_SENDTIMEO, timeout);
 
         socks_.push_back(sock);
-        addrToSocket_[connAddr] = socks_.size() - 1;
-        socketToAddr_[socks_.size() - 1] = connAddr;
+        addrToSocketIdx_[connAddr] = socks_.size() - 1;
+        socketIdxToAddr_[socks_.size() - 1] = connAddr;
     }
 }
 
@@ -82,19 +82,19 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
 {
     MessageHeader *hdr = (MessageHeader *) sendBuffer_;
 
-    if (addrToSocket_.count(dstAddr) == 0) {
+    if (addrToSocketIdx_.count(dstAddr) == 0) {
         LOG(ERROR) << "Attempt to send to unregistered address " << dstAddr.ip_ << ":" << dstAddr.port_;
         return -1;
     }
 
-    nng_socket s = socks_[addrToSocket_[dstAddr]];
+    nng_socket s = socks_[addrToSocketIdx_[dstAddr]];
     int ret = nng_send(s, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0);
     if (ret != 0) {
         VLOG(1) << "\tSend to " << dstAddr.ip_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
         return ret;
     }
 
-    VLOG(4) << "Sent to " << socketToAddr_[addrToSocket_[dstAddr]].GetIPAsString();
+    VLOG(4) << "Sent to " << socketIdxToAddr_[addrToSocketIdx_[dstAddr]].GetIPAsString();
     return 0;
 }
 
@@ -106,7 +106,7 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
     // so that the handler can identify which socket it
     for (uint32_t i = 0; i < socks_.size(); i++) {
         nng_socket sock = socks_[i];
-        Address &connAddr = socketToAddr_[i];
+        Address &connAddr = socketIdxToAddr_[i];
 
         LOG(INFO) << "Registering handle for " << connAddr.GetIPAsString() << ":" << connAddr.GetPortAsInt();
 

@@ -29,8 +29,8 @@ protected:
     /* data */
     std::vector<NngMessageHandler> handlers_;
     std::vector<nng_socket> socks_;
-    std::unordered_map<Address, int> addrToSocket_;   // Map from Address to index of in socks_
-    std::unordered_map<int, Address> socketToAddr_;   // Map from index in socks_ to Address, reverse of above
+    std::unordered_map<Address, int> addrToSocketIdx_;   // Map from Address to index of in socks_
+    std::unordered_map<int, Address> socketIdxToAddr_;   // Map from index in socks_ to Address, reverse of above
 
     byte recvBuffer_[NNG_BUFFER_SIZE];
 

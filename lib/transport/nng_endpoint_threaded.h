@@ -2,7 +2,6 @@
 #define NNG_ENDPOINT_THREAD_H
 
 #include "lib/transport/nng_endpoint.h"
-#include "lib/transport/nng_endpoint_thread.h"
 #include "lib/utils.h"
 
 #include <thread>
@@ -11,29 +10,13 @@
 
 #include <nng/nng.h>
 
-struct NngThreadMessageHandler {
-
-    MessageHandlerFunc handlerFunc_;
-
-    // Each NngMessageHandler corresponds to a socket and dst addres
-    nng_socket sock_;
-    Address srcAddr_;
-    byte *recvBuffer_;
-
-    std::unique_ptr<ev_io> evWatcher_;
-
-    // TODO handle the memory of the recvBuffer (belonging to NngEndpoint better)
-    NngThreadMessageHandler(MessageHandlerFunc msghdl, nng_socket s, const Address &otherAddr, byte *recvBuffer);
-    ~NngThreadMessageHandler();
-};
-
 class NngSendThread {
 
 public:
     NngSendThread(nng_socket sock, const Address &addr);
     ~NngSendThread();
     void run();
-    sendMsgTo(const byte *msg, size_t len);
+    void sendMsg(const byte *msg, size_t len);
 
 private:
     std::thread thread_;
@@ -45,36 +28,52 @@ private:
     // ev_async sendWatcher_;
 
     nng_socket sock_;
-    Address addr;   // Just for debugging
+    Address addr_;   // Just for debugging
 
     RWQueue<std::vector<byte>> queue_;
-}
+};
 
 class NngRecvThread {
 
 public:
-    NngRecvThread(std::vector<nng_socket> socks_);
+    NngRecvThread(const std::vector<nng_socket> &socks, std::unordered_map<int, Address> &sockToAddr,
+                  struct ev_loop *parentLoop, ev_async *recvWatcher);
     ~NngRecvThread();
     void run();
-    bool registerMsgHandler(MessageHandlerFunc);
+
+    BlockingRWQueue<std::pair<std::vector<byte>, Address>> queue_;
 
 private:
     std::thread thread_;
     bool running_;
 
-    ev_async *recv_watcher;
-    BlockingRWQueue<std::pair<std::vector<byte>, Address>> queue_;
-    // TODO do an event loop instead of busy waiting using these
-    // struct ev_loop *evLoop_;
-    // ev_async stopWatcher_;
-}
+    // Event handling for receiving packets
+    // This loop runs within the thread
+    struct IOWatcherData {
+        NngRecvThread *r;
+        nng_socket sock;
+        Address addr;
+    };
+
+    struct ev_loop *evLoop_;
+    ev_async stopWatcher_;
+    std::vector<ev_io> ioWatchers_;
+    std::vector<nng_socket> socks_;
+    byte recvBuffer_[NNG_BUFFER_SIZE];
+
+    // Communcation with parent endpoint
+    struct ev_loop *parentLoop_;
+    ev_async *parentRecvWatcher_;
+};
 
 class NngEndpointThreaded : public NngEndpoint {
 protected:
-    NngRecvThread recvThread;
-    std::vector<NngSendThread> sendThreads;
+    std::unique_ptr<NngRecvThread> recvThread_;
+    std::vector<std::unique_ptr<NngSendThread>> sendThreads_;
 
     ev_async recvWatcher_;
+
+    MessageHandlerFunc hdlrFunc_;
 
 public:
     NngEndpointThreaded(const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false);

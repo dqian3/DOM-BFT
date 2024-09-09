@@ -79,7 +79,7 @@ cc_library(
     srcs = ["utils.cc"],
     hdrs = ["utils.h"],
     deps = [
-        ":endpoint",
+        ":common_struct",
         "@com_github_gflags_gflags//:gflags",
         "@com_github_google_glog//:glog",
         "@com_github_cameron314_concurrentqueue//:concurrentqueue",

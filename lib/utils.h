@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <chrono>
 #include <cstring>
-#include <ev.h>
 #include <netinet/in.h>
 #include <openssl/sha.h>
 #include <stdio.h>
@@ -14,6 +13,7 @@
 
 // Third party libs
 #include "concurrentqueue.h"
+#include "readerwriterqueue.h"
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <junction/ConcurrentMap_Leapfrog.h>
