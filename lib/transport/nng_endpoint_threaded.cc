@@ -8,6 +8,8 @@ NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
     : sock_(sock)
     , addr_(addr)
 {
+    LOG(INFO) << "NngEndpointThreaded semd thread started for!" << addr;
+
     thread_ = std::thread(&NngSendThread::run, this);
 }
 
@@ -25,11 +27,10 @@ void NngSendThread::run()
         if (queue_.try_dequeue(msg)) {
             int ret = nng_send(sock_, msg.data(), msg.size(), 0);
             if (ret != 0) {
-                VLOG(1) << "\tSend to " << addr_.GetIPAsString() << " failed: " << nng_strerror(ret) << " (" << ret
-                        << ")";
+                VLOG(1) << "\tSend to " << addr_.ip() << " failed: " << nng_strerror(ret) << " (" << ret << ")";
                 continue;
             }
-            VLOG(4) << "Sent to " << addr_.GetIPAsString();
+            VLOG(4) << "Sent to " << addr_.ip();
         }
     }
 }
@@ -37,11 +38,12 @@ void NngSendThread::run()
 void NngSendThread::sendMsg(const byte *msg, size_t len)
 {
     // TODO send signal that this is ready
+    VLOG(6) << "Enqueuing message for sending!";
     queue_.enqueue(std::vector<byte>{msg, msg + len});
 }
 
 /*************************** NngRecvThread ***************************/
-NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, std::unordered_map<int, Address> &sockToAddr,
+NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::unordered_map<int, Address> &sockToAddr,
                              struct ev_loop *parentLoop, ev_async *recvWatcher)
     : socks_(socks)
     , parentLoop_(parentLoop)
@@ -55,9 +57,9 @@ NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, std::unordere
 
     for (size_t i = 0; i < socks_.size(); i++) {
         nng_socket sock = socks_[i];
-        Address &connAddr = sockToAddr[i];
+        const Address &connAddr = sockToAddr.at(i);
 
-        LOG(INFO) << "Registering handle for " << connAddr.GetIPAsString() << ":" << connAddr.GetPortAsInt();
+        LOG(INFO) << "Registering handle for " << connAddr.ip() << ":" << connAddr.port();
 
         if ((ret = nng_socket_get_int(sock, NNG_OPT_RECVFD, &fd)) != 0) {
             nng_close(sock);
@@ -102,6 +104,8 @@ NngRecvThread::~NngRecvThread()
 
 void NngRecvThread::run()
 {
+    LOG(INFO) << "NngEndpointThreaded recv thread started!";
+
     ev_async_init(&stopWatcher_, [](struct ev_loop *loop, ev_async *w, int revents) {
         // Signal to stop the event loop
         ev_break(loop);

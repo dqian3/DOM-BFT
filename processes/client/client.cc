@@ -322,7 +322,7 @@ void Client::submitRequest()
     nextReqSeq_++;
     inFlight_++;
 
-    VLOG(1) << "Sent request number " << nextReqSeq_ << " to Proxy at " << addr.GetIPAsString() << ", inflight txns  "
+    VLOG(1) << "Sent request number " << nextReqSeq_ << " to Proxy at " << addr.ip() << ", inflight txns  "
             << inFlight_;
 
     if (inFlight_ > maxInFlight_) {

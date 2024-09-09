@@ -94,7 +94,7 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr)
         return ret;
     }
 
-    VLOG(4) << "Sent to " << socketIdxToAddr_[addrToSocketIdx_[dstAddr]].GetIPAsString();
+    VLOG(4) << "Sent to " << socketIdxToAddr_[addrToSocketIdx_[dstAddr]].ip();
     return 0;
 }
 
@@ -108,7 +108,7 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
         nng_socket sock = socks_[i];
         Address &connAddr = socketIdxToAddr_[i];
 
-        LOG(INFO) << "Registering handle for " << connAddr.GetIPAsString() << ":" << connAddr.GetPortAsInt();
+        LOG(INFO) << "Registering handle for " << connAddr.ip() << ":" << connAddr.port();
 
         int fd;
         if ((ret = nng_socket_get_int(sock, NNG_OPT_RECVFD, &fd)) != 0) {
