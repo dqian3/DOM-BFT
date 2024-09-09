@@ -1,6 +1,6 @@
 cc_library(
-    name = "concurrentqueue", 
-    srcs = ["concurrentqueue.h"],
+    name = "readerwriterqueue", 
+    srcs = ["readerwriterqueue.h"],
     visibility = [
         "//visibility:public",
     ],
