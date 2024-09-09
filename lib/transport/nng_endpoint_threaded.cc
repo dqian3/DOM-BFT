@@ -7,8 +7,10 @@
 NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
     : sock_(sock)
     , addr_(addr)
+    , running_(true)
 {
-    LOG(INFO) << "NngEndpointThreaded semd thread started for!" << addr;
+
+    LOG(INFO) << "NngEndpointThreaded send thread started for " << addr;
 
     thread_ = std::thread(&NngSendThread::run, this);
 }
@@ -38,7 +40,6 @@ void NngSendThread::run()
 void NngSendThread::sendMsg(const byte *msg, size_t len)
 {
     // TODO send signal that this is ready
-    VLOG(6) << "Enqueuing message for sending!";
     queue_.enqueue(std::vector<byte>{msg, msg + len});
 }
 

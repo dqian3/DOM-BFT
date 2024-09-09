@@ -26,7 +26,8 @@ struct NngMessageHandler {
 
 class NngEndpoint : public Endpoint {
 protected:
-    /* data */
+    // Note these are pointers because if vector get's resized the pointers that libev relies
+    // on get messed up (this was a really annoying bug to find)
     std::vector<std::unique_ptr<NngMessageHandler>> handlers_;
     std::vector<nng_socket> socks_;
     std::unordered_map<Address, int> addrToSocketIdx_;   // Map from Address to index of in socks_

@@ -1,6 +1,7 @@
 #include "replica.h"
 
 #include "lib/transport/nng_endpoint.h"
+#include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -61,7 +62,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
 
     if (config.transport == "nng") {
         auto addrPairs = getReplicaAddrs(config, replicaId_);
-        endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
         size_t nClients = config.clientIps.size();
         for (size_t i = 0; i < nClients; i++) {

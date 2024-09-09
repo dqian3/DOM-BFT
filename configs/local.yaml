@@ -8,14 +8,14 @@ client:
   - "127.0.1.1"
   port: 33000
   keysDir: keys/client
-  maxRequests: 5
+  maxRequests: 1
   numRequests: 10000
-  runtimeSeconds: 6
+  runtimeSeconds: 20
   normalPathTimeout: 5000
   slowPathTimeout: 50000
-  sendRate: 100
+  sendRate: 0
   # the sendmode can be either using sendRate or maxRequests in flight. 
-  sendMode: "sendRate"
+  sendMode: "maxRequests"
   # sendMode: "maxRequests"
   # there may be 3 backpressure modes: none, sleep, adjust
   # none means no back pressure, sleep means sleep if outstanding requests are too many,

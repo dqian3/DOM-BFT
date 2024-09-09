@@ -161,9 +161,9 @@ void Proxy::ForwardRequestsTd(const int thread_id)
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
 
-        VLOG(2) << "Received message from " << sender->ip() << " " << hdr->msgLen;
-        if (hdr->msgType == MessageType::CLIENT_REQUEST) {
+        VLOG(2) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
 
+        if (hdr->msgType == MessageType::CLIENT_REQUEST) {
             // TODO verify and handle signed header better
             if (!inReq.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
@@ -172,6 +172,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
 
             uint64_t now = GetMicrosecondTimestamp();
             uint64_t deadline = now + latencyBound_;
+
             deadline = std::max(deadline, lastDeadline_ + 1);
             lastDeadline_ = deadline;
 
