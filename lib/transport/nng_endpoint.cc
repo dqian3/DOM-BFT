@@ -8,11 +8,11 @@ NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, co
     , sock_(s)
     , srcAddr_(otherAddr)
     , recvBuffer_(recvBuffer)
-    , evWatcher_(std::make_unique<ev_io>())
+    , evWatcher_()
 {
-    evWatcher_->data = (void *) this;
+    evWatcher_.data = (void *) this;
 
-    ev_init(evWatcher_.get(), [](struct ev_loop *loop, struct ev_io *w, int revents) {
+    ev_init(&evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents) {
         NngMessageHandler *m = (NngMessageHandler *) (w->data);
         int ret;
         size_t len = NNG_BUFFER_SIZE;
@@ -117,9 +117,9 @@ bool NngEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
         }
 
         // TODO recvBuffer is passed as a raw pointer here
-        handlers_.push_back(std::make_unique<NngMessageHandler>(hdl, sock, connAddr, recvBuffer_));
-        ev_io_set(handlers_.back()->evWatcher_.get(), fd, EV_READ);
-        ev_io_start(evLoop_, handlers_.back()->evWatcher_.get());
+        handlers_.emplace_back(hdl, sock, connAddr, recvBuffer_);
+        ev_io_set(&handlers_.back().evWatcher_, fd, EV_READ);
+        ev_io_start(evLoop_, &handlers_.back().evWatcher_);
     }
 
     return true;
