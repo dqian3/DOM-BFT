@@ -50,7 +50,7 @@ def local(c, config_file):
             other_handles.append(hdl)
 
         for id in range(n_clients):
-            cmd = f"./bazel-bin/processes/client/dombft_client -v {5} -config {config_file} -clientId {id} &>logs/client{id}.log"
+            cmd = f"./bazel-bin/processes/client/dombft_client -v {10} -config {config_file} -clientId {id} &>logs/client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 

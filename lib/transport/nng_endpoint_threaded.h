@@ -23,14 +23,14 @@ private:
     bool running_;
 
     // TODO do an event loop instead of busy waiting
-    // struct ev_loop *evLoop_;
-    // ev_async stopWatcher_;
-    // ev_async sendWatcher_;
+    struct ev_loop *evLoop_;
+    ev_async stopWatcher_;
+    ev_async sendWatcher_;
 
     nng_socket sock_;
     Address addr_;   // Just for debugging
 
-    RWQueue<std::vector<byte>> queue_;
+    BlockingRWQueue<std::vector<byte>> queue_;
 };
 
 class NngRecvThread {

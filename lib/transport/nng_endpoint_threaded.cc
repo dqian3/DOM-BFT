@@ -9,38 +9,58 @@ NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
     , addr_(addr)
     , running_(true)
 {
-
     LOG(INFO) << "NngEndpointThreaded send thread started for " << addr;
+
+    evLoop_ = ev_loop_new();
+    sendWatcher_ = ev_async();
+    stopWatcher_ = ev_async();
 
     thread_ = std::thread(&NngSendThread::run, this);
 }
 
 NngSendThread::~NngSendThread()
 {
-    running_ = false;
+    ev_async_send(evLoop_, &stopWatcher_);
     thread_.join();
 }
 
 void NngSendThread::run()
 {
-    std::vector<byte> msg;
+    auto stop_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
+        // Signal to stop the event loop
+        ev_break(loop);
+    };
 
-    while (running_) {
-        if (queue_.try_dequeue(msg)) {
-            int ret = nng_send(sock_, msg.data(), msg.size(), 0);
+    sendWatcher_.data = this;
+    auto send_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
+        NngSendThread *t = (NngSendThread *) w->data;
+        std::vector<byte> msg;
+
+        while (t->queue_.peek() != nullptr) {
+            t->queue_.wait_dequeue(msg);
+            int ret = nng_send(t->sock_, msg.data(), msg.size(), 0);
             if (ret != 0) {
-                VLOG(1) << "\tSend to " << addr_.ip() << " failed: " << nng_strerror(ret) << " (" << ret << ")";
+                VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
                 continue;
             }
-            VLOG(4) << "Sent to " << addr_;
+            VLOG(4) << "Sent to " << t->addr_;
         }
-    }
+    };
+
+    ev_async_init(&stopWatcher_, stop_cb);
+    ev_async_init(&sendWatcher_, send_cb);
+
+    ev_async_start(evLoop_, &stopWatcher_);
+    ev_async_start(evLoop_, &sendWatcher_);
+
+    ev_run(evLoop_, 0);
 }
 
 void NngSendThread::sendMsg(const byte *msg, size_t len)
 {
     // TODO send signal that this is ready
     queue_.enqueue(std::vector<byte>{msg, msg + len});
+    ev_async_send(evLoop_, &sendWatcher_);
 }
 
 /*************************** NngRecvThread ***************************/
@@ -114,6 +134,7 @@ void NngRecvThread::run()
         ev_break(loop);
     });
 
+    ev_async_start(evLoop_, &stopWatcher_);
     ev_run(evLoop_, 0);
 }
 
@@ -156,17 +177,21 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
 
     auto cb = [](struct ev_loop *loop, ev_async *w, int revents) {
         NngEndpointThreaded *ep = (NngEndpointThreaded *) w->data;
-
         std::pair<std::vector<byte>, Address> item;
-        ep->recvThread_->queue_.wait_dequeue(item);
 
-        auto &[msg, addr] = item;
-        size_t len = msg.size();
+        // Not sure if this usage is the best, but it makes sense to me
+        while (ep->recvThread_->queue_.peek() != nullptr) {
+            ep->recvThread_->queue_.try_dequeue(item);
+            auto &[msg, addr] = item;
+            size_t len = msg.size();
 
-        if (len > sizeof(MessageHeader)) {
-            MessageHeader *hdr = (MessageHeader *) msg.data();
-            if (len >= sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen) {
-                ep->hdlrFunc_(hdr, msg.data() + sizeof(MessageHeader), &addr);
+            VLOG(5) << "Dequeued message of length " << len << " from " << addr;
+
+            if (len > sizeof(MessageHeader)) {
+                MessageHeader *hdr = (MessageHeader *) msg.data();
+                if (len >= sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen) {
+                    ep->hdlrFunc_(hdr, msg.data() + sizeof(MessageHeader), &addr);
+                }
             }
         }
     };

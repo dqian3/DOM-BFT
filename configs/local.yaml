@@ -11,11 +11,11 @@ client:
   maxRequests: 1
   numRequests: 10000
   runtimeSeconds: 20
-  normalPathTimeout: 5000
-  slowPathTimeout: 50000
-  sendRate: 0
+  normalPathTimeout: 10000
+  slowPathTimeout: 100000
+  sendRate: 1
   # the sendmode can be either using sendRate or maxRequests in flight. 
-  sendMode: "maxRequests"
+  sendMode: "sendRate"
   # sendMode: "maxRequests"
   # there may be 3 backpressure modes: none, sleep, adjust
   # none means no back pressure, sleep means sleep if outstanding requests are too many,
