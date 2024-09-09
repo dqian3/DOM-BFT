@@ -30,7 +30,7 @@ void NngSendThread::run()
                 VLOG(1) << "\tSend to " << addr_.ip() << " failed: " << nng_strerror(ret) << " (" << ret << ")";
                 continue;
             }
-            VLOG(4) << "Sent to " << addr_.ip();
+            VLOG(4) << "Sent to " << addr_;
         }
     }
 }
@@ -64,6 +64,7 @@ NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::un
         if ((ret = nng_socket_get_int(sock, NNG_OPT_RECVFD, &fd)) != 0) {
             nng_close(sock);
             LOG(ERROR) << "Error getting recv fd: " << nng_strerror(ret);
+            return;
         }
 
         ev_io *watcher = &ioWatchers_[i];
@@ -79,6 +80,7 @@ NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::un
                 LOG(ERROR) << "nng_recv failure: " << nng_strerror(ret);
                 return;
             }
+            VLOG(5) << "Received message of length " << len << " from " << data->addr;
 
             r->queue_.enqueue({std::vector<byte>(r->recvBuffer_, r->recvBuffer_ + len), data->addr});
 
@@ -169,5 +171,6 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
     };
 
     ev_async_init(&recvWatcher_, cb);
+    ev_async_start(evLoop_, &recvWatcher_);
     return true;
 }

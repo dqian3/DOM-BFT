@@ -34,6 +34,6 @@ bool Address::operator==(const Address &other) const { return ip_ == other.ip_ &
 
 std::ostream &operator<<(std::ostream &os, const Address &address)
 {
-    os << "IP: " << address.ip() << ", Port: " << address.port();
+    os << address.ip() << ":" << address.port();
     return os;
 }
