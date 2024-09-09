@@ -17,7 +17,7 @@ struct NngMessageHandler {
     Address srcAddr_;
     byte *recvBuffer_;
 
-    std::unique_ptr<ev_io> evWatcher_;
+    ev_io evWatcher_;
 
     // TODO handle the memory of the recvBuffer (belonging to NngEndpoint better)
     NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, const Address &otherAddr, byte *recvBuffer);
