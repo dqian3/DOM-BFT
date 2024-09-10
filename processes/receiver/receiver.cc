@@ -42,11 +42,15 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 
         endpoint_ = std::make_unique<NngEndpoint>(proxyAddrPairs, true);
         forwardEp_ = std::make_unique<NngEndpoint>(replicaAddrPair, false);
+        // TODO the specific address may not be necessary for logging
+        loggingEp_ = std::make_unique<NngEndpoint>(replicaAddrPair, false);
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
         endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
         forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort + 100, false);
+        // TODO the specific address may not be necessary for logging
+        loggingEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort + 200, false);
     }
 
     LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.GetIPAsString() << ":" << replicaAddr_.GetPortAsInt();
@@ -57,12 +61,22 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     queueTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->addToDeadlineQueue(); }, 100, this);
 
+    logTimer_ = 
+        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->flushLogs(); }, 1000, this);
+
     // endpoint_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(queueTimer_.get());
+    loggingEp_->RegisterTimer(logTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
     });
+}
+
+void Receiver::flushLogs()
+{
+    LOG(INFO) << "Flushing logs";
+    return;
 }
 
 void Receiver::addToDeadlineQueue()
@@ -125,6 +139,7 @@ void Receiver::LaunchThreads()
 {
     threads_["ReceiveTd"] = std::thread(&Receiver::ReceiveTd, this);
     threads_["ForwardTd"] = std::thread(&Receiver::ForwardTd, this);
+    threads_["LogTd"] = std::thread(&Receiver::LogTd, this);
 }
 
 void Receiver::ReceiveTd()
@@ -137,6 +152,12 @@ void Receiver::ForwardTd()
 {
     LOG(INFO) << "forward td launched";
     forwardEp_->LoopRun();
+}
+
+void Receiver::LogTd()
+{
+    LOG(INFO) << "log td launched";
+    loggingEp_->LoopRun();
 }
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)

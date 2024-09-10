@@ -24,14 +24,21 @@ private:
 
     std::unique_ptr<Endpoint> forwardEp_;
 
+    // a unique endpoint that is woken up only when logging pending or the logging timer expires
+    std::unique_ptr<Endpoint> loggingEp_;
+
     std::map<std::string, std::thread> threads_;
 
     ConcurrentQueue<dombft::proto::DOMRequest> requestQueue_;
+
+    ConcurrentQueue<std::string> logQueue_;
 
     void LaunchThreads();
 
     void ReceiveTd();
     void ForwardTd();
+
+    void LogTd();
 
     /** The handler objects for our endpoint library */
     // TODO shared pointer for endpoint and timer??
@@ -40,6 +47,8 @@ private:
     std::unique_ptr<Timer> heartbeatTimer_;
 
     std::unique_ptr<Timer> queueTimer_;
+
+    std::unique_ptr<Timer> logTimer_;
 
     // TODO storing these protobuf objects like this might not be great performance wise
     // couldn't find much about this.
@@ -53,6 +62,8 @@ private:
     void checkDeadlines();
 
     void addToDeadlineQueue();
+
+    void flushLogs();
 
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;
