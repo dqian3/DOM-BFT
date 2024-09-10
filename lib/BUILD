@@ -89,6 +89,17 @@ cc_library(
 )
 
 cc_library(
+    name = "asyncLogger",
+    srcs = ["asyncLogger.cc"],
+    hdrs = ["asyncLogger.h"],
+    deps = [
+        "@com_github_google_glog//:glog",
+        ":utils",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "log",
     hdrs = ["log.h"],
     srcs = ["log.cc"],

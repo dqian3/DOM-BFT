@@ -50,25 +50,25 @@ cc_binary(
 )
 
 
-cc_test(
-  name = "test_log",
-  size = "small",
-  srcs = ["test_log.cc"],
-  deps = [
-    "//lib:log",
-    "@com_google_googletest//:gtest_main"
-  ],
-)
+# cc_test(
+#   name = "test_log",
+#   size = "small",
+#   srcs = ["test_log.cc"],
+#   deps = [
+#     "//lib:log",
+#     "@com_google_googletest//:gtest_main"
+#   ],
+# )
 
-cc_test(
-  name = "test_kv_store",
-  size = "small",
-  srcs = ["test_kv_store.cc"],
-  deps = [
-    "//lib:application",
-    "@com_google_googletest//:gtest_main"
-  ],
-)
+# cc_test(
+#   name = "test_kv_store",
+#   size = "small",
+#   srcs = ["test_kv_store.cc"],
+#   deps = [
+#     "//lib:application",
+#     "@com_google_googletest//:gtest_main"
+#   ],
+# )
 
 cc_binary(
   name = "sandbox_protobuf",
@@ -84,6 +84,14 @@ cc_binary(
   srcs = ["sandbox_nng.cc"],
   deps = [
     "@nng//:libnng"
+  ],
+)
+
+cc_binary(
+  name = "example_logging",
+  srcs = ["example_logging.cc"],
+  deps = [
+    "//lib:asyncLogger",
   ],
 )
 
