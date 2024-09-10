@@ -17,18 +17,23 @@ Address::Address(const std::string &ip, const int port)
     addr_.sin_addr.s_addr = inet_addr(ip.c_str());
 }
 
-Address::~Address() {}
-
-std::string Address::GetIPAsString()
+Address::Address(struct sockaddr_in addr)
 {
     ip_ = inet_ntoa(addr_.sin_addr);
-    return ip_;
+    port_ = htons(addr_.sin_port);
+    memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
 }
 
-int Address::GetPortAsInt()
-{
-    port_ = htons(addr_.sin_port);
-    return port_;
-}
+Address::~Address() {}
+
+std::string Address::ip() const { return ip_; }
+
+int Address::port() const { return port_; }
 
 bool Address::operator==(const Address &other) const { return ip_ == other.ip_ && port_ == other.port_; }
+
+std::ostream &operator<<(std::ostream &os, const Address &address)
+{
+    os << address.ip() << ":" << address.port();
+    return os;
+}

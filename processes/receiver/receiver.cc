@@ -49,7 +49,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort + 100, false);
     }
 
-    LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.GetIPAsString() << ":" << replicaAddr_.GetPortAsInt();
+    LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.ip() << ":" << replicaAddr_.port();
 
     fwdTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->checkDeadlines(); }, 1000, this);
@@ -170,13 +170,13 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
                 << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
         // Randomly send measurements only once in a whil
         if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
-	        MeasurementReply mReply;
-	        mReply.set_receiver_id(receiverId_);
-	        mReply.set_owd(recv_time - request.send_time());
+            MeasurementReply mReply;
+            mReply.set_receiver_id(receiverId_);
+            mReply.set_owd(recv_time - request.send_time());
             mReply.set_send_time(request.send_time());
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-            endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+            endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
         }
 
         requestQueue_.enqueue(request);

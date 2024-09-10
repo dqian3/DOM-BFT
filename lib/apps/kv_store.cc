@@ -48,3 +48,21 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
 
     return ret;
 }
+
+std::string KVStore::getDigest(uint32_t digest_idx)
+{
+    throw std::logic_error("Function not yet implemented");
+    return std::string();
+}
+
+std::string KVStore::takeSnapshot()
+{
+    throw std::logic_error("Function not yet implemented");
+    return "";
+}
+
+bool KVStore::abort(const uint32_t abort_idx)
+{
+    throw std::logic_error("Function not yet implemented");
+    return false;
+}

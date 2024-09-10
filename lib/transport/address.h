@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <utility>
 
+#include <iostream>   // Include this for the ostream
+
 /**
  * Encapsualted IP addresses
  *
@@ -27,19 +29,23 @@ public:
     struct sockaddr_in addr_;
 
     Address();
-    Address(const Address &addr)
-        : ip_(addr.ip_)
-        , port_(addr.port_)
+    Address(const Address &other)
+        : ip_(other.ip_)
+        , port_(other.port_)
     {
-        memcpy(&addr_, &(addr.addr_), sizeof(struct sockaddr_in));
+        memcpy(&addr_, &(other.addr_), sizeof(struct sockaddr_in));
     }
+    Address(struct sockaddr_in addr);
     Address(const std::string &ip, const int port);
     ~Address();
 
-    std::string GetIPAsString();
-    int GetPortAsInt();
+    std::string ip() const;
+    int port() const;
 
     bool operator==(const Address &other) const;
+
+    // Friend declaration for the << operator
+    friend std::ostream &operator<<(std::ostream &os, const Address &address);
 };
 
 // Define hash function so we can key a unordered_map by Address

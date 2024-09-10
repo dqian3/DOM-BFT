@@ -1,6 +1,5 @@
 #include "proxy.h"
 
-
 namespace dombft {
 using namespace dombft::proto;
 
@@ -113,8 +112,8 @@ void Proxy::LaunchThreads()
 
 void Proxy::RecvMeasurementsTd()
 {
-    OWDCalc::PercentileCtx context(numReceivers_,maxOWD_,10,90, maxOWD_);
-    //OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
+    OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 10, 90, maxOWD_);
+    // OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
 
     MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
         MeasurementReply reply;
@@ -162,9 +161,9 @@ void Proxy::ForwardRequestsTd(const int thread_id)
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
 
-        VLOG(2) << "Received message from " << sender->GetIPAsString() << " " << hdr->msgLen;
-        if (hdr->msgType == MessageType::CLIENT_REQUEST) {
+        VLOG(2) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
 
+        if (hdr->msgType == MessageType::CLIENT_REQUEST) {
             // TODO verify and handle signed header better
             if (!inReq.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
@@ -173,6 +172,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
 
             uint64_t now = GetMicrosecondTimestamp();
             uint64_t deadline = now + latencyBound_;
+
             deadline = std::max(deadline, lastDeadline_ + 1);
             lastDeadline_ = deadline;
 

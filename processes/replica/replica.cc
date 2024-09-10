@@ -1,6 +1,7 @@
 #include "replica.h"
 
 #include "lib/transport/nng_endpoint.h"
+#include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -61,11 +62,11 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
 
     if (config.transport == "nng") {
         auto addrPairs = getReplicaAddrs(config, replicaId_);
-        endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
         size_t nClients = config.clientIps.size();
         for (size_t i = 0; i < nClients; i++) {
-            // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.GetIPAsString();
+            // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.ip();
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
@@ -500,7 +501,7 @@ void Replica::handleCert(const Cert &cert)
     reply.set_replica_id(replicaId_);
 
     VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
-            << clientAddrs_[reply.client_id()].GetIPAsString();
+            << clientAddrs_[reply.client_id()].ip();
 
     // TODO set result
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);

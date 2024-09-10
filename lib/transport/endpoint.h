@@ -73,7 +73,7 @@ public:
     /** Check whether the timer has been registered */
     bool isTimerRegistered(Timer *timer);
 
-    // temporarily pause the timer, and restart after a while. 
+    // temporarily pause the timer, and restart after a while.
     // the restart is handled by the second timer in the parameter list
     bool PauseTimer(Timer *timerToPause, uint32_t pauseTime);
 

@@ -30,27 +30,27 @@ def local(c, config_file):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {5} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {10} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
 
         for id in range(n_receivers):
-            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file} -receiverId {id} &>logs/receiver{id}.log"
+            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {10} -config {config_file} -receiverId {id} &>logs/receiver{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
             other_handles.append(hdl)
 
         for id in range(n_proxies):
-            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {5} -config {config_file} -proxyId {id} &>logs/proxy{id}.log"
+            cmd = f"./bazel-bin/processes/proxy/dombft_proxy -v {10} -config {config_file} -proxyId {id} &>logs/proxy{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
             other_handles.append(hdl)
 
         for id in range(n_clients):
-            cmd = f"./bazel-bin/processes/client/dombft_client -v {5} -config {config_file} -clientId {id} &>logs/client{id}.log"
+            cmd = f"./bazel-bin/processes/client/dombft_client -v {10} -config {config_file} -clientId {id} &>logs/client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 

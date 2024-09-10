@@ -8,12 +8,12 @@ client:
   - "127.0.1.1"
   port: 33000
   keysDir: keys/client
-  maxRequests: 5
+  maxRequests: 1
   numRequests: 10000
-  runtimeSeconds: 6
-  normalPathTimeout: 5000
-  slowPathTimeout: 50000
-  sendRate: 100
+  runtimeSeconds: 20
+  normalPathTimeout: 10000
+  slowPathTimeout: 100000
+  sendRate: 1
   # the sendmode can be either using sendRate or maxRequests in flight. 
   sendMode: "sendRate"
   # sendMode: "maxRequests"

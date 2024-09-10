@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include "lib/common_struct.h"
+
 /**
  * MessageHeader* describes the type and length of the received message
  * byte* is the payload of the message

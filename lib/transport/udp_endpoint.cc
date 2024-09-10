@@ -8,14 +8,18 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl)
 
     ev_init(evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents) {
         UDPMessageHandler *m = (UDPMessageHandler *) (w->data);
-        socklen_t sockLen = sizeof(struct sockaddr_in);
+        struct sockaddr_in sockAddr;
+        socklen_t sockAddrLen = sizeof(struct sockaddr_in);
 
         int msgLen =
-            recvfrom(w->fd, m->recvBuffer_, UDP_BUFFER_SIZE, 0, (struct sockaddr *) (&(m->sender_.addr_)), &sockLen);
+            recvfrom(w->fd, m->recvBuffer_, UDP_BUFFER_SIZE, 0, (struct sockaddr *) &sockAddr, &sockAddrLen);
+        
+        m->sender_ = Address(sockAddr);
+
         if (msgLen > 0 && (uint32_t) msgLen > sizeof(MessageHeader)) {
             MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
             if ((uint32_t) msgLen >= sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen) {
-                m->msgHandler_(msgHeader, m->recvBuffer_ + sizeof(MessageHeader), &(m->sender_));
+                m->msgHandler_(msgHeader, m->recvBuffer_ + sizeof(MessageHeader), &m->sender_);
             }
         }
     });

@@ -1,6 +1,7 @@
 #include "client.h"
 
 #include "lib/transport/nng_endpoint.h"
+#include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -59,7 +60,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     if (config.transport == "nng") {
         auto addrPairs = getClientAddrs(config, clientId_);
 
-        endpoint_ = std::make_unique<NngEndpoint>(addrPairs, true);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
         for (size_t i = 0; i < addrPairs.size(); i++) {
         }
@@ -322,8 +323,8 @@ void Client::submitRequest()
     nextReqSeq_++;
     inFlight_++;
 
-    VLOG(1) << "Sent request number " << nextReqSeq_ << " to Proxy at " << addr.GetIPAsString() << ", inflight txns  "
-            << inFlight_;
+    VLOG(1) << "Sent request number " << nextReqSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size() << " ("
+            << addr << "), inflight txns " << inFlight_;
 
     if (inFlight_ > maxInFlight_) {
         adjustSendRate();
