@@ -51,7 +51,8 @@ message Cert {
     // we just repeat them here since it's easier
     // seq is also just for convenience
     uint32 seq = 4;
-
+    uint32 instance = 5; 
+    
     repeated Reply replies    = 7;
     repeated bytes signatures = 8;
 }
@@ -137,18 +138,6 @@ message FallbackProposal
 
 message FallbackExecuted
 {
-}
-
-
-// Dummy protocol message used for dummy implemenations of 
-// Zyzzyva and PBFT
-message DummyProto {
-    uint32 replica_id = 1;
-    uint32 replica_seq = 2;
-    uint32 client_id = 3;
-    uint32 client_seq = 4;
- 
-    uint32 stage = 5;
 }
 
 

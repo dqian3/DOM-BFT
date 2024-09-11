@@ -15,12 +15,11 @@ public:
 
     // Inserts reply/signature with move semantics
     // Assumes that reply has already been verified
-    bool insertReply(dombft::proto::Reply &reply, std::vector<byte> &sig);
+    int insertReply(dombft::proto::Reply &reply, std::vector<byte> &&sig);
 
     bool hasCert();
     const dombft::proto::Cert &getCert();
 
-private:
     int f_;
     int maxMatchSize_;
 
@@ -29,10 +28,6 @@ private:
     std::map<int, std::vector<byte>> signatures_;
 
     std::optional<dombft::proto::Cert> cert_;
-
-}
-
-// Util function that I just put here for some reson
-bool verifyCert(const dombft::proto::Cert &cert);
+};
 
 #endif

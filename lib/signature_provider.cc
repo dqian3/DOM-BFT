@@ -135,7 +135,7 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 std::vector<byte> SignatureProvider::getSignature(MessageHeader *hdr, byte *body)
 {
     byte *data = (byte *) (hdr + 1);
-    return std::vector<byte>(data + hdr->msgLen, hdr->sigLen);
+    return std::vector<byte>(data + hdr->msgLen, data + hdr->sigLen);
 }
 
 bool SignatureProvider::verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType,

@@ -1,10 +1,10 @@
 #include "processes/process_config.h"
 
-#include <fstream>
-#include <iostream>
 #include <optional>
+#include <span>
 #include <thread>
 
+#include "lib/cert_collector.h"
 #include "lib/message_type.h"
 #include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
@@ -17,19 +17,32 @@
 
 namespace dombft {
 struct RequestState {
-    std::map<int, dombft::proto::Reply> replies;
-    std::map<int, std::string> signatures;
-    std::optional<dombft::proto::Cert> cert;
+
+    RequestState(uint32_t f, uint32_t cseq, uint32_t inst, uint64_t sendT)
+        : collector(f)
+        , client_seq(cseq)
+        , instance(inst)
+        , sendTime(sendT)
+
+    {
+    }
+    CertCollector collector;
+
+    uint32_t client_seq;
+    uint32_t instance;
+
     uint64_t sendTime;
+
+    // Normal path state
     uint64_t certTime;
+    bool certSent = false;
     std::set<int> certReplies;
 
-    uint32_t instance = 0;
-
+    // Slow Path state
+    uint64_t triggerSendTime;
+    uint32_t fallbackAttempts = 0;
     std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
     std::optional<dombft::proto::Cert> fallbackProof;
-    uint32_t fallbackAttempts = 0;
-    bool fastPathPossible = true;
 };
 
 enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
@@ -43,6 +56,8 @@ private:
     std::vector<Address> proxyAddrs_;
     std::vector<Address> replicaAddrs_;
     uint32_t f_;
+    uint32_t instance_ = 0;
+
     uint32_t maxInFlight_ = 0;
     uint32_t numRequests_;
     uint32_t numCommitted_ = 0;
@@ -85,13 +100,14 @@ private:
     std::map<int, RequestState> requestStates_;
 
     /** The message handler to handle messages */
-    void receiveReply(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
-    void checkReqState(uint32_t client_seq);
+    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
+    void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
 
     void submitRequest();
+    void commitRequest(uint32_t clientSeq);
 
     void checkTimeouts();
-
     void adjustSendRate();
 
 public:
