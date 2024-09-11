@@ -67,7 +67,6 @@ private:
     void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
     void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
-    bool verifyCert(const dombft::proto::Cert &cert);
 
     void startFallback();
 

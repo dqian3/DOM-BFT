@@ -453,43 +453,6 @@ void Client::checkReqState(uint32_t clientSeq)
         }
     } else {
 
-        // Try and find a certificate or proof of divergent histories
-        std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
-        size_t maxMatching = 0;
-
-        for (const auto &entry : reqState.replies) {
-            int replicaId = entry.first;
-            const Reply &reply = entry.second;
-
-            // TODO this is ugly lol
-            // We don't need client_seq/client_id, these are already checked.
-            // We also don't check the result here, that only needs to happen in the fast path
-            std::tuple<std::string, int, int> key = {reply.digest(), reply.instance(), reply.seq()};
-
-            VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
-
-            matchingReplies[key].insert(replicaId);
-            maxMatching = std::max(maxMatching, matchingReplies[key].size());
-
-            if (matchingReplies[key].size() >= 2 * f_ + 1) {
-                reqState.cert = Cert();
-                reqState.cert->set_seq(std::get<1>(key));
-
-                // TODO check if fast path is not posssible, and we can send cert right away
-                for (auto repId : matchingReplies[key]) {
-                    reqState.cert->add_signatures(reqState.signatures[repId]);
-                    // THis usage is so weird, is protobuf the right tool?
-                    (*reqState.cert->add_replies()) = reqState.replies[repId];
-                }
-
-                reqState.certTime = GetMicrosecondTimestamp();
-
-                VLOG(1) << "Created cert for request number " << clientSeq;
-
-                return;
-            }
-        }
-
         // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
         // we have a proof of inconsistency.
         if (reqState.fallbackAttempts == 0 && 3 * f_ + 1 - reqState.replies.size() < 2 * f_ + 1 - maxMatching) {

@@ -638,38 +638,6 @@ void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageT
     }
 }
 
-bool Replica::verifyCert(const Cert &cert)
-{
-    if (cert.replies().size() < 2 * f_ + 1) {
-        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
-        return false;
-    }
-
-    if (cert.replies().size() != cert.signatures().size()) {
-        LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
-                  << "cert signatures size" << cert.signatures().size();
-        return false;
-    }
-
-    // Verify each signature in the cert
-    for (int i = 0; i < cert.replies().size(); i++) {
-        const Reply &reply = cert.replies()[i];
-        const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();   // TODO skip reseraizliation here?
-
-        if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
-                                 sig.size(), "replica", reply.replica_id())) {
-            LOG(INFO) << "Cert failed to verify!";
-            return false;
-        }
-    }
-
-    // TOOD verify that cert actually contains matching replies...
-    // And that there aren't signatures from the same replica.
-
-    return true;
-}
-
 void Replica::startFallback()
 {
     fallback_ = true;
