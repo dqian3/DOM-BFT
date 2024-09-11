@@ -949,6 +949,24 @@ void Replica::finishFallback(const FallbackProposal &history)
         }
     }
 
+    // Start checkpoint here
+    uint32_t seq = log_->nextSeq - 1;
+
+    LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+    Reply reply;
+    ::LogEntry *entry = log_->getEntry(seq);   // TODO better namespace
+    reply.set_client_id(entry->client_id);
+    reply.set_client_seq(entry->client_seq);
+    reply.set_replica_id(replicaId_);
+    reply.set_instance(instance_);
+    reply.set_result(entry->result);
+    reply.set_seq(seq);
+    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+    checkpointSeq_ = log_->nextSeq - 1;
+    checkpointCert_.reset();
+    broadcastToReplicas(reply, MessageType::REPLY);   // TODO better namespace
+
     // Add rest of the requests in.
 
     LOG(INFO) << "Finishing fallback by applying the rest of the queued requests!";
