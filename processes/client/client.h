@@ -45,10 +45,6 @@ struct RequestState {
     std::optional<dombft::proto::Cert> fallbackProof;
 };
 
-enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
-
-enum BackpressureMode { None = 0, Sleep = 1, Adjust = 2 };
-
 class Client {
 private:
     /* Config parameters that need to be saved */
@@ -56,29 +52,21 @@ private:
     std::vector<Address> proxyAddrs_;
     std::vector<Address> replicaAddrs_;
     uint32_t f_;
-    uint32_t instance_ = 0;
 
-    uint32_t maxInFlight_ = 0;
-    uint32_t numRequests_;
+    uint32_t numRequests_ = 0;
     uint32_t numCommitted_ = 0;
 
-    uint32_t clientSendRate_;
-
+    uint32_t sendRate_;
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
 
     /** The endpoint uses to submit request to proxies and receive replies*/
     std::unique_ptr<Endpoint> endpoint_;
+
     /** Timer to handle request timeouts  (TODO timeouts vs repeated timer would maybe be better)*/
     std::unique_ptr<Timer> timeoutTimer_;
-
     // timer to control sending rate of the client
     std::unique_ptr<Timer> sendTimer_;
-
-    std::unique_ptr<Timer> restartSendTimer_;
-
-    dombft::ClientSendMode sendMode_;
-
     /** Timer to stop client after running for configured time */
     std::unique_ptr<Timer> terminateTimer_;
 
@@ -88,13 +76,10 @@ private:
 
     SignatureProvider sigProvider_;
 
-    /** The next requestId to be submitted */
+    uint32_t instance_ = 0;
     uint32_t nextReqSeq_ = 0;
     uint32_t inFlight_ = 0;
     uint32_t numExecuted_ = 0;
-
-    dombft::BackpressureMode backpressureMode_;
-    double clientBackPressureSleepTime;
 
     /* State for the currently pending request */
     std::map<int, RequestState> requestStates_;

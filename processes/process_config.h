@@ -29,15 +29,10 @@ struct ProcessConfig {
     std::vector<std::string> clientIps;
     int clientPort;
     std::string clientKeysDir;
-    int clientMaxRequests;
-    int clientNumRequests;
     int clientRuntimeSeconds;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
     int clientSendRate;
-    std::string clientSendMode;
-    std::string clientBackPressureMode;
-    double clientBackPressureSleepTime;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -108,15 +103,10 @@ struct ProcessConfig {
             parseStringVector(clientIps, clientNode, "ips");
             clientPort = parseField<int>(clientNode, "port");
             clientKeysDir = parseField<std::string>(clientNode, "keysDir");
-            clientMaxRequests = parseField<int>(clientNode, "maxRequests");
-            clientNumRequests = parseField<int>(clientNode, "numRequests");
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
             clientSendRate = parseField<int>(clientNode, "sendRate");
-            clientSendMode = parseField<std::string>(clientNode, "sendMode");
-            clientBackPressureMode = parseField<std::string>(clientNode, "backPressure");
-            clientBackPressureSleepTime = parseField<double>(clientNode, "sleepTime");
         }
 
         catch (const ConfigParseException &e) {

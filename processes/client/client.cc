@@ -26,22 +26,10 @@ Client::Client(const ProcessConfig &config, size_t id)
     f_ = config.replicaIps.size() / 3;
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;
+    sendRate_ = config.clientSendRate;
 
-    LOG(INFO) << "Sending " << config.clientNumRequests << " requests for at most " << config.clientRuntimeSeconds
-              << " seconds";
-    numRequests_ = config.clientNumRequests;
-
-    LOG(INFO) << "Sending at most " << config.clientMaxRequests << " requests at once";
-
-    maxInFlight_ = config.clientMaxRequests;
-    clientSendRate_ = config.clientSendRate;
-
-    if (config.clientSendMode == "sendRate") {
-        sendMode_ = dombft::RateBased;
-    } else if (config.clientSendMode == "maxRequests") {
-        LOG(INFO) << "Send rate: " << clientSendRate_;
-        sendMode_ = dombft::MaxInFlightBased;
-    }
+    LOG(INFO) << "Running for " << config.clientRuntimeSeconds << " seconds";
+    LOG(INFO) << "Send rate: " << sendRate_;
 
     /* Setup keys */
     std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -100,23 +88,6 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
-    if (config.clientBackPressureMode == "none") {
-        backpressureMode_ = dombft::None;
-    } else if (config.clientBackPressureMode == "sleep") {
-        backpressureMode_ = dombft::Sleep;
-        clientBackPressureSleepTime = config.clientBackPressureSleepTime;
-        LOG(INFO) << "the backpressure recovery time is " << clientBackPressureSleepTime << " seconds";
-    } else if (config.clientBackPressureMode == "adjust") {
-        backpressureMode_ = dombft::Adjust;
-    }
-
-    if (sendMode_ == dombft::RateBased) {
-        sendTimer_ = std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Client *) ctx)->submitRequest(); },
-                                             1000000 / clientSendRate_, this);
-
-        endpoint_->RegisterTimer(sendTimer_.get());
-    }
-
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
             LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
@@ -144,22 +115,10 @@ Client::~Client()
     // TODO cleanup... though we don't really reuse this
 }
 
-void Client::run()
-{
-    if (sendMode_ == dombft::MaxInFlightBased) {
-        for (uint32_t i = 0; i < maxInFlight_; i++) {
-            submitRequest();
-        }
-    }
-    endpoint_->LoopRun();
-}
+void Client::run() { endpoint_->LoopRun(); }
 
 void Client::submitRequest()
 {
-    if (inFlight_ > maxInFlight_) {
-        adjustSendRate();
-        return;   // TODO temp fix while we fix backpressure.
-    }
     ClientRequest request;
 
     uint64_t now = GetMicrosecondTimestamp();
@@ -205,10 +164,6 @@ void Client::submitRequest()
 
     VLOG(1) << "Sent request number " << nextReqSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size() << " ("
             << addr << "), inflight txns " << inFlight_;
-
-    if (inFlight_ > maxInFlight_) {
-        adjustSendRate();
-    }
 }
 
 void Client::commitRequest(uint32_t clientSeq)
@@ -217,35 +172,6 @@ void Client::commitRequest(uint32_t clientSeq)
     requestStates_.erase(clientSeq);
     numCommitted_++;
     inFlight_--;
-
-    if (sendMode_ == dombft::MaxInFlightBased) {
-        submitRequest();
-    }
-}
-
-void Client::adjustSendRate()
-{
-    if (sendMode_ == dombft::MaxInFlightBased) {
-        // this mode does not adjusr send rate
-        return;
-    }
-
-    if (backpressureMode_ == dombft::None) {
-        return;
-    }
-
-    if (backpressureMode_ == dombft::Adjust) {
-        LOG(WARNING) << "backpressure mode adjust not yet implemented";
-        return;
-    }
-
-    if (backpressureMode_ == dombft::Sleep) {
-        LOG(INFO) << "backpressure mode sleep triggered";
-        endpoint_->PauseTimer(sendTimer_.get(), clientBackPressureSleepTime);
-
-        LOG(INFO) << "adjust timer called";
-        return;
-    }
 }
 
 void Client::checkTimeouts()
