@@ -75,7 +75,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     /** Initialize state */
-    nextReqSeq_ = 1;
+    nextSeq_ = 1;
 
     MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender);
@@ -98,6 +98,31 @@ Client::Client(const ProcessConfig &config, size_t id)
         this);
 
     endpoint_->RegisterTimer(terminateTimer_.get());
+
+    sendTimer_ = std::make_unique<Timer>(
+        [&](void *ctx, void *endpoint) {
+            // Random heuristic, just prevent more than 1 second of requests being backed up
+            if (numInFlight_ > sendRate_) {
+                return;
+            }
+
+            // If we are in the slow path, don't submit anymore
+            if (lastFastPath_ < lastSlowPath_ && numInFlight_ > 1) {
+                return;
+            }
+
+            submitRequest();
+
+            // If we are in the normal path, make the send rate slower
+            if (lastFastPath_ < lastNormalPath_) {
+                endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
+            } else {
+                endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
+            }
+        },
+        1000000 / sendRate_, this);
+
+    endpoint_->RegisterTimer(sendTimer_.get());
 
     if (config.app == AppType::COUNTER) {
         trafficGen_ = std::make_unique<CounterTrafficGen>();
@@ -125,7 +150,7 @@ void Client::submitRequest()
 
     // submit new request
     request.set_client_id(clientId_);
-    request.set_client_seq(nextReqSeq_);
+    request.set_client_seq(nextSeq_);
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
@@ -136,7 +161,7 @@ void Client::submitRequest()
         request.set_req_data(counterReq->SerializeAsString());
     }
 
-    requestStates_.emplace(nextReqSeq_, RequestState(f_, nextReqSeq_, instance_, now));
+    requestStates_.emplace(nextSeq_, RequestState(f_, nextSeq_, instance_, now));
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
     // VLOG(4) << "Begin sending request number " << nextReqSeq_;
@@ -159,11 +184,11 @@ void Client::submitRequest()
     }
 #endif
 
-    nextReqSeq_++;
-    inFlight_++;
+    nextSeq_++;
+    numInFlight_++;
 
-    VLOG(1) << "Sent request number " << nextReqSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size() << " ("
-            << addr << "), inflight txns " << inFlight_;
+    VLOG(1) << "Sent request number " << nextSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size() << " (" << addr
+            << "), inflight txns " << numInFlight_;
 }
 
 void Client::commitRequest(uint32_t clientSeq)
@@ -171,7 +196,7 @@ void Client::commitRequest(uint32_t clientSeq)
     // TODO do some application stuff
     requestStates_.erase(clientSeq);
     numCommitted_++;
-    inFlight_--;
+    numInFlight_--;
 }
 
 void Client::checkTimeouts()
@@ -182,30 +207,25 @@ void Client::checkTimeouts()
         int clientSeq = entry.first;
         RequestState &reqState = entry.second;
 
-        if (reqState.collector.hasCert() && now - reqState.certTime > normalPathTimeout_) {
+        if (reqState.collector.hasCert() && !reqState.certSent && now - reqState.certTime > normalPathTimeout_) {
             VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
+            reqState.certSent = true;
 
             // Send cert to replicas;
             endpoint_->PrepareProtoMsg(reqState.collector.getCert(), CERT);
             for (const Address &addr : replicaAddrs_) {
                 endpoint_->SendPreparedMsgTo(addr);
             }
-
-            VLOG(1) << "Cert sent!";
-            reqState.certTime = now;   // timeout again later
+            continue;
         }
 
-        if (now - reqState.sendTime > slowPathTimeout_) {
+        if (!reqState.triggerSent && now - reqState.sendTime > slowPathTimeout_) {
             LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
                       << " now=" << now << " due to timeout";
-            reqState.sendTime = now;
 
-            reqState.fallbackAttempts++;
-
-            if (reqState.fallbackAttempts == 10) {
-                LOG(ERROR) << "Client failed on request " << clientSeq << " after 10 attempts";
-                exit(1);
-            }
+            reqState.triggerSent = true;
+            reqState.triggerSendTime = now;
+            lastSlowPath_ = clientSeq;
 
             FallbackTrigger fallbackTriggerMsg;
 
@@ -213,18 +233,12 @@ void Client::checkTimeouts()
             fallbackTriggerMsg.set_instance(reqState.instance);
             fallbackTriggerMsg.set_client_seq(clientSeq);
 
-            if (reqState.fallbackProof.has_value()) {
-                (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
-            }
-
             // TODO set request data
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
             for (const Address &addr : replicaAddrs_) {
                 endpoint_->SendPreparedMsgTo(addr);
             }
-
-            LOG(ERROR) << "Attempting slow path again in " << slowPathTimeout_ << " usec";
         }
     }
 }
@@ -277,11 +291,6 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         handleCertReply(certReply, std::span{body + hdr->msgLen, hdr->sigLen});
     }
-
-    if (numCommitted_ >= numRequests_) {
-        LOG(INFO) << "Exiting before after committing " << numRequests_ << " requests";
-        exit(0);
-    }
 }
 
 void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
@@ -317,14 +326,21 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         VLOG(1) << "Request " << reply.client_seq() << " fast path committed at global seq " << reply.seq() << ". Took "
                 << now - reqState.sendTime << " us";
 
+        lastFastPath_ = reply.client_seq();
+
         commitRequest(reply.client_seq());
+
         return;
     }
 
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (reqState.fallbackAttempts == 0 && 3 * f_ + 1 - reqState.collector.replies_.size() < 2 * f_ + 1 - maxMatchSize) {
+    if (!reqState.triggerSent && 3 * f_ + 1 - reqState.collector.replies_.size() < 2 * f_ + 1 - maxMatchSize) {
         LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
+
+        reqState.triggerSendTime = now;
+        reqState.triggerSent = true;
+        lastSlowPath_ = clientSeq;
 
         reqState.fallbackProof = Cert();
         FallbackTrigger fallbackTriggerMsg;
@@ -342,8 +358,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
         // I think this is right, or we could do set_allocated_foo if fallbackProof was dynamically allcoated.
         (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
-
-        reqState.fallbackAttempts++;
 
         reqState.sendTime = GetMicrosecondTimestamp();
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
@@ -372,6 +386,8 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 
         VLOG(1) << "Request " << cseq << " normal path committed! "
                 << "Took " << GetMicrosecondTimestamp() - requestStates_.at(cseq).sendTime << " us";
+
+        lastNormalPath_ = cseq;
         commitRequest(cseq);
     }
 }

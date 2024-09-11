@@ -36,11 +36,12 @@ struct RequestState {
     // Normal path state
     uint64_t certTime;
     bool certSent = false;
+    uint64_t certSendTime = false;
     std::set<int> certReplies;
 
     // Slow Path state
+    bool triggerSent = false;
     uint64_t triggerSendTime;
-    uint32_t fallbackAttempts = 0;
     std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
     std::optional<dombft::proto::Cert> fallbackProof;
 };
@@ -52,10 +53,6 @@ private:
     std::vector<Address> proxyAddrs_;
     std::vector<Address> replicaAddrs_;
     uint32_t f_;
-
-    uint32_t numRequests_ = 0;
-    uint32_t numCommitted_ = 0;
-
     uint32_t sendRate_;
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
@@ -76,12 +73,17 @@ private:
 
     SignatureProvider sigProvider_;
 
+    /* Global state */
     uint32_t instance_ = 0;
-    uint32_t nextReqSeq_ = 0;
-    uint32_t inFlight_ = 0;
-    uint32_t numExecuted_ = 0;
+    uint32_t nextSeq_ = 0;
+    uint32_t numInFlight_ = 0;
+    uint32_t numCommitted_ = 0;
 
-    /* State for the currently pending request */
+    uint32_t lastFastPath_ = 0;
+    uint32_t lastNormalPath_ = 0;
+    uint32_t lastSlowPath_ = 0;
+
+    /* Per request state */
     std::map<int, RequestState> requestStates_;
 
     /** The message handler to handle messages */
