@@ -101,7 +101,7 @@ NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::un
                 LOG(ERROR) << "nng_recv failure: " << nng_strerror(ret);
                 return;
             }
-            VLOG(5) << "Received message of length " << len << " from " << data->addr;
+            VLOG(6) << "Received message of length " << len << " from " << data->addr;
 
             r->queue_.enqueue({std::vector<byte>(r->recvBuffer_, r->recvBuffer_ + len), data->addr});
 
@@ -185,7 +185,7 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
             auto &[msg, addr] = item;
             size_t len = msg.size();
 
-            VLOG(5) << "Dequeued message of length " << len << " from " << addr;
+            VLOG(6) << "Dequeued message of length " << len << " from " << addr;
 
             if (len > sizeof(MessageHeader)) {
                 MessageHeader *hdr = (MessageHeader *) msg.data();

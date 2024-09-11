@@ -397,7 +397,8 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
 # local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
 def gcloud_run(c, config_file="../configs/remote.yaml",
-               local_log=False):
+               local_log=False,
+               dom_logs=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -478,8 +479,10 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
         if not local_log:
             get_logs(c, clients, "client")
             get_logs(c, replicas, "replica")
-            get_logs(c, receivers, "receiver")
-            get_logs(c, proxies, "proxy")
+
+            if dom_logs:
+                get_logs(c, receivers, "receiver")
+                get_logs(c, proxies, "proxy")
 
 
 

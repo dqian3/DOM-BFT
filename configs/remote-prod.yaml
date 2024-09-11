@@ -9,13 +9,13 @@ client:
   - 10.142.0.4
   - 10.202.0.3
   keysDir: keys/client
-  maxRequests: 200
+  maxRequests: 500
   numRequests: 1000000
   runtimeSeconds: 20 
   port: 33000
   normalPathTimeout: 100000
   slowPathTimeout:   2000000
-  sendRate: 200
+  sendRate: 1000
   sendMode: "sendRate"
   backPressure: "none"
   sleepTime: 20000  

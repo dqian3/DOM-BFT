@@ -339,7 +339,6 @@ void Client::adjustSendRate()
     }
 
     if (backpressureMode_ == dombft::None) {
-        LOG(INFO) << "backpressure mode is none, does not adjust";
         return;
     }
 
