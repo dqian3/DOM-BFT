@@ -55,6 +55,9 @@ private:
 
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
+    // actively trigger fallback
+    uint32_t triggerFallbackFreq_;
+
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void handleClientRequest(const dombft::proto::ClientRequest &request);
     void handleCert(const dombft::proto::Cert &cert);
@@ -72,7 +75,7 @@ private:
     void finishFallback(const dombft::proto::FallbackProposal &history);
 
 public:
-    Replica(const ProcessConfig &config, uint32_t replicaId);
+    Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
     ~Replica();
 
     void run();

@@ -16,9 +16,8 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
-    : replicaId_(replicaId)
-    , instance_(0)
+Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq)
+    : replicaId_(replicaId), instance_(0), triggerFallbackFreq_(triggerFallbackFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -459,7 +458,11 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_fast(true);
     reply.set_seq(seq);
 
-    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+    if(triggerFallbackFreq_ && seq % triggerFallbackFreq_ == 0){
+        VLOG(2) << "Actively triggering fallback for (" << clientId << ", " << request.client_seq() << ") by altering the digest";
+        reply.set_digest(log_->getDigest() + replicaId_, SHA256_DIGEST_LENGTH);
+    }
+    else reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
     // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
