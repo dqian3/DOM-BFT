@@ -206,7 +206,6 @@ void Client::checkTimeouts()
     for (auto &entry : requestStates_) {
         int clientSeq = entry.first;
         RequestState &reqState = entry.second;
-
         if (reqState.collector.hasCert() && !reqState.certSent && now - reqState.certTime > normalPathTimeout_) {
             VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
             reqState.certSent = true;
@@ -323,13 +322,12 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(1) << "Request " << reply.client_seq() << " fast path committed at global seq " << reply.seq() << ". Took "
+        VLOG(1) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
                 << now - reqState.sendTime << " us";
 
-        lastFastPath_ = reply.client_seq();
+        lastFastPath_ = clientSeq;
 
-        commitRequest(reply.client_seq());
-
+        commitRequest(clientSeq);
         return;
     }
 

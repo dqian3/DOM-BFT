@@ -112,7 +112,6 @@ MessageHeader *Endpoint::PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgT
         LOG(ERROR) << "Msg too large " << (uint32_t) msgType << "\t length=" << msgLen;
         return nullptr;
     }
-
     memcpy(sendBuffer_ + sizeof(MessageHeader), msg, hdr->msgLen);
 
     return hdr;

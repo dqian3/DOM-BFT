@@ -173,7 +173,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         // TODO also pass client request
         handleClientRequest(clientHeader);
-        LOG(INFO) << "Received and processed DOM_REQUEST message";
     }
 #else
     if (hdr->msgType == CLIENT_REQUEST) {
@@ -433,6 +432,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
 {
     Reply reply;
     uint32_t clientId = request.client_id();
+    uint32_t clientSeq = request.client_seq();
 
     if (clientId < 0 || clientId > clientAddrs_.size()) {
         LOG(ERROR) << "Invalid client id" << clientId;
@@ -440,13 +440,13 @@ void Replica::handleClientRequest(const ClientRequest &request)
     }
 
     reply.set_client_id(clientId);
-    reply.set_client_seq(request.client_seq());
+    reply.set_client_seq(clientSeq);
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
 
     std::string result;
 
-    bool success = log_->addEntry(clientId, request.client_seq(), request.req_data(), result);
+    bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
 
     if (!success) {
         // TODO Handle this more gracefully by queuing requests

@@ -8,7 +8,7 @@ client:
   - "127.0.1.1"
   port: 33000
   keysDir: keys/client
-  normalPathTimeout: 10000
+  normalPathTimeout: 20000
   slowPathTimeout: 100000
   sendRate: 1
   runtimeSeconds: 20
