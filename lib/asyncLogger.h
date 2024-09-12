@@ -6,6 +6,9 @@
 #define LOG(level) \
         LogCollector(LogLevel::level).stream()
 
+#define VLOG(level) \
+        LogCollector(LogLevel::INFO).stream()
+
 enum class LogLevel {
     DEBUG,
     INFO,

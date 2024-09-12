@@ -7,6 +7,7 @@
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
+#include "lib/asyncLogger.h"    
 
 #include <fstream>
 #include <iostream>

@@ -12,6 +12,7 @@ cc_library(
         "//lib:protocol_config",
         "//processes:process_config",
         "//processes:config_util",
+        "//lib:asyncLogger",
     ],
 )
 
