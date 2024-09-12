@@ -4,7 +4,15 @@
 #include "utils.h"
 
 #define LOG(level) \
-        LogCollector(level).stream()
+        LogCollector(LogLevel::level).stream()
+
+enum class LogLevel {
+    DEBUG,
+    INFO,
+    WARNING,
+    ERROR, 
+    FATAL
+};
 
 class LogStream {
 public:
@@ -43,7 +51,7 @@ private:
 
 class LogCollector {
 public:
-    LogCollector(std::string level) : level_(level) {}
+    LogCollector(LogLevel level) : level_(level) {}
 
     ~LogCollector()
     {
@@ -56,7 +64,7 @@ public:
     }
 
 private:
-    std::string level_;
+    LogLevel level_;
     LogStream stream_;
     std::unique_ptr<AsyncLogger> asyncLogger_ = std::make_unique<AsyncLogger>();
 };
