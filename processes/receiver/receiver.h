@@ -32,6 +32,7 @@ private:
 
     ConcurrentQueue<dombft::proto::DOMRequest> requestQueue_;
 
+    // std::shared_ptr<AsyncLogger> asyncLogger_ = std::make_shared<AsyncLogger>();
     ConcurrentQueue<std::string> logQueue_;
 
     void LaunchThreads();

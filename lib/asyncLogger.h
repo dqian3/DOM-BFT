@@ -2,12 +2,15 @@
 #include <string>
 #include <iostream>
 #include "utils.h"
+#include <memory>
 
 #define LOG(level) \
         LogCollector(LogLevel::level).stream()
 
 #define VLOG(level) \
         LogCollector(LogLevel::INFO).stream()
+
+
 
 enum class LogLevel {
     DEBUG,
@@ -44,6 +47,7 @@ public:
     AsyncLogger();
     ~AsyncLogger();
     void log(const std::string &msg);
+    void flush();
 
 private:
     void processQueue();
@@ -52,13 +56,18 @@ private:
     bool done_ = false;   
 };
 
+static std::shared_ptr<AsyncLogger> globalLogger_ = std::make_shared<AsyncLogger>(); 
+
+
 class LogCollector {
 public:
+    // LogCollector(LogLevel level, std::shared_ptr<AsyncLogger> asyncLogger) : level_(level), asyncLogger_(asyncLogger) {}
     LogCollector(LogLevel level) : level_(level) {}
 
     ~LogCollector()
     {
-        asyncLogger_->log(stream_.str());
+        // globalLogger_->log(stream_.str());
+        globalLogger_->log(stream_.str());
     }
 
     LogStream &stream()
@@ -69,6 +78,5 @@ public:
 private:
     LogLevel level_;
     LogStream stream_;
-    std::unique_ptr<AsyncLogger> asyncLogger_ = std::make_unique<AsyncLogger>();
+    // std::shared_ptr<AsyncLogger> globalLogger_;
 };
-

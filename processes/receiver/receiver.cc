@@ -62,7 +62,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->addToDeadlineQueue(); }, 100, this);
 
     logTimer_ = 
-        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->flushLogs(); }, 1000, this);
+        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->flushLogs(); }, 10, this);
 
     // endpoint_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(fwdTimer_.get());
@@ -76,6 +76,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 void Receiver::flushLogs()
 {
     LOG(INFO) << "Flushing logs";
+    globalLogger_->flush();
     return;
 }
 
@@ -85,7 +86,7 @@ void Receiver::addToDeadlineQueue()
     int64_t recv_time = GetMicrosecondTimestamp();
     while (requestQueue_.try_dequeue(request)) {
         request.set_late(recv_time > request.deadline());
-        VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+        LOG(INFO) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
                 << " deadline=" << request.deadline() << " now=" << recv_time;
 
         if (ignoreDeadlines_) {
@@ -116,6 +117,7 @@ void Receiver::addToDeadlineQueue()
 Receiver::~Receiver()
 {
     // TODO cleanup...
+    globalLogger_->flush();
 }
 
 void Receiver::run()

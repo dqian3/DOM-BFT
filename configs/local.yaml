@@ -9,7 +9,7 @@ client:
   keysDir: keys/client
   maxRequests: 5
   numRequests: 10000
-  runtimeSeconds: 6
+  runtimeSeconds: 10
   normalPathTimeout: 5000
   slowPathTimeout: 50000
   sendRate: 100
