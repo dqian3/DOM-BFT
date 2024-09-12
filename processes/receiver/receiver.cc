@@ -67,7 +67,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     // endpoint_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(queueTimer_.get());
-    loggingEp_->RegisterTimer(logTimer_.get());
+    // loggingEp_->RegisterTimer(logTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
     });
@@ -141,7 +141,7 @@ void Receiver::LaunchThreads()
 {
     threads_["ReceiveTd"] = std::thread(&Receiver::ReceiveTd, this);
     threads_["ForwardTd"] = std::thread(&Receiver::ForwardTd, this);
-    threads_["LogTd"] = std::thread(&Receiver::LogTd, this);
+    // threads_["LogTd"] = std::thread(&Receiver::LogTd, this);
 }
 
 void Receiver::ReceiveTd()
