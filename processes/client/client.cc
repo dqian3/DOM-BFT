@@ -101,8 +101,6 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     sendTimer_ = std::make_unique<Timer>(
         [&](void *ctx, void *endpoint) {
-            VLOG(1) << "Attempting to submit request";
-
             // Random heuristic, just prevent more than 1 second of requests being backed up
             if (numInFlight_ > sendRate_) {
                 return;
@@ -199,7 +197,7 @@ void Client::submitRequest()
 void Client::commitRequest(uint32_t clientSeq)
 {
     // TODO do some application stuff
-    VLOG(2) << "After committing, numInFlight_" << numInFlight_;
+    VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
 
     requestStates_.erase(clientSeq);
     numCommitted_++;

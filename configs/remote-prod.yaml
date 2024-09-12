@@ -11,8 +11,8 @@ client:
   keysDir: keys/client
   port: 33000
   normalPathTimeout: 100000   # 100 ms
-  slowPathTimeout:   10000000 # 10 s
-  sendRate: 300
+  slowPathTimeout:   1000000  # 1 s
+  sendRate: 250
   runtimeSeconds: 45
 
 proxy:
@@ -46,5 +46,5 @@ replica:
   - 10.202.0.2
   keysDir: keys/replica
   port: 34000
-  fallbackTimeout: 2000000
+  fallbackTimeout: 5000000
   fallbackStartTimeout: 500000

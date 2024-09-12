@@ -61,7 +61,9 @@ cc_library(
     deps = [
         ":address",
         ":common_struct",
+        ":utils",
         "//proto:dombft_proto_cc",
+        "//proto:dombft_apps_cc",
         "@com_github_google_glog//:glog",
     ]
 )

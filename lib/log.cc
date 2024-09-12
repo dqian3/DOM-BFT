@@ -92,11 +92,11 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
 
-    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
-            << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
-
     res = app_->execute(req, nextSeq);
     log[nextSeq % log.size()]->result = res;
+
+    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
+            << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
 
     nextSeq++;
     return true;

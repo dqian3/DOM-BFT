@@ -34,14 +34,14 @@ std::string Counter::execute(const std::string &serialized_request, const uint32
 
     response.set_value(counter);
 
-    std::string ret;
-    if (!response.SerializeToString(&ret)) {
-        LOG(ERROR) << "Failed to serialize CounterResponse";
-        throw std::runtime_error("Failed to serialize CounterResponse message.");
-        return "";
-    }
+    // std::string ret;
+    // if (!response.SerializeToString(&ret)) {
+    //     LOG(ERROR) << "Failed to serialize CounterResponse";
+    //     throw std::runtime_error("Failed to serialize CounterResponse message.");
+    //     return "";
+    // }
 
-    return ret;
+    return response.SerializeAsString();
 }
 
 bool Counter::commit(uint32_t commit_idx)

@@ -10,7 +10,7 @@ client:
   keysDir: keys/client
   normalPathTimeout: 20000
   slowPathTimeout: 100000
-  sendRate: 1
+  sendRate: 10
   runtimeSeconds: 20
 
 
@@ -44,7 +44,7 @@ replica:
   - "127.0.0.1"
   - "127.0.0.2"
   - "127.0.0.3"
-  # - "127.0.0.4"
+  - "127.0.0.4"
   port: 34000
   app: "counter"
   keysDir: "keys/replica"

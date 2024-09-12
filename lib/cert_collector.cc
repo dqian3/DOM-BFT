@@ -1,8 +1,13 @@
 #include "lib/cert_collector.h"
+#include "lib/utils.h"
+
+#include "proto/dombft_apps.pb.h"
 
 #include <glog/logging.h>
 
+#include <iostream>
 #include <map>
+#include <sstream>
 #include <tuple>
 
 using namespace dombft::proto;
@@ -24,6 +29,22 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 
     // Try and find a certificate or proof of divergent histories
     std::map<ReplyKey, std::set<int>> matchingReplies;
+
+    if (VLOG_IS_ON(4)) {
+        std::ostringstream oss;
+        oss << "\n";
+
+        dombft::apps::CounterResponse response;
+        response.ParseFromString(reply.result());
+
+        for (const auto &[replicaId, reply] : replies_) {
+            oss << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance() << " "
+                << response.value() << "\n";
+        }
+
+        std::string logOutput = oss.str();
+        VLOG(4) << logOutput;
+    }
 
     for (const auto &[replicaId, reply] : replies_) {
         // We also don't check the result here, that only needs to happen in the fast path
