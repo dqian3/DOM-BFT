@@ -10,10 +10,10 @@ client:
   - 10.202.0.3
   keysDir: keys/client
   port: 33000
-  normalPathTimeout: 100000
-  slowPathTimeout:   2000000
-  sendRate: 1000
-  runtimeSeconds: 20 
+  normalPathTimeout: 100000   # 100 ms
+  slowPathTimeout:   10000000 # 10 s
+  sendRate: 300
+  runtimeSeconds: 45
 
 proxy:
   forwardPort: 31000

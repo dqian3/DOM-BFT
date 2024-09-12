@@ -101,6 +101,8 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     sendTimer_ = std::make_unique<Timer>(
         [&](void *ctx, void *endpoint) {
+            VLOG(1) << "Attempting to submit request";
+
             // Random heuristic, just prevent more than 1 second of requests being backed up
             if (numInFlight_ > sendRate_) {
                 return;
@@ -108,12 +110,15 @@ Client::Client(const ProcessConfig &config, size_t id)
 
             // If we are in the slow path, don't submit anymore
             if (lastFastPath_ < lastSlowPath_ && numInFlight_ > 1) {
+                // VLOG(1) << "Pause sending because slow path" << "lastFastPath_=" << lastFastPath_
+                //         << " lastSlowPath_=" << lastSlowPath_ << " numInFlight=" << numInFlight_;
+
                 return;
             }
 
             submitRequest();
 
-            // If we are in the normal path, make the send rate slower
+            // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
             if (lastFastPath_ < lastNormalPath_) {
                 endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
             } else {
@@ -194,6 +199,8 @@ void Client::submitRequest()
 void Client::commitRequest(uint32_t clientSeq)
 {
     // TODO do some application stuff
+    VLOG(2) << "After committing, numInFlight_" << numInFlight_;
+
     requestStates_.erase(clientSeq);
     numCommitted_++;
     numInFlight_--;

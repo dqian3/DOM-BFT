@@ -18,7 +18,7 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
     int replicaId = reply.replica_id();
 
     replies_[replicaId] = reply;
-    signatures_[replicaId] == sig;
+    signatures_[replicaId] = sig;
 
     typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
 

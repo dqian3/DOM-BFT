@@ -61,6 +61,12 @@ std::string KVStore::takeSnapshot()
     return "";
 }
 
+void KVStore::applySnapshot(const std::string &snapshot)
+{
+    throw std::logic_error("Function not yet implemented");
+    return;
+}
+
 bool KVStore::abort(const uint32_t abort_idx)
 {
     throw std::logic_error("Function not yet implemented");

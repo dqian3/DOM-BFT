@@ -85,6 +85,14 @@ std::string Counter::takeSnapshot()
     return std::string(reinterpret_cast<const char *>(&counter_stable), INT_SIZE_IN_BYTES);
 }
 
+void Counter::applySnapshot(const std::string &snapshot)
+{
+    counter_stable = *((int *) snapshot.c_str());
+    counter = counter_stable;
+    version_hist.clear();
+    return;
+}
+
 void *CounterTrafficGen::generateAppTraffic()
 {
     CounterRequest *request = new CounterRequest();

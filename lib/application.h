@@ -28,13 +28,14 @@ public:
     virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) = 0;
 
     virtual bool commit(uint32_t commit_idx) = 0;
+    // resetting the application state to the committed state
+    virtual bool abort(const uint32_t abort_idx) = 0;
 
     virtual std::string getDigest(uint32_t digest_idx) = 0;
 
     virtual std::string takeSnapshot() = 0;
 
-    // resetting the application state to the committed state
-    virtual bool abort(const uint32_t abort_idx) = 0;
+    virtual void applySnapshot(const std::string &snapshot) = 0;
 };
 
 class AppTrafficGen {

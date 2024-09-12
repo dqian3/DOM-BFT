@@ -564,7 +564,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             commit.set_replica_id(replicaId_);
             commit.set_seq(reply.seq());
             commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
-            commit.set_app_digest("");
+            commit.set_app_digest(log_->app_->getDigest(reply.seq()));
 
             broadcastToReplicas(commit, MessageType::COMMIT);
             return;
@@ -864,22 +864,9 @@ void Replica::finishFallback(const FallbackProposal &history)
 
     const LogCheckpoint &maxCheckpoint = history.logs()[maxCheckpointIdx].checkpoint();
 
-    if (maxCheckpoint.seq() >= log_->nextSeq) {
-        LOG(ERROR) << "Fallback checkpoint too far ahead (seq= " << maxCheckpoint.seq()
-                   << "). state transfer is not implemented, exiting...";
-        exit(1);
-    }
+    // TODO this only works with our basic counter because app_digest == counter!
+    log_->app_->applySnapshot(maxCheckpoint.app_digest());
 
-    const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
-    std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
-    if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest) {
-        LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq()
-                   << "). state transfer is not implemented, exiting...";
-        exit(1);
-    }
-
-    // Now we know the logCheckpoint is usable
-    // TODO implement this more nicely by making an interface in the log.
     log_->checkpoint.seq = maxCheckpoint.seq();
     memcpy(log_->checkpoint.appDigest, maxCheckpoint.app_digest().c_str(), maxCheckpoint.app_digest().size());
     memcpy(log_->checkpoint.logDigest, maxCheckpoint.log_digest().c_str(), maxCheckpoint.log_digest().size());

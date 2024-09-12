@@ -95,7 +95,6 @@ private:
     void commitRequest(uint32_t clientSeq);
 
     void checkTimeouts();
-    void adjustSendRate();
 
 public:
     /** Client accepts a config file, which contains all the necessary information
