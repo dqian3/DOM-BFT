@@ -7,7 +7,7 @@ client:
   - 10.138.0.6
   - 10.182.0.4
   - 10.142.0.4
-  - 10.202.0.3
+  - 10.202.0.5
   keysDir: keys/client
   port: 33000
   normalPathTimeout: 100000   # 100 ms

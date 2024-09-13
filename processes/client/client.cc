@@ -97,6 +97,8 @@ Client::Client(const ProcessConfig &config, size_t id)
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
         this);
 
+    // Set high priority (lower is more priority) to terminate properly.
+    ev_set_priority(terminateTimer_.get(), -5);
     endpoint_->RegisterTimer(terminateTimer_.get());
 
     sendTimer_ = std::make_unique<Timer>(
