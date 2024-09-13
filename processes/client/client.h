@@ -46,6 +46,10 @@ struct RequestState {
     std::optional<dombft::proto::Cert> fallbackProof;
 };
 
+enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
+
+enum BackpressureMode { None = 0, Sleep = 1, Adjust = 2 };
+
 class Client {
 private:
     /* Config parameters that need to be saved */
@@ -53,17 +57,25 @@ private:
     std::vector<Address> proxyAddrs_;
     std::vector<Address> replicaAddrs_;
     uint32_t f_;
+
+    /* Sending config */
+    dombft::ClientSendMode sendMode_;
     uint32_t sendRate_;
+    uint32_t maxInFlight_ = 0;
+
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
 
     /** The endpoint uses to submit request to proxies and receive replies*/
     std::unique_ptr<Endpoint> endpoint_;
-
     /** Timer to handle request timeouts  (TODO timeouts vs repeated timer would maybe be better)*/
     std::unique_ptr<Timer> timeoutTimer_;
+
     // timer to control sending rate of the client
     std::unique_ptr<Timer> sendTimer_;
+
+    std::unique_ptr<Timer> restartSendTimer_;
+
     /** Timer to stop client after running for configured time */
     std::unique_ptr<Timer> terminateTimer_;
 
@@ -102,8 +114,6 @@ public:
      *  */
     Client(const ProcessConfig &config, const size_t clientId);
     ~Client();
-
-    void run();
 };
 
 }   // namespace dombft

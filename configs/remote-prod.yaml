@@ -9,9 +9,13 @@ client:
   - 10.142.0.4
   - 10.202.0.5
   keysDir: keys/client
+  runtimeSeconds: 20 
   port: 33000
   normalPathTimeout: 100000   # 100 ms
   slowPathTimeout:   1000000  # 1 s
+
+  sendMode: "sendRate"
+  maxInFlight: 500
   sendRate: 250
   runtimeSeconds: 45
 

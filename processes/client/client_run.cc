@@ -14,5 +14,4 @@ int main(int argc, char *argv[])
     config.parseConfig(FLAGS_config);
 
     dombft::Client client(config, FLAGS_clientId);
-    client.run();
 }

@@ -26,10 +26,20 @@ Client::Client(const ProcessConfig &config, size_t id)
     f_ = config.replicaIps.size() / 3;
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;
-    sendRate_ = config.clientSendRate;
 
     LOG(INFO) << "Running for " << config.clientRuntimeSeconds << " seconds";
-    LOG(INFO) << "Send rate: " << sendRate_;
+
+    LOG(INFO) << "Sending at most " << config.clientMaxInFlight << " requests at once";
+
+    maxInFlight_ = config.clientMaxInFlight;
+    sendRate_ = config.clientSendRate;
+
+    if (config.clientSendMode == "sendRate") {
+        sendMode_ = dombft::RateBased;
+    } else if (config.clientSendMode == "maxInFlight") {
+        LOG(INFO) << "Send rate: " << sendRate_;
+        sendMode_ = dombft::MaxInFlightBased;
+    }
 
     /* Setup keys */
     std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
@@ -101,34 +111,6 @@ Client::Client(const ProcessConfig &config, size_t id)
     ev_set_priority(terminateTimer_.get(), -5);
     endpoint_->RegisterTimer(terminateTimer_.get());
 
-    sendTimer_ = std::make_unique<Timer>(
-        [&](void *ctx, void *endpoint) {
-            // Random heuristic, just prevent more than 1 second of requests being backed up
-            if (numInFlight_ > sendRate_) {
-                return;
-            }
-
-            // If we are in the slow path, don't submit anymore
-            if (lastFastPath_ < lastSlowPath_ && numInFlight_ > 1) {
-                // VLOG(1) << "Pause sending because slow path" << "lastFastPath_=" << lastFastPath_
-                //         << " lastSlowPath_=" << lastSlowPath_ << " numInFlight=" << numInFlight_;
-
-                return;
-            }
-
-            submitRequest();
-
-            // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
-            if (lastFastPath_ < lastNormalPath_) {
-                endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
-            } else {
-                endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
-            }
-        },
-        1000000 / sendRate_, this);
-
-    endpoint_->RegisterTimer(sendTimer_.get());
-
     if (config.app == AppType::COUNTER) {
         trafficGen_ = std::make_unique<CounterTrafficGen>();
         appType_ = AppType::COUNTER;
@@ -137,15 +119,52 @@ Client::Client(const ProcessConfig &config, size_t id)
         exit(1);
     }
 
+    if (sendMode_ == dombft::RateBased) {
+
+        sendTimer_ = std::make_unique<Timer>(
+            [&](void *ctx, void *endpoint) {
+                // Random heuristic, just prevent more than 1 second of requests being backed up
+                if (numInFlight_ > sendRate_) {
+                    return;
+                }
+
+                // If we are in the slow path, don't submit anymore
+                if (lastFastPath_ < lastSlowPath_ && numInFlight_ > 1) {
+                    // VLOG(1) << "Pause sending because slow path" << "lastFastPath_=" << lastFastPath_
+                    //         << " lastSlowPath_=" << lastSlowPath_ << " numInFlight=" << numInFlight_;
+
+                    return;
+                }
+
+                submitRequest();
+
+                // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
+                if (lastFastPath_ < lastNormalPath_) {
+                    endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
+                } else {
+                    endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
+                }
+            },
+            1000000 / sendRate_, this);
+
+        endpoint_->RegisterTimer(sendTimer_.get());
+    } else if (sendMode_ == dombft::MaxInFlightBased) {
+        for (uint32_t i = 0; i < maxInFlight_; i++) {
+            submitRequest();
+        }
+    } else {
+        LOG(ERROR) << "Unknown send mode type for client!";
+        exit(1);
+    }
+
     LOG(INFO) << "Client finished initializing";
+    endpoint_->LoopRun();
 }
 
 Client::~Client()
 {
     // TODO cleanup... though we don't really reuse this
 }
-
-void Client::run() { endpoint_->LoopRun(); }
 
 void Client::submitRequest()
 {
@@ -193,7 +212,7 @@ void Client::submitRequest()
     numInFlight_++;
 
     VLOG(1) << "Sent request number " << nextSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size() << " (" << addr
-            << "), inflight txns " << numInFlight_;
+            << "), numInFlight_=" << numInFlight_;
 }
 
 void Client::commitRequest(uint32_t clientSeq)
@@ -204,6 +223,10 @@ void Client::commitRequest(uint32_t clientSeq)
     requestStates_.erase(clientSeq);
     numCommitted_++;
     numInFlight_--;
+
+    if (sendMode_ == dombft::MaxInFlightBased) {
+        submitRequest();
+    }
 }
 
 void Client::checkTimeouts()
