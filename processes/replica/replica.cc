@@ -454,42 +454,36 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
     std::string result;
 
-    bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+    // bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
 
-    if (!success) {
-        // TODO Handle this more gracefully by queuing requests
-        LOG(ERROR) << "Could not add request to log!";
-        return;
-    }
-    uint32_t seq = log_->nextSeq - 1;
+    // if (!success) {
+    //     // TODO Handle this more gracefully by queuing requests
+    //     LOG(ERROR) << "Could not add request to log!";
+    //     return;
+    // }
+
+    // uint32_t seq = log_->nextSeq - 1;
     reply.set_result(result);
     reply.set_fast(true);
-    reply.set_seq(seq);
+    reply.set_seq(++seq_);
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+    VLOG(1) << "seq_=" << seq_;
 
-    // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-    // VLOG(4) << "Finish Serialization, start signature";
-
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Finish signature";
-
-    LOG(INFO) << "Sending reply back to client " << clientId;
     endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
-
-    LOG(INFO) << "Done Sending reply back to client " << clientId;
 
     // Try and commit every 10 replies (half of the way before
     // we can't speculatively execute anymore)
-    if (seq % CHECKPOINT_INTERVAL == 0) {
-        LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+    // if (seq % CHECKPOINT_INTERVAL == 0) {
+    //     LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
 
-        checkpointSeq_ = seq;
-        checkpointCert_.reset();
+    //     checkpointSeq_ = seq;
+    //     checkpointCert_.reset();
 
-        // TODO remove execution result here
-        broadcastToReplicas(reply, MessageType::REPLY);
-    }
+    //     // TODO remove execution result here
+    //     broadcastToReplicas(reply, MessageType::REPLY);
+    // }
 }
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)

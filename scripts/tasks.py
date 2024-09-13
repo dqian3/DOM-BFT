@@ -476,6 +476,8 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
         time.sleep(5)
 
 
+        group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+
         if not local_log:
             get_logs(c, clients, "client")
             get_logs(c, replicas, "replica")
