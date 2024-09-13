@@ -19,7 +19,6 @@ using namespace dombft::proto;
 Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq)
     : replicaId_(replicaId)
     , instance_(0)
-    , triggerFallbackFreq_(triggerFallbackFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -436,12 +435,12 @@ void Replica::handleClientRequest(const ClientRequest &request)
     Reply reply;
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
-    VLOG(2) << "Received request from client " << clientId << " with seq " << clientSeq;
 
     if (clientId < 0 || clientId > clientAddrs_.size()) {
         LOG(ERROR) << "Invalid client id" << clientId;
         return;
     }
+
     reply.set_client_id(clientId);
     reply.set_client_seq(clientSeq);
     reply.set_replica_id(replicaId_);
@@ -449,67 +448,36 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
     std::string result;
 
-    bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+    // bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
 
-    if (!success) {
-        // TODO Handle this more gracefully by queuing requests
-        LOG(ERROR) << "Could not add request to log!";
-        return;
-    }
-    uint32_t seq = log_->nextSeq - 1;
+    // if (!success) {
+    //     // TODO Handle this more gracefully by queuing requests
+    //     LOG(ERROR) << "Could not add request to log!";
+    //     return;
+    // }
+
+    // uint32_t seq = log_->nextSeq - 1;
     reply.set_result(result);
     reply.set_fast(true);
-    reply.set_seq(seq);
+    reply.set_seq(++seq_);
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+    VLOG(1) << "seq_=" << seq_;
 
-    // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-    // VLOG(4) << "Finish Serialization, start signature";
-
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Finish signature";
-
-    LOG(INFO) << "Sending reply back to client " << clientId;
     endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
-
-    LOG(INFO) << "Done Sending reply back to client " << clientId;
 
     // Try and commit every 10 replies (half of the way before
     // we can't speculatively execute anymore)
-    if (seq % CHECKPOINT_INTERVAL == 0) {
-        LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+    // if (seq % CHECKPOINT_INTERVAL == 0) {
+    //     LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
 
-        checkpointSeq_ = seq;
-        checkpointCert_.reset();
+    //     checkpointSeq_ = seq;
+    //     checkpointCert_.reset();
 
-        // TODO remove execution result here
-        broadcastToReplicas(reply, MessageType::REPLY);
-    }
-}
-
-void Replica::messReplyDigest(Reply &reply)
-{
-    VLOG(2) << "Digest altered for replica: " << replicaId_ << " seq: " << reply.seq();
-    byte tmpDigest[SHA256_DIGEST_LENGTH];
-    memcpy(tmpDigest, log_->getDigest(), SHA256_DIGEST_LENGTH);
-    tmpDigest[0] += replicaId_;
-    reply.set_digest(tmpDigest, SHA256_DIGEST_LENGTH);
-}
-
-void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
-{
-    uint32_t clientId = request.client_id();
-    uint32_t clientSeq = request.client_seq();
-    if (!heldRequest_) {
-        heldRequest_ = request;
-        VLOG(2) << "Holding request (" << clientId << ", " << clientSeq << ") for swapping";
-        return;
-    }
-    handleClientRequest(request);
-    handleClientRequest(heldRequest_.value());
-    VLOG(2) << "Swapped requests (" << clientId << ", " << clientSeq << ") and (" << heldRequest_->client_id() << ", "
-            << heldRequest_->client_seq() << ")";
-    heldRequest_.reset();
+    //     Uncomment this? as it has impact on perf actually
+    //     broadcastToReplicas(reply, MessageType::REPLY);
+    // }
 }
 
 void Replica::handleCert(const Cert &cert)
@@ -643,7 +611,6 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         LOG(INFO) << "Committing seq=" << myCommit.seq();
 
         log_->checkpoint.seq = myCommit.seq();
-        // TODO(Hao): size of appDigest is not correct
         memcpy(log_->checkpoint.appDigest, myCommit.app_digest().c_str(), SHA256_DIGEST_LENGTH);
         memcpy(log_->checkpoint.logDigest, myCommit.log_digest().c_str(), SHA256_DIGEST_LENGTH);
 
