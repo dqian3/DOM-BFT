@@ -34,14 +34,14 @@ std::string Counter::execute(const std::string &serialized_request, const uint32
 
     response.set_value(counter);
 
-    std::string ret;
-    if (!response.SerializeToString(&ret)) {
-        LOG(ERROR) << "Failed to serialize CounterResponse";
-        throw std::runtime_error("Failed to serialize CounterResponse message.");
-        return "";
-    }
+    // std::string ret;
+    // if (!response.SerializeToString(&ret)) {
+    //     LOG(ERROR) << "Failed to serialize CounterResponse";
+    //     throw std::runtime_error("Failed to serialize CounterResponse message.");
+    //     return "";
+    // }
 
-    return ret;
+    return response.SerializeAsString();
 }
 
 bool Counter::commit(uint32_t commit_idx)
@@ -77,12 +77,26 @@ std::string Counter::getDigest(uint32_t digest_idx)
     } else {
         value_digest = counter_stable;
     }
+
+    LOG(INFO) << "Digest at idx " << digest_idx << " is " << value_digest;
+
     return std::string(reinterpret_cast<const char *>(&counter), INT_SIZE_IN_BYTES);
 }
 
 std::string Counter::takeSnapshot()
 {
     return std::string(reinterpret_cast<const char *>(&counter_stable), INT_SIZE_IN_BYTES);
+}
+
+void Counter::applySnapshot(const std::string &snapshot)
+{
+    counter_stable = *((int *) snapshot.c_str());
+    counter = counter_stable;
+    version_hist.clear();
+
+    LOG(INFO) << "Applying snapshot with value " << counter_stable;
+
+    return;
 }
 
 void *CounterTrafficGen::generateAppTraffic()

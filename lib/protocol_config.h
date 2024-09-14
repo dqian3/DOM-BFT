@@ -8,17 +8,11 @@
 // as IPs and ports. Generally these will be used for experiments
 
 // TOOD, move these to yaml
-
-#define DOMBFT 0
-#define PBFT   1
-#define ZYZ    2
-
-#define PROTOCOL  DOMBFT
-#define USE_PROXY (1 && (PROTOCOL == DOMBFT))
+#define USE_PROXY 1
 
 #define FABRIC_CRYPTO 0
 
-#define MAX_SPEC_HIST       1000
-#define CHECKPOINT_INTERVAL 100
+#define MAX_SPEC_HIST       2000
+#define CHECKPOINT_INTERVAL 200
 
 #endif

@@ -22,6 +22,6 @@ std::string digest_to_hex(const byte digest[SHA256_DIGEST_LENGTH])
 
 std::string digest_to_hex(const std::string &digest)
 {
-    assert(digest.size() == SHA256_DIGEST_LENGTH);
+    // assert(digest.size() == SHA256_DIGEST_LENGTH);
     return digest_to_hex((const byte *) digest.c_str());
 }

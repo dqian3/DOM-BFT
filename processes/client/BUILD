@@ -9,8 +9,10 @@ cc_library(
         "//lib:signature_provider",
         "//lib:utils",
         "//lib:protocol_config",
+        "//lib:cert_collector",
         "//processes:process_config",
         "//processes:config_util",
+        
     ],
 )
 

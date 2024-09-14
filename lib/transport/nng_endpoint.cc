@@ -62,9 +62,6 @@ NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPai
 
         VLOG(1) << bindUrl << " <---> " << sendUrl;
 
-        nng_duration timeout = 1000;   // 1 second timeout
-        nng_setopt_ms(sock, NNG_OPT_SENDTIMEO, timeout);
-
         socks_.push_back(sock);
         addrToSocketIdx_[connAddr] = socks_.size() - 1;
         socketIdxToAddr_[socks_.size() - 1] = connAddr;

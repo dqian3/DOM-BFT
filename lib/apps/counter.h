@@ -34,6 +34,8 @@ public:
 
     virtual std::string takeSnapshot() override;
 
+    virtual void applySnapshot(const std::string &snapshot) override;
+
     Counter()
         : counter(0)
         , counter_stable(0)

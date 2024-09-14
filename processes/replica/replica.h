@@ -28,11 +28,6 @@ private:
     uint32_t f_;
     uint32_t instance_ = 0;
 
-#if PROTOCOL == PBFT
-    std::map<std::pair<int, int>, int> prepareCount;
-    std::map<std::pair<int, int>, int> commitCount;
-#endif
-
     /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
     SignatureProvider sigProvider_;
 

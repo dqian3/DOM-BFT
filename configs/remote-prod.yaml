@@ -9,17 +9,15 @@ client:
   - 10.142.0.4
   - 10.202.0.5
   keysDir: keys/client
-  maxRequests: 500
-  numRequests: 1000000
   runtimeSeconds: 20 
   port: 33000
-  normalPathTimeout: 100000
-  slowPathTimeout:   2000000
-  sendRate: 1000
-  sendMode: "sendRate"
-  backPressure: "none"
-  sleepTime: 20000  
+  normalPathTimeout: 100000   # 100 ms
+  slowPathTimeout:   1000000  # 1 s
 
+  sendMode: "sendRate"
+  maxInFlight: 500
+  sendRate: 250
+  runtimeSeconds: 45
 
 proxy:
   forwardPort: 31000
@@ -52,5 +50,5 @@ replica:
   - 10.202.0.2
   keysDir: keys/replica
   port: 34000
-  fallbackTimeout: 2000000
+  fallbackTimeout: 5000000
   fallbackStartTimeout: 500000

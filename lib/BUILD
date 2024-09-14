@@ -54,6 +54,22 @@ cc_library(
 )
 
 cc_library(
+    name = "cert_collector",
+    srcs = ["cert_collector.cc"],
+    hdrs = ["cert_collector.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":address",
+        ":common_struct",
+        ":utils",
+        "//proto:dombft_proto_cc",
+        "//proto:dombft_apps_cc",
+        "@com_github_google_glog//:glog",
+    ]
+)
+
+
+cc_library(
     name = "endpoint",
     srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc", "transport/nng_endpoint_threaded.cc"],
     hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h" , "transport/nng_endpoint_threaded.h"],

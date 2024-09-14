@@ -22,6 +22,8 @@ public:
 
     virtual std::string takeSnapshot() override;
 
+    virtual void applySnapshot(const std::string &snapshot) override;
+
     virtual bool abort(const uint32_t abort_idx) override;
 };
 

@@ -173,7 +173,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         // TODO also pass client request
         handleClientRequest(clientHeader);
-        LOG(INFO) << "Received and processed DOM_REQUEST message";
     }
 #else
     if (hdr->msgType == CLIENT_REQUEST) {
@@ -433,6 +432,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
 {
     Reply reply;
     uint32_t clientId = request.client_id();
+    uint32_t clientSeq = request.client_seq();
 
     if (clientId < 0 || clientId > clientAddrs_.size()) {
         LOG(ERROR) << "Invalid client id" << clientId;
@@ -440,13 +440,13 @@ void Replica::handleClientRequest(const ClientRequest &request)
     }
 
     reply.set_client_id(clientId);
-    reply.set_client_seq(request.client_seq());
+    reply.set_client_seq(clientSeq);
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
 
     std::string result;
 
-    bool success = log_->addEntry(clientId, request.client_seq(), request.req_data(), result);
+    bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
 
     if (!success) {
         // TODO Handle this more gracefully by queuing requests
@@ -564,7 +564,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             commit.set_replica_id(replicaId_);
             commit.set_seq(reply.seq());
             commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
-            commit.set_app_digest("");
+            commit.set_app_digest(log_->app_->getDigest(reply.seq()));
 
             broadcastToReplicas(commit, MessageType::COMMIT);
             return;
@@ -864,22 +864,9 @@ void Replica::finishFallback(const FallbackProposal &history)
 
     const LogCheckpoint &maxCheckpoint = history.logs()[maxCheckpointIdx].checkpoint();
 
-    if (maxCheckpoint.seq() >= log_->nextSeq) {
-        LOG(ERROR) << "Fallback checkpoint too far ahead (seq= " << maxCheckpoint.seq()
-                   << "). state transfer is not implemented, exiting...";
-        exit(1);
-    }
+    // TODO this only works with our basic counter because app_digest == counter!
+    log_->app_->applySnapshot(maxCheckpoint.app_digest());
 
-    const byte *digest_bytes = log_->getDigest(maxCheckpoint.seq());
-    std::string myDigest(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
-    if (maxCheckpoint.seq() != 0 && maxCheckpoint.log_digest() != myDigest) {
-        LOG(ERROR) << "Fallback checkpoint does not match current log (seq= " << maxCheckpoint.seq()
-                   << "). state transfer is not implemented, exiting...";
-        exit(1);
-    }
-
-    // Now we know the logCheckpoint is usable
-    // TODO implement this more nicely by making an interface in the log.
     log_->checkpoint.seq = maxCheckpoint.seq();
     memcpy(log_->checkpoint.appDigest, maxCheckpoint.app_digest().c_str(), maxCheckpoint.app_digest().size());
     memcpy(log_->checkpoint.logDigest, maxCheckpoint.log_digest().c_str(), maxCheckpoint.log_digest().size());
@@ -948,6 +935,24 @@ void Replica::finishFallback(const FallbackProposal &history)
             applyFallbackReq(entry);
         }
     }
+
+    // Start checkpoint here
+    uint32_t seq = log_->nextSeq - 1;
+
+    LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+    Reply reply;
+    ::LogEntry *entry = log_->getEntry(seq);   // TODO better namespace
+    reply.set_client_id(entry->client_id);
+    reply.set_client_seq(entry->client_seq);
+    reply.set_replica_id(replicaId_);
+    reply.set_instance(instance_);
+    reply.set_result(entry->result);
+    reply.set_seq(seq);
+    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+    checkpointSeq_ = log_->nextSeq - 1;
+    checkpointCert_.reset();
+    broadcastToReplicas(reply, MessageType::REPLY);   // TODO better namespace
 
     // Add rest of the requests in.
 
