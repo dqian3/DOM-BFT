@@ -52,10 +52,11 @@ bool Counter::commit(uint32_t commit_idx)
                            [commit_idx](const VersionedValue &v) { return v.version <= commit_idx; });
 
     if (it != version_hist.rend()) {
-        counter_stable = it->value;
+        committed_state.value = it->value;
+        committed_state.version = commit_idx;
         version_hist.erase(version_hist.begin(), it.base());
 
-        LOG(INFO) << "Committed counter value: " << counter_stable;
+        LOG(INFO) << "Committed counter value: " << it->value;
     } else {
         LOG(INFO) << "No version needs to be cleaned up " << commit_idx;
         return true;
@@ -75,7 +76,7 @@ std::string Counter::getDigest(uint32_t digest_idx)
     if (it != version_hist.rend()) {
         value_digest = it->value;
     } else {
-        value_digest = counter_stable;
+        value_digest = committed_state.value;
     }
 
     LOG(INFO) << "Digest at idx " << digest_idx << " is " << value_digest;
@@ -85,7 +86,7 @@ std::string Counter::getDigest(uint32_t digest_idx)
 
 std::string Counter::takeSnapshot()
 {
-    return std::string(reinterpret_cast<const char *>(&counter_stable), INT_SIZE_IN_BYTES);
+    return std::string(reinterpret_cast<const char *>(&committed_state), INT_SIZE_IN_BYTES);
 }
 
 void Counter::applySnapshot(const std::string &snapshot)
@@ -109,16 +110,21 @@ void *CounterTrafficGen::generateAppTraffic()
 
 bool Counter::abort(const uint32_t abort_idx)
 {
-
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-
-    // TODO(Hao): Commit boundary should be checked
-    // Find the last committed value before or at abort_idx
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
-                           [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
-    if (it != version_hist.rend()) {
-        // Erase all entries from the point found to the end
-        version_hist.erase(it.base(), version_hist.end());
+    if(abort_idx < committed_state.version){
+        // or revert to committed state?
+        LOG(ERROR) << "Abort index is less than the committed state version. Unable to revert.";
+        return false;
+    }
+    if(abort_idx < version_hist.front().version){
+        version_hist.erase(version_hist.begin(), version_hist.end());
+    }else{
+        auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
+                               [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
+        if (it != version_hist.rend()) {
+            // Erase all entries from the point found to the end entries from the point found to the end
+            version_hist.erase(it.base(), version_hist.end());
+        }
     }
 
     // Revert the counter to the last state not yet erased
@@ -126,7 +132,7 @@ bool Counter::abort(const uint32_t abort_idx)
     if (!version_hist.empty()) {
         counter = version_hist.back().value;
     } else {
-        counter = counter_stable;
+        counter = committed_state.value;
     }
     LOG(INFO) << "Counter reverted to stable value: " << counter;
 

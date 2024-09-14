@@ -465,7 +465,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
         // Note: shuffle cause next received request to trigger slow path
         std::srand(request.client_seq());
         uint32_t randRange = std::rand() % CHECKPOINT_INTERVAL;
-        std::optional<uint32_t> startSeq = shuffleLogOrdering(randRange);
+        std::optional<uint32_t> startSeq = shuffleLogOrdering(10);
         if (startSeq) {
             abortAppOpAndSyncWithLog(startSeq.value());
         }
@@ -498,8 +498,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
 void Replica::abortAppOpAndSyncWithLog(uint32_t startSeq) {
     assert(startSeq > 0 && startSeq > log_->checkpoint.seq);
-    // restore app state to the last checkpoint
-    log_->app_->abort(startSeq - 1);
+    log_->app_->abort(startSeq-1);
     std::shared_ptr<::LogEntry> *curEntry = log_->getEntryPtr(startSeq);
     std::shared_ptr<::LogEntry> *endEntry = log_->getEntryPtr(log_->nextSeq - 1) + 1;
     while(curEntry != endEntry && curEntry != log_->log.end()){
@@ -704,6 +703,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             log_->checkpoint.commitMessages[r] = checkpointCommits_[r];
             log_->checkpoint.signatures[r] = checkpointCommitSigs_[r];
         }
+        log_->commit(log_->checkpoint.seq);
     }
 }
 
