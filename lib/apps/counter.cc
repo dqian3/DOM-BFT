@@ -112,10 +112,10 @@ bool Counter::abort(const uint32_t abort_idx)
 
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
 
+    // TODO(Hao): Commit boundary should be checked
     // Find the last committed value before or at abort_idx
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
                            [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
-
     if (it != version_hist.rend()) {
         // Erase all entries from the point found to the end
         version_hist.erase(it.base(), version_hist.end());
@@ -128,8 +128,7 @@ bool Counter::abort(const uint32_t abort_idx)
     } else {
         counter = counter_stable;
     }
-
-    LOG(INFO) << "Counter reverted to stable value: " << counter_stable;
+    LOG(INFO) << "Counter reverted to stable value: " << counter;
 
     return true;
 }

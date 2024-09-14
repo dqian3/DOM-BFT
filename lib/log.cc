@@ -100,6 +100,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     return true;
 }
 
+// Modify the entry at targetSeq with the info of the input entry
 // use with caution as for the correctness the digest of the later seq should be updated
 void Log::modifyEntry(uint32_t targetSeq, LogEntry &entry) {
     byte *prevDigest = nullptr;
@@ -118,7 +119,7 @@ void Log::modifyEntry(uint32_t targetSeq, LogEntry &entry) {
     VLOG(4) << "Update a new entry at seq=" << targetSeq << " c_id=" << new_c_id  << " c_seq=" << new_c_seq
             << " digest=" << digest_to_hex(log[targetSeq % log.size()]->digest).substr(56);
 
-    log[targetSeq % log.size()]->result = app_->execute(req, targetSeq);
+
 }
 
 void Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
@@ -215,6 +216,7 @@ LogEntry *Log::getEntry(uint32_t seq)
     return entryPtr ? entryPtr->get() : nullptr;
 }
 
+// TODO: APP currently is not commited
 void Log::commit(uint32_t seq)
 {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {

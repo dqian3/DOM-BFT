@@ -459,11 +459,16 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_seq(seq);
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
-    if(triggerFallbackFreq_ && seq == 250 ){//% triggerFallbackFreq_ == 0){
-        VLOG(2) << "Triggering fallback for replica: " << replicaId_ << " seq: " << seq;
-        //messReplyDigest(reply);
+    if(triggerFallbackFreq_ && seq % triggerFallbackFreq_ == 0){
+        VLOG(2) << "Triggering fallback at replica: " << replicaId_ << " seq: " << seq;
+        //messReplyDigest(reply); // more efficient on triggering fallback
         // Note: shuffle cause next received request to trigger slow path
-        shuffleLogOrdering(3);
+        std::srand(request.client_seq());
+        uint32_t randRange = std::rand() % CHECKPOINT_INTERVAL;
+        std::optional<uint32_t> startSeq = shuffleLogOrdering(randRange);
+        if (startSeq) {
+            abortAppOpAndSyncWithLog(startSeq.value());
+        }
     }
 
     // VLOG(4) << "Start prepare message";
@@ -490,25 +495,49 @@ void Replica::handleClientRequest(const ClientRequest &request)
         broadcastToReplicas(reply, MessageType::REPLY);
     }
 }
+
+void Replica::abortAppOpAndSyncWithLog(uint32_t startSeq) {
+    assert(startSeq > 0 && startSeq > log_->checkpoint.seq);
+    // restore app state to the last checkpoint
+    log_->app_->abort(startSeq - 1);
+    std::shared_ptr<::LogEntry> *curEntry = log_->getEntryPtr(startSeq);
+    std::shared_ptr<::LogEntry> *endEntry = log_->getEntryPtr(log_->nextSeq - 1) + 1;
+    while(curEntry != endEntry && curEntry != log_->log.end()){
+        const ::LogEntry &entry = **curEntry;
+        log_->app_->execute(entry.request, entry.seq);
+        curEntry++;
+    }
+    if (curEntry != endEntry ) {
+        curEntry = log_->log.begin();
+        while(curEntry != endEntry){
+            const ::LogEntry &entry = **curEntry;
+            log_->app_->execute(entry.request, entry.seq);
+            curEntry++;
+        }
+    }
+    LOG(INFO) << "App state synced with log for replica: " << replicaId_ << " starting seq: " << startSeq;
+}
 void Replica::messReplyDigest(Reply &reply){
     VLOG(2) << "Digest altered for replica: " << replicaId_ << " seq: " << reply.seq();
-    byte tmpDigest[32];
+    byte tmpDigest[SHA256_DIGEST_LENGTH];
     memcpy(tmpDigest, log_->getDigest(), SHA256_DIGEST_LENGTH);
     tmpDigest[0] += replicaId_;
     reply.set_digest(tmpDigest, SHA256_DIGEST_LENGTH);
 }
 
-void Replica::shuffleLogOrdering(uint32_t num) {
+std::optional<uint32_t> Replica::shuffleLogOrdering(uint32_t num) {
+
     if(num <= 1) {
-        return;
+        return {};
     }
     VLOG(2) << "Shuffling log for replica: " << replicaId_;
     if(log_->nextSeq-1- log_->checkpoint.seq < 1) {
         VLOG(2) << "Less than 2 uncommited logs to be shuffled, skipping";
-        return;
+        return {};
     }
     uint32_t endSeq = log_->nextSeq - 1;
     uint32_t startSeq = endSeq - std::min(num-1, log_->nextSeq-2- log_->checkpoint.seq);
+    uint32_t curSeq = startSeq;
     uint32_t startIdx = startSeq % MAX_SPEC_HIST;
     uint32_t endIdx = endSeq % MAX_SPEC_HIST;
     std::shared_ptr<::LogEntry> *curEntry = log_->getEntryPtr(startSeq);
@@ -521,22 +550,20 @@ void Replica::shuffleLogOrdering(uint32_t num) {
         std::shuffle(curEntry, log_->log.end(), std::minstd_rand0(std::random_device()()));
         std::shuffle(log_->log.begin(), endEntry, std::minstd_rand0(std::random_device()()));
         while(curEntry != log_->log.end()){
-            log_->modifyEntry(startIdx, **curEntry);
+            log_->modifyEntry(curSeq, **curEntry);
             curEntry++;
-            startIdx++;
+            curSeq++;
         }
         curEntry = log_->log.begin();
     }
     while(curEntry != endEntry){
-        log_->modifyEntry(startIdx, **curEntry);
+        log_->modifyEntry(curSeq, **curEntry);
         curEntry++;
-        startIdx++;
+        curSeq++;
     }
 
     LOG(INFO) << "After shuffle: " << *log_;
-}
-
-void Replica::abortAndSyncOpsFromLogToApp(uint32_t idx) {
+    return startSeq;
 }
 
 void Replica::handleCert(const Cert &cert)
