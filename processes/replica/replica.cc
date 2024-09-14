@@ -457,12 +457,14 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_result(result);
     reply.set_fast(true);
     reply.set_seq(seq);
+    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
-    if(triggerFallbackFreq_ && seq % triggerFallbackFreq_ == 0){
-        VLOG(2) << "Actively triggering fallback for (" << clientId << ", " << request.client_seq() << ") by altering the digest";
-        reply.set_digest(log_->getDigest() + replicaId_, SHA256_DIGEST_LENGTH);
+    if(triggerFallbackFreq_ && seq == 250 ){//% triggerFallbackFreq_ == 0){
+        VLOG(2) << "Triggering fallback for replica: " << replicaId_ << " seq: " << seq;
+        //messReplyDigest(reply);
+        // Note: shuffle cause next received request to trigger slow path
+        shuffleLogOrdering(3);
     }
-    else reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
     // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
@@ -487,6 +489,54 @@ void Replica::handleClientRequest(const ClientRequest &request)
         // TODO remove execution result here
         broadcastToReplicas(reply, MessageType::REPLY);
     }
+}
+void Replica::messReplyDigest(Reply &reply){
+    VLOG(2) << "Digest altered for replica: " << replicaId_ << " seq: " << reply.seq();
+    byte tmpDigest[32];
+    memcpy(tmpDigest, log_->getDigest(), SHA256_DIGEST_LENGTH);
+    tmpDigest[0] += replicaId_;
+    reply.set_digest(tmpDigest, SHA256_DIGEST_LENGTH);
+}
+
+void Replica::shuffleLogOrdering(uint32_t num) {
+    if(num <= 1) {
+        return;
+    }
+    VLOG(2) << "Shuffling log for replica: " << replicaId_;
+    if(log_->nextSeq-1- log_->checkpoint.seq < 1) {
+        VLOG(2) << "Less than 2 uncommited logs to be shuffled, skipping";
+        return;
+    }
+    uint32_t endSeq = log_->nextSeq - 1;
+    uint32_t startSeq = endSeq - std::min(num-1, log_->nextSeq-2- log_->checkpoint.seq);
+    uint32_t startIdx = startSeq % MAX_SPEC_HIST;
+    uint32_t endIdx = endSeq % MAX_SPEC_HIST;
+    std::shared_ptr<::LogEntry> *curEntry = log_->getEntryPtr(startSeq);
+    std::shared_ptr<::LogEntry> *endEntry = log_->getEntryPtr(endSeq) + 1;
+
+    LOG(INFO) << "Before shuffle: " << *log_;
+    if(startIdx < endIdx){
+        std::shuffle(curEntry, endEntry, std::minstd_rand0(std::random_device()()));
+    }else{
+        std::shuffle(curEntry, log_->log.end(), std::minstd_rand0(std::random_device()()));
+        std::shuffle(log_->log.begin(), endEntry, std::minstd_rand0(std::random_device()()));
+        while(curEntry != log_->log.end()){
+            log_->modifyEntry(startIdx, **curEntry);
+            curEntry++;
+            startIdx++;
+        }
+        curEntry = log_->log.begin();
+    }
+    while(curEntry != endEntry){
+        log_->modifyEntry(startIdx, **curEntry);
+        curEntry++;
+        startIdx++;
+    }
+
+    LOG(INFO) << "After shuffle: " << *log_;
+}
+
+void Replica::abortAndSyncOpsFromLogToApp(uint32_t idx) {
 }
 
 void Replica::handleCert(const Cert &cert)

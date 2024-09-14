@@ -74,14 +74,12 @@ Log::Log(AppType app_type)
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
-    uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
-
     byte *prevDigest = nullptr;
     if (nextSeq - 1 == checkpoint.seq) {
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
         prevDigest = checkpoint.logDigest;
     } else {
-        prevDigest = log[prevSeqIdx]->digest;
+        prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
 
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
@@ -100,6 +98,27 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 
     nextSeq++;
     return true;
+}
+
+// use with caution as for the correctness the digest of the later seq should be updated
+void Log::modifyEntry(uint32_t targetSeq, LogEntry &entry) {
+    byte *prevDigest = nullptr;
+    if (targetSeq - 1 == checkpoint.seq) {
+        VLOG(4) << "Using checkpoint digest as previous for seq=" << targetSeq;
+        prevDigest = checkpoint.logDigest;
+    } else {
+        prevDigest = log[(targetSeq - 1) % log.size()]->digest;
+    }
+    LogEntry oldEntry = *log[targetSeq % log.size()];
+    uint32_t new_c_id = entry.client_id;
+    uint32_t new_c_seq = entry.client_seq;
+    std::string req = entry.request;
+    log[targetSeq % log.size()] = std::make_unique<LogEntry>(targetSeq, new_c_id, new_c_seq, req, prevDigest);
+
+    VLOG(4) << "Update a new entry at seq=" << targetSeq << " c_id=" << new_c_id  << " c_seq=" << new_c_seq
+            << " digest=" << digest_to_hex(log[targetSeq % log.size()]->digest).substr(56);
+
+    log[targetSeq % log.size()]->result = app_->execute(req, targetSeq);
 }
 
 void Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
@@ -181,15 +200,19 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     return out;
 }
 
-LogEntry *Log::getEntry(uint32_t seq)
-{
-    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+std::shared_ptr<LogEntry> * Log::getEntryPtr(uint32_t seq) {
+    if (seq < nextSeq && (seq < MAX_SPEC_HIST || seq >= nextSeq - MAX_SPEC_HIST)) {
         uint32_t index = seq % MAX_SPEC_HIST;
-        return log[index].get();
+        return &log[index];
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
     }
+}
+LogEntry *Log::getEntry(uint32_t seq)
+{
+    std::shared_ptr<LogEntry> *entryPtr = getEntryPtr(seq);
+    return entryPtr ? entryPtr->get() : nullptr;
 }
 
 void Log::commit(uint32_t seq)

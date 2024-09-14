@@ -15,6 +15,8 @@
 #include <queue>
 #include <span>
 #include <thread>
+#include <algorithm>
+#include <random>
 
 #include <yaml-cpp/yaml.h>
 
@@ -73,6 +75,9 @@ private:
     void applyFallbackReq(const dombft::proto::LogEntry &entry);
 
     void finishFallback(const dombft::proto::FallbackProposal &history);
+
+    void messReplyDigest(dombft::proto::Reply &reply);
+    void shuffleLogOrdering(uint32_t num);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
