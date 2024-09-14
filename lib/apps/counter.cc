@@ -86,7 +86,7 @@ std::string Counter::getDigest(uint32_t digest_idx)
 
 std::string Counter::takeSnapshot()
 {
-    return std::string(reinterpret_cast<const char *>(&committed_state), INT_SIZE_IN_BYTES);
+    return std::string(reinterpret_cast<const char *>(&committed_state), sizeof(VersionedValue));
 }
 
 void Counter::applySnapshot(const std::string &snapshot)
