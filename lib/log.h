@@ -100,8 +100,6 @@ struct Log {
 
     LogEntry *getEntry(uint32_t seq);
 
-
-    std::shared_ptr<LogEntry> * getEntryPtr(uint32_t seq);
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);

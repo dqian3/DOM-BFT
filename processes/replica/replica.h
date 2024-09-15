@@ -77,7 +77,6 @@ private:
     void finishFallback(const dombft::proto::FallbackProposal &history);
 
     void messReplyDigest(dombft::proto::Reply &reply);
-    std::optional<uint32_t> shuffleLogOrdering(uint32_t num);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
@@ -86,6 +85,8 @@ public:
     void run();
 
     void abortAppOpAndSyncWithLog(uint32_t idx);
+
+        std::optional<uint32_t> swapLog(uint32_t seqA, uint32_t seqB);
     };
 
 }   // namespace dombft

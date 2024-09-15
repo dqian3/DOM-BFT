@@ -74,6 +74,7 @@ Log::Log(AppType app_type)
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
+    assert(nextSeq);
     byte *prevDigest = nullptr;
     if (nextSeq - 1 == checkpoint.seq) {
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
@@ -81,7 +82,9 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     } else {
         prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
-
+    std::array<int,5> myarray = { 2, 16, 77, 34, 50 };
+    std::array<int,5>::iterator it = std::find(myarray.begin(), myarray.end(), 77);
+    std::vector<int>::iterator a;
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         // TODO error out properly
@@ -201,19 +204,15 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     return out;
 }
 
-std::shared_ptr<LogEntry> * Log::getEntryPtr(uint32_t seq) {
-    if (seq < nextSeq && (seq < MAX_SPEC_HIST || seq >= nextSeq - MAX_SPEC_HIST)) {
+LogEntry *Log::getEntry(uint32_t seq)
+{
+    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
         uint32_t index = seq % MAX_SPEC_HIST;
-        return &log[index];
+        return log[index].get();
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
     }
-}
-LogEntry *Log::getEntry(uint32_t seq)
-{
-    std::shared_ptr<LogEntry> *entryPtr = getEntryPtr(seq);
-    return entryPtr ? entryPtr->get() : nullptr;
 }
 
 // TODO: APP currently is not commited
