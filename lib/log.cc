@@ -215,7 +215,6 @@ LogEntry *Log::getEntry(uint32_t seq)
     }
 }
 
-// TODO: APP currently is not commited
 void Log::commit(uint32_t seq)
 {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
@@ -223,4 +222,25 @@ void Log::commit(uint32_t seq)
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
     }
+}
+
+void Log::abortAppOpAndSyncWithLog(uint32_t startSeq) {
+    assert(startSeq > 0 && startSeq > checkpoint.seq);
+    app_->abort(startSeq-1);
+    uint32_t curIdx = startSeq % MAX_SPEC_HIST;
+    uint32_t endIdx = nextSeq % MAX_SPEC_HIST;
+
+    while(curIdx != endIdx && curIdx!=MAX_SPEC_HIST){
+        app_->execute(log[curIdx]->request, log[curIdx]->seq);
+        curIdx++;
+    }
+
+    if (curIdx != endIdx) {
+        curIdx = 0;
+        while(curIdx != endIdx){
+            app_->execute(log[curIdx]->request, log[curIdx]->seq);
+            curIdx++;
+        }
+    }
+    LOG(INFO) << "App state synced with log for starting seq "<< startSeq;
 }

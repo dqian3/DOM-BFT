@@ -468,7 +468,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
         uint32_t swapSeq = std::max(seq - randRange, log_->checkpoint.seq + 1);
         std::optional<uint32_t> startSeq = swapLog(swapSeq, seq);
         if (startSeq) {
-            abortAppOpAndSyncWithLog(startSeq.value());
+            log_->abortAppOpAndSyncWithLog(startSeq.value());
         }
     }
 
@@ -497,26 +497,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
     }
 }
 
-void Replica::abortAppOpAndSyncWithLog(uint32_t startSeq) {
-    assert(startSeq > 0 && startSeq > log_->checkpoint.seq);
-    log_->app_->abort(startSeq-1);
-    uint32_t curIdx = startSeq % MAX_SPEC_HIST;
-    uint32_t endIdx = log_->nextSeq % MAX_SPEC_HIST;
 
-    while(curIdx != endIdx && curIdx!=MAX_SPEC_HIST){
-        log_->app_->execute(log_->log[curIdx]->request, log_->log[curIdx]->seq);
-        curIdx++;
-    }
-
-    if (curIdx != endIdx) {
-        curIdx = 0;
-        while(curIdx != endIdx){
-            log_->app_->execute(log_->log[curIdx]->request, log_->log[curIdx]->seq);
-            curIdx++;
-        }
-    }
-    LOG(INFO) << "App state synced with log for replica: " << replicaId_ << " starting seq: " << startSeq;
-}
 void Replica::messReplyDigest(Reply &reply){
     VLOG(2) << "Digest altered for replica: " << replicaId_ << " seq: " << reply.seq();
     byte tmpDigest[SHA256_DIGEST_LENGTH];

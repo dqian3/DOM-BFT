@@ -100,6 +100,7 @@ struct Log {
 
     LogEntry *getEntry(uint32_t seq);
 
+    void abortAppOpAndSyncWithLog(uint32_t startSeq);
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);

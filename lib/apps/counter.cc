@@ -91,13 +91,11 @@ std::string Counter::takeSnapshot()
 
 void Counter::applySnapshot(const std::string &snapshot)
 {
-    counter_stable = *((int *) snapshot.c_str());
-    counter = counter_stable;
+    committed_state = *((VersionedValue *) snapshot.c_str());
+    counter = committed_state.value;
     version_hist.clear();
 
-    LOG(INFO) << "Applying snapshot with value " << counter_stable;
-
-    return;
+    LOG(INFO) << "Applying snapshot with value " << counter;
 }
 
 void *CounterTrafficGen::generateAppTraffic()
