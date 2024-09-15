@@ -47,7 +47,11 @@ struct LogCheckpoint {
     std::map<uint32_t, std::string> signatures;
 
     // Default constructor
-    LogCheckpoint() = default;
+    LogCheckpoint()
+    {
+        std::memset(logDigest, 0, SHA256_DIGEST_LENGTH);
+        std::memset(appDigest, 0, SHA256_DIGEST_LENGTH);
+    }
 
     // Copy constructor
     LogCheckpoint(const LogCheckpoint &other)

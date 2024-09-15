@@ -459,13 +459,11 @@ void Replica::handleClientRequest(const ClientRequest &request)
     reply.set_seq(seq);
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
-    if(triggerFallbackFreq_ && seq % triggerFallbackFreq_ == 0){
+    if(triggerFallbackFreq_ && seq % triggerFallbackFreq_ == 0 && replicaId_ % 2){
         VLOG(2) << "Triggering fallback at replica: " << replicaId_ << " seq: " << seq;
         //messReplyDigest(reply); // more efficient on triggering fallback
-        // Note: shuffle cause next received request to trigger slow path
-        std::srand(request.client_seq());
-        uint32_t randRange = std::rand() % CHECKPOINT_INTERVAL;
-        uint32_t swapSeq = std::max(seq - randRange, log_->checkpoint.seq + 1);
+        // swap with previous req
+        uint32_t swapSeq = std::max(seq - 1, log_->checkpoint.seq + 1);
         std::optional<uint32_t> startSeq = swapLog(swapSeq, seq);
         if (startSeq) {
             log_->abortAppOpAndSyncWithLog(startSeq.value());

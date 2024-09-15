@@ -82,9 +82,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     } else {
         prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
-    std::array<int,5> myarray = { 2, 16, 77, 34, 50 };
-    std::array<int,5>::iterator it = std::find(myarray.begin(), myarray.end(), 77);
-    std::vector<int>::iterator a;
+    
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         // TODO error out properly
