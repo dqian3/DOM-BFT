@@ -120,7 +120,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t trigg
         },
         1000000, this);
 
-    ev_set_priority(statsTimer_->evTimer_, -5);
+    ev_set_priority(statsTimer_->evTimer_, EV_MAXPRI);
     endpoint_->RegisterTimer(statsTimer_.get());
 }
 

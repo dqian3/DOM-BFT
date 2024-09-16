@@ -14,7 +14,7 @@ client:
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "maxInFlight" # 'maxInFlight' or 'sendRate'
-  maxInFlight: 50
+  maxInFlight: 100 
   sendRate: 1000 
   runtimeSeconds: 30
 

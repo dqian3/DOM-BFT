@@ -222,6 +222,8 @@ void Client::commitRequest(uint32_t clientSeq)
     // TODO do some application stuff
     VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
 
+    totalLatency_ += GetMicrosecondTimestamp() - requestStates_[clientSeq].sendTime;
+
     requestStates_.erase(clientSeq);
     numCommitted_++;
     numInFlight_--;
