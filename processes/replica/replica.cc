@@ -119,9 +119,13 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t trigg
 
     statsTimer_ = std::make_unique<Timer>(
         [&](void *ctx, void *endpoint) {
-
+            // Print other stats?
+            if (seq_ > 0) {
+                LOG(INFO) << "seq_=" << seq_;
+            }
         },
         1000000, this);
+
     ev_set_priority(statsTimer_->evTimer_, -5);
     endpoint_->RegisterTimer(statsTimer_.get());
 }

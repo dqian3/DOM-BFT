@@ -103,8 +103,7 @@ Client::Client(const ProcessConfig &config, size_t id)
             LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
 
-            LOG(INFO) << totalLatency_ / numCommitted_ / 1000;
-
+            LOG(INFO) << "Average committed time: " << totalLatency_ / numCommitted_ / 1000 << " us";
             exit(0);
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
@@ -226,9 +225,6 @@ void Client::commitRequest(uint32_t clientSeq)
     requestStates_.erase(clientSeq);
     numCommitted_++;
     numInFlight_--;
-
-    uint64_t latency = GetMicrosecondTimestamp() - requestStates_.at(clientSeq).sendTime;
-    totalLatency_ += latency;
 
     if (sendMode_ == dombft::MaxInFlightBased) {
         submitRequest();
