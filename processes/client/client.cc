@@ -103,15 +103,14 @@ Client::Client(const ProcessConfig &config, size_t id)
             LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
 
-            LOG(INFO) << totalLatency_ / numCommitted_ / 1000;
-
+            LOG(INFO) << "Average committed time: " << totalLatency_ / numCommitted_ / 1000 << " us";
             exit(0);
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
         this);
 
     // Set high priority (lower is more priority) to terminate properly.
-    ev_set_priority(terminateTimer_->evTimer_, -5);
+    ev_set_priority(terminateTimer_->evTimer_, EV_MAXPRI);
     endpoint_->RegisterTimer(terminateTimer_.get());
 
     if (config.app == AppType::COUNTER) {
