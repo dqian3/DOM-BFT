@@ -46,7 +46,7 @@ std::string Counter::execute(const std::string &serialized_request, const uint32
 
 bool Counter::commit(uint32_t commit_idx)
 {
-    LOG(INFO) << "Committing counter value at idx: " << commit_idx;
+    VLOG(1) << "Committing counter value at idx: " << commit_idx;
 
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
                            [commit_idx](const VersionedValue &v) { return v.version <= commit_idx; });
@@ -56,9 +56,9 @@ bool Counter::commit(uint32_t commit_idx)
         committed_state.version = commit_idx;
         version_hist.erase(version_hist.begin(), it.base());
 
-        LOG(INFO) << "Committed counter value: " << it->value;
+        VLOG(1) << "Committed counter value: " << committed_state.value;
     } else {
-        LOG(INFO) << "No version needs to be cleaned up " << commit_idx;
+        VLOG(1) << "No version needs to be cleaned up " << commit_idx;
         return true;
     }
 
@@ -78,7 +78,7 @@ std::string Counter::getDigest(uint32_t digest_idx)
         digest = committed_state;
     }
 
-    LOG(INFO) << "Digest at idx " << digest_idx << " is " << digest.value;
+    VLOG(1) << "Digest at idx " << digest_idx << " is " << digest.value;
 
     return std::string(reinterpret_cast<const char *>(&digest), sizeof(VersionedValue));
 }
@@ -94,8 +94,7 @@ void Counter::applySnapshot(const std::string &snapshot)
     counter = committed_state.value;
     version_hist.clear();
 
-    LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
-
+    VLOG(1) << "Applying snapshot with value " << committed_state.value;
 }
 
 void *CounterTrafficGen::generateAppTraffic()
@@ -109,17 +108,18 @@ void *CounterTrafficGen::generateAppTraffic()
 bool Counter::abort(const uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-    if(abort_idx < committed_state.version){
+    if (abort_idx < committed_state.version) {
         // or revert to committed state?
-        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version <<". Unable to revert.";
+        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version
+                   << ". Unable to revert.";
         return false;
     }
-    if(abort_idx < version_hist.front().version){
+    if (abort_idx < version_hist.front().version) {
         version_hist.erase(version_hist.begin(), version_hist.end());
-    }else if(abort_idx >= version_hist.back().version){
+    } else if (abort_idx >= version_hist.back().version) {
         LOG(WARNING) << "Requested abort index is greater than the last version in history. No aborting";
         return true;
-    }else{
+    } else {
         auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
                                [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
         if (it != version_hist.rend()) {
@@ -135,7 +135,8 @@ bool Counter::abort(const uint32_t abort_idx)
     } else {
         counter = committed_state.value;
     }
-    LOG(INFO) << "Counter reverted to stable value: " << counter;
+
+    VLOG(1) << "Counter reverted to stable value: " << committed_state.value;
 
     return true;
 }

@@ -34,6 +34,7 @@ private:
     SignatureProvider sigProvider_;
 
     std::unique_ptr<Endpoint> endpoint_;
+    std::unique_ptr<Timer> statsTimer_;
     std::unique_ptr<Timer> fallbackStartTimer_;
     std::unique_ptr<Timer> fallbackTimer_;
     std::shared_ptr<Log> log_;

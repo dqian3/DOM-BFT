@@ -99,9 +99,12 @@ Client::Client(const ProcessConfig &config, size_t id)
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
     terminateTimer_ = std::make_unique<Timer>(
-        [config](void *ctx, void *endpoint) {
+        [&](void *ctx, void *endpoint) {
             LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
+
+            LOG(INFO) << totalLatency_ / numCommitted_ / 1000;
+
             exit(0);
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
@@ -224,6 +227,9 @@ void Client::commitRequest(uint32_t clientSeq)
     numCommitted_++;
     numInFlight_--;
 
+    uint64_t latency = GetMicrosecondTimestamp() - requestStates_.at(clientSeq).sendTime;
+    totalLatency_ += latency;
+
     if (sendMode_ == dombft::MaxInFlightBased) {
         submitRequest();
     }
@@ -251,8 +257,8 @@ void Client::checkTimeouts()
         }
 
         if (!reqState.triggerSent && now - reqState.sendTime > slowPathTimeout_) {
-            LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
-                      << " now=" << now << " due to timeout";
+            VLOG(1) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
+                    << " now=" << now << " due to timeout";
 
             reqState.triggerSent = true;
             reqState.triggerSendTime = now;
@@ -354,8 +360,9 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        LOG(INFO) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
-                  << now - reqState.sendTime << " us";
+        VLOG(1) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
+
+                << now - reqState.sendTime << " us";
 
         lastFastPath_ = clientSeq;
 
@@ -366,7 +373,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
     if (!reqState.triggerSent && 3 * f_ + 1 - reqState.collector.replies_.size() < 2 * f_ + 1 - maxMatchSize) {
-        LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
+        VLOG(1) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
         reqState.triggerSent = true;

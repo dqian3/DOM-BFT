@@ -95,6 +95,9 @@ private:
     uint32_t lastNormalPath_ = 0;
     uint32_t lastSlowPath_ = 0;
 
+    /* Global Stats */
+    uint64_t totalLatency_ = 0;
+
     /* Per request state */
     std::map<int, RequestState> requestStates_;
 

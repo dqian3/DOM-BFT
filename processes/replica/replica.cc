@@ -116,6 +116,14 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t trigg
             this->startFallback();
         },
         config.replicaFallbackTimeout, this);
+
+    statsTimer_ = std::make_unique<Timer>(
+        [&](void *ctx, void *endpoint) {
+
+        },
+        1000000, this);
+    ev_set_priority(statsTimer_->evTimer_, -5);
+    endpoint_->RegisterTimer(statsTimer_.get());
 }
 
 Replica::~Replica()
@@ -172,7 +180,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         // TODO TODO get rid of this
         if (fallback_) {
-            LOG(INFO) << "Queuing request due to fallback";
+            VLOG(1) << "Queuing request due to fallback";
             fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
             return;
         }
@@ -257,7 +265,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
 
         if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
-            LOG(INFO) << "Received fallback trigger again!";
+            VLOG(1) << "Received fallback trigger again!";
             return;
         }
 
