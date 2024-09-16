@@ -22,4 +22,6 @@ start_ns=$(date '+%s%N' --date="$(echo "$logs"  | head -n 1 | grep -o "[0-9]*:[0
 end_ns=$(date '+%s%N' --date="$(echo "$logs"  | tail -n 1 | grep -o "[0-9]*:[0-9]*:[0-9]*.[0-9]*")" )
 
 echo $num_ops
-echo $((($end_ns - $start_ns) / 1000000))
+secs=$((($end_ns - $start_ns) / 1000000000))
+echo $secs
+echo $(($num_ops / $secs))

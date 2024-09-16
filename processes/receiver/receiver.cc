@@ -192,8 +192,8 @@ void Receiver::forwardRequest(const DOMRequest &request)
     } else {
         uint64_t now = GetMicrosecondTimestamp();
 
-        LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
-                  << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+        VLOG(1) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
+                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
         MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
         if (skipForwarding_) {
