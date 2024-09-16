@@ -170,8 +170,10 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        // TODO also pass client request
-        handleClientRequest(clientHeader);
+        if(triggerFallbackFreq_ && replicaId_ % 2 && log_->nextSeq % triggerFallbackFreq_ == 0)
+            holdAndSwapCliReq(clientHeader);
+        else
+            handleClientRequest(clientHeader);
     }
 #else
     if (hdr->msgType == CLIENT_REQUEST) {
@@ -432,12 +434,12 @@ void Replica::handleClientRequest(const ClientRequest &request)
     Reply reply;
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
+    VLOG(2) << "Received request from client " << clientId << " with seq " << clientSeq;
 
     if (clientId < 0 || clientId > clientAddrs_.size()) {
         LOG(ERROR) << "Invalid client id" << clientId;
         return;
     }
-
     reply.set_client_id(clientId);
     reply.set_client_seq(clientSeq);
     reply.set_replica_id(replicaId_);
@@ -452,23 +454,11 @@ void Replica::handleClientRequest(const ClientRequest &request)
         LOG(ERROR) << "Could not add request to log!";
         return;
     }
-
     uint32_t seq = log_->nextSeq - 1;
     reply.set_result(result);
     reply.set_fast(true);
     reply.set_seq(seq);
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
-
-    if(triggerFallbackFreq_ && seq % triggerFallbackFreq_ == 0 && replicaId_ % 2){
-        VLOG(2) << "Triggering fallback at replica: " << replicaId_ << " seq: " << seq;
-        //messReplyDigest(reply); // more efficient on triggering fallback
-        // swap with previous req
-        uint32_t swapSeq = std::max(seq - 1, log_->checkpoint.seq + 1);
-        std::optional<uint32_t> startSeq = swapLog(swapSeq, seq);
-        if (startSeq) {
-            log_->abortAppOpAndSyncWithLog(startSeq.value());
-        }
-    }
 
     // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
@@ -530,6 +520,21 @@ std::optional<uint32_t> Replica::swapLog(uint32_t seqA, uint32_t seqB) {
         }
     }
     return seqA;
+}
+
+void Replica::holdAndSwapCliReq(const proto::ClientRequest &request) {
+    uint32_t clientId = request.client_id();
+    uint32_t clientSeq = request.client_seq();
+    if(!heldRequest_){
+        heldRequest_ = request;
+        VLOG(2) << "Holding request (" << clientId << ", " << clientSeq << ") for swapping";
+        return;
+    }
+    handleClientRequest(request);
+    handleClientRequest(heldRequest_.value());
+    VLOG(2) << "Swapped requests (" << clientId << ", " << clientSeq << ") and ("
+            << heldRequest_->client_id() << ", " << heldRequest_->client_seq() << ")";
+    heldRequest_.reset();
 }
 
 void Replica::handleCert(const Cert &cert)
