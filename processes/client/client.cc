@@ -108,7 +108,7 @@ Client::Client(const ProcessConfig &config, size_t id)
         this);
 
     // Set high priority (lower is more priority) to terminate properly.
-    ev_set_priority(terminateTimer_.get(), -5);
+    ev_set_priority(terminateTimer_->evTimer_, EV_MAXPRI);
     endpoint_->RegisterTimer(terminateTimer_.get());
 
     if (config.app == AppType::COUNTER) {
