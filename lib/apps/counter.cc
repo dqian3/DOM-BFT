@@ -71,17 +71,16 @@ std::string Counter::getDigest(uint32_t digest_idx)
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
                            [digest_idx](const VersionedValue &v) { return v.version <= digest_idx; });
 
-    int value_digest;
-
+    VersionedValue digest;
     if (it != version_hist.rend()) {
-        value_digest = it->value;
+        digest = *it;
     } else {
-        value_digest = committed_state.value;
+        digest = committed_state;
     }
 
-    LOG(INFO) << "Digest at idx " << digest_idx << " is " << value_digest;
+    LOG(INFO) << "Digest at idx " << digest_idx << " is " << digest.value;
 
-    return std::string(reinterpret_cast<const char *>(&counter), INT_SIZE_IN_BYTES);
+    return std::string(reinterpret_cast<const char *>(&digest), sizeof(VersionedValue));
 }
 
 std::string Counter::takeSnapshot()
@@ -91,11 +90,21 @@ std::string Counter::takeSnapshot()
 
 void Counter::applySnapshot(const std::string &snapshot)
 {
-    committed_state = *((VersionedValue *) snapshot.c_str());
-    counter = committed_state.value;
-    version_hist.clear();
+    VersionedValue curSnapshot = *((VersionedValue *) snapshot.c_str());
+    uint32_t ss_idx = curSnapshot.version;
+    LOG(INFO) << "Applying snapshot counter value at idx: " << ss_idx;
 
-    LOG(INFO) << "Applying snapshot with value " << counter;
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
+                           [ss_idx](const VersionedValue &v) { return v.version <= ss_idx; });
+
+    // TODO(Hao): May need conflict check; otherwise completely replying on replica to arbitrate state with digest
+    if (it != version_hist.rend()) {
+        committed_state = curSnapshot;
+        version_hist.erase(version_hist.begin(), it.base());
+        LOG(INFO) << "Applied snapshot counter value: " << it->value;
+    } else {
+        LOG(INFO) << "No version needs to be cleaned up before" << ss_idx;
+    }
 }
 
 void *CounterTrafficGen::generateAppTraffic()
@@ -111,7 +120,7 @@ bool Counter::abort(const uint32_t abort_idx)
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
     if(abort_idx < committed_state.version){
         // or revert to committed state?
-        LOG(ERROR) << "Abort index is less than the committed state version. Unable to revert.";
+        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version <<". Unable to revert.";
         return false;
     }
     if(abort_idx < version_hist.front().version){

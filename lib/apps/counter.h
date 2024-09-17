@@ -13,7 +13,7 @@
 
 typedef struct VersionedValue {
     uint64_t version;
-    int value;
+    int64_t value;
 } VersionedValue;
 
 // TODO instead of requests and responses being raw bytes, have

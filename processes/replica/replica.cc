@@ -494,34 +494,6 @@ void Replica::messReplyDigest(Reply &reply){
     reply.set_digest(tmpDigest, SHA256_DIGEST_LENGTH);
 }
 
-std::optional<uint32_t> Replica::swapLog(uint32_t seqA, uint32_t seqB) {
-    if(seqA == seqB || seqA < log_->checkpoint.seq || seqB < log_->checkpoint.seq || seqA >= log_->nextSeq || seqB >= log_->nextSeq) {
-        return {};
-    }
-    if (seqA > seqB) {
-        std::swap(seqA, seqB);
-    }
-    VLOG(2) << "Swapping log for seq "<<seqA<<" and "<<seqB<<" for replica: " << replicaId_;
-    uint32_t aIdx = seqA % MAX_SPEC_HIST;
-    uint32_t bIdx = seqB % MAX_SPEC_HIST;
-    std::swap(log_->log[aIdx], log_->log[bIdx]);
-
-    // update all digest from seqA to the latest log
-    uint32_t curIdx = aIdx;
-    uint32_t lastIdx = log_->nextSeq % MAX_SPEC_HIST;
-    uint32_t curSeq = seqA;
-    while(curIdx!=MAX_SPEC_HIST && curIdx != lastIdx){
-        log_->modifyEntry(curSeq++, *(log_->log[curIdx++]));
-    }
-    if( curIdx != lastIdx){
-        curIdx = 0;
-        while(curIdx != bIdx){
-            log_->modifyEntry(curSeq++, *(log_->log[curIdx++]));
-        }
-    }
-    return seqA;
-}
-
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request) {
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
@@ -668,6 +640,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         LOG(INFO) << "Committing seq=" << myCommit.seq();
 
         log_->checkpoint.seq = myCommit.seq();
+        // TODO(Hao): size of appDigest is not correct
         memcpy(log_->checkpoint.appDigest, myCommit.app_digest().c_str(), SHA256_DIGEST_LENGTH);
         memcpy(log_->checkpoint.logDigest, myCommit.log_digest().c_str(), SHA256_DIGEST_LENGTH);
 

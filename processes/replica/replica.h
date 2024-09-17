@@ -83,8 +83,6 @@ public:
     ~Replica();
 
     void run();
-
-    std::optional<uint32_t> swapLog(uint32_t seqA, uint32_t seqB);
 };
 
 }   // namespace dombft

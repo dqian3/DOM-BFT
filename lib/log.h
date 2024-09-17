@@ -90,7 +90,6 @@ struct Log {
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
-    void modifyEntry(uint32_t targetSeq, LogEntry &entry);
     void commit(uint32_t seq);
 
     void addCert(uint32_t seq, const dombft::proto::Cert &cert);
@@ -103,8 +102,6 @@ struct Log {
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 
     LogEntry *getEntry(uint32_t seq);
-
-    void abortAppOpAndSyncWithLog(uint32_t startSeq);
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);

@@ -101,28 +101,6 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     return true;
 }
 
-// Modify the entry at targetSeq with the info of the input entry
-// use with caution as for the correctness the digest of the later seq should be updated
-void Log::modifyEntry(uint32_t targetSeq, LogEntry &entry) {
-    byte *prevDigest = nullptr;
-    if (targetSeq - 1 == checkpoint.seq) {
-        VLOG(4) << "Using checkpoint digest as previous for seq=" << targetSeq;
-        prevDigest = checkpoint.logDigest;
-    } else {
-        prevDigest = log[(targetSeq - 1) % log.size()]->digest;
-    }
-    LogEntry oldEntry = *log[targetSeq % log.size()];
-    uint32_t new_c_id = entry.client_id;
-    uint32_t new_c_seq = entry.client_seq;
-    std::string req = entry.request;
-    log[targetSeq % log.size()] = std::make_unique<LogEntry>(targetSeq, new_c_id, new_c_seq, req, prevDigest);
-
-    VLOG(4) << "Update a new entry at seq=" << targetSeq << " c_id=" << new_c_id  << " c_seq=" << new_c_seq
-            << " digest=" << digest_to_hex(log[targetSeq % log.size()]->digest).substr(56);
-
-
-}
-
 void Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 {
     certs[seq] = std::make_shared<dombft::proto::Cert>(cert);
@@ -220,25 +198,4 @@ void Log::commit(uint32_t seq)
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
     }
-}
-
-void Log::abortAppOpAndSyncWithLog(uint32_t startSeq) {
-    assert(startSeq > 0 && startSeq > checkpoint.seq);
-    app_->abort(startSeq-1);
-    uint32_t curIdx = startSeq % MAX_SPEC_HIST;
-    uint32_t endIdx = nextSeq % MAX_SPEC_HIST;
-
-    while(curIdx != endIdx && curIdx!=MAX_SPEC_HIST){
-        app_->execute(log[curIdx]->request, log[curIdx]->seq);
-        curIdx++;
-    }
-
-    if (curIdx != endIdx) {
-        curIdx = 0;
-        while(curIdx != endIdx){
-            app_->execute(log[curIdx]->request, log[curIdx]->seq);
-            curIdx++;
-        }
-    }
-    LOG(INFO) << "App state synced with log for starting seq "<< startSeq;
 }
