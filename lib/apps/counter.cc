@@ -90,21 +90,12 @@ std::string Counter::takeSnapshot()
 
 void Counter::applySnapshot(const std::string &snapshot)
 {
-    VersionedValue curSnapshot = *((VersionedValue *) snapshot.c_str());
-    uint32_t ss_idx = curSnapshot.version;
-    LOG(INFO) << "Applying snapshot counter value at idx: " << ss_idx;
+    committed_state = *((VersionedValue *) snapshot.c_str());
+    counter = committed_state.value;
+    version_hist.clear();
 
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
-                           [ss_idx](const VersionedValue &v) { return v.version <= ss_idx; });
+    LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
 
-    // TODO(Hao): May need conflict check; otherwise completely replying on replica to arbitrate state with digest
-    if (it != version_hist.rend()) {
-        committed_state = curSnapshot;
-        version_hist.erase(version_hist.begin(), it.base());
-        LOG(INFO) << "Applied snapshot counter value: " << it->value;
-    } else {
-        LOG(INFO) << "No version needs to be cleaned up before" << ss_idx;
-    }
 }
 
 void *CounterTrafficGen::generateAppTraffic()
@@ -125,11 +116,14 @@ bool Counter::abort(const uint32_t abort_idx)
     }
     if(abort_idx < version_hist.front().version){
         version_hist.erase(version_hist.begin(), version_hist.end());
+    }else if(abort_idx >= version_hist.back().version){
+        LOG(WARNING) << "Requested abort index is greater than the last version in history. No aborting";
+        return true;
     }else{
         auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
                                [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
         if (it != version_hist.rend()) {
-            // Erase all entries from the point found to the end entries from the point found to the end
+            // Erase all entries from the point found + 1 to the end entries from the point found to the end
             version_hist.erase(it.base(), version_hist.end());
         }
     }
