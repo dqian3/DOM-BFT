@@ -52,10 +52,11 @@ bool Counter::commit(uint32_t commit_idx)
                            [commit_idx](const VersionedValue &v) { return v.version <= commit_idx; });
 
     if (it != version_hist.rend()) {
-        counter_stable = it->value;
+        committed_state.value = it->value;
+        committed_state.version = commit_idx;
         version_hist.erase(version_hist.begin(), it.base());
 
-        LOG(INFO) << "Committed counter value: " << counter_stable;
+        LOG(INFO) << "Committed counter value: " << it->value;
     } else {
         LOG(INFO) << "No version needs to be cleaned up " << commit_idx;
         return true;
@@ -70,33 +71,31 @@ std::string Counter::getDigest(uint32_t digest_idx)
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
                            [digest_idx](const VersionedValue &v) { return v.version <= digest_idx; });
 
-    int value_digest;
-
+    VersionedValue digest;
     if (it != version_hist.rend()) {
-        value_digest = it->value;
+        digest = *it;
     } else {
-        value_digest = counter_stable;
+        digest = committed_state;
     }
 
-    LOG(INFO) << "Digest at idx " << digest_idx << " is " << value_digest;
+    LOG(INFO) << "Digest at idx " << digest_idx << " is " << digest.value;
 
-    return std::string(reinterpret_cast<const char *>(&counter), INT_SIZE_IN_BYTES);
+    return std::string(reinterpret_cast<const char *>(&digest), sizeof(VersionedValue));
 }
 
 std::string Counter::takeSnapshot()
 {
-    return std::string(reinterpret_cast<const char *>(&counter_stable), INT_SIZE_IN_BYTES);
+    return std::string(reinterpret_cast<const char *>(&committed_state), sizeof(VersionedValue));
 }
 
 void Counter::applySnapshot(const std::string &snapshot)
 {
-    counter_stable = *((int *) snapshot.c_str());
-    counter = counter_stable;
+    committed_state = *((VersionedValue *) snapshot.c_str());
+    counter = committed_state.value;
     version_hist.clear();
 
-    LOG(INFO) << "Applying snapshot with value " << counter_stable;
+    LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
 
-    return;
 }
 
 void *CounterTrafficGen::generateAppTraffic()
@@ -109,16 +108,24 @@ void *CounterTrafficGen::generateAppTraffic()
 
 bool Counter::abort(const uint32_t abort_idx)
 {
-
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-
-    // Find the last committed value before or at abort_idx
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
-                           [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
-
-    if (it != version_hist.rend()) {
-        // Erase all entries from the point found to the end
-        version_hist.erase(it.base(), version_hist.end());
+    if(abort_idx < committed_state.version){
+        // or revert to committed state?
+        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version <<". Unable to revert.";
+        return false;
+    }
+    if(abort_idx < version_hist.front().version){
+        version_hist.erase(version_hist.begin(), version_hist.end());
+    }else if(abort_idx >= version_hist.back().version){
+        LOG(WARNING) << "Requested abort index is greater than the last version in history. No aborting";
+        return true;
+    }else{
+        auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
+                               [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
+        if (it != version_hist.rend()) {
+            // Erase all entries from the point found + 1 to the end entries from the point found to the end
+            version_hist.erase(it.base(), version_hist.end());
+        }
     }
 
     // Revert the counter to the last state not yet erased
@@ -126,10 +133,9 @@ bool Counter::abort(const uint32_t abort_idx)
     if (!version_hist.empty()) {
         counter = version_hist.back().value;
     } else {
-        counter = counter_stable;
+        counter = committed_state.value;
     }
-
-    LOG(INFO) << "Counter reverted to stable value: " << counter_stable;
+    LOG(INFO) << "Counter reverted to stable value: " << counter;
 
     return true;
 }

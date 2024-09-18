@@ -47,7 +47,11 @@ struct LogCheckpoint {
     std::map<uint32_t, std::string> signatures;
 
     // Default constructor
-    LogCheckpoint() = default;
+    LogCheckpoint()
+    {
+        std::memset(logDigest, 0, SHA256_DIGEST_LENGTH);
+        std::memset(appDigest, 0, SHA256_DIGEST_LENGTH);
+    }
 
     // Copy constructor
     LogCheckpoint(const LogCheckpoint &other)
@@ -86,7 +90,6 @@ struct Log {
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
-
     void commit(uint32_t seq);
 
     void addCert(uint32_t seq, const dombft::proto::Cert &cert);

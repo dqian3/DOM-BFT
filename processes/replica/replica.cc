@@ -16,9 +16,8 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Replica::Replica(const ProcessConfig &config, uint32_t replicaId)
-    : replicaId_(replicaId)
-    , instance_(0)
+Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq)
+    : replicaId_(replicaId), instance_(0), triggerFallbackFreq_(triggerFallbackFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -171,8 +170,10 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        // TODO also pass client request
-        handleClientRequest(clientHeader);
+        if(triggerFallbackFreq_ && replicaId_ % 2 && log_->nextSeq % triggerFallbackFreq_ == 0)
+            holdAndSwapCliReq(clientHeader);
+        else
+            handleClientRequest(clientHeader);
     }
 #else
     if (hdr->msgType == CLIENT_REQUEST) {
@@ -433,12 +434,12 @@ void Replica::handleClientRequest(const ClientRequest &request)
     Reply reply;
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
+    VLOG(2) << "Received request from client " << clientId << " with seq " << clientSeq;
 
     if (clientId < 0 || clientId > clientAddrs_.size()) {
         LOG(ERROR) << "Invalid client id" << clientId;
         return;
     }
-
     reply.set_client_id(clientId);
     reply.set_client_seq(clientSeq);
     reply.set_replica_id(replicaId_);
@@ -453,12 +454,10 @@ void Replica::handleClientRequest(const ClientRequest &request)
         LOG(ERROR) << "Could not add request to log!";
         return;
     }
-
     uint32_t seq = log_->nextSeq - 1;
     reply.set_result(result);
     reply.set_fast(true);
     reply.set_seq(seq);
-
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
     // VLOG(4) << "Start prepare message";
@@ -484,6 +483,30 @@ void Replica::handleClientRequest(const ClientRequest &request)
         // TODO remove execution result here
         broadcastToReplicas(reply, MessageType::REPLY);
     }
+}
+
+
+void Replica::messReplyDigest(Reply &reply){
+    VLOG(2) << "Digest altered for replica: " << replicaId_ << " seq: " << reply.seq();
+    byte tmpDigest[SHA256_DIGEST_LENGTH];
+    memcpy(tmpDigest, log_->getDigest(), SHA256_DIGEST_LENGTH);
+    tmpDigest[0] += replicaId_;
+    reply.set_digest(tmpDigest, SHA256_DIGEST_LENGTH);
+}
+
+void Replica::holdAndSwapCliReq(const proto::ClientRequest &request) {
+    uint32_t clientId = request.client_id();
+    uint32_t clientSeq = request.client_seq();
+    if(!heldRequest_){
+        heldRequest_ = request;
+        VLOG(2) << "Holding request (" << clientId << ", " << clientSeq << ") for swapping";
+        return;
+    }
+    handleClientRequest(request);
+    handleClientRequest(heldRequest_.value());
+    VLOG(2) << "Swapped requests (" << clientId << ", " << clientSeq << ") and ("
+            << heldRequest_->client_id() << ", " << heldRequest_->client_seq() << ")";
+    heldRequest_.reset();
 }
 
 void Replica::handleCert(const Cert &cert)
@@ -617,6 +640,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         LOG(INFO) << "Committing seq=" << myCommit.seq();
 
         log_->checkpoint.seq = myCommit.seq();
+        // TODO(Hao): size of appDigest is not correct
         memcpy(log_->checkpoint.appDigest, myCommit.app_digest().c_str(), SHA256_DIGEST_LENGTH);
         memcpy(log_->checkpoint.logDigest, myCommit.log_digest().c_str(), SHA256_DIGEST_LENGTH);
 
@@ -624,6 +648,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             log_->checkpoint.commitMessages[r] = checkpointCommits_[r];
             log_->checkpoint.signatures[r] = checkpointCommitSigs_[r];
         }
+        log_->commit(log_->checkpoint.seq);
     }
 }
 

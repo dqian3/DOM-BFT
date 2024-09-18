@@ -335,7 +335,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     auto &reqState = requestStates_.at(clientSeq);
 
-    VLOG(4) << "Received reply from replica " << reply.replica_id() << " instance " << reply.instance() << " for "
+    VLOG(4) << "Received reply from replica " << reply.replica_id() << " instance " << reply.instance() << " for c_seq "
             << clientSeq << " at log pos " << reply.seq() << " after " << now - reqState.sendTime << " usec";
 
     bool hasCertBefore = reqState.collector.hasCert();

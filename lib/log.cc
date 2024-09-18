@@ -74,16 +74,15 @@ Log::Log(AppType app_type)
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
-    uint32_t prevSeqIdx = (nextSeq + log.size() - 1) % log.size();
-
+    assert(nextSeq);
     byte *prevDigest = nullptr;
     if (nextSeq - 1 == checkpoint.seq) {
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
         prevDigest = checkpoint.logDigest;
     } else {
-        prevDigest = log[prevSeqIdx]->digest;
+        prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
-
+    
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         // TODO error out properly

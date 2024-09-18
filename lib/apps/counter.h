@@ -13,7 +13,7 @@
 
 typedef struct VersionedValue {
     uint64_t version;
-    int value;
+    int64_t value;
 } VersionedValue;
 
 // TODO instead of requests and responses being raw bytes, have
@@ -22,7 +22,7 @@ class Counter : public Application {
 public:
     int counter;
 
-    int counter_stable;
+    VersionedValue committed_state;
 
     virtual ~Counter();
 
@@ -38,7 +38,7 @@ public:
 
     Counter()
         : counter(0)
-        , counter_stable(0)
+        , committed_state(0,0)
         , version_hist()
     {
     }
@@ -47,8 +47,6 @@ public:
 
 private:
     std::vector<VersionedValue> version_hist;
-
-    uint64_t committed_idx = 0;
 };
 
 class CounterTrafficGen : public AppTrafficGen {
