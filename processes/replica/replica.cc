@@ -17,7 +17,9 @@ namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq)
-    : replicaId_(replicaId), instance_(0), triggerFallbackFreq_(triggerFallbackFreq)
+    : replicaId_(replicaId)
+    , instance_(0)
+    , triggerFallbackFreq_(triggerFallbackFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -170,7 +172,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if(triggerFallbackFreq_ && replicaId_ % 2 && log_->nextSeq % triggerFallbackFreq_ == 0)
+        if (triggerFallbackFreq_ && replicaId_ % 2 && log_->nextSeq % triggerFallbackFreq_ == 0)
             holdAndSwapCliReq(clientHeader);
         else
             handleClientRequest(clientHeader);
@@ -485,8 +487,8 @@ void Replica::handleClientRequest(const ClientRequest &request)
     }
 }
 
-
-void Replica::messReplyDigest(Reply &reply){
+void Replica::messReplyDigest(Reply &reply)
+{
     VLOG(2) << "Digest altered for replica: " << replicaId_ << " seq: " << reply.seq();
     byte tmpDigest[SHA256_DIGEST_LENGTH];
     memcpy(tmpDigest, log_->getDigest(), SHA256_DIGEST_LENGTH);
@@ -494,18 +496,19 @@ void Replica::messReplyDigest(Reply &reply){
     reply.set_digest(tmpDigest, SHA256_DIGEST_LENGTH);
 }
 
-void Replica::holdAndSwapCliReq(const proto::ClientRequest &request) {
+void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
+{
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
-    if(!heldRequest_){
+    if (!heldRequest_) {
         heldRequest_ = request;
         VLOG(2) << "Holding request (" << clientId << ", " << clientSeq << ") for swapping";
         return;
     }
     handleClientRequest(request);
     handleClientRequest(heldRequest_.value());
-    VLOG(2) << "Swapped requests (" << clientId << ", " << clientSeq << ") and ("
-            << heldRequest_->client_id() << ", " << heldRequest_->client_seq() << ")";
+    VLOG(2) << "Swapped requests (" << clientId << ", " << clientSeq << ") and (" << heldRequest_->client_id() << ", "
+            << heldRequest_->client_seq() << ")";
     heldRequest_.reset();
 }
 
@@ -890,12 +893,21 @@ void Replica::finishFallback(const FallbackProposal &history)
     const LogCheckpoint &maxCheckpoint = history.logs()[maxCheckpointIdx].checkpoint();
 
     // TODO this only works with our basic counter because app_digest == counter!
-    log_->app_->applySnapshot(maxCheckpoint.app_digest());
 
-    log_->checkpoint.seq = maxCheckpoint.seq();
-    memcpy(log_->checkpoint.appDigest, maxCheckpoint.app_digest().c_str(), maxCheckpoint.app_digest().size());
-    memcpy(log_->checkpoint.logDigest, maxCheckpoint.log_digest().c_str(), maxCheckpoint.log_digest().size());
-    log_->checkpoint.cert = maxCheckpoint.cert();
+    std::string myCheckpointDigest((char *) log_->checkpoint.logDigest, SHA256_DIGEST_LENGTH);
+    bool checkpointUsed = false;
+
+    if (maxCheckpoint.log_digest() != myCheckpointDigest) {
+
+        log_->app_->applySnapshot(maxCheckpoint.app_digest());
+
+        log_->checkpoint.seq = maxCheckpoint.seq();
+        memcpy(log_->checkpoint.appDigest, maxCheckpoint.app_digest().c_str(), maxCheckpoint.app_digest().size());
+        memcpy(log_->checkpoint.logDigest, maxCheckpoint.log_digest().c_str(), maxCheckpoint.log_digest().size());
+        log_->checkpoint.cert = maxCheckpoint.cert();
+
+        checkpointUsed = true;
+    }
 
     for (uint32_t i = 0; i < maxCheckpoint.commits().size(); i++) {
         auto &commit = maxCheckpoint.commits()[i];
@@ -930,6 +942,9 @@ void Replica::finishFallback(const FallbackProposal &history)
         if (myDigest == entry.digest()) {
             VLOG(2) << "Skipping c_id=" << entry.client_id() << " c_seq=" << entry.client_seq()
                     << " since already in log at seq=" << entry.seq();
+
+            // If we used a different checkpoint, we shouldn't reuse any of our log
+            assert(!checkpointUsed);
             continue;
         }
 
