@@ -20,15 +20,16 @@ struct RequestState {
 
     RequestState(uint32_t f, uint32_t cseq, uint32_t inst, uint64_t sendT)
         : collector(f)
-        , client_seq(cseq)
+        , clientSeq(cseq)
         , instance(inst)
         , sendTime(sendT)
 
     {
     }
     CertCollector collector;
+    uint32_t nReplies = 0;
 
-    uint32_t client_seq;
+    uint32_t clientSeq;
     uint32_t instance;
 
     uint64_t sendTime;

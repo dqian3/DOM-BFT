@@ -103,7 +103,7 @@ Client::Client(const ProcessConfig &config, size_t id)
             LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
 
-            LOG(INFO) << "Average committed time: " << totalLatency_ / numCommitted_ / 1000 << " us";
+            LOG(INFO) << "Average committed time: " << totalLatency_ / numCommitted_ << " us";
             exit(0);
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
@@ -222,7 +222,7 @@ void Client::commitRequest(uint32_t clientSeq)
     // TODO do some application stuff
     VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
 
-    totalLatency_ += GetMicrosecondTimestamp() - requestStates_[clientSeq].sendTime;
+    totalLatency_ += GetMicrosecondTimestamp() - requestStates_.at(clientSeq).sendTime;
 
     requestStates_.erase(clientSeq);
     numCommitted_++;
@@ -344,6 +344,13 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     VLOG(4) << "Received reply from replica " << reply.replica_id() << " instance " << reply.instance() << " for c_seq "
             << clientSeq << " at log pos " << reply.seq() << " after " << now - reqState.sendTime << " usec";
 
+    reqState.nReplies++;
+
+    if (reqState.nReplies >= 3 * f_ + 1) {
+        commitRequest(clientSeq);
+    }
+    return;
+
     bool hasCertBefore = reqState.collector.hasCert();
     int maxMatchSize = reqState.collector.insertReply(reply, std::vector<byte>(sig.begin(), sig.end()));
 
@@ -359,7 +366,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         VLOG(1) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
-
                 << now - reqState.sendTime << " us";
 
         lastFastPath_ = clientSeq;
