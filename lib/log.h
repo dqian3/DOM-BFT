@@ -101,20 +101,10 @@ struct Log {
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 
-    LogEntry *getEntry(uint32_t seq);
+    std::shared_ptr<LogEntry> getEntry(uint32_t seq);
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);
 std::ostream &operator<<(std::ostream &out, const Log &l);
 
-// Passed around during contention resolution. Will get to this later.
-// struct LogSuffix
-// {
-//     LogCommitPoint base;
-//     std::vector<std::unique_ptr<LogEntry>> entries;
-//     // TODO shared ptr here so we don't duplicate it from certs.
-//     dombft::proto::Cert latestCert;
-
-//     // TODO function to combine 2f + 1 log suffixes into a single one
-// };
 #endif

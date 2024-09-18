@@ -7,3 +7,13 @@ cc_test(
     "@com_google_googletest//:gtest_main"
   ],
 )
+
+
+cc_test(
+  name = "test_fallback_utils",
+  size = "small",
+  srcs = ["test_fallback_utils.cc"],
+  deps = [
+    "//lib:fallback_utils",
+  ],
+)

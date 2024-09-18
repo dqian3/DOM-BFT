@@ -82,7 +82,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     } else {
         prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
-    
+
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         // TODO error out properly
@@ -180,13 +180,12 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     return out;
 }
 
-LogEntry *Log::getEntry(uint32_t seq)
+std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
 {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
         uint32_t index = seq % MAX_SPEC_HIST;
-        return log[index].get();
+        return log[index];
     } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
     }
 }
