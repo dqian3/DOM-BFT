@@ -14,8 +14,8 @@ client:
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "maxInFlight" # 'maxInFlight' or 'sendRate'
-  maxInFlight: 100 
-  sendRate: 1000 
+  maxInFlight: 200 
+  sendRate: 1500 
   runtimeSeconds: 30
 
 proxy:

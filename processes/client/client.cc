@@ -222,7 +222,7 @@ void Client::commitRequest(uint32_t clientSeq)
     // TODO do some application stuff
     VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
 
-    totalLatency_ += GetMicrosecondTimestamp() - requestStates_[clientSeq].sendTime;
+    totalLatency_ += GetMicrosecondTimestamp() - requestStates_.at(clientSeq).sendTime;
 
     requestStates_.erase(clientSeq);
     numCommitted_++;
@@ -255,8 +255,8 @@ void Client::checkTimeouts()
         }
 
         if (!reqState.triggerSent && now - reqState.sendTime > slowPathTimeout_) {
-            LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
-                      << " now=" << now << " due to timeout";
+            VLOG(1) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
+                    << " now=" << now << " due to timeout";
 
             reqState.triggerSent = true;
             reqState.triggerSendTime = now;
