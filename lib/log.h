@@ -84,9 +84,7 @@ struct Log {
     // The log claims ownership of the application, instead of the replica
     std::unique_ptr<Application> app_;
 
-    Log();
-
-    Log(AppType app_type);
+    Log(std::unique_ptr<Application> app);
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);

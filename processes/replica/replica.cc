@@ -57,7 +57,13 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t trigg
     f_ = config.replicaIps.size() / 3;
 
     LOG(INFO) << "instantiating log";
-    log_ = std::make_shared<Log>(config.app);
+
+    if (config.app == AppType::COUNTER) {
+        log_ = std::make_shared<Log>(std::make_unique<Counter>());
+    } else {
+        LOG(ERROR) << "Unrecognized App Type";
+        exit(1);
+    }
     LOG(INFO) << "log instantiated";
 
     if (config.transport == "nng") {

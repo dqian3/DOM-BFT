@@ -41,34 +41,16 @@ std::ostream &operator<<(std::ostream &out, const LogEntry &le)
     return out;
 }
 
-Log::Log()
+Log::Log(std::unique_ptr<Application> app)
     : nextSeq(1)
     , lastExecuted(0)
-{
-    // Zero initialize all the entries
-    // TODO: there's probably a better way to handle this
-    for (uint32_t i = 0; i < log.size(); i++) {
-        log[i] = std::make_unique<LogEntry>();
-    }
-}
-
-Log::Log(AppType app_type)
-    : nextSeq(1)
-    , lastExecuted(0)
+    , app_(std::move(app))
 {
     LOG(INFO) << "Initializing log entries";
     // Zero initialize all the entries
     // TODO: there's probably a better way to handle this
     for (uint32_t i = 0; i < log.size(); i++) {
         log[i] = std::make_unique<LogEntry>();
-    }
-
-    if (app_type == AppType::COUNTER) {
-        LOG(INFO) << "Creating a counter application";
-        app_ = std::make_unique<Counter>();
-    } else {
-        LOG(ERROR) << "Unsupported application type";
-        exit(1);
     }
 }
 
@@ -186,6 +168,7 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
         uint32_t index = seq % MAX_SPEC_HIST;
         return log[index];
     } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
     }
 }
