@@ -4,6 +4,8 @@
 
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix)
 {
+    LOG(INFO) << "Start getLogSuffixFromProposal";
+
     uint32_t f = fallbackProposal.logs().size() / 2;
 
     // TODO verify message so this isn't unsafe
@@ -96,8 +98,14 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
     // Add entries with f + 1 entries
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
+        if (entry.seq() <= maxCertSeq)
+            continue;
+
         if (entry.seq() > logToUseSeq)
             break;
+
+        LOG(INFO) << entry.client_id();
+        logSuffix.entries.push_back(&entry);
     }
 
     // Add rest of client requests in deterministic order lexicographically by (client_id, client_seq)

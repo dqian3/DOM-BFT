@@ -15,5 +15,7 @@ cc_test(
   srcs = ["test_fallback_utils.cc"],
   deps = [
     "//lib:fallback_utils",
+    "//lib:signature_provider",
+    "@com_google_googletest//:gtest_main",
   ],
 )
