@@ -121,26 +121,26 @@ void Proxy::RecvMeasurementsTd()
 
         // TODO verify and handle signed header better
         if (!reply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse Measurement_Reply message";
+            // LOG(ERROR) << "Unable to parse Measurement_Reply message";
             return;
         }
         uint64_t now = GetMicrosecondTimestamp();
 
-        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
-                << " rtt=" << now - reply.send_time() << " now=" << now;
+        // VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+                // << " rtt=" << now - reply.send_time() << " now=" << now;
 
         if (reply.owd() > 0) {
             context.addMeasure(reply.receiver_id(), reply.owd());
         } else {
             // THis shouldn't matter too much, since it is ultimately the furtherest/max recevier that determines
             // the deadline
-            VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
+            // VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
             context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
         }
 
         // TODO a little buffer :)
         latencyBound_.store(context.getOWD() * 1.5);
-        VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
+        // VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
     };
 
     /* Checks every 10ms to see if we are done*/
@@ -164,7 +164,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
 
-        VLOG(2) << "Received message from " << sender->GetIPAsString() << " " << hdr->msgLen;
+        // VLOG(2) << "Received message from " << sender->GetIPAsString() << " " << hdr->msgLen;
         if (hdr->msgType == MessageType::CLIENT_REQUEST) {
 
             // TODO verify and handle signed header better
@@ -191,9 +191,9 @@ void Proxy::ForwardRequestsTd(const int thread_id)
             outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
             for (int i = 0; i < numReceivers_; i++) {
-                VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
-                        << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
-                        << " now=" << GetMicrosecondTimestamp();
+                // VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
+                //         << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
+                //         << " now=" << GetMicrosecondTimestamp();
 
                 MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
@@ -239,12 +239,18 @@ void Proxy::sendReq(uint32_t seq)
     outReq.set_client_id(proxyId_);
     outReq.set_client_seq(seq);
 
-    VLOG(1) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
-            << " deadline=" << deadline << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
+    // VLOG(1) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
+    //         << " deadline=" << deadline << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
+
+    requestsForwarded_++;
 
     for (int i = 0; i < numReceivers_; i++) {
         MessageHeader *hdr = forwardEps_[0]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
         forwardEps_[0]->SendPreparedMsgTo(receiverAddrs_[i]);
+    }
+
+    if (requestsForwarded_ % 1000 == 0) {
+        LOG(INFO) << "Forwarded " << requestsForwarded_ << " requests";
     }
 }
 
@@ -288,8 +294,8 @@ void Proxy::GenerateRequestsTd()
         }
 
         running_ = false;
-        LOG(INFO) << "Ending experiment after busy-waiting";
-        LOG(INFO) << "Sent " << seq << " requests";
+        // LOG(INFO) << "Ending experiment after busy-waiting";
+        // LOG(INFO) << "Sent " << seq << " requests";
 
     } else {
         Timer timer(

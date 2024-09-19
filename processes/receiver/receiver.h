@@ -59,6 +59,9 @@ private:
     uint32_t numReceivers_;
     Address replicaAddr_;
 
+    uint64_t requestsReceived_ = 0;
+    uint64_t requestsForwarded_ = 0;
+
     // Skip forwarding, for running experiemnts.
     bool skipForwarding_;
     bool ignoreDeadlines_;

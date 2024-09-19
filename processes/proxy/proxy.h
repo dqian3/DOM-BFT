@@ -76,6 +76,8 @@ private:
     uint32_t genReqDuration_;
     bool genReqPoisson_;
 
+    uint64_t requestsForwarded_ = 0;
+
 public:
     /** Proxy accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method

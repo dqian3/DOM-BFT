@@ -16,12 +16,12 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     , ignoreDeadlines_(ignoreDeadlines)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
-    LOG(INFO) << "receiverIP=" << receiverIp;
+    // LOG(INFO) << "receiverIP=" << receiverIp;
     int receiverPort = config.receiverPort;
-    LOG(INFO) << "receiverPort=" << receiverPort;
+    // LOG(INFO) << "receiverPort=" << receiverPort;
 
     std::string receiverKey = config.receiverKeysDir + "/receiver" + std::to_string(receiverId_) + ".pem";
-    LOG(INFO) << "Loading key from " << receiverKey;
+    // LOG(INFO) << "Loading key from " << receiverKey;
     if (!sigProvider_.loadPrivateKey(receiverKey)) {
         LOG(ERROR) << "Unable to load private key!";
         exit(1);
@@ -71,20 +71,20 @@ void Receiver::addToDeadlineQueue()
     int64_t recv_time = GetMicrosecondTimestamp();
     while (requestQueue_.try_dequeue(request)) {
         request.set_late(recv_time > request.deadline());
-        VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
-                << " deadline=" << request.deadline() << " now=" << recv_time;
+        // VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+                // << " deadline=" << request.deadline() << " now=" << recv_time;
 
         if (ignoreDeadlines_) {
             forwardRequest(request);
         } else if (request.late()) {
-            VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
-                    << recv_time - request.deadline() << "us";
-            VLOG(3) << "Checking deadlines before forwarding late message";
+            // VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
+            //         << recv_time - request.deadline() << "us";
+            // VLOG(3) << "Checking deadlines before forwarding late message";
             checkDeadlines();
             forwardRequest(request);
         } else {
-            VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
-                    << request.deadline() - recv_time << "us";
+            // VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
+            //         << request.deadline() - recv_time << "us";
             deadlineQueue_[{request.deadline(), request.client_id()}] = request;
 
             // Check if timer is firing before deadline
@@ -93,7 +93,7 @@ void Receiver::addToDeadlineQueue()
 
             if (nextCheck <= forwardEp_->GetTimerRemaining(fwdTimer_.get())) {
                 forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
-                VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
+                // VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
             }
         }
     }
@@ -166,8 +166,8 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         // Send measurement reply right away
         int64_t recv_time = GetMicrosecondTimestamp();
 
-        VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
-                << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
+        // VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+        //         << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
 
         // Randomly send measurements only once in a whil
         if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
@@ -179,6 +179,11 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
             endpoint_->SendPreparedMsgTo(Address(sender->GetIPAsString(), proxyMeasurementPort_));
+        }
+
+        requestsReceived_++;
+        if (requestsReceived_ % 100 == 0) {
+            LOG(INFO) << "Received " << requestsReceived_ << " requests";
         }
 
         requestQueue_.enqueue(request);
@@ -194,8 +199,8 @@ void Receiver::forwardRequest(const DOMRequest &request)
     } else {
         uint64_t now = GetMicrosecondTimestamp();
 
-        LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
-                  << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+        // LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
+        //           << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
         MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
         if (skipForwarding_) {
@@ -209,6 +214,11 @@ void Receiver::forwardRequest(const DOMRequest &request)
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
         forwardEp_->SendPreparedMsgTo(replicaAddr_);
+
+        requestsForwarded_++;
+        if (requestsForwarded_ % 1000 == 0) {
+            LOG(INFO) << "Forwarded " << requestsForwarded_ << " requests";
+        }
     }
 }
 
@@ -219,7 +229,7 @@ void Receiver::checkDeadlines()
 
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
-        VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
+        // VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
         forwardRequest(it->second);
         auto temp = std::next(it);
         deadlineQueue_.erase(it);
