@@ -9,14 +9,14 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     uint32_t f = fallbackProposal.logs().size() / 2;
 
     // TODO verify message so this isn't unsafe
-    uint32_t maxCheckpointIdx = 0;
+    uint32_t maxCheckpointSeq = 0;
 
     // First find highest commit point
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
         auto &log = fallbackProposal.logs()[i];
-        if (log.checkpoint().seq() > logSuffix.checkpoint->seq()) {
+        if (log.checkpoint().seq() > maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
-            maxCheckpointIdx = i;
+            maxCheckpointSeq = log.checkpoint().seq();
         }
     }
 
@@ -104,7 +104,6 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         if (entry.seq() > logToUseSeq)
             break;
 
-        LOG(INFO) << entry.client_id();
         logSuffix.entries.push_back(&entry);
     }
 
@@ -157,25 +156,28 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
     // TODO rollback
     bool rollbackDone = false;
 
+    uint32_t seq = checkpoint->seq();
+
     for (const dombft::proto::LogEntry *entry : logSuffix.entries) {
         // TODO skip ones already in our log.
         // TODO access entry needs to be cleaner than this
         // TODO fix namespaces lol
 
+        seq++;   // First sequence to apply is right after checkpoint
         // This shouldn't happen, since these should go from the latest checkpoint
-        if (entry->seq() > log->nextSeq) {
+        if (seq > log->nextSeq) {
             LOG(ERROR) << "Missing some log entries before first in log suffix firstSeq is " << entry->seq()
                        << " my nextSeq=" << log->nextSeq;
             exit(1);
         }
 
-        std::shared_ptr<LogEntry> myEntry = log->getEntry(entry->seq());
+        std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
 
         if (myEntry != nullptr) {
             std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
             if (myDigest == entry->digest()) {
                 VLOG(2) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
-                        << " since already in log at seq=" << entry->seq();
+                        << " since already in log at seq=" << seq;
 
                 // If we used a different checkpoint, we shouldn't reuse any of our log
                 assert(!checkpointUsed);
@@ -185,13 +187,13 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
         // TODO Rollback application state here!
         if (!rollbackDone) {
-            log->nextSeq = entry->seq();
-            log->app_->abort(entry->seq() - 1);
+            log->nextSeq = seq;
+            log->app_->abort(seq - 1);
 
             rollbackDone = true;
         }
 
-        assert(entry->seq() == log->nextSeq);
+        assert(seq == log->nextSeq);
 
         std::string result;
         if (!log->addEntry(entry->client_id(), entry->client_seq(), entry->request(), result)) {

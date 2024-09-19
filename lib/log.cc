@@ -123,6 +123,10 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
         }
 
         (*checkpointProto->mutable_cert()) = checkpoint.cert;
+    } else {
+        checkpointProto->set_seq(0);
+        checkpointProto->set_app_digest("");
+        checkpointProto->set_log_digest("");
     }
 
     for (int i = checkpoint.seq + 1; i < nextSeq; i++) {
@@ -168,7 +172,6 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
         uint32_t index = seq % MAX_SPEC_HIST;
         return log[index];
     } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
     }
 }
