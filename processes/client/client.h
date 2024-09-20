@@ -18,10 +18,9 @@
 namespace dombft {
 struct RequestState {
 
-    RequestState(uint32_t f, uint32_t cseq, uint32_t inst, uint64_t sendT)
+    RequestState(uint32_t f, uint32_t cseq, uint64_t sendT)
         : collector(f)
         , client_seq(cseq)
-        , instance(inst)
         , sendTime(sendT)
 
     {
@@ -29,8 +28,6 @@ struct RequestState {
     CertCollector collector;
 
     uint32_t client_seq;
-    uint32_t instance;
-
     uint64_t sendTime;
 
     // Normal path state
@@ -86,7 +83,11 @@ private:
     SignatureProvider sigProvider_;
 
     /* Global state */
-    uint32_t instance_ = 0;
+
+    // Map of replica id instance, once f + 1 are higher than n, update own instance
+    std::map<uint32_t, uint32_t> replicaInstances_;
+    u_int32_t myInstance_ = 0;
+
     uint32_t nextSeq_ = 0;
     uint32_t numInFlight_ = 0;
     uint32_t numCommitted_ = 0;

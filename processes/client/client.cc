@@ -185,7 +185,7 @@ void Client::submitRequest()
         request.set_req_data(counterReq->SerializeAsString());
     }
 
-    requestStates_.emplace(nextSeq_, RequestState(f_, nextSeq_, instance_, now));
+    requestStates_.emplace(nextSeq_, RequestState(f_, nextSeq_, now));
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
     // VLOG(4) << "Begin sending request number " << nextReqSeq_;
@@ -259,7 +259,7 @@ void Client::checkTimeouts()
             FallbackTrigger fallbackTriggerMsg;
 
             fallbackTriggerMsg.set_client_id(clientId_);
-            fallbackTriggerMsg.set_instance(reqState.instance);
+            fallbackTriggerMsg.set_instance(myInstance_);
             fallbackTriggerMsg.set_client_seq(clientSeq);
 
             // TODO set request data
