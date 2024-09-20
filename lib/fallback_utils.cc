@@ -8,13 +8,13 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
     uint32_t f = fallbackProposal.logs().size() / 2;
 
-    // TODO verify message so this isn't unsafe
+    // TODO verify messages so this isn't unsafe
     uint32_t maxCheckpointSeq = 0;
 
     // First find highest commit point
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
         auto &log = fallbackProposal.logs()[i];
-        if (log.checkpoint().seq() > maxCheckpointSeq) {
+        if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
             maxCheckpointSeq = log.checkpoint().seq();
         }

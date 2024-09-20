@@ -766,7 +766,7 @@ void Replica::finishFallback(const FallbackProposal &history)
     getLogSuffixFromProposal(history, logSuffix);
     applySuffixToLog(logSuffix, log_);
 
-    LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log;
+    LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
 
     // TODO send updated replies to each client.
 
