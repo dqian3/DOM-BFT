@@ -1,5 +1,7 @@
 #include "proxy.h"
 
+#include "lib/transport/nng_endpoint_threaded.h"
+
 namespace dombft {
 using namespace dombft::proto;
 
@@ -37,8 +39,8 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         std::vector<std::pair<Address, Address>> measurementAddrs(addrPairs.end() - config.receiverIps.size(),
                                                                   addrPairs.end());
 
-        forwardEps_.push_back(std::make_unique<NngEndpoint>(forwardAddrs, false));
-        measurementEp_ = std::make_unique<NngEndpoint>(measurementAddrs);
+        forwardEps_.push_back(std::make_unique<NngEndpointThreaded>(forwardAddrs, false));
+        measurementEp_ = std::make_unique<NngEndpointThreaded>(measurementAddrs);
 
         for (size_t i = nClients; i < forwardAddrs.size(); i++) {
             receiverAddrs_.push_back(forwardAddrs[i].second);

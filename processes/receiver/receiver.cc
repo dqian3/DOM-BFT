@@ -168,7 +168,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
         VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
                 << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
-        // Randomly send measurements only once in a whil
+        // Randomly send measurements only once in a while
         if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
             MeasurementReply mReply;
             mReply.set_receiver_id(receiverId_);

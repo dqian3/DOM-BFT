@@ -1,8 +1,8 @@
 // C++ Standard Libs
 #include <fstream>
 #include <queue>
-#include <thread>
 #include <random>
+#include <thread>
 
 // Third party libs
 #include <openssl/pem.h>
