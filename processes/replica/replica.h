@@ -69,13 +69,9 @@ private:
     bool verifyCert(const dombft::proto::Cert &cert);
 
     void startFallback();
-
     void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
-    void applyFallbackReq(const dombft::proto::LogEntry &entry);
-
     void finishFallback(const dombft::proto::FallbackProposal &history);
 
-    void messReplyDigest(dombft::proto::Reply &reply);
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
 public:

@@ -41,34 +41,16 @@ std::ostream &operator<<(std::ostream &out, const LogEntry &le)
     return out;
 }
 
-Log::Log()
+Log::Log(std::unique_ptr<Application> app)
     : nextSeq(1)
     , lastExecuted(0)
-{
-    // Zero initialize all the entries
-    // TODO: there's probably a better way to handle this
-    for (uint32_t i = 0; i < log.size(); i++) {
-        log[i] = std::make_unique<LogEntry>();
-    }
-}
-
-Log::Log(AppType app_type)
-    : nextSeq(1)
-    , lastExecuted(0)
+    , app_(std::move(app))
 {
     LOG(INFO) << "Initializing log entries";
     // Zero initialize all the entries
     // TODO: there's probably a better way to handle this
     for (uint32_t i = 0; i < log.size(); i++) {
         log[i] = std::make_unique<LogEntry>();
-    }
-
-    if (app_type == AppType::COUNTER) {
-        LOG(INFO) << "Creating a counter application";
-        app_ = std::make_unique<Counter>();
-    } else {
-        LOG(ERROR) << "Unsupported application type";
-        exit(1);
     }
 }
 
@@ -82,7 +64,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     } else {
         prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
-    
+
     if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         // TODO error out properly
@@ -141,6 +123,10 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
         }
 
         (*checkpointProto->mutable_cert()) = checkpoint.cert;
+    } else {
+        checkpointProto->set_seq(0);
+        checkpointProto->set_app_digest("");
+        checkpointProto->set_log_digest("");
     }
 
     for (int i = checkpoint.seq + 1; i < nextSeq; i++) {
@@ -180,13 +166,12 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     return out;
 }
 
-LogEntry *Log::getEntry(uint32_t seq)
+std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
 {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
         uint32_t index = seq % MAX_SPEC_HIST;
-        return log[index].get();
+        return log[index];
     } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
     }
 }

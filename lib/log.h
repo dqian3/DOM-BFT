@@ -84,9 +84,7 @@ struct Log {
     // The log claims ownership of the application, instead of the replica
     std::unique_ptr<Application> app_;
 
-    Log();
-
-    Log(AppType app_type);
+    Log(std::unique_ptr<Application> app);
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
@@ -101,20 +99,10 @@ struct Log {
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 
-    LogEntry *getEntry(uint32_t seq);
+    std::shared_ptr<LogEntry> getEntry(uint32_t seq);
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);
 std::ostream &operator<<(std::ostream &out, const Log &l);
 
-// Passed around during contention resolution. Will get to this later.
-// struct LogSuffix
-// {
-//     LogCommitPoint base;
-//     std::vector<std::unique_ptr<LogEntry>> entries;
-//     // TODO shared ptr here so we don't duplicate it from certs.
-//     dombft::proto::Cert latestCert;
-
-//     // TODO function to combine 2f + 1 log suffixes into a single one
-// };
 #endif

@@ -88,8 +88,6 @@ cc_library(
     ],
 )
 
-
-
 cc_library(
     name = "utils",
     srcs = ["utils.cc"],
@@ -111,7 +109,6 @@ cc_library(
     hdrs = ["log.h"],
     srcs = ["log.cc"],
     deps = [
-
         ":common_struct",
         ":protocol_config",
         ":utils",
@@ -123,6 +120,21 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "fallback_utils",
+    hdrs = ["fallback_utils.h"],
+    srcs = ["fallback_utils.cc"],
+    deps = [
+        ":common_struct",
+        ":protocol_config",
+        ":utils",
+        "@com_github_google_glog//:glog",
+        "@openssl//:openssl",
+        "//lib:log",
+        "//proto:dombft_proto_cc",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 cc_library(
     name = "application",

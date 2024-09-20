@@ -120,8 +120,8 @@ message LogCheckpoint
 
 message FallbackStart
 {
-    uint32 replica_id = 1;
-    uint32 instance = 2;
+    uint32 instance = 1;
+    uint32 replica_id = 2;
 
     repeated LogEntry log_entries = 3;
     LogCheckpoint checkpoint = 4;

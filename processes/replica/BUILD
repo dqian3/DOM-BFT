@@ -11,6 +11,7 @@ cc_library(
         "//lib:protocol_config",
         "//lib:log",
         "//lib:cert_collector",
+        "//lib:fallback_utils",
         "//processes:process_config",
         "//processes:config_util",
     ],
