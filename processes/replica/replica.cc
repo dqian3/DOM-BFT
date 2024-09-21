@@ -492,6 +492,31 @@ void Replica::handleClientRequest(const ClientRequest &request)
     // }
 }
 
+void Replica::messReplyDigest(Reply &reply)
+{
+    VLOG(2) << "Digest altered for replica: " << replicaId_ << " seq: " << reply.seq();
+    byte tmpDigest[SHA256_DIGEST_LENGTH];
+    memcpy(tmpDigest, log_->getDigest(), SHA256_DIGEST_LENGTH);
+    tmpDigest[0] += replicaId_;
+    reply.set_digest(tmpDigest, SHA256_DIGEST_LENGTH);
+}
+
+void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
+{
+    uint32_t clientId = request.client_id();
+    uint32_t clientSeq = request.client_seq();
+    if (!heldRequest_) {
+        heldRequest_ = request;
+        VLOG(2) << "Holding request (" << clientId << ", " << clientSeq << ") for swapping";
+        return;
+    }
+    handleClientRequest(request);
+    handleClientRequest(heldRequest_.value());
+    VLOG(2) << "Swapped requests (" << clientId << ", " << clientSeq << ") and (" << heldRequest_->client_id() << ", "
+            << heldRequest_->client_seq() << ")";
+    heldRequest_.reset();
+}
+
 void Replica::handleCert(const Cert &cert)
 {
     if (!verifyCert(cert)) {

@@ -99,7 +99,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
     terminateTimer_ = std::make_unique<Timer>(
-        [config](void *ctx, void *endpoint) {
+        [&](void *ctx, void *endpoint) {
             LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
 
