@@ -30,7 +30,7 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
     // Try and find a certificate or proof of divergent histories
     std::map<ReplyKey, std::set<int>> matchingReplies;
 
-    if (VLOG_IS_ON(4)) {
+    if (0) {
         std::ostringstream oss;
         oss << "\n";
 
