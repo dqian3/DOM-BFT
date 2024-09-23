@@ -173,6 +173,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         if (clientHeader.instance() < instance_) {
             LOG(INFO) << "Dropping request c_id=" << clientHeader.client_id() << " c_seq=" << clientHeader.client_seq()
                       << " due to stale instance!";
+            return;
         }
 
         if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id())) {
@@ -555,7 +556,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
     // Find a cert among a set of replies
     for (const auto &entry : checkpointReplies_) {
-        int replicaId = entry.first;
+        uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
 
         VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
@@ -564,7 +565,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         if (reply.seq() <= log_->checkpoint.seq)
             continue;
 
-        std::tuple<std::string, int, int> key = {reply.digest(), reply.instance(), reply.seq()};
+        std::tuple<std::string, uint32_t, uint32_t> key = {reply.digest(), reply.instance(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
 
@@ -604,53 +605,70 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     checkpointCommits_[commitMsg.replica_id()] = commitMsg;
     checkpointCommitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
 
-    // Don't try finishing the commit if our log hasn't reached the seq being committed
-    if (checkpointCommits_[replicaId_].seq() != checkpointSeq_) {
-        VLOG(4) << "Skipping processing of commit messages until we receive our own...";
-        return;
-    }
-
     if (log_->checkpoint.seq >= commitMsg.seq()) {
         VLOG(4) << "Checkpoint: already committed for seq=" << commitMsg.seq() << ", skipping";
         return;
     }
 
-    // DO something simpler than client, just match everything to my commit
-    // If this doesn't work, we won't be able to commit without fixing anyways!
-    const dombft::proto::Commit &myCommit = checkpointCommits_[replicaId_];
-    std::vector<uint32_t> matches = {replicaId_};
+    std::map<std::tuple<std::string, std::string, int, int>, std::set<int>> matchingCommits;
 
-    for (auto &[r, commit] : checkpointCommits_) {
-        if (r == replicaId_) {
-            // Skip processing own checkpoint, we assume it is good
+    // Find a cert among a set of replies
+    for (const auto &entry : checkpointCommits_) {
+        uint32_t replicaId = entry.first;
+        const Commit &commit = entry.second;
+
+        // Already committed
+        if (commit.seq() <= log_->checkpoint.seq)
             continue;
+
+        std::tuple<std::string, std::string, uint32_t, uint32_t> key = {commit.log_digest(), commit.app_digest(),
+                                                                        commit.instance(), commit.seq()};
+
+        matchingCommits[key].insert(replicaId);
+
+        // Need 2f + 1 to commit checkpoing
+        // Modifies log if own reply is not in checkpoint
+        if (matchingCommits[key].size() >= 2 * f_ + 1) {
+            uint32_t seq = std::get<3>(key);
+            LOG(INFO) << "Committing seq=" << seq;
+
+            const byte *myDigestBytes = log_->getDigest(seq);
+            std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
+
+            log_->checkpoint.seq = std::get<3>(key);
+
+            memcpy(log_->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
+            memcpy(log_->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
+
+            for (uint32_t r : matchingCommits[key]) {
+                log_->checkpoint.commitMessages[r] = checkpointCommits_[r];
+                log_->checkpoint.signatures[r] = checkpointCommitSigs_[r];
+            }
+            log_->commit(log_->checkpoint.seq);
+
+            // Our log doesn't match the committed checkpoint, so we need to fix our log
+            if (myDigest != commit.log_digest()) {
+                LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot and modifying "
+                             "log...";
+                // TODO, normally this would involve requesting a snapshot of the application state, but the
+                // digest is the same for the basic counter
+                log_->app_->applySnapshot(commit.app_digest());
+                VLOG(5) << "Apply commit: new_digest=" << digest_to_hex(myDigest).substr(56)
+                        << " old_digest=" << digest_to_hex(commit.log_digest()).substr(56);
+
+                for (uint32_t s = seq + 1; s < log_->nextSeq; s++) {
+                    std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
+                    log_->app_->execute(entry->request, s);
+
+                    entry->updateDigest(s == seq + 1 ? (const byte *) commit.log_digest().c_str()
+                                                     : log_->getEntry(s - 1)->digest);
+
+                    VLOG(5) << "Update seq=" << s << " digest=" << digest_to_hex(entry->digest).substr(56);
+                }
+            }
+
+            return;
         }
-
-        if (commit.seq() != myCommit.seq()) {
-            continue;
-        }
-
-        if (commit.log_digest() != myCommit.log_digest() || commit.app_digest() != myCommit.app_digest()) {
-            VLOG(4) << "Found non matching digest!";
-            continue;
-        }
-
-        matches.push_back(r);
-    }
-
-    if (matches.size() >= 2 * f_ + 1) {
-        LOG(INFO) << "Committing seq=" << myCommit.seq();
-
-        log_->checkpoint.seq = myCommit.seq();
-        // TODO(Hao): size of appDigest is not correct
-        memcpy(log_->checkpoint.appDigest, myCommit.app_digest().c_str(), SHA256_DIGEST_LENGTH);
-        memcpy(log_->checkpoint.logDigest, myCommit.log_digest().c_str(), SHA256_DIGEST_LENGTH);
-
-        for (uint32_t r : matches) {
-            log_->checkpoint.commitMessages[r] = checkpointCommits_[r];
-            log_->checkpoint.signatures[r] = checkpointCommitSigs_[r];
-        }
-        log_->commit(log_->checkpoint.seq);
     }
 }
 

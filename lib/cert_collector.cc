@@ -38,7 +38,8 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         response.ParseFromString(reply.result());
 
         for (const auto &[replicaId, reply] : replies_) {
-            oss << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance() << "\n";
+            oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
+                << reply.instance() << "\n";
         }
 
         std::string logOutput = oss.str();

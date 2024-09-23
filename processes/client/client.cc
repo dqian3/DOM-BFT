@@ -171,6 +171,7 @@ void Client::submitRequest()
     // submit new request
     request.set_client_id(clientId_);
     request.set_client_seq(nextSeq_);
+    request.set_instance(myInstance_);
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
