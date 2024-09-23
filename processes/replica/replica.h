@@ -51,8 +51,9 @@ private:
     uint32_t fallbackTriggerSeq_ = 0;
     std::map<int, dombft::proto::FallbackStart> fallbackHistory_;
     std::map<int, std::string> fallbackHistorySigs_;
+    std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
-    // actively trigger fallback
+    // State for actively triggering fallback
     uint32_t triggerFallbackFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 

@@ -166,8 +166,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
 
         if (fallback_) {
-            LOG(INFO) << "Dropping request c_id=" << clientHeader.client_id() << " c_seq=" << clientHeader.client_seq()
-                      << " due to fallback";
+            LOG(INFO) << "Dropping request due to fallback";
             return;
         }
 

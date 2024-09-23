@@ -18,14 +18,16 @@
 namespace dombft {
 struct RequestState {
 
-    RequestState(uint32_t f, uint32_t cseq, uint64_t sendT)
+    RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
         : collector(f)
-        , client_seq(cseq)
+        , request(req)
+        , client_seq(req.client_seq())
         , sendTime(sendT)
 
     {
     }
     CertCollector collector;
+    dombft::proto::ClientRequest request;
 
     uint32_t client_seq;
     uint64_t sendTime;
@@ -108,6 +110,7 @@ private:
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 
     void submitRequest();
+    void sendRequest(const dombft::proto::ClientRequest &request);
     void commitRequest(uint32_t clientSeq);
 
     void updateInstance();

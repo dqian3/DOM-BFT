@@ -124,9 +124,10 @@ Client::Client(const ProcessConfig &config, size_t id)
         sendTimer_ = std::make_unique<Timer>(
             [&](void *ctx, void *endpoint) {
                 // If we are in the slow path, don't submit anymore
-                if (lastFastPath_ < lastSlowPath_ && numInFlight_ >= 1) {
-                    VLOG(4) << "Pause sending because slow path, " << "lastFastPath_=" << lastFastPath_
-                            << " lastSlowPath_=" << lastSlowPath_ << " numInFlight=" << numInFlight_;
+                if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
+                    VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+                            << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
+                            << " numInFlight=" << numInFlight_;
 
                     return;
                 }
@@ -180,7 +181,18 @@ void Client::submitRequest()
         request.set_req_data(counterReq->SerializeAsString());
     }
 
-    requestStates_.emplace(nextSeq_, RequestState(f_, nextSeq_, now));
+    requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
+    sendRequest(request);
+
+    nextSeq_++;
+    numInFlight_++;
+
+    VLOG(1) << "Sent request number " << nextSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size()
+            << " numInFlight_=" << numInFlight_;
+}
+
+void Client::sendRequest(const ClientRequest &request)
+{
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
     // VLOG(4) << "Begin sending request number " << nextReqSeq_;
@@ -202,19 +214,11 @@ void Client::submitRequest()
         endpoint_->SendPreparedMsgTo(addr);
     }
 #endif
-
-    nextSeq_++;
-    numInFlight_++;
-
-    VLOG(1) << "Sent request number " << nextSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size() << " (" << addr
-            << "), numInFlight_=" << numInFlight_;
 }
 
 void Client::commitRequest(uint32_t clientSeq)
 {
-    // TODO do some application stuff
-    VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
-
+    // TODO inform application of result
     if (clientSeq > lastCommitted_ + 1) {
         LOG(WARNING) << "Committed out of order! Commited " << clientSeq << " after committing " << lastCommitted_;
     }
@@ -223,6 +227,8 @@ void Client::commitRequest(uint32_t clientSeq)
     requestStates_.erase(clientSeq);
     numCommitted_++;
     numInFlight_--;
+
+    VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
 
     if (sendMode_ == dombft::MaxInFlightBased) {
         submitRequest();
@@ -476,6 +482,8 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
     replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
     updateInstance();
 
+    bool slowPathCommitted = false;
+
     for (const FallbackReply &reply : summary.replies()) {
         if (reply.client_id() != clientId_)
             continue;
@@ -486,9 +494,10 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             continue;
 
         auto &reqState = requestStates_.at(cseq);
+        VLOG(1) << "Received fallback reply for c_seq=" << cseq;
 
-        reqState.certReplies.insert(summary.replica_id());
-        if (reqState.certReplies.size() >= 2 * f_ + 1) {
+        reqState.fallbackReplies.insert(summary.replica_id());
+        if (reqState.fallbackReplies.size() >= 2 * f_ + 1) {
             // Request is committed, so we can clean up state!
             // TODO check we have a consistent set of application replies!
 
@@ -497,6 +506,17 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
 
             lastSlowPath_ = cseq;
             commitRequest(cseq);
+            slowPathCommitted = true;
+        }
+    }
+
+    if (slowPathCommitted) {
+        // If we committed anything in the slow path, retry any outstanding requests in the new instance
+        for (auto &[cseq, reqState] : requestStates_) {
+            reqState.request.set_instance(myInstance_);
+
+            sendRequest(reqState.request);
+            VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after slow path commits!";
         }
     }
 }
