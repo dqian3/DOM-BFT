@@ -136,8 +136,21 @@ message FallbackProposal
     repeated bytes signatures = 4;
 }
 
-message FallbackExecuted
+
+message FallbackReply
 {
+    uint32 client_id = 5;
+    uint32 client_seq = 6;
+    uint32 seq = 4;
+
+    bytes result = 9;
+}
+
+message FallbackSummary
+{
+    uint32 instance = 1;
+    uint32 replica_id = 2;
+    repeated FallbackReply replies = 3;
 }
 
 

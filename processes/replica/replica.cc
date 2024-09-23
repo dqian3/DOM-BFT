@@ -165,15 +165,19 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id())) {
-            LOG(INFO) << "Failed to verify client signature!";
+        if (fallback_) {
+            LOG(INFO) << "Dropping request c_id=" << clientHeader.client_id() << " c_seq=" << clientHeader.client_seq()
+                      << " due to fallback";
             return;
         }
 
-        // TODO TODO get rid of this
-        if (fallback_) {
-            LOG(INFO) << "Queuing request due to fallback";
-            fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
+        if (clientHeader.instance() < instance_) {
+            LOG(INFO) << "Dropping request c_id=" << clientHeader.client_id() << " c_seq=" << clientHeader.client_seq()
+                      << " due to stale instance!";
+        }
+
+        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id())) {
+            LOG(INFO) << "Failed to verify client signature!";
             return;
         }
 
@@ -699,9 +703,6 @@ void Replica::startFallback()
     fallback_ = true;
     instance_++;
     LOG(INFO) << "Starting fallback for instance " << instance_;
-
-    // TODO prevent processing of other messsages.
-
     if (endpoint_->isTimerRegistered(fallbackTimer_.get())) {
         endpoint_->ResetTimer(fallbackTimer_.get());
     } else {
@@ -755,11 +756,25 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
     }
 }
 
+void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
+{
+    std::shared_ptr<::LogEntry> entry = log_->getEntry(seq);   // TODO better namespace
+
+    reply.set_client_id(entry->client_id);
+    reply.set_client_seq(entry->client_seq);
+    reply.set_replica_id(replicaId_);
+    reply.set_instance(instance_);
+    reply.set_result(entry->result);
+    reply.set_seq(entry->seq);
+    reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
+}
+
 void Replica::finishFallback(const FallbackProposal &history)
 {
     LOG(INFO) << "Applying fallback for instance=" << history.instance() << " from instance=" << instance_;
     fallback_ = false;
     instance_ = history.instance();
+    endpoint_->UnRegisterTimer(fallbackTimer_.get());
 
     // TODO Verify FallbackProposal
     LogSuffix logSuffix;
@@ -768,24 +783,46 @@ void Replica::finishFallback(const FallbackProposal &history)
 
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
 
-    // TODO send updated replies to each client.
+    FallbackSummary summary;
+    std::set<int> clients;
 
-    // Start checkpoint for this spot in the log, which should finish if fallback was sucessful
-    uint32_t seq = log_->nextSeq - 1;
+    summary.set_instance(instance_);
+    summary.set_replica_id(replicaId_);
 
-    LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
-    Reply reply;
-    std::shared_ptr<::LogEntry> entry = log_->getEntry(seq);   // TODO better namespace
-    reply.set_client_id(entry->client_id);
-    reply.set_client_seq(entry->client_seq);
-    reply.set_replica_id(replicaId_);
-    reply.set_instance(instance_);
-    reply.set_result(entry->result);
-    reply.set_seq(seq);
-    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+    uint32_t seq = log_->checkpoint.seq;
+    for (; seq < log_->nextSeq; seq++) {
+        std::shared_ptr<::LogEntry> entry = log_->getEntry(seq);   // TODO better namespace
+        FallbackReply reply;
+
+        clients.insert(entry->client_id);
+
+        reply.set_client_id(entry->client_id);
+        reply.set_client_seq(entry->client_seq);
+        reply.set_seq(entry->seq);
+
+        (*summary.add_replies()) = reply;
+    }
+
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::FALLBACK_SUMMARY);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+    for (auto cid : clients) {
+
+        LOG(INFO) << "Sending fallback summary for instance=" << instance_ << " to client_id=" << cid;
+        endpoint_->SendPreparedMsgTo(clientAddrs_[cid]);
+    }
+
+    // Start checkpoint for last spot in the log, which should finish if fallback was sucessful
+    // NOTE, as implemented, this is a potential vulnerability,
+    // This needs to succeed so that the next time slow path is invoked everything is committed
 
     checkpointSeq_ = log_->nextSeq - 1;
+
+    LOG(INFO) << "Starting checkpoint cert for seq=" << checkpointSeq_;
+
     checkpointCert_.reset();
+    Reply reply;
+    replyFromLogEntry(reply, checkpointSeq_);
     broadcastToReplicas(reply, MessageType::REPLY);   // TODO better namespace
 }
 

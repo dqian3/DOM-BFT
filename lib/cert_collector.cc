@@ -38,8 +38,7 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         response.ParseFromString(reply.result());
 
         for (const auto &[replicaId, reply] : replies_) {
-            oss << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance() << " "
-                << response.value() << "\n";
+            oss << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance() << "\n";
         }
 
         std::string logOutput = oss.str();
@@ -52,7 +51,7 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         ReplyKey key = {reply.seq(), 0, reply.client_id(), reply.client_seq(), reply.digest(), reply.result()};
 
         matchingReplies[key].insert(replicaId);
-        maxMatchSize_ = std::max(maxMatchSize_, (int) matchingReplies[key].size());
+        maxMatchSize_ = std::max(maxMatchSize_, matchingReplies[key].size());
 
         if (matchingReplies[key].size() >= 2 * f_ + 1) {
             cert_ = Cert();

@@ -85,7 +85,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             clientReqs[entry.client_id()][entry.client_seq()] = &entry;
 
             if (matchingEntries[entry.seq()][entry.digest()] == f + 1) {
-                VLOG(4) << "f + 1 matching digests found for seq=" << entry.seq() << " c_id=" << entry.client_id()
+                VLOG(6) << "f + 1 matching digests found for seq=" << entry.seq() << " c_id=" << entry.client_id()
                         << " c_seq=" << entry.client_seq();
 
                 maxMatchClientSeq[entry.client_id()] =
@@ -176,7 +176,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         if (myEntry != nullptr) {
             std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
             if (myDigest == entry->digest()) {
-                VLOG(2) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
+                VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                         << " since already in log at seq=" << seq;
 
                 // If we used a different checkpoint, we shouldn't reuse any of our log
