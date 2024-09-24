@@ -153,16 +153,11 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
     LOG(INFO) << "Checkpoint digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
 
-    // TODO rollback
     bool rollbackDone = false;
 
     uint32_t seq = checkpoint->seq();
 
     for (const dombft::proto::LogEntry *entry : logSuffix.entries) {
-        // TODO skip ones already in our log.
-        // TODO access entry needs to be cleaner than this
-        // TODO fix namespaces lol
-
         seq++;   // First sequence to apply is right after checkpoint
         // This shouldn't happen, since these should go from the latest checkpoint
         if (seq > log->nextSeq) {

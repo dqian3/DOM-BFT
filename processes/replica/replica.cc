@@ -156,7 +156,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        // TODO This seems bad...
         // Separate this out into another function probably.
         MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();
         byte *clientBody = (byte *) (clientMsgHdr + 1);
@@ -529,7 +528,6 @@ void Replica::handleCert(const Cert &cert)
     VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
             << clientAddrs_[reply.client_id()].ip();
 
-    // TODO set result
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
@@ -585,7 +583,6 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             const byte *logDigest = log_->getDigest(reply.seq());
 
             // Broadcast commmit Message
-            // TODO get app digest
             dombft::proto::Commit commit;
             commit.set_replica_id(replicaId_);
             commit.set_seq(reply.seq());
