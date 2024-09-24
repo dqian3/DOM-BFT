@@ -12,7 +12,7 @@ LogEntry::LogEntry()
     memset(digest, 0, SHA256_DIGEST_LENGTH);
 }
 
-LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &req, byte *prev_digest)
+LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &req, const byte *prev_digest)
     : seq(s)
     , client_id(c_id)
     , client_seq(c_seq)
@@ -27,7 +27,19 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string 
     SHA256_Update(&ctx, &client_id, sizeof(client_id));
     SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
     SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    // TODO add this back in, currently fallback doesnt' work with this
+    SHA256_Update(&ctx, request.c_str(), request.length());
+    SHA256_Final(digest, &ctx);
+}
+
+void LogEntry::updateDigest(const byte *prev_digest)
+{
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+
+    SHA256_Update(&ctx, &seq, sizeof(seq));
+    SHA256_Update(&ctx, &client_id, sizeof(client_id));
+    SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
+    SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
     SHA256_Update(&ctx, request.c_str(), request.length());
     SHA256_Final(digest, &ctx);
 }

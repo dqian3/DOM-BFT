@@ -12,7 +12,6 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <queue>
 #include <span>
 #include <thread>
 
@@ -52,10 +51,9 @@ private:
     uint32_t fallbackTriggerSeq_ = 0;
     std::map<int, dombft::proto::FallbackStart> fallbackHistory_;
     std::map<int, std::string> fallbackHistorySigs_;
-
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
-    // actively trigger fallback
+    // State for actively triggering fallback
     uint32_t triggerFallbackFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
@@ -70,6 +68,8 @@ private:
 
     void startFallback();
     void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
+
+    void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
     void finishFallback(const dombft::proto::FallbackProposal &history);
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);

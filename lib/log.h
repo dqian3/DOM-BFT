@@ -30,8 +30,10 @@ struct LogEntry {
 
     LogEntry();
 
-    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, byte *prev_digest);
+    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, const byte *prev_digest);
     ~LogEntry();
+
+    void updateDigest(const byte *prev_digest);
 
     friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);
 };
