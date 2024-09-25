@@ -180,7 +180,6 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
             }
         }
 
-        // TODO Rollback application state here!
         if (!rollbackDone) {
             log->nextSeq = seq;
             log->app_->abort(seq - 1);
@@ -194,5 +193,9 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         if (!log->addEntry(entry->client_id(), entry->client_seq(), entry->request(), result)) {
             LOG(ERROR) << "Failure to add log entry!";
         }
+
+        // TODO get the replica id and stuff here for better logging...
+        VLOG(1) << "PERF event=spec_execute seq = " << seq << " client_id=" << entry->client_id()
+                << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
     }
 }

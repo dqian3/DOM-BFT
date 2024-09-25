@@ -464,11 +464,16 @@ void Replica::handleClientRequest(const ClientRequest &request)
         LOG(ERROR) << "Could not add request to log!";
         return;
     }
+
     uint32_t seq = log_->nextSeq - 1;
     reply.set_result(result);
     reply.set_fast(true);
     reply.set_seq(seq);
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+    VLOG(1) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+            << " client_seq=" << clientSeq << " instance=" << instance_
+            << " digest=" << digest_to_hex(log_->getDigest()).substr(56);
 
     // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
@@ -486,6 +491,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
     // we can't speculatively execute anymore)
     if (seq % CHECKPOINT_INTERVAL == 0) {
         LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
 
         checkpointSeq_ = seq;
         checkpointCert_.reset();
@@ -524,6 +530,8 @@ void Replica::handleCert(const Cert &cert)
     reply.set_client_id(r.client_id());
     reply.set_client_seq(r.client_seq());
     reply.set_replica_id(replicaId_);
+    reply.set_seq(r.seq());
+    reply.set_instance(instance_);
 
     VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
             << clientAddrs_[reply.client_id()].ip();
@@ -628,6 +636,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         if (matchingCommits[key].size() >= 2 * f_ + 1) {
             uint32_t seq = std::get<3>(key);
             LOG(INFO) << "Committing seq=" << seq;
+            VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
 
             const byte *myDigestBytes = log_->getDigest(seq);
             std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
@@ -660,7 +669,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                     entry->updateDigest(s == seq + 1 ? (const byte *) commit.log_digest().c_str()
                                                      : log_->getEntry(s - 1)->digest);
 
-                    VLOG(5) << "Update seq=" << s << " digest=" << digest_to_hex(entry->digest).substr(56);
+                    VLOG(5) << "PERF event=update_digest seq=" << s
+                            << " digest=" << digest_to_hex(entry->digest).substr(56);
                 }
             }
 

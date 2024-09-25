@@ -63,8 +63,7 @@ message CertReply {
     uint32 client_id = 2;
     uint32 client_seq = 3;
     uint32 instance = 4;
-
-    bytes result = 5;
+    uint32 seq = 5;
 }
 
 message Commit {

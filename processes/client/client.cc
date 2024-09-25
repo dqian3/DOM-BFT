@@ -36,8 +36,8 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     if (config.clientSendMode == "sendRate") {
         sendMode_ = dombft::RateBased;
-    } else if (config.clientSendMode == "maxInFlight") {
         LOG(INFO) << "Send rate: " << sendRate_;
+    } else if (config.clientSendMode == "maxInFlight") {
         sendMode_ = dombft::MaxInFlightBased;
     }
 
@@ -125,7 +125,7 @@ Client::Client(const ProcessConfig &config, size_t id)
             [&](void *ctx, void *endpoint) {
                 // If we are in the slow path, don't submit anymore
                 if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
-                    VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+                    VLOG(6) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
                             << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
                             << " numInFlight=" << numInFlight_;
 
@@ -185,11 +185,11 @@ void Client::submitRequest()
     requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
     sendRequest(request);
 
+    VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+            << " in_flight=" << numInFlight_;
+
     nextSeq_++;
     numInFlight_++;
-
-    VLOG(1) << "Sent request number " << nextSeq_ - 1 << " to Proxy " << clientId_ % proxyAddrs_.size()
-            << " numInFlight_=" << numInFlight_;
 }
 
 void Client::sendRequest(const ClientRequest &request)
@@ -244,7 +244,7 @@ void Client::checkTimeouts()
         int clientSeq = entry.first;
         RequestState &reqState = entry.second;
         if (reqState.collector.hasCert() && !reqState.certSent && now - reqState.certTime > normalPathTimeout_) {
-            VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
+            VLOG(2) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
             reqState.certSent = true;
 
             lastNormalPath_ = clientSeq;
@@ -407,8 +407,9 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(1) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
-                << now - reqState.sendTime << " us";
+        VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
+                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+                << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
 
@@ -464,12 +465,10 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     reqState.certReplies.insert(certReply.replica_id());
 
     if (reqState.certReplies.size() >= 2 * f_ + 1) {
-        // Request is committed, so we can clean up state!
-        // TODO check we have a consistent set of application replies!
-
-        VLOG(1) << "Request " << cseq << " normal path committed! "
-                << "Took " << GetMicrosecondTimestamp() - requestStates_.at(cseq).sendTime << " us";
-
+        VLOG(1) << "PERF event=commit path=normal " << " client_id=" << clientId_ << " client_seq=" << cseq
+                << " seq=" << certReply.seq() << " instance=" << certReply.instance()
+                << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime
+                << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest()).substr(56);
         lastNormalPath_ = cseq;
         commitRequest(cseq);
     }
@@ -477,7 +476,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 
 void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig)
 {
-    VLOG(1) << "Received fallback summary for instance=" << summary.instance()
+    VLOG(2) << "Received fallback summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();
 
     replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
@@ -502,8 +501,9 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             // Request is committed, so we can clean up state!
             // TODO check we have a consistent set of application replies!
 
-            VLOG(1) << "Request " << cseq << " slow path committed! "
-                    << "Took " << GetMicrosecondTimestamp() - requestStates_.at(cseq).sendTime << " us";
+            VLOG(1) << "PERF event=commit path=slow client_id=" << clientId_ << " client_seq=" << cseq
+                    << " seq=" << reply.seq() << "instance=" << summary.instance()
+                    << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime;
 
             lastSlowPath_ = cseq;
             commitRequest(cseq);
