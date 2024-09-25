@@ -41,8 +41,7 @@ tests can be built with
 ```
 bazel build //test/...
 ```
-The files starting with `test_` are actualy gtest tests for various components that I've built.
-There are also a few experimental "sandbox" programs that serve as examples of usage. 
+The files starting with `test_` are gtest files for various components that I've built.
 
 ## Basic Docker Setup
 
