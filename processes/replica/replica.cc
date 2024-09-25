@@ -803,6 +803,10 @@ void Replica::finishFallback(const FallbackProposal &history)
     // TODO Verify FallbackProposal
     LogSuffix logSuffix;
     getLogSuffixFromProposal(history, logSuffix);
+
+    logSuffix.replicaId = replicaId_;
+    logSuffix.instance = instance_;
+
     applySuffixToLog(logSuffix, log_);
 
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;

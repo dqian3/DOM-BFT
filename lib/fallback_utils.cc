@@ -195,7 +195,8 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         }
 
         // TODO get the replica id and stuff here for better logging...
-        VLOG(1) << "PERF event=spec_execute seq = " << seq << " client_id=" << entry->client_id()
+        VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
+                << " instance=" << logSuffix.instance << " client_id=" << entry->client_id()
                 << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
     }
 }
