@@ -199,7 +199,7 @@ def gcloud_clockwork(c, config_file="../configs/remote-prod.yaml", install=False
 
 
 @task
-def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
+def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=True):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -215,9 +215,10 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
 
     print("Cloning/building repo...")
 
-    # group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull && git checkout hao_fast_path_exp && bazel build //processes/...")
+    group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
+    group.run("cd DOM-BFT && git checkout main && git pull && git checkout hao_fast_path_exp && bazel build //processes/...")
 
+    group.run("sudo rm -rf dombft_*")
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
@@ -473,8 +474,8 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
             hdl.join()
 
 
-        print("Clients done, waiting 5 sec for other processes to finish...")
-        time.sleep(5)
+        print("Clients done, waiting 10 sec for other processes to finish...")
+        time.sleep(10)
 
 
         group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")

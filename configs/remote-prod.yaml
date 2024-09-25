@@ -15,7 +15,7 @@ client:
 
   sendMode: "sendRate" # 'maxInFlight' or 'sendRate'
   maxInFlight: 200 
-  sendRate: 1500 
+  sendRate: 4000
   runtimeSeconds: 30
 
 proxy:
