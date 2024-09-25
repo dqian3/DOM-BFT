@@ -465,7 +465,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     reqState.certReplies.insert(certReply.replica_id());
 
     if (reqState.certReplies.size() >= 2 * f_ + 1) {
-        VLOG(1) << "PERF event=commit path=normal " << " client_id=" << clientId_ << " client_seq=" << cseq
+        VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " instance=" << certReply.instance()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime
                 << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest()).substr(56);
@@ -502,7 +502,7 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             // TODO check we have a consistent set of application replies!
 
             VLOG(1) << "PERF event=commit path=slow client_id=" << clientId_ << " client_seq=" << cseq
-                    << " seq=" << reply.seq() << "instance=" << summary.instance()
+                    << " seq=" << reply.seq() << " instance=" << summary.instance()
                     << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime;
 
             lastSlowPath_ = cseq;
