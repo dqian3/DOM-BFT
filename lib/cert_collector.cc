@@ -57,12 +57,13 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         std::ostringstream oss;
         oss << "\n";
 
+        // TODO this is just for logging,
         dombft::apps::CounterResponse response;
         response.ParseFromString(reply.result());
 
         for (const auto &[replicaId, reply] : replies_) {
             oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
-                << reply.instance() << " " << digest_to_hex(reply.result()) << "\n";
+                << reply.instance() << " " << response.value() << "\n";
         }
 
         std::string logOutput = oss.str();

@@ -167,9 +167,8 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
             exit(1);
         }
 
-        std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
-
-        if (myEntry != nullptr) {
+        if (seq < log->nextSeq) {
+            std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
             std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
             if (myDigest == entry->digest()) {
                 VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
@@ -199,5 +198,10 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                 << " instance=" << logSuffix.instance << " client_id=" << entry->client_id()
                 << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
+    }
+
+    if (!rollbackDone) {
+        log->nextSeq = seq + 1;
+        log->app_->abort(seq);
     }
 }

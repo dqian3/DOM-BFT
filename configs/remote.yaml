@@ -8,7 +8,7 @@ client:
   - "10.128.0.5"
   port: 33000
   keysDir: keys/client
-  normalPathTimeout: 100000   # 100 ms
+  normalPathTimeout: 20000   # 100 ms
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "sendRate"

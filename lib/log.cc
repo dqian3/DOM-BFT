@@ -164,15 +164,10 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    int i = l.nextSeq - MAX_SPEC_HIST;
-    i = i < 0 ? 0 : i;   // std::max isn't playing nice
+    out << "CHECKPOINT " << l.checkpoint.seq << ": " << l.checkpoint.logDigest << " | ";
+    uint32_t i = l.checkpoint.seq + 1;
     for (; i < l.nextSeq; i++) {
         int idx = i % MAX_SPEC_HIST;
-
-        // Skip any committed/truncated logs
-        if (l.log[idx]->seq <= l.checkpoint.seq)
-            continue;
-
         out << *l.log[idx];
     }
     return out;

@@ -592,8 +592,10 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
         matchingReplies[key].insert(replicaId);
 
+        bool hasOwnReply = checkpointReplies_.count(replicaId_) && checkpointReplies_[replicaId_].seq() == reply.seq();
+
         // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= 2 * f_ + 1 && checkpointReplies_.count(replicaId_)) {
+        if (matchingReplies[key].size() >= 2 * f_ + 1 && hasOwnReply) {
 
             checkpointCert_ = Cert();
             checkpointCert_->set_seq(std::get<2>(key));
@@ -652,11 +654,9 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         // Modifies log if own reply is not in checkpoint
         if (matchingCommits[key].size() >= 2 * f_ + 1) {
             uint32_t seq = std::get<3>(key);
+
             LOG(INFO) << "Committing seq=" << seq;
             VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
-
-            const byte *myDigestBytes = log_->getDigest(seq);
-            std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
 
             log_->checkpoint.seq = std::get<3>(key);
 
@@ -669,7 +669,12 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             }
             log_->commit(log_->checkpoint.seq);
 
-            // Our log doesn't match the committed checkpoint, so we need to fix our log
+            // If checkpoint is inconsistent, we probably swapped some previous operations before the
+            // checkpoint. Try repairing our log by just overwriting our digest for later ops.
+            assert(seq < log_->nextSeq);
+            const byte *myDigestBytes = log_->getDigest(seq);
+            std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
+
             if (myDigest != commit.log_digest()) {
                 LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot and modifying "
                              "log...";
