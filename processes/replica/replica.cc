@@ -15,10 +15,10 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq)
+Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq)
     : replicaId_(replicaId)
     , instance_(0)
-    , triggerFallbackFreq_(triggerFallbackFreq)
+    , swapFreq_(swapFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
