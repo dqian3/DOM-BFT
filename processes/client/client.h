@@ -90,6 +90,7 @@ private:
     // Map of replica id instance, once f + 1 are higher than n, update own instance
     std::map<uint32_t, uint32_t> replicaInstances_;
     uint32_t myInstance_ = 0;
+    uint64_t startTime_ = 0;
 
     uint32_t nextSeq_ = 0;
     uint32_t numInFlight_ = 0;
@@ -99,6 +100,7 @@ private:
     uint32_t lastFastPath_ = 0;
     uint32_t lastNormalPath_ = 0;
     uint32_t lastSlowPath_ = 0;
+    std::unique_ptr<std::thread> sendThread_;
 
     /* Per request state */
     std::map<int, RequestState> requestStates_;

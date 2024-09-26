@@ -5,7 +5,6 @@ app: "counter"
 client:
   ips: 
   - "127.0.1.0"
-  - "127.0.1.1"
   port: 33000
   keysDir: keys/client
   normalPathTimeout: 100000   # 100 ms
@@ -13,15 +12,14 @@ client:
 
   sendMode: "sendRate"
   maxInFlight: 500
-  sendRate: 250
-  runtimeSeconds: 20
+  sendRate: 2000
+  runtimeSeconds: 15
 
 
 # Proxy Info
 proxy:
   ips: 
-    - "127.0.0.9"  
-    - "127.0.0.10"  
+    - "127.0.0.9"
   shards: 1
   forwardPort: 31000
   measurementPort: 32000
@@ -32,9 +30,6 @@ proxy:
 receiver:
   ips: 
     - "127.0.0.5"
-    - "127.0.0.6"
-    - "127.0.0.7"
-    - "127.0.0.8"
   port: 33000
   keysDir: keys/receiver
   shards: 1 # The number of threads to receive threads 
@@ -44,9 +39,6 @@ receiver:
 replica:
   ips: 
   - "127.0.0.1"
-  - "127.0.0.2"
-  - "127.0.0.3"
-  - "127.0.0.4"
   port: 34000
   app: "counter"
   keysDir: "keys/replica"

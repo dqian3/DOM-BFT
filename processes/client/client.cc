@@ -121,8 +121,9 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     if (sendMode_ == dombft::RateBased) {
 
-        sendTimer_ = std::make_unique<Timer>(
-            [&](void *ctx, void *endpoint) {
+        bool useEvloop = 1;
+        if (useEvloop){
+            auto defaultSendRateFunc = [&](void *ctx, void *endpoint) {
                 // If we are in the slow path, don't submit anymore
                 if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
                     VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
@@ -140,10 +141,70 @@ Client::Client(const ProcessConfig &config, size_t id)
                 } else {
                     endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
                 }
-            },
-            1000000 / sendRate_, this);
+            };
 
-        endpoint_->RegisterTimer(sendTimer_.get());
+            auto checkedSendRateFunc = [&](void *ctx, void *endpoint) {
+                // If we are in the slow path, don't submit anymore
+                if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
+                    VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+                            << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
+                            << " numInFlight=" << numInFlight_;
+
+                    return;
+                }
+
+                submitRequest();
+                if(nextSeq_ < 10) return;
+                // check if the current send rate is smaller than the desired send rate
+                uint32_t reqCatch = (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_)) < sendRate_ * 1000 ?
+                                    sendRate_/1000 - (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_))  : 0;
+                if((nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_)) < sendRate_* 1000){
+                    VLOG(1) << "smalll "<< startTime_ <<"  "<< ((GetMicrosecondTimestamp() - startTime_)) <<"  " <<sendRate_/1000 - (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_));
+                }
+                while(reqCatch--){
+                    VLOG(1) << "CSR " << reqCatch + 1;
+                    submitRequest();
+                }
+
+                // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
+                if (lastFastPath_ < lastNormalPath_) {
+                    endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
+                } else {
+                    endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
+                }
+            };
+
+            sendTimer_ = std::make_unique<Timer>(
+                    checkedSendRateFunc,
+                    1000000 / sendRate_, this);
+
+            endpoint_->RegisterTimer(sendTimer_.get());
+        }else{
+            // initialize a thread to send requests
+            sendThread_ = std::make_unique<std::thread>([this]() {
+                while (true) {
+                    // If we are in the slow path, don't submit anymore
+                    if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
+                        VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+                                << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
+                                << " numInFlight=" << numInFlight_;
+
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        continue;
+                    }
+
+                    submitRequest();
+
+                    // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
+                    if (lastFastPath_ < lastNormalPath_) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(replicaAddrs_.size() * 1000 / sendRate_));
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1000 / sendRate_));
+                    }
+                }
+            });
+
+        }
     } else if (sendMode_ == dombft::MaxInFlightBased) {
         for (uint32_t i = 0; i < maxInFlight_; i++) {
             submitRequest();
@@ -154,7 +215,10 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     VLOG(4) << "Client finished initializing";
+    startTime_ = GetMicrosecondTimestamp();
     endpoint_->LoopRun();
+
+
 }
 
 Client::~Client()
@@ -419,7 +483,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
     if (!reqState.triggerSent && 3 * f_ + 1 - reqState.collector.replies_.size() < 2 * f_ + 1 - maxMatchSize) {
-        VLOG(4) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
+        VLOG(1) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
         reqState.triggerSent = true;

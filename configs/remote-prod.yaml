@@ -5,9 +5,6 @@ app: "counter"
 client:
   ips: 
   - 10.138.0.6
-  - 10.182.0.4
-  - 10.142.0.4
-  - 10.202.0.5
 
   keysDir: keys/client
   runtimeSeconds: 20 
@@ -17,16 +14,13 @@ client:
 
   sendMode: "sendRate"
   maxInFlight: 500
-  sendRate: 250
-  runtimeSeconds: 10
+  sendRate: 3000
+  runtimeSeconds: 30
 
 proxy:
   forwardPort: 31000
   ips:
   - 10.138.0.7
-  - 10.182.0.5
-  - 10.142.0.5
-  - 10.202.0.4
   keysDir: keys/proxy
   maxOwd: 100000
   measurementPort: 32000
@@ -36,8 +30,6 @@ receiver:
   ips:
   - 10.138.0.4
   - 10.182.0.2
-  - 10.142.0.2
-  - 10.202.0.2
   keysDir: keys/receiver
   local: true
   port: 33000
@@ -47,8 +39,6 @@ replica:
   ips:
   - 10.138.0.4
   - 10.182.0.2
-  - 10.142.0.2
-  - 10.202.0.2
   keysDir: keys/replica
   port: 34000
   fallbackTimeout: 5000000

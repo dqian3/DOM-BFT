@@ -8,7 +8,7 @@ from invoke import task
 
 # TODO we can process output of these here instead of in the terminal
 @task
-def local(c, config_file, v=5):
+def local(c, config_file, v=1):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 
@@ -92,7 +92,7 @@ def local_reorder_exp(c, config_file, poisson=False):
 
         for id in range(n_receivers):
             cmd = (
-                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file}"
+                f"./bazel-bin/processes/receiver/dombft_receiver -v {1} -config {config_file}"
                 + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
             )
             hdl = arun(cmd)
@@ -101,7 +101,7 @@ def local_reorder_exp(c, config_file, poisson=False):
 
         for id in range(n_proxies):
             cmd = (
-                f"./bazel-bin/processes/proxy/dombft_proxy -v {5} " +
+                f"./bazel-bin/processes/proxy/dombft_proxy -v {1} " +
                 f"-config {config_file} -proxyId {id} -genRequests  -duration 10 " +
                 f"{'-poisson' if poisson else ''} &>logs/proxy{id}.log"
             )
@@ -435,19 +435,19 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
     print("Starting replicas")
     for id, ip in enumerate(replicas):
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log)
-        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id}")
+        hdl = arun(f"{replica_path} -v {1} -config {remote_config_file} -replicaId {id}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
-        hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id}")
+        hdl = arun(f"{receiver_path} -v {1} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
         arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
-        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id}")
+        hdl = arun(f"{proxy_path} -v {1} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
     time.sleep(5)
@@ -455,7 +455,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
     print("Starting clients")
     for id, ip in enumerate(clients):
         arun = arun_on(ip, f"client{id}.log", local_log=local_log)
-        hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id}")
+        hdl = arun(f"{client_path} -v {1} -config {remote_config_file} -clientId {id}")
         client_handles.append(hdl)
 
     try:
@@ -472,8 +472,8 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
             hdl.join()
 
 
-        print("Clients done, waiting 5 sec for other processes to finish...")
-        time.sleep(5)
+        print("Clients done, waiting 15 sec for other processes to finish...")
+        time.sleep(15)
 
 
         if not local_log:
@@ -530,7 +530,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml",
     print("Starting proxies")
     for id, ip in enumerate(proxies):
         arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
-        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
+        hdl = arun(f"{proxy_path} -v {1} -config {remote_config_file} -proxyId {id} -genRequests " +
                 f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
         
         proxy_handles.append(hdl)
