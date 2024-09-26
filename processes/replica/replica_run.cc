@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
     google::InitGoogleLogging(argv[0]);
     FLAGS_logtostderr = 1;
 
-    LOG(INFO) << "Loading config information from " << FLAGS_config;
+    VLOG(4) << "Loading config information from " << FLAGS_config;
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
 

@@ -26,6 +26,7 @@ private:
 
     uint32_t f_;
     uint32_t instance_ = 0;
+    uint64_t seq_ = 0;
 
     /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
     SignatureProvider sigProvider_;

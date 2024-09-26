@@ -17,19 +17,19 @@ using namespace dombft::proto;
 Client::Client(const ProcessConfig &config, size_t id)
     : clientId_(id)
 {
-    LOG(INFO) << "clientId=" << clientId_;
+    VLOG(4) << "clientId=" << clientId_;
     std::string clientIp = config.clientIps[clientId_];
-    LOG(INFO) << "clientIp=" << clientIp;
+    VLOG(4) << "clientIp=" << clientIp;
     int clientPort = config.clientPort;
-    LOG(INFO) << "clientPort=" << clientPort;
+    VLOG(4) << "clientPort=" << clientPort;
 
     f_ = config.replicaIps.size() / 3;
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;
 
-    LOG(INFO) << "Running for " << config.clientRuntimeSeconds << " seconds";
+    VLOG(4) << "Running for " << config.clientRuntimeSeconds << " seconds";
 
-    LOG(INFO) << "Sending at most " << config.clientMaxInFlight << " requests at once";
+    VLOG(4) << "Sending at most " << config.clientMaxInFlight << " requests at once";
 
     maxInFlight_ = config.clientMaxInFlight;
     sendRate_ = config.clientSendRate;
@@ -37,20 +37,20 @@ Client::Client(const ProcessConfig &config, size_t id)
     if (config.clientSendMode == "sendRate") {
         sendMode_ = dombft::RateBased;
     } else if (config.clientSendMode == "maxInFlight") {
-        LOG(INFO) << "Send rate: " << sendRate_;
+        VLOG(4) << "Send rate: " << sendRate_;
         sendMode_ = dombft::MaxInFlightBased;
     }
 
     /* Setup keys */
     std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
-    LOG(INFO) << "Loading key from " << clientKey;
+    VLOG(4) << "Loading key from " << clientKey;
     if (!sigProvider_.loadPrivateKey(clientKey)) {
-        LOG(ERROR) << "Error loading client private key, exiting...";
+        VLOG(4) << "Error loading client private key, exiting...";
         exit(1);
     }
 
     if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
-        LOG(ERROR) << "Error loading replica public keys, exiting...";
+        VLOG(4) << "Error loading replica public keys, exiting...";
         exit(1);
     }
 
@@ -74,7 +74,7 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
+            VLOG(4) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
             proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
         }
 
@@ -100,7 +100,7 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
-            LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
+            VLOG(4) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
             exit(0);
         },
@@ -115,7 +115,7 @@ Client::Client(const ProcessConfig &config, size_t id)
         trafficGen_ = std::make_unique<CounterTrafficGen>();
         appType_ = AppType::COUNTER;
     } else {
-        LOG(ERROR) << "Unknown application type for client!";
+        VLOG(4) << "Unknown application type for client!";
         exit(1);
     }
 
@@ -149,11 +149,11 @@ Client::Client(const ProcessConfig &config, size_t id)
             submitRequest();
         }
     } else {
-        LOG(ERROR) << "Unknown send mode type for client!";
+        VLOG(4) << "Unknown send mode type for client!";
         exit(1);
     }
 
-    LOG(INFO) << "Client finished initializing";
+    VLOG(4) << "Client finished initializing";
     endpoint_->LoopRun();
 }
 
@@ -221,7 +221,7 @@ void Client::commitRequest(uint32_t clientSeq)
 {
     // TODO inform application of result
     if (clientSeq > lastCommitted_ + 1) {
-        LOG(WARNING) << "Committed out of order! Commited " << clientSeq << " after committing " << lastCommitted_;
+        VLOG(4) << "Committed out of order! Commited " << clientSeq << " after committing " << lastCommitted_;
     }
     lastCommitted_ = clientSeq;
 
@@ -229,7 +229,7 @@ void Client::commitRequest(uint32_t clientSeq)
     numCommitted_++;
     numInFlight_--;
 
-    VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
+    VLOG(4) << "After committing, numInFlight_=" << numInFlight_;
 
     if (sendMode_ == dombft::MaxInFlightBased) {
         submitRequest();
@@ -244,7 +244,7 @@ void Client::checkTimeouts()
         int clientSeq = entry.first;
         RequestState &reqState = entry.second;
         if (reqState.collector.hasCert() && !reqState.certSent && now - reqState.certTime > normalPathTimeout_) {
-            VLOG(1) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
+            VLOG(4) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
             reqState.certSent = true;
 
             lastNormalPath_ = clientSeq;
@@ -258,7 +258,7 @@ void Client::checkTimeouts()
         }
 
         if (!reqState.triggerSent && now - reqState.sendTime > slowPathTimeout_) {
-            LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
+            VLOG(4) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
                       << " now=" << now << " due to timeout";
 
             reqState.triggerSent = true;
@@ -296,7 +296,7 @@ void Client::updateInstance()
 
     uint64_t now = GetMicrosecondTimestamp();
     if (newInstance != myInstance_) {
-        VLOG(1) << "Updating instance=" << newInstance << " from " << myInstance_;
+        VLOG(4) << "Updating instance=" << newInstance << " from " << myInstance_;
 
         // TODO Reset any uncommitted requests by changing the send time
         // for (auto &[cseq, reqState] : requestStates_) {
@@ -319,17 +319,17 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         // TODO verify and handle signed header better
         if (!reply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse REPLY message";
+            VLOG(4) << "Unable to parse REPLY message";
             return;
         }
 
         if (reply.client_id() != clientId_) {
-            VLOG(2) << "Received reply for client " << reply.client_id() << " != " << clientId_;
+            VLOG(4) << "Received reply for client " << reply.client_id() << " != " << clientId_;
             return;
         }
 
         if (!sigProvider_.verify(hdr, body, "replica", reply.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
+            VLOG(4) << "Failed to verify replica signature!";
             return;
         }
 
@@ -340,17 +340,17 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         CertReply certReply;
 
         if (!certReply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CERT_REPLY message";
+            VLOG(4) << "Unable to parse CERT_REPLY message";
             return;
         }
 
         if (certReply.client_id() != clientId_) {
-            VLOG(2) << "Received certReply for client " << certReply.client_id() << " != " << clientId_;
+            VLOG(4) << "Received certReply for client " << certReply.client_id() << " != " << clientId_;
             return;
         }
 
         if (!sigProvider_.verify(hdr, body, "replica", certReply.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature for CERT_REPLY!";
+            VLOG(4) << "Failed to verify replica signature for CERT_REPLY!";
             return;
         }
 
@@ -361,12 +361,12 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         FallbackSummary fallbackSummary;
 
         if (!fallbackSummary.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse FALLBACK_SUMMARY message";
+            VLOG(4) << "Unable to parse FALLBACK_SUMMARY message";
             return;
         }
 
         if (!sigProvider_.verify(hdr, body, "replica", fallbackSummary.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature for FALLBACK_SUMMARY!";
+            VLOG(4) << "Failed to verify replica signature for FALLBACK_SUMMARY!";
             return;
         }
 
@@ -385,7 +385,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // Check validity
     if (requestStates_.count(clientSeq) == 0) {
-        VLOG(2) << "Received reply for " << clientSeq << " not in active requests";
+        VLOG(4) << "Received reply for " << clientSeq << " not in active requests";
         return;
     }
 
@@ -399,7 +399,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // Just collected cert
     if (!hasCertBefore && reqState.collector.hasCert()) {
-        VLOG(1) << "Created cert for request number " << clientSeq;
+        VLOG(4) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
         return;
     }
@@ -407,7 +407,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(1) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
+        VLOG(4) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
                 << now - reqState.sendTime << " us";
 
         lastFastPath_ = clientSeq;
@@ -419,7 +419,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
     if (!reqState.triggerSent && 3 * f_ + 1 - reqState.collector.replies_.size() < 2 * f_ + 1 - maxMatchSize) {
-        LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
+        VLOG(4) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
         reqState.triggerSent = true;
@@ -456,7 +456,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     uint32_t cseq = certReply.client_seq();
 
     if (requestStates_.count(cseq) == 0) {
-        // VLOG(2) << "Received certReply for " << cseq << " not in active requests";
+        // VLOG(4) << "Received certReply for " << cseq << " not in active requests";
         return;
     }
 
@@ -467,7 +467,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
         // Request is committed, so we can clean up state!
         // TODO check we have a consistent set of application replies!
 
-        VLOG(1) << "Request " << cseq << " normal path committed! "
+        VLOG(4) << "Request " << cseq << " normal path committed! "
                 << "Took " << GetMicrosecondTimestamp() - requestStates_.at(cseq).sendTime << " us";
 
         lastNormalPath_ = cseq;
@@ -477,7 +477,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 
 void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig)
 {
-    VLOG(1) << "Received fallback summary for instance=" << summary.instance()
+    VLOG(4) << "Received fallback summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();
 
     replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
@@ -495,14 +495,14 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             continue;
 
         auto &reqState = requestStates_.at(cseq);
-        VLOG(1) << "Received fallback reply for c_seq=" << cseq;
+        VLOG(4) << "Received fallback reply for c_seq=" << cseq;
 
         reqState.fallbackReplies.insert(summary.replica_id());
         if (reqState.fallbackReplies.size() >= 2 * f_ + 1) {
             // Request is committed, so we can clean up state!
             // TODO check we have a consistent set of application replies!
 
-            VLOG(1) << "Request " << cseq << " slow path committed! "
+            VLOG(4) << "Request " << cseq << " slow path committed! "
                     << "Took " << GetMicrosecondTimestamp() - requestStates_.at(cseq).sendTime << " us";
 
             lastSlowPath_ = cseq;
@@ -517,7 +517,7 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             reqState.request.set_instance(myInstance_);
 
             sendRequest(reqState.request);
-            VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after slow path commits!";
+            VLOG(4) << "Retrying cseq=" << reqState.client_seq << " after slow path commits!";
         }
     }
 }

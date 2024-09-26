@@ -15,9 +15,9 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     selfGenReqs_ = false;
 
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
-    LOG(INFO) << "Loading key from " << proxyKey;
+    VLOG(4) << "Loading key from " << proxyKey;
     if (!sigProvider_.loadPrivateKey(proxyKey)) {
-        LOG(ERROR) << "Unable to load private key!";
+        VLOG(4) << "Unable to load private key!";
         exit(1);
     }
 
@@ -25,7 +25,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
 
     if (config.transport == "nng") {
         if (numShards_ > 1) {
-            LOG(ERROR) << "Multiple shards for proxy and NNG not implemented yet!";
+            VLOG(4) << "Multiple shards for proxy and NNG not implemented yet!";
             exit(1);
         }
         auto addrPairs = getProxyAddrs(config, proxyId);
@@ -73,7 +73,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t freq, uint3
 
 void Proxy::terminate()
 {
-    LOG(INFO) << "Terminating...";
+    VLOG(4) << "Terminating...";
     running_ = false;
 }
 
@@ -83,11 +83,11 @@ void Proxy::run()
 
     LaunchThreads();
     for (auto &kv : threads_) {
-        LOG(INFO) << "Join " << kv.first;
+        VLOG(4) << "Join " << kv.first;
         kv.second->join();
-        LOG(INFO) << "Join Complete " << kv.first;
+        VLOG(4) << "Join Complete " << kv.first;
     }
-    LOG(INFO) << "Run Terminated ";
+    VLOG(4) << "Run Terminated ";
 }
 
 Proxy::~Proxy()
@@ -121,11 +121,11 @@ void Proxy::RecvMeasurementsTd()
         MeasurementReply reply;
 
         if (!reply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse Measurement_Reply message";
+            VLOG(4) << "Unable to parse Measurement_Reply message";
             return;
         }
         uint64_t now = GetMicrosecondTimestamp();
-        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+        VLOG(4) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
                 << " rtt=" << now - reply.send_time() << " now=" << now;
 
         if (reply.owd() > 0) {
@@ -162,12 +162,12 @@ void Proxy::ForwardRequestsTd(const int thread_id)
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
 
-        VLOG(2) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
+        VLOG(4) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
 
         if (hdr->msgType == MessageType::CLIENT_REQUEST) {
             // TODO verify and handle signed header better
             if (!inReq.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                VLOG(4) << "Unable to parse CLIENT_REQUEST message";
                 return;
             }
 
@@ -190,7 +190,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
             outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
             for (int i = 0; i < numReceivers_; i++) {
-                VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
+                VLOG(4) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
                         << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
                         << " now=" << GetMicrosecondTimestamp();
 
@@ -201,7 +201,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
                 forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
             }
         } else {
-            LOG(ERROR) << "Unknown message type " << hdr->msgType;
+            VLOG(4) << "Unknown message type " << hdr->msgType;
         }
     };
 
@@ -238,7 +238,7 @@ void Proxy::sendReq(uint32_t seq)
     outReq.set_client_id(proxyId_);
     outReq.set_client_seq(seq);
 
-    VLOG(1) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
+    VLOG(4) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
             << " deadline=" << deadline << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
 
     for (int i = 0; i < numReceivers_; i++) {
@@ -287,8 +287,8 @@ void Proxy::GenerateRequestsTd()
         }
 
         running_ = false;
-        LOG(INFO) << "Ending experiment after busy-waiting";
-        LOG(INFO) << "Sent " << seq << " requests";
+        VLOG(4) << "Ending experiment after busy-waiting";
+        VLOG(4) << "Sent " << seq << " requests";
 
     } else {
         Timer timer(
@@ -303,7 +303,7 @@ void Proxy::GenerateRequestsTd()
                 uint32_t interval_us = interval * 1000000;
                 interval_us = std::max(1u, interval_us);
 
-                VLOG(1) << "Waiting for " << interval_us << " usec";
+                VLOG(4) << "Waiting for " << interval_us << " usec";
                 ep->ResetTimer(&timer, interval_us);
             },
             1000, this);   // initial time doesn't matter, since it's reset
@@ -311,8 +311,8 @@ void Proxy::GenerateRequestsTd()
         Timer endExperiment(
             [&seq, this](void *ctx, void *endpoint) {
                 running_ = false;
-                LOG(INFO) << "Ending experiment";
-                LOG(INFO) << "Sent " << seq << " requests";
+                VLOG(4) << "Ending experiment";
+                VLOG(4) << "Sent " << seq << " requests";
                 ((Endpoint *) endpoint)->LoopBreak();
             },
             genReqDuration_ * 1000000, this);

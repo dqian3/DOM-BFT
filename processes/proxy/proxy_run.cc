@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     signal(SIGINT, terminate);
     FLAGS_logtostderr = 1;
 
-    LOG(INFO) << "Loading config from " << FLAGS_config;
+    VLOG(4) << "Loading config from " << FLAGS_config;
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
     if (FLAGS_genRequests) {
