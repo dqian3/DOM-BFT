@@ -164,9 +164,9 @@ Client::Client(const ProcessConfig &config, size_t id, bool checkSendRate)
                         return;
                     }
 
-                    auto timeDiff = std::chrono::system_clock::now().time_since_epoch();
+                    uint64_t timeDiff = GetMicrosecondTimestamp();
                     submitRequest();
-                    VLOG(1) << "time diff:" << std::chrono::system_clock::now().time_since_epoch().count() - timeDiff.count();
+                    VLOG(1) << "time diff:" <<GetMicrosecondTimestamp() - timeDiff;
 
                     // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
                     if (lastFastPath_ < lastNormalPath_) {
