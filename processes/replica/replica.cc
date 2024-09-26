@@ -650,9 +650,13 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
 
         matchingCommits[key].insert(replicaId);
 
-        // Need 2f + 1 to commit checkpoing
-        // Modifies log if own reply is not in checkpoint
-        if (matchingCommits[key].size() >= 2 * f_ + 1) {
+        // TODO see if there's a better way to do this
+        bool hasOwnCommit =
+            checkpointCommits_.count(replicaId_) && checkpointCommits_[replicaId_].seq() == commit.seq();
+
+        // Need 2f + 1 and own commit
+        // Modifies log if checkpoint is incosistent with our current log
+        if (matchingCommits[key].size() >= 2 * f_ + 1 && hasOwnCommit) {
             uint32_t seq = std::get<3>(key);
 
             LOG(INFO) << "Committing seq=" << seq;
@@ -732,11 +736,13 @@ bool Replica::verifyCert(const Cert &cert)
         return false;
     }
 
+    // TODO check cert instance
+
     // Verify each signature in the cert
     for (int i = 0; i < cert.replies().size(); i++) {
         const Reply &reply = cert.replies()[i];
         const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();   // TODO skip reseraizliation here?
+        std::string serializedReply = reply.SerializeAsString();
 
         if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
                                  sig.size(), "replica", reply.replica_id())) {
