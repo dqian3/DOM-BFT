@@ -85,7 +85,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             clientReqs[entry.client_id()][entry.client_seq()] = &entry;
 
             if (matchingEntries[entry.seq()][entry.digest()] == f + 1) {
-                VLOG(4) << "f + 1 matching digests found for seq=" << entry.seq() << " c_id=" << entry.client_id()
+                VLOG(6) << "f + 1 matching digests found for seq=" << entry.seq() << " c_id=" << entry.client_id()
                         << " c_seq=" << entry.client_seq();
 
                 maxMatchClientSeq[entry.client_id()] =
@@ -153,30 +153,25 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
     LOG(INFO) << "Checkpoint digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
 
-    // TODO rollback
     bool rollbackDone = false;
 
     uint32_t seq = checkpoint->seq();
 
     for (const dombft::proto::LogEntry *entry : logSuffix.entries) {
-        // TODO skip ones already in our log.
-        // TODO access entry needs to be cleaner than this
-        // TODO fix namespaces lol
-
         seq++;   // First sequence to apply is right after checkpoint
         // This shouldn't happen, since these should go from the latest checkpoint
         if (seq > log->nextSeq) {
             LOG(ERROR) << "Missing some log entries before first in log suffix firstSeq is " << entry->seq()
                        << " my nextSeq=" << log->nextSeq;
+
             exit(1);
         }
 
-        std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
-
-        if (myEntry != nullptr) {
+        if (seq < log->nextSeq) {
+            std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
             std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
             if (myDigest == entry->digest()) {
-                VLOG(2) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
+                VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                         << " since already in log at seq=" << seq;
 
                 // If we used a different checkpoint, we shouldn't reuse any of our log
@@ -185,7 +180,6 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
             }
         }
 
-        // TODO Rollback application state here!
         if (!rollbackDone) {
             log->nextSeq = seq;
             log->app_->abort(seq - 1);
@@ -199,5 +193,15 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         if (!log->addEntry(entry->client_id(), entry->client_seq(), entry->request(), result)) {
             LOG(ERROR) << "Failure to add log entry!";
         }
+
+        // TODO get the replica id and stuff here for better logging...
+        VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
+                << " instance=" << logSuffix.instance << " client_id=" << entry->client_id()
+                << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
+    }
+
+    if (!rollbackDone) {
+        log->nextSeq = seq + 1;
+        log->app_->abort(seq);
     }
 }

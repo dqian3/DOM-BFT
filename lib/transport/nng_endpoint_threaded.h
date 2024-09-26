@@ -22,7 +22,6 @@ private:
     std::thread thread_;
     bool running_;
 
-    // TODO do an event loop instead of busy waiting
     struct ev_loop *evLoop_;
     ev_async stopWatcher_;
     ev_async sendWatcher_;

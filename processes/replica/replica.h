@@ -12,7 +12,6 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <queue>
 #include <span>
 #include <thread>
 
@@ -39,6 +38,10 @@ private:
     std::unique_ptr<Timer> fallbackTimer_;
     std::shared_ptr<Log> log_;
 
+    // State for tracking client state
+    // TODO add some parts for caching client results to deal with duplicate requests
+    std::map<int, uint32_t> clientInstance_;
+
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
     // TODO this assumes non-overlapping checkpoint protocol
@@ -55,11 +58,10 @@ private:
     uint32_t fallbackTriggerSeq_ = 0;
     std::map<int, dombft::proto::FallbackStart> fallbackHistory_;
     std::map<int, std::string> fallbackHistorySigs_;
-
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
-    // actively trigger fallback
-    uint32_t triggerFallbackFreq_;
+    // State for actively triggering fallback
+    uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
@@ -73,6 +75,8 @@ private:
 
     void startFallback();
     void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
+
+    void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
     void finishFallback(const dombft::proto::FallbackProposal &history);
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);

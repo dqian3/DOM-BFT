@@ -20,8 +20,8 @@ public:
     bool hasCert();
     const dombft::proto::Cert &getCert();
 
-    int f_;
-    int maxMatchSize_;
+    uint32_t f_;
+    size_t maxMatchSize_;
 
     // maps from replica
     std::map<int, dombft::proto::Reply> replies_;

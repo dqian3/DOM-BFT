@@ -18,20 +18,21 @@
 namespace dombft {
 struct RequestState {
 
-    RequestState(uint32_t f, uint32_t cseq, uint32_t inst, uint64_t sendT)
+    RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
         : collector(f)
-        , clientSeq(cseq)
-        , instance(inst)
+        , request(req)
+        , client_seq(req.client_seq())
         , sendTime(sendT)
 
     {
     }
     CertCollector collector;
+
     uint32_t nReplies = 0;
 
-    uint32_t clientSeq;
-    uint32_t instance;
+    dombft::proto::ClientRequest request;
 
+    uint32_t client_seq;
     uint64_t sendTime;
 
     // Normal path state
@@ -43,7 +44,8 @@ struct RequestState {
     // Slow Path state
     bool triggerSent = false;
     uint64_t triggerSendTime;
-    std::map<int, dombft::proto::FallbackExecuted> fallbackReplies;
+    // TODO keep track of matching replies, not just number of replies, of which we need f + 1
+    std::set<int> fallbackReplies;
     std::optional<dombft::proto::Cert> fallbackProof;
 };
 
@@ -87,11 +89,16 @@ private:
     SignatureProvider sigProvider_;
 
     /* Global state */
-    uint32_t instance_ = 0;
+
+    // Map of replica id instance, once f + 1 are higher than n, update own instance
+    std::map<uint32_t, uint32_t> replicaInstances_;
+    uint32_t myInstance_ = 0;
+
     uint32_t nextSeq_ = 0;
     uint32_t numInFlight_ = 0;
     uint32_t numCommitted_ = 0;
 
+    uint32_t lastCommitted_ = 0;
     uint32_t lastFastPath_ = 0;
     uint32_t lastNormalPath_ = 0;
     uint32_t lastSlowPath_ = 0;
@@ -106,9 +113,14 @@ private:
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
+    void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 
     void submitRequest();
+    void retryRequests();
+    void sendRequest(const dombft::proto::ClientRequest &request);
     void commitRequest(uint32_t clientSeq);
+
+    bool updateInstance();
 
     void checkTimeouts();
 

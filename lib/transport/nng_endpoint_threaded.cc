@@ -43,7 +43,7 @@ void NngSendThread::run()
                 VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
                 continue;
             }
-            VLOG(4) << "Sent to " << t->addr_;
+            VLOG(6) << "Sent to " << t->addr_;
         }
     };
 
@@ -58,7 +58,6 @@ void NngSendThread::run()
 
 void NngSendThread::sendMsg(const byte *msg, size_t len)
 {
-    // TODO send signal that this is ready
     queue_.enqueue(std::vector<byte>{msg, msg + len});
     ev_async_send(evLoop_, &sendWatcher_);
 }

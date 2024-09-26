@@ -120,7 +120,6 @@ void Proxy::RecvMeasurementsTd()
     MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
         MeasurementReply reply;
 
-        // TODO verify and handle signed header better
         if (!reply.ParseFromArray(body, hdr->msgLen)) {
             LOG(ERROR) << "Unable to parse Measurement_Reply message";
             return;

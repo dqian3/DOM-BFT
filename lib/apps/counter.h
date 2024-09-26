@@ -16,8 +16,6 @@ typedef struct VersionedValue {
     int64_t value;
 } VersionedValue;
 
-// TODO instead of requests and responses being raw bytes, have
-// request and response types that can be serialized/unserialized.
 class Counter : public Application {
 public:
     int counter;
@@ -38,7 +36,7 @@ public:
 
     Counter()
         : counter(0)
-        , committed_state(0,0)
+        , committed_state(0, 0)
         , version_hist()
     {
     }

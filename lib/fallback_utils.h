@@ -8,6 +8,10 @@
 // Struct that references the checkpoint and order of entries to use within
 // the given FallbackProposal message
 struct LogSuffix {
+    // For logign purposes
+    uint32_t replicaId;
+    uint32_t instance;
+
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
 };

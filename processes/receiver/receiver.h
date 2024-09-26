@@ -63,6 +63,8 @@ private:
     bool skipForwarding_;
     bool ignoreDeadlines_;
 
+    bool running_;
+
 public:
     Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false,
              bool ignoreDeadlines_ = false);

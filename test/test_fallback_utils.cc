@@ -244,6 +244,49 @@ TEST(TestFallbackUtils, ApplyLogSuffix)
     assertLogEq(*log, newLog);
 }
 
+TEST(TestFallbackUtils, ApplyReplicaAhead)
+{
+    // Test
+    // TODO we would probably need to mock out verifaction of certs and stuff here
+    TestLog curLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog newLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}};
+
+    // Generate protocol log
+    auto log = logFromTestLog(curLog);
+
+    // Generate suffix for fallback
+    LogSuffix suffix;
+    auto ret = suffixFromTestLog(newLog, suffix);
+
+    MockApplication *mockApp = static_cast<MockApplication *>(log->app_.get());
+
+    LOG(INFO) << "Before apply: " << *log;
+    applySuffixToLog(suffix, log);
+    LOG(INFO) << "After apply: " << *log;
+    assertLogEq(*log, newLog);
+}
+
+TEST(TestFallbackUtils, ApplyReplicaInserted)
+{
+    // Test
+    // TODO we would probably need to mock out verifaction of certs and stuff here
+    TestLog curLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog newLog{10, "aaaa", {{2, 2}, {3, 2}, {4, 2}}};
+
+    // Generate protocol log
+    auto log = logFromTestLog(curLog);
+
+    // Generate suffix for fallback
+    LogSuffix suffix;
+    auto ret = suffixFromTestLog(newLog, suffix);
+
+    MockApplication *mockApp = static_cast<MockApplication *>(log->app_.get());
+
+    applySuffixToLog(suffix, log);
+
+    assertLogEq(*log, newLog);
+}
+
 // TODO add case where checkpoitn is used
 
 /************************ Start end to end tests ************************/
