@@ -51,6 +51,15 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 
     LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.ip() << ":" << replicaAddr_.port();
 
+    fwdTimer_ =
+        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->checkDeadlines(); }, 1000, this);
+
+    queueTimer_ =
+        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->addToDeadlineQueue(); }, 100, this);
+
+    // endpoint_->RegisterTimer(fwdTimer_.get());
+    forwardEp_->RegisterTimer(fwdTimer_.get());
+    forwardEp_->RegisterTimer(queueTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
     });
@@ -60,7 +69,6 @@ void Receiver::addToDeadlineQueue()
 {
     DOMRequest request;
     int64_t recv_time = GetMicrosecondTimestamp();
-
     while (requestQueue_.try_dequeue(request)) {
         request.set_late(recv_time > request.deadline());
         VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
@@ -68,7 +76,7 @@ void Receiver::addToDeadlineQueue()
 
         if (ignoreDeadlines_) {
             forwardRequest(request);
-        } else if (request.late()) {
+        } else if (false && request.late()) {   // TODO temporary change to see
             VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
                     << recv_time - request.deadline() << "us";
             VLOG(3) << "Checking deadlines before forwarding late message";
@@ -80,13 +88,13 @@ void Receiver::addToDeadlineQueue()
             deadlineQueue_[{request.deadline(), request.client_id()}] = request;
 
             // Check if timer is firing before deadline
-            // uint64_t now = GetMicrosecondTimestamp();
-            // uint64_t nextCheck = request.deadline() - now;
+            uint64_t now = GetMicrosecondTimestamp();
+            uint64_t nextCheck = request.deadline() - now;
 
-            // if (nextCheck <= forwardEp_->GetTimerRemaining(fwdTimer_.get())) {
-            //     forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
-            //     VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
-            // }
+            if (nextCheck <= forwardEp_->GetTimerRemaining(fwdTimer_.get())) {
+                forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
+                VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
+            }
         }
     }
 }
@@ -99,7 +107,10 @@ Receiver::~Receiver()
 void Receiver::run()
 {
     // Submit first request
-    running_ = true;
+    LOG(INFO) << "Starting event loop...";
+    // endpoint_->LoopRun();
+
+    // running_ = true;
 
     LaunchThreads();
     for (auto &kv : threads_) {
@@ -118,18 +129,14 @@ void Receiver::LaunchThreads()
 
 void Receiver::ReceiveTd()
 {
-    LOG(INFO) << "Receive td launched";
+    LOG(INFO) << "receive td launched";
     endpoint_->LoopRun();
 }
 
 void Receiver::ForwardTd()
 {
-    LOG(INFO) << "Forward td launched";
-    while (running_) {
-
-        addToDeadlineQueue();
-        checkDeadlines();
-    }
+    LOG(INFO) << "forward td launched";
+    forwardEp_->LoopRun();
 }
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
@@ -161,9 +168,6 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
         VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
                 << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
-
-        requestQueue_.enqueue(request);
-
         // Randomly send measurements only once in a while
         if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
             MeasurementReply mReply;
@@ -171,9 +175,11 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
             mReply.set_owd(recv_time - request.send_time());
             mReply.set_send_time(request.send_time());
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-            // sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
             endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
         }
+
+        requestQueue_.enqueue(request);
     }
 }
 
@@ -218,8 +224,8 @@ void Receiver::checkDeadlines()
         it = temp;
     }
 
-    // TODO if we are actually using timers use this
-    // uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
+    uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
+    forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 
 }   // namespace dombft
