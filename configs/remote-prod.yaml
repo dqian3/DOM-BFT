@@ -7,14 +7,13 @@ client:
   - 10.138.0.6
 
   keysDir: keys/client
-  runtimeSeconds: 20 
   port: 33000
   normalPathTimeout: 100000   # 100 ms
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "sendRate"
   maxInFlight: 500
-  sendRate: 3000
+  sendRate: 4000
   runtimeSeconds: 30
 
 proxy:
