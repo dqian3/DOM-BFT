@@ -35,6 +35,10 @@ private:
     std::unique_ptr<Timer> fallbackTimer_;
     std::shared_ptr<Log> log_;
 
+    // State for tracking client state
+    // TODO add some parts for caching client results to deal with duplicate requests
+    std::map<int, uint32_t> clientInstance_;
+
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
     // TODO this assumes non-overlapping checkpoint protocol

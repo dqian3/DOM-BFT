@@ -110,10 +110,11 @@ private:
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 
     void submitRequest();
+    void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request);
     void commitRequest(uint32_t clientSeq);
 
-    void updateInstance();
+    bool updateInstance();
 
     void checkTimeouts();
 

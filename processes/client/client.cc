@@ -192,6 +192,16 @@ void Client::submitRequest()
     numInFlight_++;
 }
 
+void Client::retryRequests()
+{
+    for (auto &[cseq, reqState] : requestStates_) {
+        reqState.request.set_instance(myInstance_);
+
+        sendRequest(reqState.request);
+        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after slow path commits!";
+    }
+}
+
 void Client::sendRequest(const ClientRequest &request)
 {
 #if USE_PROXY
@@ -281,7 +291,7 @@ void Client::checkTimeouts()
     }
 }
 
-void Client::updateInstance()
+bool Client::updateInstance()
 {
     uint32_t newInstance = myInstance_ - 1;
     int count = 0;
@@ -305,7 +315,10 @@ void Client::updateInstance()
         // }
 
         myInstance_ = newInstance;
+        return true;
     }
+
+    return false;
 }
 
 void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
@@ -513,12 +526,7 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
 
     if (slowPathCommitted) {
         // If we committed anything in the slow path, retry any outstanding requests in the new instance
-        for (auto &[cseq, reqState] : requestStates_) {
-            reqState.request.set_instance(myInstance_);
-
-            sendRequest(reqState.request);
-            VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after slow path commits!";
-        }
+        retryRequests();
     }
 }
 

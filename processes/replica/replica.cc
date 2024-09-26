@@ -168,14 +168,31 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             LOG(INFO) << "Dropping request due to fallback";
             return;
         }
+        uint32_t clientId = clientHeader.client_id();
+
+        clientInstance_[clientId] = std::max(instance_, clientInstance_[clientId]);
 
         if (clientHeader.instance() < instance_) {
-            LOG(INFO) << "Dropping request c_id=" << clientHeader.client_id() << " c_seq=" << clientHeader.client_seq()
-                      << " due to stale instance!";
+            LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
+                      << " due to stale instance! Sending blank reply to catch client up";
+
+            if (clientInstance_[clientId] < instance_) {
+                // Send blank request to catch up the client
+                Reply reply;
+                reply.set_client_id(clientHeader.client_id());
+                reply.set_instance(instance_);
+
+                MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+                endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
+
+                // update this so we don't send this multiple times
+                clientInstance_[clientId] = instance_;
+            }
             return;
         }
 
-        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id())) {
+        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientId)) {
             LOG(INFO) << "Failed to verify client signature!";
             return;
         }
@@ -724,6 +741,7 @@ bool Replica::verifyCert(const Cert &cert)
 
 void Replica::startFallback()
 {
+
     fallback_ = true;
     instance_++;
     LOG(INFO) << "Starting fallback for instance " << instance_;
@@ -732,6 +750,9 @@ void Replica::startFallback()
     } else {
         endpoint_->RegisterTimer(fallbackTimer_.get());
     }
+
+    VLOG(1) << "PERF event=fallback_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+            << " instance=" << instance_;
 
     // Extract log into start fallback message
     FallbackStart fallbackStartMsg;
@@ -809,6 +830,8 @@ void Replica::finishFallback(const FallbackProposal &history)
 
     applySuffixToLog(logSuffix, log_);
 
+    VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+            << " instance=" << instance_;
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
 
     FallbackSummary summary;
