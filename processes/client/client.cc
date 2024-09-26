@@ -315,6 +315,8 @@ bool Client::updateInstance()
         // }
 
         myInstance_ = newInstance;
+
+        retryRequests();
         return true;
     }
 
@@ -495,8 +497,6 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
     replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
     updateInstance();
 
-    bool slowPathCommitted = false;
-
     for (const FallbackReply &reply : summary.replies()) {
         if (reply.client_id() != clientId_)
             continue;
@@ -520,13 +520,7 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
 
             lastSlowPath_ = cseq;
             commitRequest(cseq);
-            slowPathCommitted = true;
         }
-    }
-
-    if (slowPathCommitted) {
-        // If we committed anything in the slow path, retry any outstanding requests in the new instance
-        retryRequests();
     }
 }
 

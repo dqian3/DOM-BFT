@@ -857,10 +857,10 @@ void Replica::finishFallback(const FallbackProposal &history)
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::FALLBACK_SUMMARY);
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
-    for (auto cid : clients) {
-
-        LOG(INFO) << "Sending fallback summary for instance=" << instance_ << " to client_id=" << cid;
-        endpoint_->SendPreparedMsgTo(clientAddrs_[cid]);
+    // TODO make this only send to clients that need it
+    LOG(INFO) << "Sending fallback summary for instance=" << instance_;
+    for (auto &addr : clientAddrs_) {
+        endpoint_->SendPreparedMsgTo(addr);
     }
 
     // Start checkpoint for last spot in the log, which should finish if fallback was sucessful
