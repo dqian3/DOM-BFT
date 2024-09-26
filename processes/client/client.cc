@@ -198,7 +198,7 @@ void Client::retryRequests()
         reqState.request.set_instance(myInstance_);
 
         sendRequest(reqState.request);
-        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after slow path commits!";
+        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after instance update";
     }
 }
 
@@ -302,7 +302,9 @@ bool Client::updateInstance()
             if (rinst > newInstance)
                 count++;
         }
-    } while (count >= f_ + 1);
+    } while (count >= 2 * f_ + 1);
+    // Note, this can actually be f + 1, but it causes issues cause the client
+    // will try and retry requests before it can commit in the slow path
 
     uint64_t now = GetMicrosecondTimestamp();
     if (newInstance != myInstance_) {
@@ -316,6 +318,7 @@ bool Client::updateInstance()
 
         myInstance_ = newInstance;
 
+        // TODO TODO this is really fragile doing it here for some reason, figure it out
         retryRequests();
         return true;
     }
@@ -491,11 +494,9 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 
 void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig)
 {
+
     VLOG(2) << "Received fallback summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();
-
-    replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
-    updateInstance();
 
     for (const FallbackReply &reply : summary.replies()) {
         if (reply.client_id() != clientId_)
@@ -507,7 +508,6 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             continue;
 
         auto &reqState = requestStates_.at(cseq);
-        VLOG(1) << "Received fallback reply for c_seq=" << cseq;
 
         reqState.fallbackReplies.insert(summary.replica_id());
         if (reqState.fallbackReplies.size() >= 2 * f_ + 1) {
@@ -522,6 +522,9 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             commitRequest(cseq);
         }
     }
+
+    replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
+    updateInstance();
 }
 
 }   // namespace dombft

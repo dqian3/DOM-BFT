@@ -163,6 +163,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         if (seq > log->nextSeq) {
             LOG(ERROR) << "Missing some log entries before first in log suffix firstSeq is " << entry->seq()
                        << " my nextSeq=" << log->nextSeq;
+
             exit(1);
         }
 

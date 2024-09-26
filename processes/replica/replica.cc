@@ -582,11 +582,11 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
 
-        VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
-
         // Already committed
         if (reply.seq() <= log_->checkpoint.seq)
             continue;
+
+        VLOG(4) << digest_to_hex(reply.digest()).substr(0, 8) << " " << reply.seq() << " " << reply.instance();
 
         std::tuple<std::string, uint32_t, uint32_t> key = {reply.digest(), reply.instance(), reply.seq()};
 
@@ -678,6 +678,13 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 log_->app_->applySnapshot(commit.app_digest());
                 VLOG(5) << "Apply commit: new_digest=" << digest_to_hex(myDigest).substr(56)
                         << " old_digest=" << digest_to_hex(commit.log_digest()).substr(56);
+
+                if (log_->nextSeq < seq) {
+                    LOG(INFO) << "Our log nextSeq=" << log_->nextSeq << " too far behind checkpoint's seq=" << seq
+                              << " , resetting log";
+
+                    log_->nextSeq = seq + 1;
+                }
 
                 for (uint32_t s = seq + 1; s < log_->nextSeq; s++) {
                     std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
@@ -864,7 +871,7 @@ void Replica::finishFallback(const FallbackProposal &history)
     }
 
     // Start checkpoint for last spot in the log, which should finish if fallback was sucessful
-    // NOTE, as implemented, this is a potential vulnerability,
+    // TODO, as implemented, this is a potential vulnerability,
     // This needs to succeed so that the next time slow path is invoked everything is committed
 
     checkpointSeq_ = log_->nextSeq - 1;
@@ -874,7 +881,7 @@ void Replica::finishFallback(const FallbackProposal &history)
     checkpointCert_.reset();
     Reply reply;
     replyFromLogEntry(reply, checkpointSeq_);
-    broadcastToReplicas(reply, MessageType::REPLY);   // TODO better namespace
+    broadcastToReplicas(reply, MessageType::REPLY);
 }
 
 }   // namespace dombft

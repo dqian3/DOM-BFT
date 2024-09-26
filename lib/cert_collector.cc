@@ -65,8 +65,6 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
                 << reply.instance() << " " << digest_to_hex(reply.result()) << "\n";
         }
 
-        oss << maxMatchSize_;
-
         std::string logOutput = oss.str();
         VLOG(4) << logOutput;
     }

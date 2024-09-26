@@ -184,6 +184,7 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
         uint32_t index = seq % MAX_SPEC_HIST;
         return log[index];
     } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
         return nullptr;
     }
 }
