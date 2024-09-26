@@ -14,7 +14,7 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Client::Client(const ProcessConfig &config, size_t id)
+Client::Client(const ProcessConfig &config, size_t id, bool checkSendRate)
     : clientId_(id)
 {
     VLOG(4) << "clientId=" << clientId_;
@@ -120,62 +120,62 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     if (sendMode_ == dombft::RateBased) {
-
         bool useEvloop = 1;
         if (useEvloop){
-            auto defaultSendRateFunc = [&](void *ctx, void *endpoint) {
-                // If we are in the slow path, don't submit anymore
-                if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
-                    VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
-                            << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
-                            << " numInFlight=" << numInFlight_;
+            std::function<void(void *, void *)> sendRateFunc;
+            if(checkSendRate){
+                sendRateFunc = [&](void *ctx, void *endpoint) {
+                    // If we are in the slow path, don't submit anymore
+                    if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
+                        VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+                                << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
+                                << " numInFlight=" << numInFlight_;
 
-                    return;
-                }
+                        return;
+                    }
 
-                submitRequest();
-
-                // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
-                if (lastFastPath_ < lastNormalPath_) {
-                    endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
-                } else {
-                    endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
-                }
-            };
-
-            auto checkedSendRateFunc = [&](void *ctx, void *endpoint) {
-                // If we are in the slow path, don't submit anymore
-                if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
-                    VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
-                            << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
-                            << " numInFlight=" << numInFlight_;
-
-                    return;
-                }
-
-                submitRequest();
-                if(nextSeq_ < 10) return;
-                // check if the current send rate is smaller than the desired send rate
-                uint32_t reqCatch = (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_)) < sendRate_ * 1000 ?
-                                    sendRate_/1000 - (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_))  : 0;
-                if((nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_)) < sendRate_* 1000){
-                    VLOG(1) << "smalll "<< startTime_ <<"  "<< ((GetMicrosecondTimestamp() - startTime_)) <<"  " <<sendRate_/1000 - (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_));
-                }
-                while(reqCatch--){
-                    VLOG(1) << "CSR " << reqCatch + 1;
                     submitRequest();
-                }
+                    // check if the current send rate is smaller than the desired send rate
+                    uint32_t reqCatch = (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_)) < sendRate_ * 1000 ?
+                                        sendRate_/1000 - (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_))  : 0;
+                    if (reqCatch){
+                        VLOG(1) << "compensate " << reqCatch + 1 << " reqs";
+                    }
+                    while(reqCatch--){
+                        submitRequest();
+                    }
 
-                // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
-                if (lastFastPath_ < lastNormalPath_) {
-                    endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
-                } else {
-                    endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
-                }
-            };
+                    // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
+                    if (lastFastPath_ < lastNormalPath_) {
+                        endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
+                    } else {
+                        endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
+                    }
+                };
+            }else{
+                sendRateFunc = [&](void *ctx, void *endpoint) {
+                    // If we are in the slow path, don't submit anymore
+                    if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
+                        VLOG(4) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+                                << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
+                                << " numInFlight=" << numInFlight_;
+
+                        return;
+                    }
+
+                    submitRequest();
+
+                    // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
+                    if (lastFastPath_ < lastNormalPath_) {
+                        endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
+                    } else {
+                        endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
+                    }
+                };
+            }
 
             sendTimer_ = std::make_unique<Timer>(
-                    checkedSendRateFunc,
+                    sendRateFunc,
                     1000000 / sendRate_, this);
 
             endpoint_->RegisterTimer(sendTimer_.get());

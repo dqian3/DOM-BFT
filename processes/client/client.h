@@ -105,6 +105,8 @@ private:
     /* Per request state */
     std::map<int, RequestState> requestStates_;
 
+    bool checkSendRate;
+
     /** The message handler to handle messages */
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
@@ -123,7 +125,7 @@ public:
     /** Client accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */
-    Client(const ProcessConfig &config, const size_t clientId);
+    Client(const ProcessConfig &config, const size_t clientId, bool checkSendRate);
     ~Client();
 };
 
