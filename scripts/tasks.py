@@ -398,7 +398,10 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
 @task
 def gcloud_run(c, config_file="../configs/remote.yaml",
                local_log=False,
-               dom_logs=False):
+               dom_logs=False,
+               slow_path_freq=0,
+               normal_path_freq=0,
+               ):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -430,12 +433,19 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
     client_handles = []
     other_handles = []
 
+    f = len(replicas) // 3
 
     c.run("mkdir -p ../logs")
     print("Starting replicas")
     for id, ip in enumerate(replicas):
+        swap_arg = ''
+        if normal_path_freq != 0 and (id % f) == 0:
+            swap_arg = '-swapFreq %{normal_path_freq}'
+        if slow_path_freq != 0 and (id % 2) == 0:
+            swap_arg = '-swapFreq %{slow_path_freq}'
+
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log)
-        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id}")
+        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")

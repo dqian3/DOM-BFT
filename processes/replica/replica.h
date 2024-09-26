@@ -58,7 +58,7 @@ private:
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
     // State for actively triggering fallback
-    uint32_t triggerFallbackFreq_;
+    uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
