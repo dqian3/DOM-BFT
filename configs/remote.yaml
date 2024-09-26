@@ -8,11 +8,11 @@ client:
   - "10.128.0.5"
   port: 33000
   keysDir: keys/client
-  normalPathTimeout: 20000   # 100 ms
+  normalPathTimeout: 15000   # 15 ms
   slowPathTimeout:   1000000  # 1 s
 
-  sendMode: "sendRate"
-  maxInFlight: 100
+  sendMode: "maxInFlight"
+  maxInFlight: 2
   sendRate: 100
   runtimeSeconds: 30
 
