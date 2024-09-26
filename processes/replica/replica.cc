@@ -676,10 +676,10 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 // TODO, normally this would involve requesting a snapshot of the application state, but the
                 // digest is the same for the basic counter
                 log_->app_->applySnapshot(commit.app_digest());
-                VLOG(5) << "Apply commit: new_digest=" << digest_to_hex(myDigest).substr(56)
-                        << " old_digest=" << digest_to_hex(commit.log_digest()).substr(56);
+                VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
+                        << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
 
-                if (log_->nextSeq < seq) {
+                if (log_->nextSeq <= seq) {
                     LOG(INFO) << "Our log nextSeq=" << log_->nextSeq << " too far behind checkpoint's seq=" << seq
                               << " , resetting log";
 
