@@ -137,8 +137,7 @@ Client::Client(const ProcessConfig &config, size_t id, bool checkSendRate)
                     submitRequest();
                     VLOG(1) << "time diff:" <<GetMicrosecondTimestamp() - timeDiff;
                     // check if the current send rate is smaller than the desired send rate
-                    uint32_t reqCatch = (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_)) < sendRate_ * 1000 ?
-                                        sendRate_/1000 - (nextSeq_ - 1) / ((GetMicrosecondTimestamp() - startTime_))  : 0;
+                    uint32_t reqCatch = sendRate_ * (GetMicrosecondTimestamp() - startTime_) / 1000000 - nextSeq_ > 0 ? sendRate_ * (GetMicrosecondTimestamp() - startTime_) / 1000000 - nextSeq_ : 0;
                     if (reqCatch){
                         VLOG(1) << "compensate " << reqCatch << " reqs";
                     }
