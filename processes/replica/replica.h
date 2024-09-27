@@ -35,6 +35,10 @@ private:
     std::unique_ptr<Timer> fallbackTimer_;
     std::shared_ptr<Log> log_;
 
+    // State for tracking client state
+    // TODO add some parts for caching client results to deal with duplicate requests
+    std::map<int, uint32_t> clientInstance_;
+
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
     // TODO this assumes non-overlapping checkpoint protocol
@@ -54,7 +58,7 @@ private:
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
     // State for actively triggering fallback
-    uint32_t triggerFallbackFreq_;
+    uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);

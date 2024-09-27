@@ -30,22 +30,6 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
     // Try and find a certificate or proof of divergent histories
     std::map<ReplyKey, std::set<int>> matchingReplies;
 
-    if (VLOG_IS_ON(4)) {
-        std::ostringstream oss;
-        oss << "\n";
-
-        dombft::apps::CounterResponse response;
-        response.ParseFromString(reply.result());
-
-        for (const auto &[replicaId, reply] : replies_) {
-            oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
-                << reply.instance() << "\n";
-        }
-
-        std::string logOutput = oss.str();
-        VLOG(4) << logOutput;
-    }
-
     for (const auto &[replicaId, reply] : replies_) {
         // We also don't check the result here, that only needs to happen in the fast path
         ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
@@ -67,6 +51,23 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
                 (*cert_->add_replies()) = replies_[repId];
             }
         }
+    }
+
+    if (VLOG_IS_ON(4)) {
+        std::ostringstream oss;
+        oss << "\n";
+
+        // TODO this is just for logging,
+        dombft::apps::CounterResponse response;
+        response.ParseFromString(reply.result());
+
+        for (const auto &[replicaId, reply] : replies_) {
+            oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
+                << reply.instance() << " " << response.value() << "\n";
+        }
+
+        std::string logOutput = oss.str();
+        VLOG(4) << logOutput;
     }
 
     return maxMatchSize_;

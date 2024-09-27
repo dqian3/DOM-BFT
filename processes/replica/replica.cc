@@ -15,10 +15,10 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq)
+Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq)
     : replicaId_(replicaId)
     , instance_(0)
-    , triggerFallbackFreq_(triggerFallbackFreq)
+    , swapFreq_(swapFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -168,19 +168,36 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             LOG(INFO) << "Dropping request due to fallback";
             return;
         }
+        uint32_t clientId = clientHeader.client_id();
+
+        clientInstance_[clientId] = std::max(instance_, clientInstance_[clientId]);
 
         if (clientHeader.instance() < instance_) {
-            LOG(INFO) << "Dropping request c_id=" << clientHeader.client_id() << " c_seq=" << clientHeader.client_seq()
-                      << " due to stale instance!";
+            LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
+                      << " due to stale instance! Sending blank reply to catch client up";
+
+            if (clientInstance_[clientId] < instance_) {
+                // Send blank request to catch up the client
+                Reply reply;
+                reply.set_client_id(clientHeader.client_id());
+                reply.set_instance(instance_);
+
+                MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+                endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
+
+                // update this so we don't send this multiple times
+                clientInstance_[clientId] = instance_;
+            }
             return;
         }
 
-        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id())) {
+        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientId)) {
             LOG(INFO) << "Failed to verify client signature!";
             return;
         }
 
-        if (triggerFallbackFreq_ && replicaId_ % 2 && log_->nextSeq % triggerFallbackFreq_ == 0)
+        if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
             holdAndSwapCliReq(clientHeader);
         else
             handleClientRequest(clientHeader);
@@ -464,11 +481,16 @@ void Replica::handleClientRequest(const ClientRequest &request)
         LOG(ERROR) << "Could not add request to log!";
         return;
     }
+
     uint32_t seq = log_->nextSeq - 1;
     reply.set_result(result);
     reply.set_fast(true);
     reply.set_seq(seq);
     reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+
+    VLOG(1) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+            << " client_seq=" << clientSeq << " instance=" << instance_
+            << " digest=" << digest_to_hex(log_->getDigest()).substr(56);
 
     // VLOG(4) << "Start prepare message";
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
@@ -486,6 +508,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
     // we can't speculatively execute anymore)
     if (seq % CHECKPOINT_INTERVAL == 0) {
         LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
 
         checkpointSeq_ = seq;
         checkpointCert_.reset();
@@ -524,6 +547,8 @@ void Replica::handleCert(const Cert &cert)
     reply.set_client_id(r.client_id());
     reply.set_client_seq(r.client_seq());
     reply.set_replica_id(replicaId_);
+    reply.set_seq(r.seq());
+    reply.set_instance(instance_);
 
     VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
             << clientAddrs_[reply.client_id()].ip();
@@ -557,18 +582,20 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
 
-        VLOG(4) << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " " << reply.instance();
-
         // Already committed
         if (reply.seq() <= log_->checkpoint.seq)
             continue;
+
+        VLOG(4) << digest_to_hex(reply.digest()).substr(0, 8) << " " << reply.seq() << " " << reply.instance();
 
         std::tuple<std::string, uint32_t, uint32_t> key = {reply.digest(), reply.instance(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
 
+        bool hasOwnReply = checkpointReplies_.count(replicaId_) && checkpointReplies_[replicaId_].seq() == reply.seq();
+
         // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= 2 * f_ + 1 && checkpointReplies_.count(replicaId_)) {
+        if (matchingReplies[key].size() >= 2 * f_ + 1 && hasOwnReply) {
 
             checkpointCert_ = Cert();
             checkpointCert_->set_seq(std::get<2>(key));
@@ -623,14 +650,17 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
 
         matchingCommits[key].insert(replicaId);
 
-        // Need 2f + 1 to commit checkpoing
-        // Modifies log if own reply is not in checkpoint
-        if (matchingCommits[key].size() >= 2 * f_ + 1) {
-            uint32_t seq = std::get<3>(key);
-            LOG(INFO) << "Committing seq=" << seq;
+        // TODO see if there's a better way to do this
+        bool hasOwnCommit =
+            checkpointCommits_.count(replicaId_) && checkpointCommits_[replicaId_].seq() == commit.seq();
 
-            const byte *myDigestBytes = log_->getDigest(seq);
-            std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
+        // Need 2f + 1 and own commit
+        // Modifies log if checkpoint is incosistent with our current log
+        if (matchingCommits[key].size() >= 2 * f_ + 1 && hasOwnCommit) {
+            uint32_t seq = std::get<3>(key);
+
+            LOG(INFO) << "Committing seq=" << seq;
+            VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
 
             log_->checkpoint.seq = std::get<3>(key);
 
@@ -643,15 +673,27 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             }
             log_->commit(log_->checkpoint.seq);
 
-            // Our log doesn't match the committed checkpoint, so we need to fix our log
+            // If checkpoint is inconsistent, we probably swapped some previous operations before the
+            // checkpoint. Try repairing our log by just overwriting our digest for later ops.
+            assert(seq < log_->nextSeq);
+            const byte *myDigestBytes = log_->getDigest(seq);
+            std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
+
             if (myDigest != commit.log_digest()) {
                 LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot and modifying "
                              "log...";
                 // TODO, normally this would involve requesting a snapshot of the application state, but the
                 // digest is the same for the basic counter
                 log_->app_->applySnapshot(commit.app_digest());
-                VLOG(5) << "Apply commit: new_digest=" << digest_to_hex(myDigest).substr(56)
-                        << " old_digest=" << digest_to_hex(commit.log_digest()).substr(56);
+                VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
+                        << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
+
+                if (log_->nextSeq <= seq) {
+                    LOG(INFO) << "Our log nextSeq=" << log_->nextSeq << " too far behind checkpoint's seq=" << seq
+                              << " , resetting log";
+
+                    log_->nextSeq = seq + 1;
+                }
 
                 for (uint32_t s = seq + 1; s < log_->nextSeq; s++) {
                     std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
@@ -660,7 +702,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                     entry->updateDigest(s == seq + 1 ? (const byte *) commit.log_digest().c_str()
                                                      : log_->getEntry(s - 1)->digest);
 
-                    VLOG(5) << "Update seq=" << s << " digest=" << digest_to_hex(entry->digest).substr(56);
+                    VLOG(5) << "PERF event=update_digest seq=" << s
+                            << " digest=" << digest_to_hex(entry->digest).substr(56);
                 }
             }
 
@@ -693,11 +736,13 @@ bool Replica::verifyCert(const Cert &cert)
         return false;
     }
 
+    // TODO check cert instance
+
     // Verify each signature in the cert
     for (int i = 0; i < cert.replies().size(); i++) {
         const Reply &reply = cert.replies()[i];
         const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();   // TODO skip reseraizliation here?
+        std::string serializedReply = reply.SerializeAsString();
 
         if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
                                  sig.size(), "replica", reply.replica_id())) {
@@ -714,6 +759,7 @@ bool Replica::verifyCert(const Cert &cert)
 
 void Replica::startFallback()
 {
+
     fallback_ = true;
     instance_++;
     LOG(INFO) << "Starting fallback for instance " << instance_;
@@ -722,6 +768,9 @@ void Replica::startFallback()
     } else {
         endpoint_->RegisterTimer(fallbackTimer_.get());
     }
+
+    VLOG(1) << "PERF event=fallback_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+            << " instance=" << instance_;
 
     // Extract log into start fallback message
     FallbackStart fallbackStartMsg;
@@ -793,8 +842,14 @@ void Replica::finishFallback(const FallbackProposal &history)
     // TODO Verify FallbackProposal
     LogSuffix logSuffix;
     getLogSuffixFromProposal(history, logSuffix);
+
+    logSuffix.replicaId = replicaId_;
+    logSuffix.instance = instance_;
+
     applySuffixToLog(logSuffix, log_);
 
+    VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+            << " instance=" << instance_;
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
 
     FallbackSummary summary;
@@ -820,14 +875,14 @@ void Replica::finishFallback(const FallbackProposal &history)
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::FALLBACK_SUMMARY);
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
-    for (auto cid : clients) {
-
-        LOG(INFO) << "Sending fallback summary for instance=" << instance_ << " to client_id=" << cid;
-        endpoint_->SendPreparedMsgTo(clientAddrs_[cid]);
+    // TODO make this only send to clients that need it
+    LOG(INFO) << "Sending fallback summary for instance=" << instance_;
+    for (auto &addr : clientAddrs_) {
+        endpoint_->SendPreparedMsgTo(addr);
     }
 
     // Start checkpoint for last spot in the log, which should finish if fallback was sucessful
-    // NOTE, as implemented, this is a potential vulnerability,
+    // TODO, as implemented, this is a potential vulnerability,
     // This needs to succeed so that the next time slow path is invoked everything is committed
 
     checkpointSeq_ = log_->nextSeq - 1;
@@ -837,7 +892,7 @@ void Replica::finishFallback(const FallbackProposal &history)
     checkpointCert_.reset();
     Reply reply;
     replyFromLogEntry(reply, checkpointSeq_);
-    broadcastToReplicas(reply, MessageType::REPLY);   // TODO better namespace
+    broadcastToReplicas(reply, MessageType::REPLY);
 }
 
 }   // namespace dombft

@@ -8,13 +8,13 @@ client:
   - "127.0.1.1"
   port: 33000
   keysDir: keys/client
-  normalPathTimeout: 100000   # 100 ms
+  normalPathTimeout: 15000    # 15ms
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "sendRate"
-  maxInFlight: 500
-  sendRate: 250
-  runtimeSeconds: 20
+  maxInFlight: 100
+  sendRate: 100 
+  runtimeSeconds: 30
 
 
 # Proxy Info

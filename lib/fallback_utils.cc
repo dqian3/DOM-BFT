@@ -163,12 +163,12 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         if (seq > log->nextSeq) {
             LOG(ERROR) << "Missing some log entries before first in log suffix firstSeq is " << entry->seq()
                        << " my nextSeq=" << log->nextSeq;
+
             exit(1);
         }
 
-        std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
-
-        if (myEntry != nullptr) {
+        if (seq < log->nextSeq) {
+            std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
             std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
             if (myDigest == entry->digest()) {
                 VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
@@ -180,7 +180,6 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
             }
         }
 
-        // TODO Rollback application state here!
         if (!rollbackDone) {
             log->nextSeq = seq;
             log->app_->abort(seq - 1);
@@ -194,5 +193,15 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         if (!log->addEntry(entry->client_id(), entry->client_seq(), entry->request(), result)) {
             LOG(ERROR) << "Failure to add log entry!";
         }
+
+        // TODO get the replica id and stuff here for better logging...
+        VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
+                << " instance=" << logSuffix.instance << " client_id=" << entry->client_id()
+                << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
+    }
+
+    if (!rollbackDone) {
+        log->nextSeq = seq + 1;
+        log->app_->abort(seq);
     }
 }
