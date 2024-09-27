@@ -50,7 +50,7 @@ def local(c, config_file, v=1):
             other_handles.append(hdl)
 
         for id in range(n_clients):
-            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
+            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} -checkRate &>logs/client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
@@ -455,7 +455,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
     print("Starting clients")
     for id, ip in enumerate(clients):
         arun = arun_on(ip, f"client{id}.log", local_log=local_log)
-        hdl = arun(f"{client_path} -v {1} -config {remote_config_file} -clientId {id}")
+        hdl = arun(f"{client_path} -v {1} -config {remote_config_file} -clientId {id} -checkRate")
         client_handles.append(hdl)
 
     try:

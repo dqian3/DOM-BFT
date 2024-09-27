@@ -297,7 +297,7 @@ void Client::commitRequest(uint32_t clientSeq)
     numCommitted_++;
     numInFlight_--;
 
-    VLOG(4) << "After committing, numInFlight_=" << numInFlight_;
+    VLOG(1) << "After committing, numInFlight_=" << numInFlight_;
 
     if (sendMode_ == dombft::MaxInFlightBased) {
         submitRequest();
@@ -475,7 +475,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(4) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
+        VLOG(1) << "Request " << clientSeq << " fast path committed at global seq " << reply.seq() << ". Took "
                 << now - reqState.sendTime << " us";
 
         lastFastPath_ = clientSeq;
