@@ -22,7 +22,6 @@ private:
     std::thread thread_;
 
     struct ev_loop *evLoop_;
-    ev_async stopWatcher_;
     ev_async sendWatcher_;
 
     nng_socket sock_;
@@ -53,7 +52,6 @@ private:
     };
 
     struct ev_loop *evLoop_;
-    ev_async stopWatcher_;
     std::vector<ev_io> ioWatchers_;
     std::vector<nng_socket> socks_;
     byte recvBuffer_[NNG_BUFFER_SIZE];

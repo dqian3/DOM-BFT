@@ -12,24 +12,18 @@ NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
 
     evLoop_ = ev_loop_new();
     sendWatcher_ = ev_async();
-    stopWatcher_ = ev_async();
 
     thread_ = std::thread(&NngSendThread::run, this);
 }
 
 NngSendThread::~NngSendThread()
 {
-    ev_async_send(evLoop_, &stopWatcher_);
+    ev_break(evLoop_);
     thread_.join();
 }
 
 void NngSendThread::run()
 {
-    auto stop_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
-        // Signal to stop the event loop
-        ev_break(loop);
-    };
-
     sendWatcher_.data = this;
     auto send_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
         NngSendThread *t = (NngSendThread *) w->data;
@@ -46,10 +40,7 @@ void NngSendThread::run()
         }
     };
 
-    ev_async_init(&stopWatcher_, stop_cb);
     ev_async_init(&sendWatcher_, send_cb);
-
-    ev_async_start(evLoop_, &stopWatcher_);
     ev_async_start(evLoop_, &sendWatcher_);
 
     LOG(INFO) << "Starting event loop for send thread";
@@ -119,7 +110,7 @@ NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::un
 
 NngRecvThread::~NngRecvThread()
 {
-    ev_async_send(evLoop_, &stopWatcher_);
+    ev_break(evLoop_);
     thread_.join();
 
     // TODO clean up event loop properly
@@ -129,13 +120,6 @@ NngRecvThread::~NngRecvThread()
 void NngRecvThread::run()
 {
     LOG(INFO) << "NngEndpointThreaded recv thread started!";
-
-    ev_async_init(&stopWatcher_, [](struct ev_loop *loop, ev_async *w, int revents) {
-        // Signal to stop the event loop
-        ev_break(loop);
-    });
-
-    ev_async_start(evLoop_, &stopWatcher_);
 
     LOG(INFO) << "Starting event loop for receive thread";
     ev_run(evLoop_, 0);

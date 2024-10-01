@@ -153,8 +153,9 @@ Client::Client(const ProcessConfig &config, size_t id)
         exit(1);
     }
 
-    LOG(INFO) << "Client finished initializing";
+    LOG(INFO) << "Client main thread starting";
     endpoint_->LoopRun();
+    LOG(INFO) << "Client main thread finishing";
 }
 
 Client::~Client()

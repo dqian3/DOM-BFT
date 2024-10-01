@@ -45,7 +45,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
-        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
+        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
         forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort + 100, false);
     }
 
@@ -108,9 +108,6 @@ void Receiver::run()
 {
     // Submit first request
     LOG(INFO) << "Starting event loop...";
-    // endpoint_->LoopRun();
-
-    // running_ = true;
 
     LaunchThreads();
     for (auto &kv : threads_) {
@@ -131,12 +128,14 @@ void Receiver::ReceiveTd()
 {
     LOG(INFO) << "receive td launched";
     endpoint_->LoopRun();
+    LOG(INFO) << "receive td finished";
 }
 
 void Receiver::ForwardTd()
 {
     LOG(INFO) << "forward td launched";
     forwardEp_->LoopRun();
+    LOG(INFO) << "forward td finished";
 }
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
