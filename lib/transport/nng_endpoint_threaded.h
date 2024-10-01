@@ -20,7 +20,6 @@ public:
 
 private:
     std::thread thread_;
-    bool running_;
 
     struct ev_loop *evLoop_;
     ev_async stopWatcher_;
@@ -44,7 +43,6 @@ public:
 
 private:
     std::thread thread_;
-    bool running_;
 
     // Event handling for receiving packets
     // This loop runs within the thread

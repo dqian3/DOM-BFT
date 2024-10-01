@@ -1,5 +1,11 @@
 #include "lib/transport/endpoint.h"
 
+void signal_cb(struct ev_loop *loop, ev_signal *w, int revents)
+{
+    LOG(INFO) << "signal handler: calling ev_break";
+    ev_break(loop, EVBREAK_ALL);   // Break the event loop
+}
+
 Endpoint::Endpoint(const bool isMasterReceiver)
 {
     evLoop_ = isMasterReceiver ? ev_default_loop() : ev_loop_new();
@@ -133,7 +139,17 @@ MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg, b
     return hdr;
 }
 
-void Endpoint::LoopRun() { ev_run(evLoop_, 0); }
+void Endpoint::LoopRun()
+{
+    // Handle interrupt signals properly on main loop
+    if (evLoop_ == EV_DEFAULT) {
+        ev_signal sigint_watcher;
+        ev_signal_init(&sigint_watcher, signal_cb, SIGINT);
+        ev_signal_start(evLoop_, &sigint_watcher);
+    }
+
+    ev_run(evLoop_, 0);
+}
 
 void Endpoint::LoopBreak()
 {

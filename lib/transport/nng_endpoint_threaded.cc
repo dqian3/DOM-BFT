@@ -7,7 +7,6 @@
 NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
     : sock_(sock)
     , addr_(addr)
-    , running_(true)
 {
     LOG(INFO) << "NngEndpointThreaded send thread started for " << addr;
 
@@ -53,7 +52,10 @@ void NngSendThread::run()
     ev_async_start(evLoop_, &stopWatcher_);
     ev_async_start(evLoop_, &sendWatcher_);
 
+    LOG(INFO) << "Starting event loop for send thread";
     ev_run(evLoop_, 0);
+
+    LOG(INFO) << "Finsihing event loop for send thread";
 }
 
 void NngSendThread::sendMsg(const byte *msg, size_t len)
@@ -134,7 +136,11 @@ void NngRecvThread::run()
     });
 
     ev_async_start(evLoop_, &stopWatcher_);
+
+    LOG(INFO) << "Starting event loop for receive thread";
     ev_run(evLoop_, 0);
+
+    LOG(INFO) << "Finishing event loop for receive thread";
 }
 
 /*************************** NngEndpointThreaded ***************************/

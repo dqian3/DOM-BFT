@@ -484,7 +484,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
     finally:
         # kill these processes and then join
         for hdl in other_handles:
-            hdl.runner.kill()
+            hdl.runner.send_interrupt()
 
         for hdl in other_handles:
             hdl.join()

@@ -6,9 +6,8 @@ DEFINE_string(config, "configs/config.yaml", "The config file for the receiver")
 // for reorder analysis
 DEFINE_bool(skipForwarding, false, "Whether to skip forwarding (for reordering experiments).");
 DEFINE_bool(ignoreDeadlines, false, "Whether to ignore deadlines (for reordering experiments).");
-
-dombft::Receiver *receiver = NULL;
 DEFINE_uint32(receiverId, 0, "The receiver id.");
+
 int main(int argc, char *argv[])
 {
     gflags::ParseCommandLineFlags(&argc, &argv, true);

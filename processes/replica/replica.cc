@@ -126,8 +126,10 @@ Replica::~Replica()
 void Replica::run()
 {
     // Submit first request
-    LOG(INFO) << "Starting event loop...";
+    LOG(INFO) << "Starting main event loop...";
     endpoint_->LoopRun();
+
+    LOG(INFO) << "Finishing main event loop...";
 }
 
 #if PROTOCOL == DOMBFT
