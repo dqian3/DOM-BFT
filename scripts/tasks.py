@@ -339,7 +339,9 @@ gcloud compute instances create {} \
 
 
 
-def arun_on(ip, logfile, local_log=False):
+def arun_on(ip, logfile, local_log=False, profile=False):
+    def perf_prefix(prof_file):
+        return f"env LD_PRELOAD='/usr/local/lib/libprofiler.so' CPUPROFILE={prof_file} "
 
     if local_log:
         logfile = os.path.join("../logs/", logfile)
@@ -347,7 +349,10 @@ def arun_on(ip, logfile, local_log=False):
             log = open(logfile, "w")
             conn = Connection(ip)
 
-            print(f"Running {args} on {ip}, logging to local {logfile}")
+            if (profile):
+                command = perf_prefix(os.path.splitext(logfile)[0] + '.prof') + command
+
+            print(f"Running {command} on {ip}, logging to local {logfile}")
             return conn.run(command + " 2>&1", **kwargs, asynchronous=True, warn=True, out_stream=log)
 
         return arun_local_log
@@ -355,6 +360,9 @@ def arun_on(ip, logfile, local_log=False):
     else:
         def arun(command, **kwargs):
             conn = Connection(ip)
+
+            if profile:
+                command = perf_prefix(os.path.splitext(logfile)[0] + '.prof') + command
 
             print(f"Running {command} on {ip}, logging on remote machine {logfile}" )
             return conn.run(command + f" &>{logfile}", **kwargs, asynchronous=True, warn=True)
@@ -375,8 +383,6 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
-
     # ips of each process 
     replicas = config["replica"]["ips"]
     receivers = config["receiver"]["ips"]
@@ -401,7 +407,8 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
                dom_logs=False,
                slow_path_freq=0,
                normal_path_freq=0,
-               ):
+               profile=False
+):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -444,20 +451,20 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
             swap_arg = f'-swapFreq {normal_path_freq}'
         if slow_path_freq != 0 and (id % 2) == 0:
             swap_arg = f'-swapFreq {slow_path_freq}'
-
-        arun = arun_on(ip, f"replica{id}.log", local_log=local_log)
+            
+        arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
@@ -465,7 +472,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
     print("Starting clients")
     for id, ip in enumerate(clients):
-        arun = arun_on(ip, f"client{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"client{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id}")
         client_handles.append(hdl)
 
