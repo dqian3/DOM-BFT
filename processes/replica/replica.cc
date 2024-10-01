@@ -349,6 +349,70 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         // TODO actually run a protocol instead of assuming this is ok
         finishFallback(msg);
     }
+
+    if(hdr->msgType == DUMMY_PREPREPARE) {
+        FallbackPrePrepare msg;
+
+        if (!msg.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse DUMMY_PREPREPARE message";
+            return;
+        }
+
+//        if (!sigProvider_.verify(hdr, body, "replica", msg.primary_id())) {
+//            LOG(INFO) << "Failed to verify replica signature!";
+//            return;
+//        }
+
+        if (msg.instance() < instance_) {
+            LOG(INFO) << "Received old fallback preprepare from instance=" << msg.instance() << " own instance is "
+                      << instance_;
+            return;
+        }
+        handlePrePrepare(msg);
+    }
+
+    if(hdr->msgType == DUMMY_PREPARE) {
+        FallbackPrepare msg;
+
+        if (!msg.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse DUMMY_PREPARE message";
+            return;
+        }
+
+//        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+//            LOG(INFO) << "Failed to verify replica signature!";
+//            return;
+//        }
+
+        if (msg.instance() < instance_) {
+            LOG(INFO) << "Received old fallback prepare from instance=" << msg.instance() << " own instance is "
+                      << instance_;
+            return;
+        }
+        handlePrepare(msg);
+    }
+
+    if(hdr->msgType == DUMMY_COMMIT) {
+        FallbackPBFTCommit msg;
+
+        if (!msg.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse DUMMY_COMMIT message";
+            return;
+        }
+
+//        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+//            LOG(INFO) << "Failed to verify replica signature!";
+//            return;
+//        }
+
+        if (msg.instance() < instance_) {
+            LOG(INFO) << "Received old fallback commit from instance=" << msg.instance() << " own instance is "
+                      << instance_;
+            return;
+        }
+        handlePBFTCommit(msg);
+    }
+
 }
 
 #else   // if not DOM_BFT
@@ -795,8 +859,9 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 
     LOG(INFO) << "Received fallback message from " << msg.replica_id();
 
-    if (instance_ % replicaAddrs_.size() != replicaId_) {
+    if (!isPrimary()) {
         return;
+
     }
 
     // First check if we have 2f + 1 fallback start messages for the same instance
@@ -804,18 +869,7 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
                                       [this](auto &startMsg) { return startMsg.second.instance() == instance_; });
 
     if (numStartMsgs == 2 * f_ + 1) {
-        FallbackProposal proposal;
-
-        proposal.set_replica_id(replicaId_);
-        proposal.set_instance(instance_);
-        for (auto &startMsg : fallbackHistory_) {
-            if (startMsg.second.instance() != instance_)
-                continue;
-
-            *(proposal.add_logs()) = startMsg.second;
-        }
-
-        broadcastToReplicas(proposal, FALLBACK_PROPOSAL);
+        doPrePreparePhase();
     }
 }
 
@@ -893,6 +947,79 @@ void Replica::finishFallback(const FallbackProposal &history)
     Reply reply;
     replyFromLogEntry(reply, checkpointSeq_);
     broadcastToReplicas(reply, MessageType::REPLY);
+}
+
+// dummy fallbacl PBFT
+
+void Replica::doPrePreparePhase() {
+    if (!isPrimary()) {
+        LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
+        return;
+    }
+    VLOG(6) << "DUMMY PrePrepare for instance=" << instance_ << " in primary replicaId=" << replicaId_;
+    FallbackPrePrepare prePrepare;
+    prePrepare.set_primary_id(replicaId_);
+    prePrepare.set_instance(instance_);
+    //TODO(Hao) sig & history?
+    broadcastToReplicas(prePrepare, DUMMY_PREPREPARE);
+}
+
+void Replica::doPreparePhase() {
+    VLOG(6) << "DUMMY Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
+    FallbackPrepare prepare;
+    prepare.set_replica_id(replicaId_);
+    prepare.set_instance(instance_);
+    broadcastToReplicas(prepare, DUMMY_PREPARE);
+}
+
+
+void Replica::doCommitPhase() {
+    VLOG(6) << "DUMMY Commit for instance=" << instance_ << " replicaId=" << replicaId_;
+    FallbackPBFTCommit cmt;
+    cmt.set_replica_id(replicaId_);
+    cmt.set_instance(instance_);
+    broadcastToReplicas(cmt, DUMMY_COMMIT);
+
+}
+void Replica::handlePrePrepare(const FallbackPrePrepare &msg) {
+    VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
+    doPreparePhase();
+}
+
+void Replica::handlePrepare(const FallbackPrepare &msg) {
+    VLOG(6) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
+    fallbackPrepares_[msg.replica_id()] = msg;
+    auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(),
+                                      [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+    if (numMsgs == 2 * f_ + 1) {
+        VLOG(6) << "DUMMY Prepare received from 2f + 1 replicas, Prepared!";
+        doCommitPhase();
+    }
+}
+
+void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg) {
+    VLOG(6) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
+    fallbackPBFTCommits_[msg.replica_id()] = msg;
+    auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(),
+                                      [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+    if (numMsgs == 2 * f_ + 1) {
+        VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
+        if (isPrimary()) {
+            // end of dummy PBFT
+            FallbackProposal proposal;
+
+            proposal.set_replica_id(replicaId_);
+            proposal.set_instance(instance_);
+            for (auto &startMsg : fallbackHistory_) {
+                if (startMsg.second.instance() != instance_)
+                    continue;
+
+                *(proposal.add_logs()) = startMsg.second;
+            }
+
+            broadcastToReplicas(proposal, FALLBACK_PROPOSAL);
+        }
+    }
 }
 
 }   // namespace dombft

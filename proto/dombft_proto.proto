@@ -152,4 +152,23 @@ message FallbackSummary
     repeated FallbackReply replies = 3;
 }
 
+message FallbackPrePrepare
+{
+    uint32 instance = 1;
+    uint32 primary_id = 2;
+}
+
+message FallbackPrepare
+{
+    uint32 instance = 1;
+    uint32 replica_id = 2;
+}
+
+message FallbackPBFTCommit
+{
+    uint32 instance = 1;
+    uint32 replica_id = 2;
+}
+
+
 
