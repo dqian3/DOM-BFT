@@ -805,7 +805,7 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 
     // First check if we have 2f + 1 fallback start messages for the same instance
     auto numStartMsgs = std::count_if(fallbackHistory_.begin(), fallbackHistory_.end(),
-                                      [this](auto &startMsg) { return startMsg.second.instance() == instance_; });
+                                      [&](auto &startMsg) { return startMsg.second.instance() == msg.instance(); });
 
     if (numStartMsgs == 2 * f_ + 1) {
         FallbackProposal proposal;
