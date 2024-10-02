@@ -433,16 +433,17 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
     client_handles = []
     other_handles = []
 
+    n = len(replicas)
     f = len(replicas) // 3
 
     c.run("mkdir -p ../logs")
     print("Starting replicas")
     for id, ip in enumerate(replicas):
         swap_arg = ''
-        if normal_path_freq != 0 and (id % f) == 0:
-            swap_arg = '-swapFreq %{normal_path_freq}'
+        if normal_path_freq != 0 and id < f:
+            swap_arg = f'-swapFreq {normal_path_freq}'
         if slow_path_freq != 0 and (id % 2) == 0:
-            swap_arg = '-swapFreq %{slow_path_freq}'
+            swap_arg = f'-swapFreq {slow_path_freq}'
 
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log)
         hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
