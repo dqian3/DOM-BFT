@@ -221,5 +221,11 @@ void NngEndpointThreaded::LoopBreak()
 
     ev_async_send(recvThread_->evLoop_, &recvThread_->stopWatcher_);
 
+    for (auto &t : sendThreads_) {
+        t->thread_.join();
+    }
+
+    recvThread_->thread_.join();
+
     Endpoint::LoopBreak();
 }
