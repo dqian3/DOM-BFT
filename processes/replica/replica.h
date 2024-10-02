@@ -53,6 +53,7 @@ private:
     // State for fallback
     bool fallback_ = false;
     uint32_t fallbackTriggerSeq_ = 0;
+    std::optional<dombft::proto::FallbackProposal> fallbackProposal_;
     std::map<int, dombft::proto::FallbackStart> fallbackHistory_;
     std::map<int, std::string> fallbackHistorySigs_;
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
@@ -79,7 +80,7 @@ private:
     void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
 
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void finishFallback(const dombft::proto::FallbackProposal &history);
+    void finishFallback();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 

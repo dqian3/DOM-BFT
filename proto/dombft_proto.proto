@@ -156,6 +156,8 @@ message FallbackPrePrepare
 {
     uint32 instance = 1;
     uint32 primary_id = 2;
+
+    FallbackProposal proposal = 3;
 }
 
 message FallbackPrepare

@@ -326,30 +326,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handleFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 
-    if (hdr->msgType == FALLBACK_PROPOSAL) {
-        FallbackProposal msg;
-
-        if (!msg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse FALLBACK_PROPOSAL message";
-            return;
-        }
-
-        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
-            return;
-        }
-
-        if (msg.instance() < instance_) {
-
-            LOG(INFO) << "Received old fallback proposal from instance=" << msg.instance() << " own instance is "
-                      << instance_;
-            return;
-        }
-
-        // TODO actually run a protocol instead of assuming this is ok
-        finishFallback(msg);
-    }
-
     if(hdr->msgType == DUMMY_PREPREPARE) {
         FallbackPrePrepare msg;
 
@@ -358,10 +334,10 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-//        if (!sigProvider_.verify(hdr, body, "replica", msg.primary_id())) {
-//            LOG(INFO) << "Failed to verify replica signature!";
-//            return;
-//        }
+        if (!sigProvider_.verify(hdr, body, "replica", msg.primary_id())) {
+            LOG(INFO) << "Failed to verify replica signature!";
+            return;
+        }
 
         if (msg.instance() < instance_) {
             LOG(INFO) << "Received old fallback preprepare from instance=" << msg.instance() << " own instance is "
@@ -379,10 +355,10 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-//        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
-//            LOG(INFO) << "Failed to verify replica signature!";
-//            return;
-//        }
+        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+            LOG(INFO) << "Failed to verify replica signature!";
+            return;
+        }
 
         if (msg.instance() < instance_) {
             LOG(INFO) << "Received old fallback prepare from instance=" << msg.instance() << " own instance is "
@@ -400,10 +376,10 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-//        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
-//            LOG(INFO) << "Failed to verify replica signature!";
-//            return;
-//        }
+        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+            LOG(INFO) << "Failed to verify replica signature!";
+            return;
+        }
 
         if (msg.instance() < instance_) {
             LOG(INFO) << "Received old fallback commit from instance=" << msg.instance() << " own instance is "
@@ -886,14 +862,17 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
 }
 
-void Replica::finishFallback(const FallbackProposal &history)
+void Replica::finishFallback()
 {
+    if (!fallbackProposal_.has_value()) {
+        LOG(ERROR) << "Attempted to finishFallback without a proposal!";
+        return;
+    }
+    FallbackProposal& history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback for instance=" << history.instance() << " from instance=" << instance_;
-    fallback_ = false;
     instance_ = history.instance();
     endpoint_->UnRegisterTimer(fallbackTimer_.get());
 
-    // TODO Verify FallbackProposal
     LogSuffix logSuffix;
     getLogSuffixFromProposal(history, logSuffix);
 
@@ -935,6 +914,9 @@ void Replica::finishFallback(const FallbackProposal &history)
         endpoint_->SendPreparedMsgTo(addr);
     }
 
+    fallback_ = false;
+    fallbackProposal_.reset();
+
     // Start checkpoint for last spot in the log, which should finish if fallback was sucessful
     // TODO, as implemented, this is a potential vulnerability,
     // This needs to succeed so that the next time slow path is invoked everything is committed
@@ -957,10 +939,21 @@ void Replica::doPrePreparePhase() {
         return;
     }
     VLOG(6) << "DUMMY PrePrepare for instance=" << instance_ << " in primary replicaId=" << replicaId_;
+
     FallbackPrePrepare prePrepare;
     prePrepare.set_primary_id(replicaId_);
     prePrepare.set_instance(instance_);
-    //TODO(Hao) sig & history?
+
+    // Piggyback the fallback proposal
+    FallbackProposal* proposal = prePrepare.mutable_proposal();
+    proposal->set_replica_id(replicaId_);
+    proposal->set_instance(instance_);
+    for (auto &startMsg : fallbackHistory_) {
+        if (startMsg.second.instance() != instance_)
+            continue;
+
+        *(proposal->add_logs()) = startMsg.second;
+    }
     broadcastToReplicas(prePrepare, DUMMY_PREPREPARE);
 }
 
@@ -983,6 +976,12 @@ void Replica::doCommitPhase() {
 }
 void Replica::handlePrePrepare(const FallbackPrePrepare &msg) {
     VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
+    // TODO Verify FallbackProposal
+    if (fallbackProposal_.has_value()) {
+        LOG(ERROR) << "Attempted to doPrepare with existing fallbackProposal!";
+        return;
+    }
+    fallbackProposal_ = msg.proposal();
     doPreparePhase();
 }
 
@@ -1004,21 +1003,7 @@ void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg) {
                                       [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
     if (numMsgs == 2 * f_ + 1) {
         VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
-        if (isPrimary()) {
-            // end of dummy PBFT
-            FallbackProposal proposal;
-
-            proposal.set_replica_id(replicaId_);
-            proposal.set_instance(instance_);
-            for (auto &startMsg : fallbackHistory_) {
-                if (startMsg.second.instance() != instance_)
-                    continue;
-
-                *(proposal.add_logs()) = startMsg.second;
-            }
-
-            broadcastToReplicas(proposal, FALLBACK_PROPOSAL);
-        }
+        finishFallback();
     }
 }
 
