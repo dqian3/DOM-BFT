@@ -18,7 +18,8 @@ NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
 
 NngSendThread::~NngSendThread()
 {
-    ev_break(evLoop_);
+    // TODO this seems suspect todo
+    ev_break(evLoop_, EVBREAK_ALL);
     thread_.join();
 }
 
@@ -45,7 +46,6 @@ void NngSendThread::run()
 
     LOG(INFO) << "Starting event loop for send thread";
     ev_run(evLoop_, 0);
-
     LOG(INFO) << "Finsihing event loop for send thread";
 }
 
@@ -110,20 +110,14 @@ NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::un
 
 NngRecvThread::~NngRecvThread()
 {
-    ev_break(evLoop_);
+    ev_break(evLoop_, EVBREAK_ALL);
     thread_.join();
-
-    // TODO clean up event loop properly
-    // But also this thread only ends when the calling program so it's kind of fine :)
 }
 
 void NngRecvThread::run()
 {
-    LOG(INFO) << "NngEndpointThreaded recv thread started!";
-
     LOG(INFO) << "Starting event loop for receive thread";
     ev_run(evLoop_, 0);
-
     LOG(INFO) << "Finishing event loop for receive thread";
 }
 
@@ -188,4 +182,13 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
     ev_async_init(&recvWatcher_, cb);
     ev_async_start(evLoop_, &recvWatcher_);
     return true;
+}
+
+void NngEndpointThreaded::LoopBreak()
+{
+    for (auto &t : sendThreads_) {
+        ev_break(t->evLoop_, EVBREAK_ALL);
+    }
+
+    ev_break(recvThread_->evLoop_, EVBREAK_ALL);
 }

@@ -57,7 +57,6 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     queueTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->addToDeadlineQueue(); }, 100, this);
 
-    // endpoint_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(fwdTimer_.get());
     forwardEp_->RegisterTimer(queueTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
@@ -128,6 +127,12 @@ void Receiver::ReceiveTd()
 {
     LOG(INFO) << "receive td launched";
     endpoint_->LoopRun();
+
+    // TODO make this cleaner, by having receive thread be main thread or smth.
+    // This only works because endpoint_ has argument isMasterReceiver=true above
+    // and so handles a signal properly and
+    forwardEp_->LoopBreak();
+
     LOG(INFO) << "receive td finished";
 }
 

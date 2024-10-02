@@ -99,7 +99,7 @@ public:
 
     // -------------------- Entrypoints --------------------
     void LoopRun();
-    void LoopBreak();
+    virtual void LoopBreak();
 };
 
 #endif

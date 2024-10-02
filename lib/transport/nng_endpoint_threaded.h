@@ -17,11 +17,11 @@ public:
     ~NngSendThread();
     void run();
     void sendMsg(const byte *msg, size_t len);
+    struct ev_loop *evLoop_;
 
 private:
     std::thread thread_;
 
-    struct ev_loop *evLoop_;
     ev_async sendWatcher_;
 
     nng_socket sock_;
@@ -39,6 +39,7 @@ public:
     void run();
 
     BlockingRWQueue<std::pair<std::vector<byte>, Address>> queue_;
+    struct ev_loop *evLoop_;
 
 private:
     std::thread thread_;
@@ -51,7 +52,6 @@ private:
         Address addr;
     };
 
-    struct ev_loop *evLoop_;
     std::vector<ev_io> ioWatchers_;
     std::vector<nng_socket> socks_;
     byte recvBuffer_[NNG_BUFFER_SIZE];
@@ -76,6 +76,8 @@ public:
 
     virtual int SendPreparedMsgTo(const Address &dstAddr) override;
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
+
+    virtual void LoopBreak() override;
 };
 
 #endif
