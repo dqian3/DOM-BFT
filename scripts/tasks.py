@@ -215,9 +215,11 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
 
     print("Cloning/building repo...")
 
-    group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("sudo apt update && sudo apt install bazel-5.2.0")
-    group.run("cd DOM-BFT && git pull && bazel build //processes/...")
+    # group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
+    # group.run("sudo apt update && sudo apt install bazel-5.2.0")
+    group.run("cd DOM-BFT && git checkout experiment && git pull && bazel build //processes/...")
+    
+    group.run("rm -f dombft_*", warn=True)
 
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
@@ -486,7 +488,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
 @task
 def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml", 
-                    poisson=False, ignore_deadlines=False, duration=20, rate=60000,
+                    poisson=False, ignore_deadlines=False, duration=20, rate=200000,
                     local_log=False, proxy_number=2):
     config_file = os.path.abspath(config_file)
 
@@ -626,7 +628,7 @@ def gcloud_reorder_exp_submission_rate(c, config_file="../configs/remote-prod.ya
 
             if not local_log:
                 get_logs(c, receivers, "receiver", new_name_prefix=f"receiver_submit_rate_{rate}_")
-                # get_logs(c, proxies, "proxy")
+                get_logs(c, proxies, "proxy", new_name_prefix=f"proxy_submit_rate_{rate}_")
 
 
 @task
