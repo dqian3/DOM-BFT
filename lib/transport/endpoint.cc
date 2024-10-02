@@ -133,26 +133,22 @@ MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg, b
     return hdr;
 }
 
-void Endpoint::LoopRun()
+void Endpoint::LoopRun() { ev_run(evLoop_, 0); }
+
+void Endpoint::RegisterSignalHandler(SignalHandlerFunc signalHandler)
 {
-    // Handle interrupt signals properly on main loop
-    if (evLoop_ == EV_DEFAULT) {
-        ev_signal sigint_watcher;
+    signalWatcher_.data = this;
+    signalHandler_ = signalHandler;
 
-        sigint_watcher.data = this;
-
-        ev_signal_init(
-            &sigint_watcher,
-            [](struct ev_loop *loop, ev_signal *w, int revents) {
-                Endpoint *e = (Endpoint *) w->data;
-                e->LoopBreak();
-            },
-            SIGINT);
-
-        ev_signal_start(evLoop_, &sigint_watcher);
-    }
-
-    ev_run(evLoop_, 0);
+    // TODO handle other than SIGINT?
+    ev_signal_init(
+        &signalWatcher_,
+        [](struct ev_loop *loop, ev_signal *w, int revents) {
+            Endpoint *e = (Endpoint *) w->data;
+            e->signalHandler_();
+        },
+        SIGINT);
+    ev_signal_start(evLoop_, &signalWatcher_);
 }
 
 void Endpoint::LoopBreak()

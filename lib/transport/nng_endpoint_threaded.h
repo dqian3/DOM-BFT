@@ -17,17 +17,20 @@ public:
     ~NngSendThread();
     void run();
     void sendMsg(const byte *msg, size_t len);
-    struct ev_loop *evLoop_;
 
 private:
     std::thread thread_;
 
+    struct ev_loop *evLoop_;
+    ev_async stopWatcher_;
     ev_async sendWatcher_;
 
     nng_socket sock_;
     Address addr_;   // Just for debugging
 
     BlockingRWQueue<std::vector<byte>> queue_;
+
+    friend class NngEndpointThreaded;
 };
 
 class NngRecvThread {
@@ -39,10 +42,10 @@ public:
     void run();
 
     BlockingRWQueue<std::pair<std::vector<byte>, Address>> queue_;
-    struct ev_loop *evLoop_;
 
 private:
     std::thread thread_;
+    bool running_;
 
     // Event handling for receiving packets
     // This loop runs within the thread
@@ -52,6 +55,8 @@ private:
         Address addr;
     };
 
+    struct ev_loop *evLoop_;
+    ev_async stopWatcher_;
     std::vector<ev_io> ioWatchers_;
     std::vector<nng_socket> socks_;
     byte recvBuffer_[NNG_BUFFER_SIZE];
@@ -59,6 +64,8 @@ private:
     // Communcation with parent endpoint
     struct ev_loop *parentLoop_;
     ev_async *parentRecvWatcher_;
+
+    friend class NngEndpointThreaded;
 };
 
 class NngEndpointThreaded : public NngEndpoint {

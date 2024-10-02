@@ -12,19 +12,28 @@ NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
 
     evLoop_ = ev_loop_new();
     sendWatcher_ = ev_async();
+    stopWatcher_ = ev_async();
+
+    // Timeout after 5 seconds, so we can gracefully exit
+    // TODO would be nice to do something neater like handle queues/timeouts ourselves.
+    nng_setopt_ms(sock, NNG_OPT_SENDTIMEO, 5000);
 
     thread_ = std::thread(&NngSendThread::run, this);
 }
 
 NngSendThread::~NngSendThread()
 {
-    // TODO this seems suspect todo
-    ev_break(evLoop_, EVBREAK_ALL);
+    ev_async_send(evLoop_, &stopWatcher_);
     thread_.join();
 }
 
 void NngSendThread::run()
 {
+    auto stop_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
+        // Signal to stop the event loop
+        ev_break(loop, EVBREAK_ALL);
+    };
+
     sendWatcher_.data = this;
     auto send_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
         NngSendThread *t = (NngSendThread *) w->data;
@@ -35,18 +44,25 @@ void NngSendThread::run()
             int ret = nng_send(t->sock_, msg.data(), msg.size(), 0);
             if (ret != 0) {
                 VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
-                continue;
+                return;
             }
             VLOG(6) << "Sent to " << t->addr_;
         }
     };
 
+    ev_async_init(&stopWatcher_, stop_cb);
     ev_async_init(&sendWatcher_, send_cb);
+
+    ev_async_start(evLoop_, &stopWatcher_);
     ev_async_start(evLoop_, &sendWatcher_);
 
-    LOG(INFO) << "Starting event loop for send thread";
+    ev_set_priority(&stopWatcher_, EV_MAXPRI);
+
+    LOG(INFO) << "NngEndpointThreaded send thread started!";
+
     ev_run(evLoop_, 0);
-    LOG(INFO) << "Finsihing event loop for send thread";
+
+    LOG(INFO) << "NngEndpointThreaded send thread finished!";
 }
 
 void NngSendThread::sendMsg(const byte *msg, size_t len)
@@ -110,15 +126,26 @@ NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::un
 
 NngRecvThread::~NngRecvThread()
 {
-    ev_break(evLoop_, EVBREAK_ALL);
+    ev_async_send(evLoop_, &stopWatcher_);
     thread_.join();
 }
 
 void NngRecvThread::run()
 {
-    LOG(INFO) << "Starting event loop for receive thread";
+    LOG(INFO) << "NngEndpointThreaded recv thread started!";
+
+    ev_async_init(&stopWatcher_, [](struct ev_loop *loop, ev_async *w, int revents) {
+        // Signal to stop the event loop
+
+        ev_break(loop, EVBREAK_ALL);
+    });
+
+    ev_async_start(evLoop_, &stopWatcher_);
+    ev_set_priority(&stopWatcher_, EV_MAXPRI);
+
     ev_run(evLoop_, 0);
-    LOG(INFO) << "Finishing event loop for receive thread";
+
+    LOG(INFO) << "NngEndpointThreaded recv thread finished!";
 }
 
 /*************************** NngEndpointThreaded ***************************/
@@ -186,9 +213,13 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
 
 void NngEndpointThreaded::LoopBreak()
 {
+    LOG(INFO) << "NngEndpointThreaded::LoopBreak() called";
+
     for (auto &t : sendThreads_) {
-        ev_break(t->evLoop_, EVBREAK_ALL);
+        ev_async_send(t->evLoop_, &t->stopWatcher_);
     }
 
-    ev_break(recvThread_->evLoop_, EVBREAK_ALL);
+    ev_async_send(recvThread_->evLoop_, &recvThread_->stopWatcher_);
+
+    Endpoint::LoopBreak();
 }
