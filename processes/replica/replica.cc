@@ -116,6 +116,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
             this->startFallback();
         },
         config.replicaFallbackTimeout, this);
+
+    endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
 }
 
 Replica::~Replica()
