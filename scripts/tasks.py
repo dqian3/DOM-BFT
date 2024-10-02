@@ -62,12 +62,11 @@ def local(c, config_file, v=5):
             hdl.join()
 
     finally:
-        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
+        print("Clients done, waiting for other processes to finish...")
+        c.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True)
 
-        # kill these processes and then join
-        # TODO(Hao) there should be a graceful way to do it..
+        #  stop other processes and then join
         for hdl in other_handles:
-            hdl.runner.kill()
             hdl.join()
 
 
@@ -374,7 +373,14 @@ def get_logs(c, ips, log_prefix):
         conn = Connection(ip)
         print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
- 
+
+    for id, ip in enumerate(ips):
+        try:
+            conn.get(f"{log_prefix}{id}.prof", "../logs/")
+            print(f"Got profile in {log_prefix}{id}.prof ")
+        except:
+            c.run(f"rm ../logs/{log_prefix}{id}.prof")
+
 
 @task
 def gcloud_logs(c, config_file="../configs/remote.yaml"):
@@ -482,17 +488,13 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
             hdl.join()
 
     finally:
+        print("Clients done, waiting for other processes to finish...")
+
         # kill these processes and then join
-        for hdl in other_handles:
-            hdl.runner.send_interrupt()
+        group.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True, hide="both")
 
         for hdl in other_handles:
             hdl.join()
-
-
-        print("Clients done, waiting 5 sec for other processes to finish...")
-        time.sleep(5)
-
 
         if not local_log:
             get_logs(c, clients, "client")
@@ -564,7 +566,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     finally:
         # kill these processes and then join
         for hdl in other_handles:
-            hdl.runner.kill()
+            hdl.runner.send_interrupt(KeyboardInterrupt())
             hdl.join()
 
         if not local_log:
