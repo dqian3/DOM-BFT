@@ -14,6 +14,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
+    , running_(false)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -106,7 +107,9 @@ Receiver::~Receiver()
 void Receiver::run()
 {
     // Submit first request
-    LOG(INFO) << "Starting event loop...";
+    LOG(INFO) << "Starting event loops...";
+
+    running_ = true;
 
     LaunchThreads();
     for (auto &kv : threads_) {
@@ -117,6 +120,8 @@ void Receiver::run()
     LOG(INFO) << "Run Terminated ";
 }
 
+void Receiver::terminate() { running_ = false; }
+
 void Receiver::LaunchThreads()
 {
     threads_["ReceiveTd"] = std::thread(&Receiver::ReceiveTd, this);
@@ -126,12 +131,18 @@ void Receiver::LaunchThreads()
 void Receiver::ReceiveTd()
 {
     LOG(INFO) << "receive td launched";
-    endpoint_->LoopRun();
 
-    // TODO make this cleaner, by having receive thread be main thread or smth.
-    // This only works because endpoint_ has argument isMasterReceiver=true above
-    // and so handles a signal properly and
-    forwardEp_->LoopBreak();
+    // Exit cleanly
+    // TODO use async watcher instead
+    auto checkEnd = [](void *ctx, void *ep) {
+        if (!((Receiver *) ctx)->running_) {
+            ((Endpoint *) ep)->LoopBreak();
+        }
+    };
+    Timer monitor(checkEnd, 10000, this);
+    endpoint_->RegisterTimer(&monitor);
+
+    endpoint_->LoopRun();
 
     LOG(INFO) << "receive td finished";
 }
@@ -139,6 +150,17 @@ void Receiver::ReceiveTd()
 void Receiver::ForwardTd()
 {
     LOG(INFO) << "forward td launched";
+
+    // Exit cleanly
+    // TODO use async watcher instead
+    auto checkEnd = [](void *ctx, void *ep) {
+        if (!((Receiver *) ctx)->running_) {
+            ((Endpoint *) ep)->LoopBreak();
+        }
+    };
+    Timer monitor(checkEnd, 10000, this);
+    forwardEp_->RegisterTimer(&monitor);
+
     forwardEp_->LoopRun();
     LOG(INFO) << "forward td finished";
 }

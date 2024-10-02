@@ -70,6 +70,8 @@ public:
              bool ignoreDeadlines_ = false);
     ~Receiver();
     void run();
+
+    void terminate();
 };
 
 }   // namespace dombft

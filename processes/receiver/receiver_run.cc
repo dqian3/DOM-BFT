@@ -8,6 +8,9 @@ DEFINE_bool(skipForwarding, false, "Whether to skip forwarding (for reordering e
 DEFINE_bool(ignoreDeadlines, false, "Whether to ignore deadlines (for reordering experiments).");
 DEFINE_uint32(receiverId, 0, "The receiver id.");
 
+std::unique_ptr<dombft::Receiver> receiver;
+void terminate(int para) { receiver->terminate(); }
+
 int main(int argc, char *argv[])
 {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -18,6 +21,9 @@ int main(int argc, char *argv[])
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
 
-    dombft::Receiver receiver(config, FLAGS_receiverId, FLAGS_skipForwarding, FLAGS_ignoreDeadlines);
-    receiver.run();
+    receiver =
+        std::make_unique<dombft::Receiver>(config, FLAGS_receiverId, FLAGS_skipForwarding, FLAGS_ignoreDeadlines);
+
+    signal(SIGINT, terminate);
+    receiver->run();
 }
