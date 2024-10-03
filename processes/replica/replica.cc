@@ -19,6 +19,9 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     : replicaId_(replicaId)
     , instance_(0)
     , swapFreq_(swapFreq)
+    , f_(config.replicaIps.size() / 3)
+    , sigProvider_()
+    , verificationManager_(f_, sigProvider_)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -54,7 +57,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         exit(1);
     }
 
-    f_ = config.replicaIps.size() / 3;
+    // f_ = config.replicaIps.size() / 3;
 
     LOG(INFO) << "instantiating log";
 
@@ -765,36 +768,45 @@ void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageT
 
 bool Replica::verifyCert(const Cert &cert)
 {
-    if (cert.replies().size() < 2 * f_ + 1) {
-        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
-        return false;
+    LOG(INFO) << "Verify cert triggered";
+    auto res = verificationManager_.verifyCert(cert);
+    if (!res) {
+        LOG(INFO) << "Cert failed to verify!";
+    } else {
+        LOG(INFO) << "Cert verified!";
     }
 
-    if (cert.replies().size() != cert.signatures().size()) {
-        LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
-                  << "cert signatures size" << cert.signatures().size();
-        return false;
-    }
+    return res;
+    // if (cert.replies().size() < 2 * f_ + 1) {
+    //     LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
+    //     return false;
+    // }
 
-    // TODO check cert instance
+    // if (cert.replies().size() != cert.signatures().size()) {
+    //     LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
+    //               << "cert signatures size" << cert.signatures().size();
+    //     return false;
+    // }
 
-    // Verify each signature in the cert
-    for (int i = 0; i < cert.replies().size(); i++) {
-        const Reply &reply = cert.replies()[i];
-        const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();
+    // // TODO check cert instance
 
-        if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
-                                 sig.size(), "replica", reply.replica_id())) {
-            LOG(INFO) << "Cert failed to verify!";
-            return false;
-        }
-    }
+    // // Verify each signature in the cert
+    // for (int i = 0; i < cert.replies().size(); i++) {
+    //     const Reply &reply = cert.replies()[i];
+    //     const std::string &sig = cert.signatures()[i];
+    //     std::string serializedReply = reply.SerializeAsString();
 
-    // TOOD verify that cert actually contains matching replies...
-    // And that there aren't signatures from the same replica.
+    //     if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
+    //                              sig.size(), "replica", reply.replica_id())) {
+    //         LOG(INFO) << "Cert failed to verify!";
+    //         return false;
+    //     }
+    // }
 
-    return true;
+    // // TOOD verify that cert actually contains matching replies...
+    // // And that there aren't signatures from the same replica.
+
+    // return true;
 }
 
 void Replica::startFallback()

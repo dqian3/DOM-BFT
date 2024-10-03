@@ -7,6 +7,7 @@
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
+#include "lib/verification_manager.h"
 #include "proto/dombft_proto.pb.h"
 
 #include <fstream>
@@ -29,6 +30,9 @@ private:
 
     /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
     SignatureProvider sigProvider_;
+
+    // State for verification steps:
+    VerificationManager verificationManager_;
 
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
