@@ -172,31 +172,11 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             LOG(INFO) << "Dropping request due to fallback";
             return;
         }
-        uint32_t clientId = clientHeader.client_id();
 
-        clientInstance_[clientId] = std::max(instance_, clientInstance_[clientId]);
+        // TODO(Hao) should this be in handleClientRequest?
+        if (!checkClientRecord(clientHeader)) return;
 
-        if (clientHeader.instance() < instance_) {
-            LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
-                      << " due to stale instance! Sending blank reply to catch client up";
-
-            if (clientInstance_[clientId] < instance_) {
-                // Send blank request to catch up the client
-                Reply reply;
-                reply.set_client_id(clientHeader.client_id());
-                reply.set_instance(instance_);
-
-                MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-                endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
-
-                // update this so we don't send this multiple times
-                clientInstance_[clientId] = instance_;
-            }
-            return;
-        }
-
-        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientId)) {
+        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientHeader.client_id())) {
             LOG(INFO) << "Failed to verify client signature!";
             return;
         }
@@ -502,6 +482,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
 void Replica::handleClientRequest(const ClientRequest &request)
 {
+
     Reply reply;
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
@@ -519,6 +500,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
     std::string result;
 
     bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+
 
     if (!success) {
         // TODO Handle this more gracefully by queuing requests
@@ -548,8 +530,8 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
     LOG(INFO) << "Done Sending reply back to client " << clientId;
 
-    // Try and commit every 10 replies (half of the way before
-    // we can't speculatively execute anymore)
+
+
     if (seq % CHECKPOINT_INTERVAL == 0) {
         LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
         VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
@@ -1009,6 +991,52 @@ void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg) {
         VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
         finishFallback();
     }
+}
+
+
+bool Replica::checkClientRecord(const ClientRequest &clientHeader){
+    uint32_t clientId = clientHeader.client_id();
+    uint32_t clientSeq = clientHeader.client_seq();
+    uint32_t clientInstance = clientHeader.instance();
+
+    ClientRecord &clientRecord = clientInstance_[clientId];
+    clientRecord.instance = std::max(clientInstance, clientRecord.instance);
+
+    if (clientHeader.instance() < instance_) {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
+                  << " due to stale instance! Sending blank reply to catch client up";
+
+        if (clientRecord.instance < instance_) {
+            // Send blank request to catch up the client
+            Reply reply;
+            reply.set_client_id(clientHeader.client_id());
+            reply.set_instance(instance_);
+
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
+
+            // update this so we don't send this multiple times
+            clientRecord.instance = instance_;
+        }
+        return false;
+    }
+
+    // check if this is a duplicate request or a missed request
+    if(clientRecord.lastSeq < clientSeq) {
+        for (uint32_t i = clientRecord.lastSeq + 1; i < clientSeq; i++) {
+            clientRecord.missSeqs.insert(i);
+        }
+        clientRecord.lastSeq = clientSeq;
+    } else if(clientRecord.missSeqs.contains(clientSeq)) {
+        clientRecord.missSeqs.erase(clientSeq);
+    } else {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
+                  << " due to duplication!";
+        return false;
+    }
+
+    return true;
 }
 
 }   // namespace dombft

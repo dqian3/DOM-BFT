@@ -18,6 +18,12 @@
 #include <yaml-cpp/yaml.h>
 
 namespace dombft {
+
+struct ClientRecord {
+    uint32_t instance = 0;
+    uint32_t lastSeq = 0;
+    std::set<uint32_t> missSeqs;
+};
 class Replica {
 private:
     uint32_t replicaId_;
@@ -36,8 +42,7 @@ private:
     std::shared_ptr<Log> log_;
 
     // State for tracking client state
-    // TODO add some parts for caching client results to deal with duplicate requests
-    std::map<int, uint32_t> clientInstance_;
+    std::unordered_map<uint32_t , ClientRecord> clientInstance_;
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
@@ -92,6 +97,9 @@ private:
     void handlePrePrepare(const dombft::proto::FallbackPrePrepare &msg);
     void handlePrepare(const dombft::proto::FallbackPrepare &msg);
     void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
+
+    // helpers
+    bool checkClientRecord(const dombft::proto::ClientRequest &clientHeader);
 
 
 public:
