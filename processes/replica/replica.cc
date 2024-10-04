@@ -297,11 +297,18 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         // send result back
 
         if (fallbackTriggerMsg.has_proof()) {
-            // TODO verify proof
-            LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+            if (verificationManager_.verifyFallbackTrigger(fallbackTriggerMsg)) {
+                LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+                broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
+                startFallback();
+            } else {
+                LOG(INFO) << "Fallback trigger has a proof, but failed to verify!";
+            }
+            // // TODO verify proof
+            // LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
 
-            broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
-            startFallback();
+            // broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
+            // startFallback();
         } else {
             endpoint_->RegisterTimer(fallbackStartTimer_.get());
         }
