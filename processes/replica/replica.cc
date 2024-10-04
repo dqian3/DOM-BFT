@@ -173,25 +173,9 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             LOG(INFO) << "Dropping request due to fallback";
             return;
         }
-        uint32_t clientId = clientHeader.client_id();
 
-        clientInstance_[clientId] = std::max(clientHeader.instance(), clientInstance_[clientId]);
-
-        if (clientInstance_[clientId] < instance_) {
-            LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
-                      << " due to stale instance! Sending blank reply to catch client up";
-
-            // Send blank request to catch up the client
-            Reply reply;
-            reply.set_client_id(clientHeader.client_id());
-            reply.set_instance(instance_);
-
-            sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientHeader.client_id()]);
-
-            // update this so we don't send this multiple times
-            clientInstance_[clientId] = instance_;
-            return;
-        }
+        // TODO(Hao) should this be in handleClientRequest?
+        if (!checkClientRecord(clientHeader)) return;
 
         if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
             holdAndSwapCliReq(clientHeader);
@@ -513,8 +497,8 @@ void Replica::handleClientRequest(const ClientRequest &request)
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
     LOG(INFO) << "Done Sending reply back to client " << clientId;
 
-    // Try and commit every 10 replies (half of the way before
-    // we can't speculatively execute anymore)
+
+
     if (seq % CHECKPOINT_INTERVAL == 0) {
         LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
         VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
@@ -987,6 +971,47 @@ void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
         VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
         finishFallback();
     }
+}
+
+
+bool Replica::checkClientRecord(const ClientRequest &clientHeader){
+    uint32_t clientId = clientHeader.client_id();
+    uint32_t clientSeq = clientHeader.client_seq();
+    uint32_t clientInstance = clientHeader.instance();
+
+    ClientRecord &clientRecord = clientInstance_[clientId];
+    clientRecord.instance = std::max(clientInstance, clientRecord.instance);
+
+    if (clientRecord.instance < instance_) {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
+                  << " due to stale instance! Sending blank reply to catch client up";
+        // Send blank request to catch up the client
+        Reply reply;
+        reply.set_client_id(clientId);
+        reply.set_instance(instance_);
+
+        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
+        // update this so we don't send this multiple times
+        clientRecord.instance = instance_;
+
+        return false;
+    }
+
+    // check if this is a duplicate request or a missed request
+    if(clientRecord.lastSeq < clientSeq) {
+        for (uint32_t i = clientRecord.lastSeq + 1; i < clientSeq; i++) {
+            clientRecord.missSeqs.insert(i);
+        }
+        clientRecord.lastSeq = clientSeq;
+    } else if(clientRecord.missSeqs.contains(clientSeq)) {
+        clientRecord.missSeqs.erase(clientSeq);
+    } else {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
+                  << " due to duplication!";
+        return false;
+    }
+
+    return true;
 }
 
 }   // namespace dombft
