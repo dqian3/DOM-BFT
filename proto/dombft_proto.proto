@@ -73,6 +73,7 @@ message Commit {
 
     bytes log_digest = 4;
     bytes app_digest = 5;
+    repeated CheckpointClientRecord client_records = 6;
 }
 
 message FallbackTrigger
@@ -88,6 +89,14 @@ message FallbackTrigger
     optional Cert proof = 7;
 }
 
+message CheckpointClientRecord
+{
+    uint32 client_id = 1;
+    uint32 instance = 2;
+    uint32 last_seq = 3;
+
+    repeated uint32 missed_seqs = 4;
+}
 
 message LogEntry
 {
@@ -124,6 +133,7 @@ message FallbackStart
 
     repeated LogEntry log_entries = 3;
     LogCheckpoint checkpoint = 4;
+    repeated CheckpointClientRecord client_records = 5;
 }
 
 message FallbackProposal
