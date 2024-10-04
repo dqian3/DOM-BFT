@@ -3,6 +3,12 @@
 
 #include "proto/dombft_proto.pb.h"
 #include "signature_provider.h"
+#include <future>
+#include <vector>
+#include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 // #include <cstddef>
 // #include <set>
 // #include <string>
@@ -10,7 +16,8 @@
 // a class that handles all the verification stuff. 
 class VerificationManager {
 public:
-    VerificationManager(uint32_t f, SignatureProvider& sigProvider);
+    VerificationManager(uint32_t f, SignatureProvider& sigProvider, size_t threadPoolSize);
+    ~VerificationManager();
 
     bool verifyCert(const dombft::proto::Cert& cert);
 
@@ -22,6 +29,18 @@ public:
 private:
     int f_; // Fault tolerance parameter
     SignatureProvider& sigProvider_;
+
+    // Thread pool related members
+    size_t threadPoolSize_;
+    std::vector<std::thread> workers_;
+    std::queue<std::function<void()>> tasks_;
+    std::mutex queueMutex_;
+    std::condition_variable condition_;
+    bool stop_;
+
+    void workerThread();
+    template<typename F>
+    auto enqueueTask(F&& f) -> std::future<decltype(f())>;
 };
 
 #endif // VERIFICATION_MANAGER_H

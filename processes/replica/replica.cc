@@ -21,7 +21,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
     , sigProvider_()
-    , verificationManager_(f_, sigProvider_)
+    , verificationManager_(f_, sigProvider_, 10)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];

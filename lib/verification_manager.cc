@@ -1,8 +1,53 @@
 #include "verification_manager.h"
 #include <glog/logging.h>
 
-VerificationManager::VerificationManager(uint32_t f, SignatureProvider& sigProvider)
-    : f_(f), sigProvider_(sigProvider) {}
+VerificationManager::VerificationManager(uint32_t f, SignatureProvider& sigProvider, size_t threadPoolSize)
+    : f_(f), sigProvider_(sigProvider), threadPoolSize_(threadPoolSize), stop_(false) {
+    for (size_t i = 0; i < threadPoolSize_; ++i) {
+        workers_.emplace_back(&VerificationManager::workerThread, this);
+    }
+}
+
+VerificationManager::~VerificationManager() {
+    {
+        std::unique_lock<std::mutex> lock(queueMutex_);
+        stop_ = true;
+    }
+    condition_.notify_all();
+    for (std::thread &worker : workers_) {
+        worker.join();
+    }
+}
+
+
+void VerificationManager::workerThread() {
+    while (true) {
+        std::function<void()> task;
+        {
+            std::unique_lock<std::mutex> lock(queueMutex_);
+            condition_.wait(lock, [this] { return stop_ || !tasks_.empty(); });
+            if (stop_ && tasks_.empty())
+                return;
+            task = std::move(tasks_.front());
+            tasks_.pop();
+        }
+        task();
+    }
+}
+
+
+// return a future object so that the result can be later retrieved
+template<typename F>
+auto VerificationManager::enqueueTask(F&& f) -> std::future<decltype(f())> {
+    auto task = std::make_shared<std::packaged_task<decltype(f())()>>(std::forward<F>(f));
+    std::future<decltype(f())> res = task->get_future();
+    {
+        std::unique_lock<std::mutex> lock(queueMutex_);
+        tasks_.emplace([task]() { (*task)(); });
+    }
+    condition_.notify_one();
+    return res;
+}
 
 
 bool VerificationManager::verifyCert(const dombft::proto::Cert& cert) {
@@ -20,25 +65,40 @@ bool VerificationManager::verifyCert(const dombft::proto::Cert& cert) {
 
     // TODO: Check cert instance
 
-    // Verify each signature in the cert
-    std::set<int> replicaIds; // To check for duplicate signatures
+
+    // Verify each signature in the cert in parallel
+    std::vector<std::future<bool>> futures;
     for (size_t i = 0; i < cert.replies().size(); i++) {
         const dombft::proto::Reply& reply = cert.replies()[i];
         const std::string& sig = cert.signatures()[i];
         std::string serializedReply = reply.SerializeAsString();
 
-        if (!sigProvider_.verify(
-                (byte*)serializedReply.c_str(),
-                serializedReply.size(),
-                (byte*)sig.c_str(),
-                sig.size(),
-                "replica",
-                reply.replica_id())) {
-            LOG(INFO) << "Cert failed to verify for replica " << reply.replica_id();
+        futures.push_back(enqueueTask([this, serializedReply, sig, &reply]() {
+            if (!sigProvider_.verify(
+                    (byte*)serializedReply.c_str(),
+                    serializedReply.size(),
+                    (byte*)sig.c_str(),
+                    sig.size(),
+                    "replica",
+                    reply.replica_id())) {
+                LOG(INFO) << "Cert failed to verify for replica " << reply.replica_id();
+                return false;
+            }
+            return true;
+        }));
+    }
+
+    for (auto& future : futures) {
+        if (!future.get()) {
             return false;
         }
+    }
 
-        // Check for duplicate signatures
+    // Verify each signature in the cert
+    std::set<int> replicaIds; // To check for duplicate signatures
+    for (size_t i = 0; i < cert.replies().size(); i++) {
+        const dombft::proto::Reply& reply = cert.replies()[i];
+        
         if (!replicaIds.insert(reply.replica_id()).second) {
             LOG(INFO) << "Duplicate signature from replica " << reply.replica_id();
             return false;
@@ -51,19 +111,22 @@ bool VerificationManager::verifyCert(const dombft::proto::Cert& cert) {
 bool VerificationManager::verifyReply(const dombft::proto::Reply& reply, const std::string& signature) {
     std::string serializedReply = reply.SerializeAsString();
 
-    if (!sigProvider_.verify(
-            (byte*)serializedReply.c_str(),
-            serializedReply.size(),
-            (byte*)signature.c_str(),
-            signature.size(),
-            "replica",
-            reply.replica_id())) {
-        LOG(INFO) << "Failed to verify reply signature for replica " << reply.replica_id();
-        return false;
-    }
+    auto future = enqueueTask([this, serializedReply, signature, &reply]() {
+        if (!sigProvider_.verify(
+                (byte*)serializedReply.c_str(),
+                serializedReply.size(),
+                (byte*)signature.c_str(),
+                signature.size(),
+                "replica",
+                reply.replica_id())) {
+            LOG(INFO) << "Failed to verify reply signature for replica " << reply.replica_id();
+            return false;
+        }
+        LOG(INFO) << "Reply verified for replica " << reply.replica_id();
+        return true;
+    });
 
-    LOG(INFO) << "Reply verified for replica " << reply.replica_id();
-    return true;
+    return future.get();
 }
 
 bool VerificationManager::verifyFallbackTrigger(const dombft::proto::FallbackTrigger& trigger) {
@@ -76,27 +139,30 @@ bool VerificationManager::verifyFallbackTrigger(const dombft::proto::FallbackTri
         return false;
     }
 
-    // Verify each reply in the proof
-    std::set<int> replicaIds; // To check for duplicate proofs
+    // Verify each reply in the proof in parallel
+    std::vector<std::future<bool>> futures;
     for (size_t i = 0; i < proof.replies().size(); i++) {
         const dombft::proto::Reply& reply = proof.replies()[i];
         const std::string& sig = proof.signatures()[i];
         std::string serializedReply = reply.SerializeAsString();
 
-        if (!sigProvider_.verify(
-                (byte*)serializedReply.c_str(),
-                serializedReply.size(),
-                (byte*)sig.c_str(),
-                sig.size(),
-                "replica",
-                reply.replica_id())) {
-            LOG(INFO) << "Fallback trigger proof failed to verify for replica " << reply.replica_id();
-            return false;
-        }
+        futures.push_back(enqueueTask([this, serializedReply, sig, &reply]() {
+            if (!sigProvider_.verify(
+                    (byte*)serializedReply.c_str(),
+                    serializedReply.size(),
+                    (byte*)sig.c_str(),
+                    sig.size(),
+                    "replica",
+                    reply.replica_id())) {
+                LOG(INFO) << "Fallback trigger proof failed to verify for replica " << reply.replica_id();
+                return false;
+            }
+            return true;
+        }));
+    }
 
-        // Check for duplicate proofs
-        if (!replicaIds.insert(reply.replica_id()).second) {
-            LOG(INFO) << "Duplicate proof from replica " << reply.replica_id();
+    for (auto& future : futures) {
+        if (!future.get()) {
             return false;
         }
     }
