@@ -11,6 +11,8 @@ public:
 
     bool verifyCert(const dombft::proto::Cert& cert);
 
+    bool verifyReply(const dombft::proto::Reply& reply, const std::string& signature);
+
 private:
     int f_; // Fault tolerance parameter
     SignatureProvider& sigProvider_;

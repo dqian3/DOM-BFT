@@ -44,8 +44,24 @@ bool VerificationManager::verifyCert(const dombft::proto::Cert& cert) {
             return false;
         }
     }
+    return true;
+}
 
-    // Additional verification steps...
 
+bool VerificationManager::verifyReply(const dombft::proto::Reply& reply, const std::string& signature) {
+    std::string serializedReply = reply.SerializeAsString();
+
+    if (!sigProvider_.verify(
+            (byte*)serializedReply.c_str(),
+            serializedReply.size(),
+            (byte*)signature.c_str(),
+            signature.size(),
+            "replica",
+            reply.replica_id())) {
+        LOG(INFO) << "Failed to verify reply signature for replica " << reply.replica_id();
+        return false;
+    }
+
+    LOG(INFO) << "Reply verified for replica " << reply.replica_id();
     return true;
 }

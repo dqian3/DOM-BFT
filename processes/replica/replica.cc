@@ -618,6 +618,13 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         return;
     }
 
+    if (verificationManager_.verifyReply(reply, checkpointReplySigs_[reply.replica_id()])) {
+        VLOG(4) << "Checkpoint: verified reply for seq=" << reply.seq();
+    } else {
+        LOG(INFO) << "Checkpoint: failed to verify reply for seq=" << reply.seq();
+        return;
+    }
+
     std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
 
     // Find a cert among a set of replies
