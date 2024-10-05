@@ -92,8 +92,8 @@ def local_reorder_exp(c, config_file, poisson=False):
 
         for id in range(n_receivers):
             cmd = (
-                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file}"
-                + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
+                    f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file}"
+                    + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
             )
             hdl = arun(cmd)
 
@@ -101,9 +101,9 @@ def local_reorder_exp(c, config_file, poisson=False):
 
         for id in range(n_proxies):
             cmd = (
-                f"./bazel-bin/processes/proxy/dombft_proxy -v {5} " +
-                f"-config {config_file} -proxyId {id} -genRequests  -duration 10 " +
-                f"{'-poisson' if poisson else ''} &>logs/proxy{id}.log"
+                    f"./bazel-bin/processes/proxy/dombft_proxy -v {5} " +
+                    f"-config {config_file} -proxyId {id} -genRequests  -duration 10 " +
+                    f"{'-poisson' if poisson else ''} &>logs/proxy{id}.log"
             )
 
             hdl = arun(cmd)
@@ -156,7 +156,7 @@ def get_gcloud_process_group(config, ext_ips):
 
 
 @task
-def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
+def gcloud_clockwork(c, config_file="../configs/remote-prod.yaml", install=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -199,7 +199,7 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
 
 @task
-def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
+def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -216,8 +216,9 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull && bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull --rebase && git checkout dedup_miss_test && bazel build //processes/...")
 
+    group.run("rm ~/dombft_*")
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
@@ -225,7 +226,7 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
 
 
 @task
-def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
+def gcloud_copy_keys(c, config_file="../configs/remote-prod.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -243,7 +244,7 @@ def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
 
 
 @task
-def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
+def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -290,7 +291,7 @@ def get_gcloud_process_ips(c, filter):
 
 
 @task
-def gcloud_create_prod(c, config_template="../configs/remote.yaml"):
+def gcloud_create_prod(c, config_template="../configs/remote-prod.yaml"):
     # This is probably better, but can't be across zones:
     # https://cloud.google.com/compute/docs/instances/multiple/create-in-bulk
 
@@ -322,7 +323,7 @@ gcloud compute instances create {} \
     for i in range(n_proxies):
         zone = zones[i % len(zones)]
         c.run(create_vm_template.format(f"prod-proxy{i}", zone))
-    
+
 
     for i in range(n_clients):
         zone = zones[i % len(zones)]
@@ -366,10 +367,10 @@ def get_logs(c, ips, log_prefix):
         conn = Connection(ip)
         print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
- 
+
 
 @task
-def gcloud_logs(c, config_file="../configs/remote.yaml"):
+def gcloud_logs(c, config_file="../configs/remote-prod.yaml"):
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
@@ -377,7 +378,7 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
     ext_ips = get_gcloud_ext_ips(c)
     group = get_gcloud_process_group(config, ext_ips)
 
-    # ips of each process 
+    # ips of each process
     replicas = config["replica"]["ips"]
     receivers = config["receiver"]["ips"]
     proxies = config["proxy"]["ips"]
@@ -396,10 +397,10 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
-def gcloud_run(c, config_file="../configs/remote.yaml",
+def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                local_log=False,
                dom_logs=False,
-               slow_path_freq=0,
+               slow_path_freq=7000,
                normal_path_freq=0,
                ):
     config_file = os.path.abspath(config_file)
@@ -412,7 +413,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
     group.put(config_file)
     group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
 
-    # ips of each process 
+    # ips of each process
     replicas = config["replica"]["ips"]
     receivers = config["receiver"]["ips"]
     proxies = config["proxy"]["ips"]
@@ -498,9 +499,9 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
 
 @task
-def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100,
-                    local_log=False):
+def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml",
+                       poisson=False, ignore_deadlines=False, duration=20, rate=100,
+                       local_log=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -530,7 +531,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
         hdl = arun(
-            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}"
             + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
         )
 
@@ -542,15 +543,15 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     for id, ip in enumerate(proxies):
         arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
-                f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
-        
+                   f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
+
         proxy_handles.append(hdl)
 
     try:
         # join on the client processes, which should end
         for hdl in proxy_handles:
             hdl.join()
-            
+
         print("Proxies done, waiting 5 sec for receivers to finish...")
         time.sleep(5)
 

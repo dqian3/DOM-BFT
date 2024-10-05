@@ -186,15 +186,15 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 void Receiver::forwardRequest(const DOMRequest &request)
 {
 
-    if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 1000 && !dupped_) {
-        dupped_ = true;
-        VLOG(1)<<"DUPPING";
-        forwardRequest(request);
-    }
-//    if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 1000 && !missed_) {
-//        missed_ = true;
-//        VLOG(1)<<"Dropping";
+//    if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 1000 && !dupped_) {
+//        dupped_ = true;
+//        VLOG(1)<<"DUPPING";
+//        forwardRequest(request);
 //    }
+    if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 1000 && !missed_) {
+        missed_ = true;
+        VLOG(1)<<"Dropping";
+    }
     if (false)   // receiverConfig_.ipcReplica)
     {
         // TODO
