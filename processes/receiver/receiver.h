@@ -65,6 +65,11 @@ private:
 
     bool running_;
 
+
+    // DELETE LATER
+    bool dupped_ = false;
+    bool missed_ = false;
+
 public:
     Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false,
              bool ignoreDeadlines_ = false);
