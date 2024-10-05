@@ -119,18 +119,8 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
     replicaBase = config.replicaPort + config.clientIps.size() + 1;
 
     // Each replica just uses (base + i) to connect with replica i
-    // For itself, we create a nng pairs on both sides, betwen (base + n) and (base + id)
-    // And in replica we need to account for this.
-    // This is not ideal at all though...
     for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-        if (i == id) {
-            ret.push_back({Address(replicaIp, replicaBase + id),
-                           Address(config.replicaIps[i], replicaBase + config.replicaIps.size())});
-            ret.push_back({Address(replicaIp, replicaBase + config.replicaIps.size()),
-                           Address(config.replicaIps[i], replicaBase + id)});
-        } else {
-            ret.push_back({Address(replicaIp, replicaBase + i), Address(config.replicaIps[i], replicaBase + id)});
-        }
+        ret.push_back({Address(replicaIp, replicaBase + i), Address(config.replicaIps[i], replicaBase + id)});
     }
 
     return ret;
