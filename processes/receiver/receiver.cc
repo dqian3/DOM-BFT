@@ -194,6 +194,7 @@ void Receiver::forwardRequest(const DOMRequest &request)
     if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 1000 && !missed_) {
         missed_ = true;
         VLOG(1)<<"Dropping";
+        return;
     }
     if (false)   // receiverConfig_.ipcReplica)
     {
