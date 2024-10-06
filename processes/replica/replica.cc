@@ -273,6 +273,8 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         // Ignore any messages not for your current instance
         if (fallbackTriggerMsg.instance() != instance_) {
+            LOG(ERROR) << "LATE Fallback trigger for instance " << fallbackTriggerMsg.instance() << " current instance "
+                       << instance_ << " from " << fallbackTriggerMsg.client_id() << " cseq=" << fallbackTriggerMsg.client_seq();
             return;
         }
 
