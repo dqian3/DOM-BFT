@@ -296,8 +296,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         if (fallbackTriggerMsg.has_proof()) {
             // TODO verify proof
             LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
-
-            broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
             startFallback();
         } else {
             endpoint_->RegisterTimer(fallbackStartTimer_.get());
