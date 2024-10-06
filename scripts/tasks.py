@@ -216,8 +216,9 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git checkout hao_test && git pull && bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull --rebase && git checkout hao_test && bazel build //processes/...")
 
+    group.run("rm ~/dombft_*")
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
@@ -399,7 +400,7 @@ def gcloud_logs(c, config_file="../configs/remote-prod.yaml"):
 def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                local_log=False,
                dom_logs=False,
-               slow_path_freq=0,
+               slow_path_freq=1000,
                normal_path_freq=0,
                ):
     config_file = os.path.abspath(config_file)
