@@ -20,7 +20,6 @@ public:
 
 private:
     std::thread thread_;
-    bool running_;
 
     struct ev_loop *evLoop_;
     ev_async stopWatcher_;
@@ -30,6 +29,8 @@ private:
     Address addr_;   // Just for debugging
 
     BlockingRWQueue<std::vector<byte>> queue_;
+
+    friend class NngEndpointThreaded;
 };
 
 class NngRecvThread {
@@ -63,6 +64,8 @@ private:
     // Communcation with parent endpoint
     struct ev_loop *parentLoop_;
     ev_async *parentRecvWatcher_;
+
+    friend class NngEndpointThreaded;
 };
 
 class NngEndpointThreaded : public NngEndpoint {
@@ -80,6 +83,8 @@ public:
 
     virtual int SendPreparedMsgTo(const Address &dstAddr) override;
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
+
+    virtual void LoopBreak() override;
 };
 
 #endif

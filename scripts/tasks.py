@@ -62,12 +62,11 @@ def local(c, config_file, v=5):
             hdl.join()
 
     finally:
-        c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
+        print("Clients done, waiting for other processes to finish...")
+        c.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True)
 
-        # kill these processes and then join
-        # TODO(Hao) there should be a graceful way to do it..
+        #  stop other processes and then join
         for hdl in other_handles:
-            hdl.runner.kill()
             hdl.join()
 
 
@@ -339,7 +338,9 @@ gcloud compute instances create {} \
 
 
 
-def arun_on(ip, logfile, local_log=False):
+def arun_on(ip, logfile, local_log=False, profile=False):
+    def perf_prefix(prof_file):
+        return f"env LD_PRELOAD='/usr/local/lib/libprofiler.so' CPUPROFILE={prof_file} "
 
     if local_log:
         logfile = os.path.join("../logs/", logfile)
@@ -347,7 +348,10 @@ def arun_on(ip, logfile, local_log=False):
             log = open(logfile, "w")
             conn = Connection(ip)
 
-            print(f"Running {args} on {ip}, logging to local {logfile}")
+            if (profile):
+                command = perf_prefix(os.path.splitext(logfile)[0] + '.prof') + command
+
+            print(f"Running {command} on {ip}, logging to local {logfile}")
             return conn.run(command + " 2>&1", **kwargs, asynchronous=True, warn=True, out_stream=log)
 
         return arun_local_log
@@ -355,6 +359,9 @@ def arun_on(ip, logfile, local_log=False):
     else:
         def arun(command, **kwargs):
             conn = Connection(ip)
+
+            if profile:
+                command = perf_prefix(os.path.splitext(logfile)[0] + '.prof') + command
 
             print(f"Running {command} on {ip}, logging on remote machine {logfile}" )
             return conn.run(command + f" &>{logfile}", **kwargs, asynchronous=True, warn=True)
@@ -366,7 +373,14 @@ def get_logs(c, ips, log_prefix):
         conn = Connection(ip)
         print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
- 
+
+    for id, ip in enumerate(ips):
+        try:
+            conn.get(f"{log_prefix}{id}.prof", "../logs/")
+            print(f"Got profile in {log_prefix}{id}.prof ")
+        except:
+            c.run(f"rm ../logs/{log_prefix}{id}.prof")
+
 
 @task
 def gcloud_logs(c, config_file="../configs/remote.yaml"):
@@ -375,8 +389,6 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
-
     # ips of each process 
     replicas = config["replica"]["ips"]
     receivers = config["receiver"]["ips"]
@@ -401,7 +413,8 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
                dom_logs=False,
                slow_path_freq=0,
                normal_path_freq=0,
-               ):
+               profile=False
+):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -444,20 +457,20 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
             swap_arg = f'-swapFreq {normal_path_freq}'
         if slow_path_freq != 0 and (id % 2) == 0:
             swap_arg = f'-swapFreq {slow_path_freq}'
-
-        arun = arun_on(ip, f"replica{id}.log", local_log=local_log)
+            
+        arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
@@ -465,7 +478,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
     print("Starting clients")
     for id, ip in enumerate(clients):
-        arun = arun_on(ip, f"client{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"client{id}.log", local_log=local_log, profile=(profile and id == 0))
         hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id}")
         client_handles.append(hdl)
 
@@ -475,17 +488,13 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
             hdl.join()
 
     finally:
+        print("Clients done, waiting for other processes to finish...")
+
         # kill these processes and then join
-        for hdl in other_handles:
-            hdl.runner.kill()
+        group.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True, hide="both")
 
         for hdl in other_handles:
             hdl.join()
-
-
-        print("Clients done, waiting 5 sec for other processes to finish...")
-        time.sleep(5)
-
 
         if not local_log:
             get_logs(c, clients, "client")
@@ -557,7 +566,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote.yaml",
     finally:
         # kill these processes and then join
         for hdl in other_handles:
-            hdl.runner.kill()
+            hdl.runner.send_interrupt(KeyboardInterrupt())
             hdl.join()
 
         if not local_log:

@@ -116,6 +116,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
             this->startFallback();
         },
         config.replicaFallbackTimeout, this);
+
+    endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
 }
 
 Replica::~Replica()
@@ -126,8 +128,10 @@ Replica::~Replica()
 void Replica::run()
 {
     // Submit first request
-    LOG(INFO) << "Starting event loop...";
+    LOG(INFO) << "Starting main event loop...";
     endpoint_->LoopRun();
+
+    LOG(INFO) << "Finishing main event loop...";
 }
 
 #if PROTOCOL == DOMBFT
@@ -842,7 +846,7 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 
     // First check if we have 2f + 1 fallback start messages for the same instance
     auto numStartMsgs = std::count_if(fallbackHistory_.begin(), fallbackHistory_.end(),
-                                      [this](auto &startMsg) { return startMsg.second.instance() == instance_; });
+                                      [&](auto &startMsg) { return startMsg.second.instance() == msg.instance(); });
 
     if (numStartMsgs == 2 * f_ + 1) {
         doPrePreparePhase();
