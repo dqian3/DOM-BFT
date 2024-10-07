@@ -101,7 +101,7 @@ private:
     uint32_t lastSlowPath_ = 0;
 
     /* Per request state */
-    std::map<int, RequestState> requestStates_;
+    std::map<uint32_t, RequestState> requestStates_;
 
     /** The message handler to handle messages */
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);

@@ -53,9 +53,15 @@ private:
     // State for fallback
     bool fallback_ = false;
     uint32_t fallbackTriggerSeq_ = 0;
+    std::optional<dombft::proto::FallbackProposal> fallbackProposal_;
     std::map<int, dombft::proto::FallbackStart> fallbackHistory_;
     std::map<int, std::string> fallbackHistorySigs_;
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
+
+    // State for PBFT
+    std::map<uint32_t, dombft::proto::FallbackPrepare> fallbackPrepares_;
+    std::map<uint32_t, dombft::proto::FallbackPBFTCommit> fallbackPBFTCommits_;
+
 
     // State for actively triggering fallback
     uint32_t swapFreq_;
@@ -74,9 +80,19 @@ private:
     void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
 
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void finishFallback(const dombft::proto::FallbackProposal &history);
+    void finishFallback();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
+
+    // dummy fallback PBFT
+    inline bool isPrimary() { return  instance_ % replicaAddrs_.size() == replicaId_; }
+    void doPrePreparePhase();
+    void doPreparePhase();
+    void doCommitPhase();
+    void handlePrePrepare(const dombft::proto::FallbackPrePrepare &msg);
+    void handlePrepare(const dombft::proto::FallbackPrepare &msg);
+    void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
+
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

@@ -423,7 +423,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (!hasCertBefore && reqState.collector.hasCert()) {
         VLOG(1) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
-        return;
     }
 
     if (maxMatchSize == 3 * f_ + 1) {
@@ -439,9 +438,29 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         return;
     }
 
+    // `replies_.size() == maxMatchSize` iff all replies are yet matching, no need to check for normal/slow path
+    // return when normal/slow path is already triggered
+    if(reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent) return;
+
+    // `hasCert()==true` iff maxMatchSize >= 2 * f_ + 1
+    if (reqState.collector.hasCert()) {
+        LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
+        reqState.certSent = true;
+
+        lastNormalPath_ = clientSeq;
+
+        // Send cert to replicas
+        endpoint_->PrepareProtoMsg(reqState.collector.getCert(), CERT);
+        for (const Address &addr : replicaAddrs_) {
+            endpoint_->SendPreparedMsgTo(addr);
+        }
+
+    }
+
+
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (!reqState.triggerSent && 3 * f_ + 1 - reqState.collector.replies_.size() < 2 * f_ + 1 - maxMatchSize) {
+    if (reqState.collector.replies_.size()  - maxMatchSize > f_) {
         LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
@@ -455,7 +474,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         fallbackTriggerMsg.set_instance(myInstance_);
         fallbackTriggerMsg.set_client_seq(clientSeq);
 
-        // TODO check if fast path is not posssible, and we can send cert right away
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             auto &sig = reqState.collector.signatures_[replicaId];
             reqState.fallbackProof->add_signatures(std::string(sig.begin(), sig.end()));
