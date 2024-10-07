@@ -149,3 +149,16 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+
+cc_library(
+    name = "verification_manager",
+    srcs = ["verification_manager.cc"],
+    hdrs = ["verification_manager.h"],
+    deps = [
+        ":signature_provider",
+        "//proto:dombft_proto_cc",
+        "@com_github_google_glog//:glog",
+    ],
+    visibility = ["//visibility:public"],
+)
