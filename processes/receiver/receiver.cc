@@ -9,11 +9,13 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines,
+                   bool skipVerify)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
+    , skipVerify_(skipVerify)
     , running_(false)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
@@ -30,6 +32,11 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 
     if (!sigProvider_.loadPublicKeys("proxy", config.proxyKeysDir)) {
         LOG(ERROR) << "Unable to load proxy public keys!";
+        exit(1);
+    }
+
+    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+        LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }
 
@@ -73,84 +80,83 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     }
 #endif
 
+    // We don't expect any other kind of message.
+    if (hdr->msgType != MessageType::DOM_REQUEST) {
+        LOG(ERROR) << "Received message type " << hdr->msgType << " != DOM_REQUEST";
+        return;
+    }
+
     DOMRequest request;
-    if (hdr->msgType == MessageType::DOM_REQUEST) {
-        if (!request.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
-            return;
-        }
+    if (!request.ParseFromArray(body, hdr->msgLen)) {
+        LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+        return;
+    }
 
 #if FABRIC_CRYPTO
-        // TODO: verify sending from proxy.
+    // TODO: verify sending from proxy.
 #endif
 
-        // Send measurement reply right away
-        int64_t recv_time = GetMicrosecondTimestamp();
+    int64_t recv_time = GetMicrosecondTimestamp();
+    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+            << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
 
-        VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
-                << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
-        request.set_late(recv_time > request.deadline());
-        VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
-                << " deadline=" << request.deadline() << " now=" << recv_time;
+    if (recv_time > request.deadline()) {
+        request.set_late(true);
 
-        if (ignoreDeadlines_) {
-            forwardRequest(request);
-        } else if (false && request.late()) {   // TODO temporary change to see
-            VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
-                    << recv_time - request.deadline() << "us";
-            VLOG(3) << "Checking deadlines before forwarding late message";
-            checkDeadlines();
-            forwardRequest(request);
-        } else {
-            VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
-                    << request.deadline() - recv_time << "us";
-            deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+        VLOG(3) << "Request is late late by " << recv_time - request.deadline() << "us";
 
-            // Check if timer is firing before deadline
-            uint64_t now = GetMicrosecondTimestamp();
-            uint64_t nextCheck = request.deadline() - now;
-
-            if (nextCheck <= endpoint_->GetTimerRemaining(fwdTimer_.get())) {
-                endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
-                VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
-            }
+        if (lastFwdDeadline > request.deadline()) {
+            LOG(WARNING) << "Forwarded request out of order!";
         }
+    }
 
-        // Randomly send measurements only once in a while
-        if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
-            MeasurementReply mReply;
-            mReply.set_receiver_id(receiverId_);
-            mReply.set_owd(recv_time - request.send_time());
-            mReply.set_send_time(request.send_time());
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+    uint64_t deadline = request.deadline();
+    if (ignoreDeadlines_) {
+        // This will just make the receiver forward messages in order of receiving
+        deadline = recv_time;
+    }
+
+    auto r = std::make_shared<Request>(request, request.deadline(), request.client_id(), false);
+
+    deadlineQueue_[{request.deadline(), request.client_id()}] = r;
+
+    if (skipVerify_) {
+        r->verified = true;
+    } else {
+        verifyQueue_.enqueue(r);
+    }
+
+    // Send measurements replies back to the proxy
+    if (request.client_seq() == 0) {
+        MeasurementReply mReply;
+        mReply.set_receiver_id(receiverId_);
+        mReply.set_owd(recv_time - request.send_time());
+        mReply.set_send_time(request.send_time());
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
 #if FABRIC_CRYPTO
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-            endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
-        }
+        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
     }
 }
 
 void Receiver::forwardRequest(const DOMRequest &request)
 {
+    uint64_t now = GetMicrosecondTimestamp();
+
+    LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
+              << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+
+    if (skipForwarding_) {
+        return;
+    }
+
     if (false)   // receiverConfig_.ipcReplica)
     {
         // TODO
         throw "IPC communciation not implemented";
     } else {
-        uint64_t now = GetMicrosecondTimestamp();
-
-        LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
-                  << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
-
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
-        if (skipForwarding_) {
-            return;
-        }
-
-        // TODO check errors for all of these lol
-        // TODO do this while waiting, not in the critical path
-
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif

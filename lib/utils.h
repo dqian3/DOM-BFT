@@ -21,6 +21,7 @@
 #include "common_struct.h"
 
 template <typename T1> using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
+template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcurrentQueue<T1>;
 template <typename T1> using RWQueue = moodycamel::ReaderWriterQueue<T1>;
 template <typename T1> using BlockingRWQueue = moodycamel::BlockingReaderWriterQueue<T1>;
 template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
