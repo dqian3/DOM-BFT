@@ -16,7 +16,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
     , skipVerify_(skipVerify)
-    , running_(false)
+    , running_(true)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -59,7 +59,10 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
     });
-    endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
+    endpoint_->RegisterSignalHandler([&]() {
+        running_ = false;
+        endpoint_->LoopBreak();
+    });
 
     // Start verify threads
     // TODO parameterize verifyThreads
@@ -206,6 +209,8 @@ void Receiver::checkDeadlines()
 
 void Receiver::verifyWorker()
 {
+    LOG(INFO) << "Starting verify thd";
+
     std::shared_ptr<Request> request;
     while (running_) {
         if (!verifyQueue_.try_dequeue(request)) {
@@ -230,6 +235,8 @@ void Receiver::verifyWorker()
         {
             std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
             if (verified) {
+                VLOG(4) << "Verified client signature for c_id=" << request->clientId
+                        << " c_seq=" << request->request.client_seq();
                 request->verified = true;
             } else {
                 LOG(INFO) << "Failed to verify client signature!";
