@@ -26,6 +26,20 @@ public:
     bool verifyFallbackTrigger(const dombft::proto::FallbackTrigger& trigger);
 
 
+    // return a future object so that the result can be later retrieved
+    template<typename F>
+    auto enqueueTask(F&& f) -> std::future<decltype(f())> {
+        auto task = std::make_shared<std::packaged_task<decltype(f())()>>(std::forward<F>(f));
+        std::future<decltype(f())> res = task->get_future();
+        {
+            std::unique_lock<std::mutex> lock(queueMutex_);
+            tasks_.emplace([task]() { (*task)(); });
+        }
+        condition_.notify_one();
+        return res;
+    }
+
+
 private:
     int f_; // Fault tolerance parameter
     SignatureProvider& sigProvider_;
@@ -39,8 +53,6 @@ private:
     bool stop_;
 
     void workerThread();
-    template<typename F>
-    auto enqueueTask(F&& f) -> std::future<decltype(f())>;
 };
 
 #endif // VERIFICATION_MANAGER_H

@@ -8,9 +8,13 @@
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 
+#include "lib/verification_manager.h"
+
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <mutex>
+#include <vector>
 
 #include <yaml-cpp/yaml.h>
 
@@ -26,7 +30,7 @@ private:
 
     std::map<std::string, std::thread> threads_;
 
-    ConcurrentQueue<dombft::proto::DOMRequest> requestQueue_;
+    // ConcurrentQueue<dombft::proto::DOMRequest> requestQueue_;
 
     void LaunchThreads();
 
@@ -41,9 +45,17 @@ private:
 
     std::unique_ptr<Timer> queueTimer_;
 
+
+    struct RequestInfo {
+        std::shared_ptr<dombft::proto::DOMRequest> request;
+        bool verified;
+        uint64_t deadline;
+    };
+
     // TODO storing these protobuf objects like this might not be great performance wise
     // couldn't find much about this.
-    std::map<std::pair<uint64_t, uint32_t>, dombft::proto::DOMRequest> deadlineQueue_;
+    std::map<std::pair<uint64_t, uint32_t>, RequestInfo> deadlineQueue_;
+    std::mutex deadlineQueueMutex_;
     std::vector<dombft::proto::DOMRequest> lateMessages;
 
     /** The actual message / timeout handlers */
@@ -52,7 +64,7 @@ private:
     void forwardRequest(const dombft::proto::DOMRequest &request);
     void checkDeadlines();
 
-    void addToDeadlineQueue();
+    // void addToDeadlineQueue();
 
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;
@@ -64,6 +76,14 @@ private:
     bool ignoreDeadlines_;
 
     bool running_;
+
+
+    uint32_t f_;
+    size_t threadPoolSize_;
+
+
+    VerificationManager verificationManager_;
+
 
 public:
     Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false,

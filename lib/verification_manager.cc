@@ -36,20 +36,6 @@ void VerificationManager::workerThread() {
 }
 
 
-// return a future object so that the result can be later retrieved
-template<typename F>
-auto VerificationManager::enqueueTask(F&& f) -> std::future<decltype(f())> {
-    auto task = std::make_shared<std::packaged_task<decltype(f())()>>(std::forward<F>(f));
-    std::future<decltype(f())> res = task->get_future();
-    {
-        std::unique_lock<std::mutex> lock(queueMutex_);
-        tasks_.emplace([task]() { (*task)(); });
-    }
-    condition_.notify_one();
-    return res;
-}
-
-
 bool VerificationManager::verifyCert(const dombft::proto::Cert& cert) {
     if (cert.replies().size() < 2 * f_ + 1) {
         LOG(INFO) << "Received cert of size " << cert.replies().size()
