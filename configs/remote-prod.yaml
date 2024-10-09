@@ -45,6 +45,7 @@ receiver:
   local: true
   port: 33000
   shards: 1
+  numVerifyThreads: 3
 
 replica:
   ips:
