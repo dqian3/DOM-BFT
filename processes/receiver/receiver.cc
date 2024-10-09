@@ -62,24 +62,39 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     endpoint_->RegisterSignalHandler([&]() {
         running_ = false;
         endpoint_->LoopBreak();
+
+        verifyQueueCondVar_.notify_all();
     });
 
     // Start verify threads
     // TODO parameterize verifyThreads
+    uint32_t numVerifyThreads = config.numVerifyThreads;
 
-    std::vector<std::thread> verifyThds;
-    for (int i = 0; i < 2; i++) {
-        verifyThds.emplace_back(&Receiver::verifyWorker, this);
+    for (int i = 0; i < numVerifyThreads; i++) {
+        verifyThds_.emplace_back(&Receiver::verifyWorker, this);
     }
 
     endpoint_->LoopRun();
-    for (std::thread &thd : verifyThds) {
+    for (std::thread &thd : verifyThds_) {
         thd.join();
     }
     LOG(INFO) << "Receiver exited cleanly";
 }
 
-Receiver::~Receiver() {}
+Receiver::~Receiver() 
+{
+    running_ = false;
+    verifyQueueCondVar_.notify_all();
+
+    // Join the verification threads
+    for (std::thread &thd : verifyThds_) {
+        if (thd.joinable()) {
+            thd.join();
+        }
+    }
+
+    LOG(INFO) << "Receiver exited cleanly";
+}
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 {
@@ -140,7 +155,12 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     if (skipVerify_) {
         r->verified = true;
     } else {
-        verifyQueue_.enqueue(r);
+        // verifyQueue_.enqueue(r);
+        {
+            std::lock_guard<std::mutex> lock(verifyQueueMtx_);
+            verifyQueue_.push(r);
+        }
+        verifyQueueCondVar_.notify_one();
     }
 
     // Send measurements replies back to the proxy
@@ -213,35 +233,48 @@ void Receiver::verifyWorker()
 
     std::shared_ptr<Request> request;
     while (running_) {
-        if (!verifyQueue_.try_dequeue(request)) {
-            // TODO sleep?
-            continue;
+        std::unique_lock<std::mutex> lock(verifyQueueMtx_);
+        verifyQueueCondVar_.wait(lock, [this] { return !verifyQueue_.empty() || !running_; });
+
+
+        if (!running_ && verifyQueue_.empty()) {
+            LOG(ERROR) << "Verify thread exiting...";
+            lock.unlock();
+            break;
         }
 
-        ClientRequest clientHeader;
+        if (!verifyQueue_.empty()) {
+            request = verifyQueue_.front();
+            verifyQueue_.pop();
+            lock.unlock();
 
-        // Separate this out into another function probably.
+            ClientRequest clientHeader;
 
-        // TODO is there a race condition reading the request here?
-        MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
-        byte *clientBody = (byte *) (clientMsgHdr + 1);
-        if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-            return;
-        }
+            // Separate this out into another function probably.
 
-        bool verified = sigProvider_.verify(clientMsgHdr, clientBody, "client", request->clientId);
-
-        {
-            std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-            if (verified) {
-                VLOG(4) << "Verified client signature for c_id=" << request->clientId
-                        << " c_seq=" << request->request.client_seq();
-                request->verified = true;
-            } else {
-                LOG(INFO) << "Failed to verify client signature!";
-                deadlineQueue_.erase({request->deadline, request->clientId});
+            // TODO is there a race condition reading the request here?
+            MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
+            byte *clientBody = (byte *) (clientMsgHdr + 1);
+            if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                return;
             }
+
+            bool verified = sigProvider_.verify(clientMsgHdr, clientBody, "client", request->clientId);
+
+            {
+                std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+                if (verified) {
+                    VLOG(4) << "Verified client signature for c_id=" << request->clientId
+                            << " c_seq=" << request->request.client_seq();
+                    request->verified = true;
+                } else {
+                    LOG(INFO) << "Failed to verify client signature!";
+                    deadlineQueue_.erase({request->deadline, request->clientId});
+                }
+            }
+        } else {
+            lock.unlock();
         }
     }
 }

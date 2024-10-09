@@ -12,6 +12,8 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <queue>
+#include <condition_variable>
 
 #include <yaml-cpp/yaml.h>
 
@@ -40,7 +42,14 @@ private:
     uint64_t lastFwdDeadline;
 
     // Queue for worker threads to trigger verify tasks through
-    ConcurrentQueue<std::shared_ptr<Request>> verifyQueue_;
+    // ConcurrentQueue<std::shared_ptr<Request>> verifyQueue_;
+
+    // Queue for worker threads to trigger verify tasks through
+    std::mutex verifyQueueMtx_;
+    std::condition_variable verifyQueueCondVar_;
+    std::queue<std::shared_ptr<Request>> verifyQueue_;
+
+    std::vector<std::thread> verifyThds_;
 
     /** The actual message / timeout handlers */
     void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
