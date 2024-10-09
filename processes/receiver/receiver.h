@@ -19,6 +19,7 @@ struct Request {
     dombft::proto::DOMRequest request;
     uint64_t deadline;
     uint32_t clientId;
+
     bool verified = false;
 };
 
@@ -46,6 +47,8 @@ private:
 
     void checkDeadlines();
     void forwardRequest(const dombft::proto::DOMRequest &request);
+
+    void verifyWorker();
 
     uint32_t receiverId_;
     uint32_t proxyMeasurementPort_;

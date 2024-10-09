@@ -61,7 +61,18 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     });
     endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
 
+    // Start verify threads
+    // TODO parameterize verifyThreads
+
+    std::vector<std::thread> verifyThds;
+    for (int i = 0; i < 2; i++) {
+        verifyThds.emplace_back(&Receiver::verifyWorker, this);
+    }
+
     endpoint_->LoopRun();
+    for (std::thread &thd : verifyThds) {
+        thd.join();
+    }
     LOG(INFO) << "Receiver exited cleanly";
 }
 
@@ -118,7 +129,10 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
     auto r = std::make_shared<Request>(request, request.deadline(), request.client_id(), false);
 
-    deadlineQueue_[{request.deadline(), request.client_id()}] = r;
+    {
+        std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+        deadlineQueue_[{request.deadline(), request.client_id()}] = r;
+    }
 
     if (skipVerify_) {
         r->verified = true;
@@ -166,13 +180,21 @@ void Receiver::forwardRequest(const DOMRequest &request)
 
 void Receiver::checkDeadlines()
 {
+    std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+
     uint64_t now = GetMicrosecondTimestamp();
     auto it = deadlineQueue_.begin();
 
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
-        forwardRequest(it->second);
+
+        if (!it->second->verified) {
+            VLOG(3) << "Request not verified, waiting for next check";
+            break;
+        }
+
+        forwardRequest(it->second->request);
         auto temp = std::next(it);
         deadlineQueue_.erase(it);
         it = temp;
@@ -180,6 +202,41 @@ void Receiver::checkDeadlines()
 
     uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
     endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+}
+
+void Receiver::verifyWorker()
+{
+    std::shared_ptr<Request> request;
+    while (running_) {
+        if (!verifyQueue_.try_dequeue(request)) {
+            // TODO sleep?
+            continue;
+        }
+
+        ClientRequest clientHeader;
+
+        // Separate this out into another function probably.
+
+        // TODO is there a race condition reading the request here?
+        MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
+        byte *clientBody = (byte *) (clientMsgHdr + 1);
+        if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+            return;
+        }
+
+        bool verified = sigProvider_.verify(clientMsgHdr, clientBody, "client", request->clientId);
+
+        {
+            std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+            if (verified) {
+                request->verified = true;
+            } else {
+                LOG(INFO) << "Failed to verify client signature!";
+                deadlineQueue_.erase({request->deadline, request->clientId});
+            }
+        }
+    }
 }
 
 }   // namespace dombft

@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 // Third party libs
+#include "blockingconcurrentqueue.h"
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"
 #include <gflags/gflags.h>
