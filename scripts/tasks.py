@@ -375,7 +375,10 @@ def get_logs(c, ips, log_prefix):
         conn.get(f"{log_prefix}{id}.log", "../logs/")
 
     for id, ip in enumerate(ips):
+        conn = Connection(ip)
+
         try:
+            print(f"Getting {log_prefix}{id}.prof")
             conn.get(f"{log_prefix}{id}.prof", "../logs/")
             print(f"Got profile in {log_prefix}{id}.prof ")
         except:
