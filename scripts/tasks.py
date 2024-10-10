@@ -50,7 +50,7 @@ def local(c, config_file, v=5):
             other_handles.append(hdl)
 
         for id in range(n_clients):
-            cmd = f"perf record -o logs/client{id}.prof  ./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
+            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
@@ -374,15 +374,15 @@ def get_logs(c, ips, log_prefix):
         print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
 
-    for id, ip in enumerate(ips):
-        conn = Connection(ip)
+    # for id, ip in enumerate(ips):
+    #     conn = Connection(ip)
 
-        try:
-            print(f"Getting {log_prefix}{id}.prof")
-            conn.get(f"{log_prefix}{id}.prof", "../logs/")
-            print(f"Got profile in {log_prefix}{id}.prof ")
-        except:
-            c.run(f"rm ../logs/{log_prefix}{id}.prof")
+    #     try:
+    #         print(f"Getting {log_prefix}{id}.prof")
+    #         conn.get(f"{log_prefix}{id}.prof", "../logs/")
+    #         print(f"Got profile in {log_prefix}{id}.prof ")
+    #     except:
+    #         c.run(f"rm ../logs/{log_prefix}{id}.prof")
 
 
 @task
