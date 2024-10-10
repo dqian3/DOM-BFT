@@ -121,18 +121,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         },
         config.replicaFallbackTimeout, this);
 
-    statsTimer_ = std::make_unique<Timer>(
-        [&](void *ctx, void *endpoint) {
-            // Print other stats?
-            if (seq_ > 0) {
-                LOG(INFO) << "seq_=" << seq_;
-            }
-        },
-        1000000, this);
-
-    ev_set_priority(statsTimer_->evTimer_, EV_MAXPRI);
-    endpoint_->RegisterTimer(statsTimer_.get());
-
     endpoint_->RegisterSignalHandler([&]() {
         LOG(INFO) << "Received interrupt signal!";
         endpoint_->LoopBreak();
