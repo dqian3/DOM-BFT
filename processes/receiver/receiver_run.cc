@@ -18,5 +18,7 @@ int main(int argc, char *argv[])
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
 
-    dombft::Receiver receiver(config, FLAGS_receiverId, FLAGS_skipForwarding, FLAGS_ignoreDeadlines);
+    // Skip verifying if we are not forwarding to the replica.
+    bool skipVerify = FLAGS_skipForwarding;
+    dombft::Receiver receiver(config, FLAGS_receiverId, FLAGS_skipForwarding, FLAGS_ignoreDeadlines, skipVerify);
 }

@@ -1,6 +1,6 @@
 cc_library(
     name = "concurrentqueue", 
-    srcs = ["concurrentqueue.h"],
+    srcs = ["concurrentqueue.h", "blockingconcurrentqueue.h", "lightweightsemaphore.h"],
     visibility = [
         "//visibility:public",
     ],
