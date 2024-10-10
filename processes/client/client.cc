@@ -425,6 +425,11 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     reqState.nReplies++;
 
     if (reqState.nReplies >= 3 * f_ + 1) {
+
+        VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
+                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+                << " digest=" << digest_to_hex(reply.digest()).substr(56);
+
         commitRequest(clientSeq);
     }
     return;
