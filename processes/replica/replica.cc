@@ -79,10 +79,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         receiverAddr_ = addrPairs[nClients].second;
 
         for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
-            // Skip adding one side of self connection so replica chooses one side to send to
-            // TODO this is very ugly.
-            if (i - (nClients + 1) == replicaId_)
-                continue;
             replicaAddrs_.push_back(addrPairs[i].second);
         }
     } else {
@@ -181,7 +177,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         clientInstance_[clientId] = std::max(clientHeader.instance(), clientInstance_[clientId]);
 
-        if (clientHeader.instance() < instance_) {
+        if (clientInstance_[clientId] < instance_) {
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
                       << " due to stale instance! Sending blank reply to catch client up";
 
@@ -190,9 +186,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             reply.set_client_id(clientHeader.client_id());
             reply.set_instance(instance_);
 
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-            endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
+            sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientHeader.client_id()]);
 
             // update this so we don't send this multiple times
             clientInstance_[clientId] = instance_;
@@ -281,7 +275,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         if (fallbackTriggerMsg.has_proof()) {
             // TODO verify proof
             LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
-
             broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
             startFallback();
         } else {
@@ -516,16 +509,8 @@ void Replica::handleClientRequest(const ClientRequest &request)
             << " client_seq=" << clientSeq << " instance=" << instance_
             << " digest=" << digest_to_hex(log_->getDigest()).substr(56);
 
-    // VLOG(4) << "Start prepare message";
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-    // VLOG(4) << "Finish Serialization, start signature";
-
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Finish signature";
-
     LOG(INFO) << "Sending reply back to client " << clientId;
-    endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
-
+    sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
     LOG(INFO) << "Done Sending reply back to client " << clientId;
 
     // Try and commit every 10 replies (half of the way before
@@ -577,9 +562,7 @@ void Replica::handleCert(const Cert &cert)
     VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
             << clientAddrs_[reply.client_id()].ip();
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+    sendMsgToDst(reply, MessageType::CERT_REPLY, clientAddrs_[reply.client_id()]);
 }
 
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
@@ -736,15 +719,31 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     }
 }
 
-void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
+
+void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst)
 {
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    if (dst == replicaAddrs_[replicaId_]) {
+        loopbackDispatch_.at(type)(msgSigPair(msg,std::span{(byte *) (hdr + 1)+hdr->msgLen, hdr->sigLen}));
+        return;
+    }
+    endpoint_->SendPreparedMsgTo(dst);
+}
+void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
+{
+    const Address& loopbackAddr = replicaAddrs_[replicaId_];
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
     // TODO check errors for all of these lol
-    // TODO this sends to self as well, could shortcut this
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     for (const Address &addr : replicaAddrs_) {
+        if (addr == loopbackAddr) {
+            continue;
+        }
         endpoint_->SendPreparedMsgTo(addr);
     }
+    // execute loopback at the end to not blocking sending to other replicas
+    loopbackDispatch_.at(type)(msgSigPair(msg,std::span{(byte *) (hdr + 1)+hdr->msgLen, hdr->sigLen}));
 }
 
 bool Replica::verifyCert(const Cert &cert)
@@ -802,12 +801,8 @@ void Replica::startFallback()
     fallbackStartMsg.set_replica_id(replicaId_);
     log_->toProto(fallbackStartMsg);
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackStartMsg, FALLBACK_START);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-
     LOG(INFO) << "Sending FALLBACK_START to replica " << instance_ % replicaAddrs_.size();
-    endpoint_->SendPreparedMsgTo(replicaAddrs_[instance_ % replicaAddrs_.size()]);
-
+    sendMsgToDst(fallbackStartMsg, FALLBACK_START, replicaAddrs_[instance_ % replicaAddrs_.size()]);
     // TEMP: dump the logs
     LOG(INFO) << "DUMP start fallback instance=" << instance_ << " " << *log_;
 }
