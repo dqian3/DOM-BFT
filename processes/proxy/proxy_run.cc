@@ -19,7 +19,6 @@ int main(int argc, char *argv[])
 {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
-    signal(SIGINT, terminate);
     FLAGS_logtostderr = 1;
 
     LOG(INFO) << "Loading config from " << FLAGS_config;
@@ -30,5 +29,7 @@ int main(int argc, char *argv[])
     } else {
         proxy = std::make_unique<dombft::Proxy>(config, FLAGS_proxyId);
     }
+    signal(SIGINT, terminate);
+
     proxy->run();
 }

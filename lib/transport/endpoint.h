@@ -31,10 +31,13 @@
  * For convenience, we also have the endpoint
  * (4) Provide a buffer and an interface for sending a message to a specified address
  */
+typedef std::function<void()> SignalHandlerFunc;
+
 class Endpoint {
 protected:
     /** The ev_loop struct from libev, which uses to handle io/timer events */
     struct ev_loop *evLoop_;
+
     /** One endpoint can have multiple timers registered. We maintain a set to
      * avoid duplicate registration and check whether a specific timer has been
      * registered or not.*/
@@ -44,6 +47,12 @@ protected:
 
 public:
     int epId_;   // The id of the endpoint, mainly for debug
+
+    /** Signal handler data
+     *  TOOD refactor this into separate class like timer
+     */
+    ev_signal signalWatcher_;
+    SignalHandlerFunc signalHandler_;
 
     Endpoint(const bool isMasterReceiver = false);
     virtual ~Endpoint();
@@ -97,9 +106,12 @@ public:
     // broadcast we can reuse the same buffer/signatures
     virtual int SendPreparedMsgTo(const Address &dstAddr) = 0;
 
-    // -------------------- Entrypoints --------------------
+    // -------------------- Entry and exit points --------------------
     void LoopRun();
-    void LoopBreak();
+
+    // Register a SIGINT handler. TODO generalize this, and make sure it's ok being called multiple times
+    void RegisterSignalHandler(SignalHandlerFunc signal_cb);
+    virtual void LoopBreak();
 };
 
 #endif

@@ -41,8 +41,7 @@ tests can be built with
 ```
 bazel build //test/...
 ```
-The files starting with `test_` are actualy gtest tests for various components that I've built.
-There are also a few experimental "sandbox" programs that serve as examples of usage. 
+The files starting with `test_` are gtest files for various components that I've built.
 
 ## Basic Docker Setup
 
@@ -53,3 +52,17 @@ The current way to use this setup is to simply run
 docker compose run --rm dev
 ```
 This will give you a bash shell in a conatiner where you can run the above commands to compile the code. Docker compose mounts the source code into the container as well, so any changes you make locally (i.e. in an editor) will be reflected in your conatiner.
+
+
+## Profiling
+
+To get CPU profiles of the processes, we use the gperftools CPU profiler. The steps for setting this up are:
+1. Build and install the repository https://github.com/gperftools/gperftools on the machine you plan to run the profile on
+2. Follow the instructions here: https://gperftools.github.io/gperftools/cpuprofile.html to run the process with the profiler. Specifically, append `env LD_PRELOAD='.../libprofiler.so' CPUPROFILE=profile.prof` to the command.
+   - Note it isn't reccomended in the above link to do this runtime linking. We should probably figure out how to incoporate this library into our build
+   - Also, the `invoke gcloud-run` command includes a `--profile` argument that adds this to processes already, for running on the cloud.
+  
+3. Visualize the profile results with the pprof tool: https://github.com/google/pprof.
+   ```
+   pprof -web [main_binary] profile.prof
+   ```

@@ -1,6 +1,6 @@
 #include "receiver.h"
 
-#include "lib/transport/nng_endpoint.h"
+#include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -9,11 +9,14 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines,
+                   bool skipVerify)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
+    , skipVerify_(skipVerify)
+    , running_(true)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -32,111 +35,65 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         exit(1);
     }
 
+    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+        LOG(ERROR) << "Unable to load client public keys!";
+        exit(1);
+    }
+
     /** Store replica addrs */
     numReceivers_ = config.receiverIps.size();
     if (config.transport == "nng") {
         auto addrPairs = getReceiverAddrs(config, receiverId);
         replicaAddr_ = addrPairs.back().second;
-        std::vector<std::pair<Address, Address>> proxyAddrPairs(addrPairs.begin(), addrPairs.end() - 1);
-        std::vector<std::pair<Address, Address>> replicaAddrPair = {addrPairs.back()};
-
-        endpoint_ = std::make_unique<NngEndpoint>(proxyAddrPairs, true);
-        forwardEp_ = std::make_unique<NngEndpoint>(replicaAddrPair, false);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
-        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, false);
-        forwardEp_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort + 100, false);
+        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
     }
-
-    LOG(INFO) << "Bound replicaAddr_=" << replicaAddr_.ip() << ":" << replicaAddr_.port();
 
     fwdTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->checkDeadlines(); }, 1000, this);
 
-    queueTimer_ =
-        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->addToDeadlineQueue(); }, 100, this);
-
-    // endpoint_->RegisterTimer(fwdTimer_.get());
-    forwardEp_->RegisterTimer(fwdTimer_.get());
-    forwardEp_->RegisterTimer(queueTimer_.get());
+    endpoint_->RegisterTimer(fwdTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
     });
-}
+    endpoint_->RegisterSignalHandler([&]() {
+        running_ = false;
+        endpoint_->LoopBreak();
 
-void Receiver::addToDeadlineQueue()
-{
-    DOMRequest request;
-    int64_t recv_time = GetMicrosecondTimestamp();
-    while (requestQueue_.try_dequeue(request)) {
-        request.set_late(recv_time > request.deadline());
-        VLOG(4) << "Forward Thread Received request c_id=" << request.client_id() << " c_seq=" << request.client_seq()
-                << " deadline=" << request.deadline() << " now=" << recv_time;
+        verifyQueueCondVar_.notify_all();
+    });
 
-        if (ignoreDeadlines_) {
-            forwardRequest(request);
-        } else if (false && request.late()) {   // TODO temporary change to see
-            VLOG(3) << "Request is late, sending immediately deadline=" << request.deadline() << " late by "
-                    << recv_time - request.deadline() << "us";
-            VLOG(3) << "Checking deadlines before forwarding late message";
-            checkDeadlines();
-            forwardRequest(request);
-        } else {
-            VLOG(3) << "Adding request to priority queue with deadline=" << request.deadline() << " in "
-                    << request.deadline() - recv_time << "us";
-            deadlineQueue_[{request.deadline(), request.client_id()}] = request;
+    // Start verify threads
+    // TODO parameterize verifyThreads
+    uint32_t numVerifyThreads = config.numVerifyThreads;
 
-            // Check if timer is firing before deadline
-            uint64_t now = GetMicrosecondTimestamp();
-            uint64_t nextCheck = request.deadline() - now;
-
-            if (nextCheck <= forwardEp_->GetTimerRemaining(fwdTimer_.get())) {
-                forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
-                VLOG(3) << "Changed next deadline check to be in " << nextCheck << "us";
-            }
-        }
+    for (int i = 0; i < numVerifyThreads; i++) {
+        verifyThds_.emplace_back(&Receiver::verifyWorker, this);
     }
+
+    endpoint_->LoopRun();
+    for (std::thread &thd : verifyThds_) {
+        thd.join();
+    }
+    LOG(INFO) << "Receiver exited cleanly";
 }
 
 Receiver::~Receiver()
 {
-    // TODO cleanup...
-}
+    running_ = false;
+    verifyQueueCondVar_.notify_all();
 
-void Receiver::run()
-{
-    // Submit first request
-    LOG(INFO) << "Starting event loop...";
-    // endpoint_->LoopRun();
-
-    // running_ = true;
-
-    LaunchThreads();
-    for (auto &kv : threads_) {
-        LOG(INFO) << "Join " << kv.first;
-        kv.second.join();
-        LOG(INFO) << "Join Complete " << kv.first;
+    // Join the verification threads
+    for (std::thread &thd : verifyThds_) {
+        if (thd.joinable()) {
+            thd.join();
+        }
     }
-    LOG(INFO) << "Run Terminated ";
-}
 
-void Receiver::LaunchThreads()
-{
-    threads_["ReceiveTd"] = std::thread(&Receiver::ReceiveTd, this);
-    threads_["ForwardTd"] = std::thread(&Receiver::ForwardTd, this);
-}
-
-void Receiver::ReceiveTd()
-{
-    LOG(INFO) << "receive td launched";
-    endpoint_->LoopRun();
-}
-
-void Receiver::ForwardTd()
-{
-    LOG(INFO) << "forward td launched";
-    forwardEp_->LoopRun();
+    LOG(INFO) << "Receiver exited cleanly";
 }
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
@@ -152,80 +109,173 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     }
 #endif
 
+    // We don't expect any other kind of message.
+    if (hdr->msgType != MessageType::DOM_REQUEST) {
+        LOG(ERROR) << "Received message type " << hdr->msgType << " != DOM_REQUEST";
+        return;
+    }
+
     DOMRequest request;
-    if (hdr->msgType == MessageType::DOM_REQUEST) {
-        if (!request.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
-            return;
-        }
+    if (!request.ParseFromArray(body, hdr->msgLen)) {
+        LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+        return;
+    }
 
 #if FABRIC_CRYPTO
-        // TODO: verify sending from proxy.
+    // TODO: verify sending from proxy.
 #endif
 
-        // Send measurement reply right away
-        int64_t recv_time = GetMicrosecondTimestamp();
+    int64_t recv_time = GetMicrosecondTimestamp();
+    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+            << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
 
-        VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
-                << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
-        // Randomly send measurements only once in a while
-        if ((request.client_seq() % (numReceivers_ * 2)) == 0) {
-            MeasurementReply mReply;
-            mReply.set_receiver_id(receiverId_);
-            mReply.set_owd(recv_time - request.send_time());
-            mReply.set_send_time(request.send_time());
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-            endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
+    if (recv_time > request.deadline()) {
+        request.set_late(true);
+
+        VLOG(3) << "Request is late late by " << recv_time - request.deadline() << "us";
+
+        if (lastFwdDeadline > request.deadline()) {
+            LOG(WARNING) << "Forwarded request out of order!";
         }
+    }
 
-        requestQueue_.enqueue(request);
+    uint64_t deadline = request.deadline();
+    if (ignoreDeadlines_) {
+        // This will just make the receiver forward messages in order of receiving
+        deadline = recv_time;
+    }
+
+    auto r = std::make_shared<Request>(request, request.deadline(), request.client_id(), false);
+
+    {
+        std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+        deadlineQueue_[{request.deadline(), request.client_id()}] = r;
+    }
+
+    if (skipVerify_) {
+        r->verified = true;
+    } else {
+        // verifyQueue_.enqueue(r);
+        {
+            std::lock_guard<std::mutex> lock(verifyQueueMtx_);
+            verifyQueue_.push(r);
+        }
+        verifyQueueCondVar_.notify_one();
+    }
+
+    // Send measurements replies back to the proxy
+    if (request.client_seq() == 0) {
+        MeasurementReply mReply;
+        mReply.set_receiver_id(receiverId_);
+        mReply.set_owd(recv_time - request.send_time());
+        mReply.set_send_time(request.send_time());
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+#if FABRIC_CRYPTO
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+#endif
+        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
     }
 }
 
 void Receiver::forwardRequest(const DOMRequest &request)
 {
+    uint64_t now = GetMicrosecondTimestamp();
+
+    LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
+              << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+
+    if (skipForwarding_) {
+        return;
+    }
+
     if (false)   // receiverConfig_.ipcReplica)
     {
         // TODO
         throw "IPC communciation not implemented";
     } else {
-        uint64_t now = GetMicrosecondTimestamp();
-
-        VLOG(1) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
-                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
-
-        MessageHeader *hdr = forwardEp_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
-        if (skipForwarding_) {
-            return;
-        }
-
-        // TODO check errors for all of these lol
-        // TODO do this while waiting, not in the critical path
-
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        forwardEp_->SendPreparedMsgTo(replicaAddr_);
+        endpoint_->SendPreparedMsgTo(replicaAddr_);
     }
 }
 
 void Receiver::checkDeadlines()
 {
+    std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+
     uint64_t now = GetMicrosecondTimestamp();
     auto it = deadlineQueue_.begin();
 
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
-        forwardRequest(it->second);
+
+        if (!it->second->verified) {
+            VLOG(3) << "Request not verified, waiting for next check";
+            break;
+        }
+
+        forwardRequest(it->second->request);
         auto temp = std::next(it);
         deadlineQueue_.erase(it);
         it = temp;
     }
 
     uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
-    forwardEp_->ResetTimer(fwdTimer_.get(), nextCheck);
+    endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+}
+
+void Receiver::verifyWorker()
+{
+    LOG(INFO) << "Starting verify thd";
+
+    std::shared_ptr<Request> request;
+    while (running_) {
+        std::unique_lock<std::mutex> lock(verifyQueueMtx_);
+        verifyQueueCondVar_.wait(lock, [this] { return !verifyQueue_.empty() || !running_; });
+
+        if (!running_ && verifyQueue_.empty()) {
+            LOG(ERROR) << "Verify thread exiting...";
+            lock.unlock();
+            break;
+        }
+
+        if (!verifyQueue_.empty()) {
+            request = verifyQueue_.front();
+            verifyQueue_.pop();
+            lock.unlock();
+
+            ClientRequest clientHeader;
+
+            // Separate this out into another function probably.
+
+            // TODO is there a race condition reading the request here?
+            MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
+            byte *clientBody = (byte *) (clientMsgHdr + 1);
+            if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                return;
+            }
+
+            bool verified = sigProvider_.verify(clientMsgHdr, clientBody, "client", request->clientId);
+
+            {
+                std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+                if (verified) {
+                    VLOG(4) << "Verified client signature for c_id=" << request->clientId
+                            << " c_seq=" << request->request.client_seq();
+                    request->verified = true;
+                } else {
+                    LOG(INFO) << "Failed to verify client signature!";
+                    deadlineQueue_.erase({request->deadline, request->clientId});
+                }
+            }
+        } else {
+            lock.unlock();
+        }
+    }
 }
 
 }   // namespace dombft

@@ -12,7 +12,7 @@
 
 #define FABRIC_CRYPTO 0
 
-#define MAX_SPEC_HIST       2000
-#define CHECKPOINT_INTERVAL 200
+#define MAX_SPEC_HIST       10000
+#define CHECKPOINT_INTERVAL 400
 
 #endif

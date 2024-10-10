@@ -18,7 +18,7 @@ CertCollector::CertCollector(int f)
 {
 }
 
-int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
+size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 {
     int replicaId = reply.replica_id();
 
@@ -42,8 +42,7 @@ int CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
             cert_ = Cert();
             cert_->set_seq(std::get<0>(key));
             cert_->set_instance(std::get<1>(key));
-
-            // TODO check if fast path is not posssible, and we can send cert right away
+            
             for (auto repId : matchingReplies[key]) {
                 std::string sigStr(signatures_[repId].begin(), signatures_[repId].end());
                 cert_->add_signatures(sigStr);

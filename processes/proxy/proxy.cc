@@ -87,27 +87,25 @@ void Proxy::run()
         kv.second->join();
         LOG(INFO) << "Join Complete " << kv.first;
     }
+
     LOG(INFO) << "Run Terminated ";
 }
 
 Proxy::~Proxy()
 {
-    for (auto &kv : threads_) {
-        delete kv.second;
-    }
 
     // TODO Cleanup more
 }
 
 void Proxy::LaunchThreads()
 {
-    threads_["RecvMeasurementsTd"] = new std::thread(&Proxy::RecvMeasurementsTd, this);
+    threads_["RecvMeasurementsTd"] = std::make_unique<std::thread>(&Proxy::RecvMeasurementsTd, this);
     if (selfGenReqs_) {
-        threads_["GenerateRequestsTd"] = new std::thread(&Proxy::GenerateRequestsTd, this);
+        threads_["GenerateRequestsTd"] = std::make_unique<std::thread>(&Proxy::GenerateRequestsTd, this);
     } else {
         for (int i = 0; i < numShards_; i++) {
             std::string key = "ForwardRequestsTd-" + std::to_string(i);
-            threads_[key] = new std::thread(&Proxy::ForwardRequestsTd, this, i);
+            threads_[key] = std::make_unique<std::thread>(&Proxy::ForwardRequestsTd, this, i);
         }
     }
 }
@@ -142,9 +140,9 @@ void Proxy::RecvMeasurementsTd()
     };
 
     /* Checks every 10ms to see if we are done*/
-    auto checkEnd = [](void *ctx, void *receiverEP) {
+    auto checkEnd = [](void *ctx, void *ep) {
         if (!((Proxy *) ctx)->running_) {
-            ((Endpoint *) receiverEP)->LoopBreak();
+            ((Endpoint *) ep)->LoopBreak();
         }
     };
 
@@ -154,6 +152,8 @@ void Proxy::RecvMeasurementsTd()
     measurementEp_->RegisterTimer(&monitor);
 
     measurementEp_->LoopRun();
+
+    LOG(INFO) << "Measurement thread ending";
 }
 
 void Proxy::ForwardRequestsTd(const int thread_id)
@@ -206,9 +206,9 @@ void Proxy::ForwardRequestsTd(const int thread_id)
     };
 
     /* Checks every 10ms to see if we are done*/
-    auto checkEnd = [](void *ctx, void *receiverEP) {
+    auto checkEnd = [](void *ctx, void *ep) {
         if (!((Proxy *) ctx)->running_) {
-            ((Endpoint *) receiverEP)->LoopBreak();
+            ((Endpoint *) ep)->LoopBreak();
         }
     };
 
@@ -218,6 +218,8 @@ void Proxy::ForwardRequestsTd(const int thread_id)
     forwardEps_[thread_id]->RegisterTimer(&monitor);
 
     forwardEps_[thread_id]->LoopRun();
+
+    LOG(INFO) << "Forward thread ending";
 }
 
 void Proxy::sendReq(uint32_t seq)
@@ -318,9 +320,9 @@ void Proxy::GenerateRequestsTd()
             genReqDuration_ * 1000000, this);
 
         /* Checks every 10ms to see if we are done*/
-        auto checkEnd = [](void *ctx, void *receiverEP) {
+        auto checkEnd = [](void *ctx, void *ep) {
             if (!((Proxy *) ctx)->running_) {
-                ((Endpoint *) receiverEP)->LoopBreak();
+                ((Endpoint *) ep)->LoopBreak();
             }
         };
 

@@ -25,7 +25,10 @@ enum MessageType {
     FALLBACK_PROPOSAL = 11,
     FALLBACK_SUMMARY = 12,
 
-    DUMMY_PROTO = 13
+    DUMMY_PROTO = 13,
+    DUMMY_PREPREPARE = 14,
+    DUMMY_PREPARE = 15,
+    DUMMY_COMMIT = 16
 };
 
 #endif

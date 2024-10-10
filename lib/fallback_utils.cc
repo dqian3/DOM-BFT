@@ -204,4 +204,6 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         log->nextSeq = seq + 1;
         log->app_->abort(seq);
     }
+
+    return true;
 }

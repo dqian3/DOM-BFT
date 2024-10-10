@@ -15,7 +15,7 @@ public:
 
     // Inserts reply/signature with move semantics
     // Assumes that reply has already been verified
-    int insertReply(dombft::proto::Reply &reply, std::vector<byte> &&sig);
+    size_t insertReply(dombft::proto::Reply &reply, std::vector<byte> &&sig);
 
     bool hasCert();
     const dombft::proto::Cert &getCert();

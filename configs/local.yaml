@@ -39,6 +39,7 @@ receiver:
   keysDir: keys/receiver
   shards: 1 # The number of threads to receive threads 
   local: false # Although it's local, we actually use distinct loopback addresses for localhost experiments
+  numVerifyThreads: 2
 
 # Replica Info
 replica:
