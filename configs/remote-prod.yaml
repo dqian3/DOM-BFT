@@ -15,12 +15,12 @@ client:
   # - 10.150.0.3
   keysDir: keys/client
   port: 33000
-  normalPathTimeout: 100000   # 100 ms
+  normalPathTimeout: 150000   # 100 ms
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "maxInFlight"
-  maxInFlight: 60
-  sendRate: 600
+  maxInFlight: 80
+  sendRate: 500
   runtimeSeconds: 30
 
 proxy:
@@ -45,7 +45,7 @@ receiver:
   local: true
   port: 33000
   shards: 1
-  numVerifyThreads: 3
+  numVerifyThreads: 4
 
 replica:
   ips:

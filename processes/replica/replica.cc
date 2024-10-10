@@ -121,7 +121,10 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         },
         config.replicaFallbackTimeout, this);
 
-    endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
+    endpoint_->RegisterSignalHandler([&]() {
+        LOG(INFO) << "Received interrupt signal!";
+        endpoint_->LoopBreak();
+    });
 }
 
 Replica::~Replica()

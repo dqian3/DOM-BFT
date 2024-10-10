@@ -50,7 +50,7 @@ def local(c, config_file, v=5):
             other_handles.append(hdl)
 
         for id in range(n_clients):
-            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
+            cmd = f"perf record -o logs/client{id}.prof  ./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
@@ -340,7 +340,7 @@ gcloud compute instances create {} \
 
 def arun_on(ip, logfile, local_log=False, profile=False):
     def perf_prefix(prof_file):
-        return f"env LD_PRELOAD='/usr/local/lib/libprofiler.so' CPUPROFILE={prof_file} "
+        return f"env LD_PRELOAD='/home/dqian/libprofiler.so' CPUPROFILE={prof_file} CPUPROFILE_FREQUENCY={10} "
 
     if local_log:
         logfile = os.path.join("../logs/", logfile)
@@ -461,19 +461,19 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
         if slow_path_freq != 0 and (id % 2) == 0:
             swap_arg = f'-swapFreq {slow_path_freq}'
             
-        arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=(profile and id == 0))
+        arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=profile)
         hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log, profile=(profile and id == 0))
+        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log, profile=profile)
         hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log, profile=(profile and id == 0))
+        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log, profile=profile )
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
@@ -481,7 +481,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
     print("Starting clients")
     for id, ip in enumerate(clients):
-        arun = arun_on(ip, f"client{id}.log", local_log=local_log, profile=(profile and id == 0))
+        arun = arun_on(ip, f"client{id}.log", local_log=local_log, profile=profile)
         hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id}")
         client_handles.append(hdl)
 

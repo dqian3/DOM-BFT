@@ -164,7 +164,7 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    out << "CHECKPOINT " << l.checkpoint.seq << ": " << l.checkpoint.logDigest << " | ";
+    out << "CHECKPOINT " << l.checkpoint.seq << ": " << digest_to_hex(l.checkpoint.logDigest).substr(56) << " | ";
     uint32_t i = l.checkpoint.seq + 1;
     for (; i < l.nextSeq; i++) {
         int idx = i % MAX_SPEC_HIST;
