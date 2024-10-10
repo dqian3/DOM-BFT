@@ -76,6 +76,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
+        receiverAddr_ = addrPairs[nClients].second;
+
         for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
             // Skip adding one side of self connection so replica chooses one side to send to
             // TODO this is very ugly.
@@ -90,6 +92,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
         }
+
+        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
 
         /** Store all client addrs */
         for (uint32_t i = 0; i < config.clientIps.size(); i++) {
@@ -117,7 +121,10 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         },
         config.replicaFallbackTimeout, this);
 
-    endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
+    endpoint_->RegisterSignalHandler([&]() {
+        LOG(INFO) << "Received interrupt signal!";
+        endpoint_->LoopBreak();
+    });
 }
 
 Replica::~Replica()
@@ -141,19 +148,17 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         return;
     }
 
-#if USE_PROXY
-
-#if FABRIC_CRYPTO
-    // TODO find id correctly
-    if (!sigProvider_.verify(hdr, body, "receiver", 0)) {
-        LOG(INFO) << "Failed to verify receiver signatures";
-        return;
-    }
-#endif
+    // Note, here we skip verifying the underlying client message,
+    // since this is offloaded to the receiver process
 
     if (hdr->msgType == MessageType::DOM_REQUEST) {
         DOMRequest domHeader;
         ClientRequest clientHeader;
+
+        if (*sender != receiverAddr_) {
+            LOG(ERROR) << "Received DOM_REQUEST message from non-receiever!";
+            return;
+        }
 
         if (!domHeader.ParseFromArray(body, hdr->msgLen)) {
             LOG(ERROR) << "Unable to parse DOM_REQUEST message";
@@ -174,30 +179,23 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
         uint32_t clientId = clientHeader.client_id();
 
-        clientInstance_[clientId] = std::max(instance_, clientInstance_[clientId]);
+        clientInstance_[clientId] = std::max(clientHeader.instance(), clientInstance_[clientId]);
 
         if (clientHeader.instance() < instance_) {
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
                       << " due to stale instance! Sending blank reply to catch client up";
 
-            if (clientInstance_[clientId] < instance_) {
-                // Send blank request to catch up the client
-                Reply reply;
-                reply.set_client_id(clientHeader.client_id());
-                reply.set_instance(instance_);
+            // Send blank request to catch up the client
+            Reply reply;
+            reply.set_client_id(clientHeader.client_id());
+            reply.set_instance(instance_);
 
-                MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-                endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
 
-                // update this so we don't send this multiple times
-                clientInstance_[clientId] = instance_;
-            }
-            return;
-        }
-
-        if (!sigProvider_.verify(clientMsgHdr, clientBody, "client", clientId)) {
-            LOG(INFO) << "Failed to verify client signature!";
+            // update this so we don't send this multiple times
+            clientInstance_[clientId] = instance_;
             return;
         }
 
@@ -206,23 +204,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         else
             handleClientRequest(clientHeader);
     }
-#else
-    if (hdr->msgType == CLIENT_REQUEST) {
-        ClientRequest clientHeader;
-
-        if (!clientHeader.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-            return;
-        }
-
-        if (!sigProvider_.verify(hdr, body, "client", clientHeader.client_id())) {
-            LOG(INFO) << "Failed to verify client signature!";
-            return;
-        }
-
-        handleClientRequest(clientHeader);
-    }
-#endif
 
     if (hdr->msgType == CERT) {
         Cert cert;
@@ -330,7 +311,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handleFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 
-    if(hdr->msgType == DUMMY_PREPREPARE) {
+    if (hdr->msgType == DUMMY_PREPREPARE) {
         FallbackPrePrepare msg;
 
         if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -351,7 +332,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handlePrePrepare(msg);
     }
 
-    if(hdr->msgType == DUMMY_PREPARE) {
+    if (hdr->msgType == DUMMY_PREPARE) {
         FallbackPrepare msg;
 
         if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -372,7 +353,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handlePrepare(msg);
     }
 
-    if(hdr->msgType == DUMMY_COMMIT) {
+    if (hdr->msgType == DUMMY_COMMIT) {
         FallbackPBFTCommit msg;
 
         if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -392,7 +373,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
         handlePBFTCommit(msg);
     }
-
 }
 
 #else   // if not DOM_BFT
@@ -841,7 +821,6 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 
     if (!isPrimary()) {
         return;
-
     }
 
     // First check if we have 2f + 1 fallback start messages for the same instance
@@ -872,7 +851,7 @@ void Replica::finishFallback()
         LOG(ERROR) << "Attempted to finishFallback without a proposal!";
         return;
     }
-    FallbackProposal& history = fallbackProposal_.value();
+    FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback for instance=" << history.instance() << " from instance=" << instance_;
     instance_ = history.instance();
     endpoint_->UnRegisterTimer(fallbackTimer_.get());
@@ -937,7 +916,8 @@ void Replica::finishFallback()
 
 // dummy fallbacl PBFT
 
-void Replica::doPrePreparePhase() {
+void Replica::doPrePreparePhase()
+{
     if (!isPrimary()) {
         LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
         return;
@@ -949,7 +929,7 @@ void Replica::doPrePreparePhase() {
     prePrepare.set_instance(instance_);
 
     // Piggyback the fallback proposal
-    FallbackProposal* proposal = prePrepare.mutable_proposal();
+    FallbackProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_instance(instance_);
     for (auto &startMsg : fallbackHistory_) {
@@ -961,7 +941,8 @@ void Replica::doPrePreparePhase() {
     broadcastToReplicas(prePrepare, DUMMY_PREPREPARE);
 }
 
-void Replica::doPreparePhase() {
+void Replica::doPreparePhase()
+{
     VLOG(6) << "DUMMY Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPrepare prepare;
     prepare.set_replica_id(replicaId_);
@@ -969,16 +950,16 @@ void Replica::doPreparePhase() {
     broadcastToReplicas(prepare, DUMMY_PREPARE);
 }
 
-
-void Replica::doCommitPhase() {
+void Replica::doCommitPhase()
+{
     VLOG(6) << "DUMMY Commit for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
     cmt.set_instance(instance_);
     broadcastToReplicas(cmt, DUMMY_COMMIT);
-
 }
-void Replica::handlePrePrepare(const FallbackPrePrepare &msg) {
+void Replica::handlePrePrepare(const FallbackPrePrepare &msg)
+{
     VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     // TODO Verify FallbackProposal
     if (fallbackProposal_.has_value()) {
@@ -989,22 +970,24 @@ void Replica::handlePrePrepare(const FallbackPrePrepare &msg) {
     doPreparePhase();
 }
 
-void Replica::handlePrepare(const FallbackPrepare &msg) {
+void Replica::handlePrepare(const FallbackPrepare &msg)
+{
     VLOG(6) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPrepares_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(),
-                                      [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+                                 [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
     if (numMsgs == 2 * f_ + 1) {
         VLOG(6) << "DUMMY Prepare received from 2f + 1 replicas, Prepared!";
         doCommitPhase();
     }
 }
 
-void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg) {
+void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
+{
     VLOG(6) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPBFTCommits_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(),
-                                      [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+                                 [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
     if (numMsgs == 2 * f_ + 1) {
         VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
         finishFallback();

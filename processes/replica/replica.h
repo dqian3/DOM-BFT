@@ -22,6 +22,7 @@ class Replica {
 private:
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
+    Address receiverAddr_;
     std::vector<Address> clientAddrs_;
 
     uint32_t f_;
@@ -62,7 +63,6 @@ private:
     std::map<uint32_t, dombft::proto::FallbackPrepare> fallbackPrepares_;
     std::map<uint32_t, dombft::proto::FallbackPBFTCommit> fallbackPBFTCommits_;
 
-
     // State for actively triggering fallback
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
@@ -85,14 +85,13 @@ private:
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // dummy fallback PBFT
-    inline bool isPrimary() { return  instance_ % replicaAddrs_.size() == replicaId_; }
+    inline bool isPrimary() { return instance_ % replicaAddrs_.size() == replicaId_; }
     void doPrePreparePhase();
     void doPreparePhase();
     void doCommitPhase();
     void handlePrePrepare(const dombft::proto::FallbackPrePrepare &msg);
     void handlePrepare(const dombft::proto::FallbackPrepare &msg);
     void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
-
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
