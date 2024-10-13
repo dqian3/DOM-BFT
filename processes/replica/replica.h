@@ -24,7 +24,7 @@ using msgHandlingFunc = std::function<void(const msgSigPair&)>;
 struct ClientRecord {
     uint32_t instance = 0;
     uint32_t lastSeq = 0;
-    std::set<uint32_t> missSeqs;
+    std::unordered_set<uint32_t> missedSeqs;
 };
 
 class Replica {
@@ -46,7 +46,7 @@ private:
     std::shared_ptr<Log> log_;
 
     // State for tracking client state
-    std::unordered_map<uint32_t , ClientRecord> clientInstance_;
+    std::unordered_map<uint32_t , ClientRecord> clientRecords_;
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
@@ -55,9 +55,10 @@ private:
     std::map<int, dombft::proto::Reply> checkpointReplies_;
     std::map<int, std::string> checkpointReplySigs_;
     std::optional<dombft::proto::Cert> checkpointCert_;
+    std::unordered_map<uint32_t , ClientRecord> checkpointClientRecords_;
 
-    std::map<int, dombft::proto::Commit> checkpointCommits_;
-    std::map<int, std::string> checkpointCommitSigs_;
+    std::map<uint32_t, dombft::proto::Commit> checkpointCommits_;
+    std::map<uint32_t, std::string> checkpointCommitSigs_;
 
 
 
@@ -130,7 +131,10 @@ private:
     void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
 
     // helpers
-    bool checkClientRecord(const dombft::proto::ClientRequest &clientHeader);
+    bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
+    void reapplyEntries(uint32_t startingSeq);
+    template <typename MessageType>
+    void toProtoCheckpointClientRecords(MessageType& message);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

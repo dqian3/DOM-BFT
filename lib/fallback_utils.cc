@@ -72,6 +72,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     // TODO save this info in the checkpoint
     std::map<uint32_t, std::map<uint32_t, const dombft::proto::LogEntry *>> clientReqs;
 
+    // The main logic for finding the common suffix
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
         auto &log = fallbackProposal.logs()[i];
         // TODO verify each checkpoint
