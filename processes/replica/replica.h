@@ -133,6 +133,8 @@ private:
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
     void reapplyEntries(uint32_t startingSeq);
+    void getClientRecordsFromProto(const google::protobuf::RepeatedPtrField<proto::CheckpointClientRecord> &records,
+                                            std::unordered_map<uint32_t, ClientRecord> &dst);
     template <typename MessageType>
     void toProtoCheckpointClientRecords(MessageType& message);
 

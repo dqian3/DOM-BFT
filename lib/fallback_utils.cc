@@ -16,6 +16,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
             maxCheckpointSeq = log.checkpoint().seq();
+            logSuffix.clientRecords = &log.client_records();
         }
     }
 
@@ -32,7 +33,6 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
         auto &fallbackLog = fallbackProposal.logs()[i];
         // TODO verify each checkpoint
-
         for (const dombft::proto::LogEntry &entry : fallbackLog.log_entries()) {
             if (!entry.has_cert())
                 continue;
@@ -64,7 +64,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     }
 
     // Counts of matching digests for each seq coming after max cert
-    std::map<uint32_t, std::map<std::string, int>> matchingEntries;
+    std::map<uint32_t, std::map<std::string, uint32_t>> matchingEntries;
     // Track latest applied clientSequence number
     // TODO we make some assumptions about client requests coming in order, which aren't ideal.
     std::map<uint32_t, uint32_t> maxMatchClientSeq;
@@ -72,11 +72,10 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     // TODO save this info in the checkpoint
     std::map<uint32_t, std::map<uint32_t, const dombft::proto::LogEntry *>> clientReqs;
 
-    // The main logic for finding the common suffix
+    // Find the common suffix after the max cert position
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
         auto &log = fallbackProposal.logs()[i];
         // TODO verify each checkpoint
-
         for (const dombft::proto::LogEntry &entry : log.log_entries()) {
             if (entry.seq() <= maxCertSeq)
                 continue;
@@ -118,9 +117,10 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             logSuffix.entries.push_back(entry);
         }
     }
+    return true;
 }
 
-bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
+bool applySuffixToLog(const LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
 {
     LOG(INFO) << "Applying checkpoint";
 
@@ -141,7 +141,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         memcpy(myCheckpoint.logDigest, checkpoint->log_digest().c_str(), checkpoint->log_digest().size());
         myCheckpoint.cert = checkpoint->cert();
 
-        for (uint32_t i = 0; i < checkpoint->commits().size(); i++) {
+        for (int i = 0; i < checkpoint->commits().size(); i++) {
             auto &commit = checkpoint->commits()[i];
 
             myCheckpoint.commitMessages[commit.replica_id()] = commit;

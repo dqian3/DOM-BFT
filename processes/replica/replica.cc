@@ -676,15 +676,9 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
 
                 // TODO(Hao) bad replica can send wrong client records, may add digest to verify
                 checkpointClientRecords_.clear();
-                for(const auto& cliRecord : commitMsg.client_records()) {
-                    uint32_t cliId = cliRecord.client_id();
-                    checkpointClientRecords_[cliId].instance = cliRecord.instance();
-                    checkpointClientRecords_[cliId].lastSeq = cliRecord.last_seq();
-                    for(const auto& s : cliRecord.missed_seqs())
-                        checkpointClientRecords_[cliId].missedSeqs.insert(s);
-                }
+                getClientRecordsFromProto(commitMsg.client_records(), checkpointClientRecords_);
                 clientRecords_ = checkpointClientRecords_;
-                reapplyEntries(log_->checkpoint.seq);
+                reapplyEntries(log_->checkpoint.seq + 1);
             }
 
             return;
@@ -1009,11 +1003,9 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
 
 void Replica::reapplyEntries(uint32_t startingSeq)
 {
-    // start from startingSeq + 1
-    uint32_t oldNextSeq = log_->nextSeq;
-    log_->nextSeq = startingSeq + 1;
-    log_->app_->abort(startingSeq);
-    for (uint32_t s = startingSeq + 1; s < oldNextSeq; s++) {
+    log_->app_->abort(startingSeq - 1);
+    uint32_t curSeq = startingSeq;
+    for (uint32_t s = startingSeq; s < log_->nextSeq; s++) {
         std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
 
         // record update
@@ -1033,14 +1025,29 @@ void Replica::reapplyEntries(uint32_t startingSeq)
             continue;
         }
 
-        log_->app_->execute(entry->request, log_->nextSeq);
+        log_->app_->execute(entry->request, curSeq);
 
         entry->updateDigest(s == startingSeq + 1 ? log_->checkpoint.logDigest
-                                         : log_->getEntry(log_->nextSeq-1)->digest);
-        log_->nextSeq++;
+                                         : log_->getEntry(curSeq-1)->digest);
 
-        VLOG(5) << "PERF event=update_digest seq=" << s
+        VLOG(5) << "PERF event=update_digest seq=" << curSeq
                 << " digest=" << digest_to_hex(entry->digest).substr(56);
+        curSeq++;
+    }
+
+    if(curSeq != log_->nextSeq)
+        log_->nextSeq = curSeq;
+}
+
+void Replica::getClientRecordsFromProto(const google::protobuf::RepeatedPtrField<CheckpointClientRecord> &records,
+                                        std::unordered_map<uint32_t, ClientRecord> &dst)
+{
+    for(const auto& cliRecord : records) {
+        uint32_t cliId = cliRecord.client_id();
+        dst[cliId].instance = cliRecord.instance();
+        dst[cliId].lastSeq = cliRecord.last_seq();
+        for(const auto& s : cliRecord.missed_seqs())
+            dst[cliId].missedSeqs.insert(s);
     }
 }
 

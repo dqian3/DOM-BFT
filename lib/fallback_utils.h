@@ -14,9 +14,10 @@ struct LogSuffix {
 
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
+    const google::protobuf::RepeatedPtrField<dombft::proto::CheckpointClientRecord> *clientRecords;
 };
 
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
-bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log);
+bool applySuffixToLog(const LogSuffix &logSuffix, const std::shared_ptr<Log>& log);
 
 #endif
