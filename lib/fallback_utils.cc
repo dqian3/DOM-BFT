@@ -107,7 +107,6 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     }
 
     // Add rest of client requests in deterministic order lexicographically by (client_id, client_seq)
-
     for (auto &[c_id, reqs] : clientReqs) {
         for (auto &[c_seq, entry] : reqs) {
             // Already matched and added

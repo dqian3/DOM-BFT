@@ -56,6 +56,7 @@ private:
     std::map<int, std::string> checkpointReplySigs_;
     std::optional<dombft::proto::Cert> checkpointCert_;
     std::unordered_map<uint32_t , ClientRecord> checkpointClientRecords_;
+    std::unordered_map<uint32_t , ClientRecord> intermediateCheckpointClientRecords_;
 
     std::map<uint32_t, dombft::proto::Commit> checkpointCommits_;
     std::map<uint32_t, std::string> checkpointCommitSigs_;
@@ -132,7 +133,7 @@ private:
 
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
-    void reapplyEntries(uint32_t startingSeq);
+    void reapplyEntriesWithRecord(uint32_t startingSeq);
     void getClientRecordsFromProto(const google::protobuf::RepeatedPtrField<proto::CheckpointClientRecord> &records,
                                             std::unordered_map<uint32_t, ClientRecord> &dst);
     template <typename MessageType>

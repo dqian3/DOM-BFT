@@ -502,8 +502,9 @@ void Replica::handleClientRequest(const ClientRequest &request)
     if (seq % CHECKPOINT_INTERVAL == 0) {
         LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
         VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
-
-        checkpointClientRecords_ = clientRecords_;
+        // an intermediate record is needed as current checkpointing can be interrupted by fallback
+        // so only when the checkpoint is finished, the checkpoint record is updated
+        intermediateCheckpointClientRecords_ = clientRecords_;
         checkpointSeq_ = seq;
         checkpointCert_.reset();
 
@@ -678,7 +679,9 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 checkpointClientRecords_.clear();
                 getClientRecordsFromProto(commitMsg.client_records(), checkpointClientRecords_);
                 clientRecords_ = checkpointClientRecords_;
-                reapplyEntries(log_->checkpoint.seq + 1);
+                reapplyEntriesWithRecord(log_->checkpoint.seq + 1);
+            }else{
+                checkpointClientRecords_ = intermediateCheckpointClientRecords_;
             }
 
             return;
@@ -827,6 +830,12 @@ void Replica::finishFallback()
 
     applySuffixToLog(logSuffix, log_);
 
+    // TODO(Hao) should make cleaner somehow...
+    checkpointClientRecords_.clear();
+    getClientRecordsFromProto(*logSuffix.clientRecords, checkpointClientRecords_);
+    clientRecords_ = checkpointClientRecords_;
+    reapplyEntriesWithRecord(log_->checkpoint.seq + 1);
+
     VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->nextSeq
             << " instance=" << instance_;
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
@@ -870,7 +879,7 @@ void Replica::finishFallback()
     // This needs to succeed so that the next time slow path is invoked everything is committed
 
     checkpointSeq_ = log_->nextSeq - 1;
-
+    intermediateCheckpointClientRecords_ = clientRecords_;
     LOG(INFO) << "Starting checkpoint cert for seq=" << checkpointSeq_;
 
     checkpointCert_.reset();
@@ -879,7 +888,7 @@ void Replica::finishFallback()
     broadcastToReplicas(reply, MessageType::REPLY);
 }
 
-// dummy fallbacl PBFT
+// dummy fallback PBFT
 
 void Replica::doPrePreparePhase()
 {
@@ -1001,7 +1010,7 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
     return true;
 }
 
-void Replica::reapplyEntries(uint32_t startingSeq)
+void Replica::reapplyEntriesWithRecord(uint32_t startingSeq)
 {
     log_->app_->abort(startingSeq - 1);
     uint32_t curSeq = startingSeq;
@@ -1020,14 +1029,19 @@ void Replica::reapplyEntries(uint32_t startingSeq)
         } else if(cliRecord.missedSeqs.contains(clientSeq)) {
             cliRecord.missedSeqs.erase(clientSeq);
         } else {
+            // TODO(Hao) is a swap happened acrossing a checkpoint, like AB to BA
+            //  then, A will be considered as a duplication since it is included in other replica's checkpoint
+            //  and B will be lost. So, there will be a left shift in log, never recover from normal path
+            //  though not dropping it it will work in next checkpoint, but it is not a good solution
+            //  should be fixed with missing req?
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
-                      << " due to duplication in checkpointing!";
+                      << " due to duplication in reapplying with record!";
             continue;
         }
 
         log_->app_->execute(entry->request, curSeq);
 
-        entry->updateDigest(s == startingSeq + 1 ? log_->checkpoint.logDigest
+        entry->updateDigest(curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
                                          : log_->getEntry(curSeq-1)->digest);
 
         VLOG(5) << "PERF event=update_digest seq=" << curSeq
@@ -1054,7 +1068,7 @@ void Replica::getClientRecordsFromProto(const google::protobuf::RepeatedPtrField
 template <typename MessageType>
 void Replica::toProtoCheckpointClientRecords(MessageType& message)
 {
-    for (const auto& [cliId, cliRecord]: checkpointClientRecords_) {
+    for (const auto& [cliId, cliRecord]: intermediateCheckpointClientRecords_) {
         dombft::proto::CheckpointClientRecord *record = message.add_client_records();
         record->set_client_id(cliId);
         record->set_instance(cliRecord.instance);
