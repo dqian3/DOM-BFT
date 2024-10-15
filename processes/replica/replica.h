@@ -4,10 +4,10 @@
 #include "lib/message_type.h"
 #include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
+#include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
-#include "lib/verification_manager.h"
 #include "proto/dombft_proto.pb.h"
 
 #include <fstream>
@@ -30,9 +30,7 @@ private:
 
     /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
     SignatureProvider sigProvider_;
-
-    // State for verification steps:
-    VerificationManager verificationManager_;
+    ThreadPool threadpool_;
 
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
@@ -66,7 +64,6 @@ private:
     std::map<uint32_t, dombft::proto::FallbackPrepare> fallbackPrepares_;
     std::map<uint32_t, dombft::proto::FallbackPBFTCommit> fallbackPBFTCommits_;
 
-
     // State for actively triggering fallback
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
@@ -89,14 +86,13 @@ private:
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // dummy fallback PBFT
-    inline bool isPrimary() { return  instance_ % replicaAddrs_.size() == replicaId_; }
+    inline bool isPrimary() { return instance_ % replicaAddrs_.size() == replicaId_; }
     void doPrePreparePhase();
     void doPreparePhase();
     void doCommitPhase();
     void handlePrePrepare(const dombft::proto::FallbackPrePrepare &msg);
     void handlePrepare(const dombft::proto::FallbackPrepare &msg);
     void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
-
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

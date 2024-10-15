@@ -21,7 +21,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
     , sigProvider_()
-    , verificationManager_(f_, sigProvider_, 10)
+    , threadpool_(10)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -297,13 +297,13 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         // send result back
 
         if (fallbackTriggerMsg.has_proof()) {
-            if (verificationManager_.verifyFallbackTrigger(fallbackTriggerMsg)) {
-                LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
-                broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
-                startFallback();
-            } else {
-                LOG(INFO) << "Fallback trigger has a proof, but failed to verify!";
-            }
+            // if (verificationManager_.verifyFallbackTrigger(fallbackTriggerMsg)) {
+            //     LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+            //     broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
+            //     startFallback();
+            // // } else {
+            //     LOG(INFO) << "Fallback trigger has a proof, but failed to verify!";
+            // }
             // // TODO verify proof
             // LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
 
@@ -336,7 +336,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handleFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 
-    if(hdr->msgType == DUMMY_PREPREPARE) {
+    if (hdr->msgType == DUMMY_PREPREPARE) {
         FallbackPrePrepare msg;
 
         if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -357,7 +357,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handlePrePrepare(msg);
     }
 
-    if(hdr->msgType == DUMMY_PREPARE) {
+    if (hdr->msgType == DUMMY_PREPARE) {
         FallbackPrepare msg;
 
         if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -378,7 +378,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handlePrepare(msg);
     }
 
-    if(hdr->msgType == DUMMY_COMMIT) {
+    if (hdr->msgType == DUMMY_COMMIT) {
         FallbackPBFTCommit msg;
 
         if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -398,7 +398,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
         handlePBFTCommit(msg);
     }
-
 }
 
 #else   // if not DOM_BFT
@@ -624,14 +623,6 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         VLOG(4) << "Checkpoint: already have cert for seq=" << reply.seq() << ", skipping";
         return;
     }
-
-    if (verificationManager_.verifyReply(reply, checkpointReplySigs_[reply.replica_id()])) {
-        VLOG(4) << "Checkpoint: verified reply for seq=" << reply.seq();
-    } else {
-        LOG(INFO) << "Checkpoint: failed to verify reply for seq=" << reply.seq();
-        return;
-    }
-
     std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
 
     // Find a cert among a set of replies
@@ -783,44 +774,36 @@ void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageT
 bool Replica::verifyCert(const Cert &cert)
 {
     LOG(INFO) << "Verify cert triggered";
-    auto res = verificationManager_.verifyCert(cert);
-    if (!res) {
-        LOG(INFO) << "Cert failed to verify!";
-    } else {
-        LOG(INFO) << "Cert verified!";
+    if (cert.replies().size() < 2 * f_ + 1) {
+        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
+        return false;
     }
 
-    return res;
-    // if (cert.replies().size() < 2 * f_ + 1) {
-    //     LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
-    //     return false;
-    // }
+    if (cert.replies().size() != cert.signatures().size()) {
+        LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
+                  << "cert signatures size" << cert.signatures().size();
+        return false;
+    }
 
-    // if (cert.replies().size() != cert.signatures().size()) {
-    //     LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
-    //               << "cert signatures size" << cert.signatures().size();
-    //     return false;
-    // }
+    // TODO check cert instance
 
-    // // TODO check cert instance
+    // Verify each signature in the cert
+    for (int i = 0; i < cert.replies().size(); i++) {
+        const Reply &reply = cert.replies()[i];
+        const std::string &sig = cert.signatures()[i];
+        std::string serializedReply = reply.SerializeAsString();
 
-    // // Verify each signature in the cert
-    // for (int i = 0; i < cert.replies().size(); i++) {
-    //     const Reply &reply = cert.replies()[i];
-    //     const std::string &sig = cert.signatures()[i];
-    //     std::string serializedReply = reply.SerializeAsString();
+        if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
+                                 sig.size(), "replica", reply.replica_id())) {
+            LOG(INFO) << "Cert failed to verify!";
+            return false;
+        }
+    }
 
-    //     if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
-    //                              sig.size(), "replica", reply.replica_id())) {
-    //         LOG(INFO) << "Cert failed to verify!";
-    //         return false;
-    //     }
-    // }
+    // TOOD verify that cert actually contains matching replies...
+    // And that there aren't signatures from the same replica.
 
-    // // TOOD verify that cert actually contains matching replies...
-    // // And that there aren't signatures from the same replica.
-
-    // return true;
+    return true;
 }
 
 void Replica::startFallback()
@@ -863,7 +846,6 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 
     if (!isPrimary()) {
         return;
-
     }
 
     // First check if we have 2f + 1 fallback start messages for the same instance
@@ -894,7 +876,7 @@ void Replica::finishFallback()
         LOG(ERROR) << "Attempted to finishFallback without a proposal!";
         return;
     }
-    FallbackProposal& history = fallbackProposal_.value();
+    FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback for instance=" << history.instance() << " from instance=" << instance_;
     instance_ = history.instance();
     endpoint_->UnRegisterTimer(fallbackTimer_.get());
@@ -959,7 +941,8 @@ void Replica::finishFallback()
 
 // dummy fallbacl PBFT
 
-void Replica::doPrePreparePhase() {
+void Replica::doPrePreparePhase()
+{
     if (!isPrimary()) {
         LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
         return;
@@ -971,7 +954,7 @@ void Replica::doPrePreparePhase() {
     prePrepare.set_instance(instance_);
 
     // Piggyback the fallback proposal
-    FallbackProposal* proposal = prePrepare.mutable_proposal();
+    FallbackProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_instance(instance_);
     for (auto &startMsg : fallbackHistory_) {
@@ -983,7 +966,8 @@ void Replica::doPrePreparePhase() {
     broadcastToReplicas(prePrepare, DUMMY_PREPREPARE);
 }
 
-void Replica::doPreparePhase() {
+void Replica::doPreparePhase()
+{
     VLOG(6) << "DUMMY Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPrepare prepare;
     prepare.set_replica_id(replicaId_);
@@ -991,16 +975,16 @@ void Replica::doPreparePhase() {
     broadcastToReplicas(prepare, DUMMY_PREPARE);
 }
 
-
-void Replica::doCommitPhase() {
+void Replica::doCommitPhase()
+{
     VLOG(6) << "DUMMY Commit for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
     cmt.set_instance(instance_);
     broadcastToReplicas(cmt, DUMMY_COMMIT);
-
 }
-void Replica::handlePrePrepare(const FallbackPrePrepare &msg) {
+void Replica::handlePrePrepare(const FallbackPrePrepare &msg)
+{
     VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     // TODO Verify FallbackProposal
     if (fallbackProposal_.has_value()) {
@@ -1011,22 +995,24 @@ void Replica::handlePrePrepare(const FallbackPrePrepare &msg) {
     doPreparePhase();
 }
 
-void Replica::handlePrepare(const FallbackPrepare &msg) {
+void Replica::handlePrepare(const FallbackPrepare &msg)
+{
     VLOG(6) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPrepares_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(),
-                                      [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+                                 [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
     if (numMsgs == 2 * f_ + 1) {
         VLOG(6) << "DUMMY Prepare received from 2f + 1 replicas, Prepared!";
         doCommitPhase();
     }
 }
 
-void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg) {
+void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
+{
     VLOG(6) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPBFTCommits_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(),
-                                      [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+                                 [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
     if (numMsgs == 2 * f_ + 1) {
         VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
         finishFallback();

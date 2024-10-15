@@ -81,7 +81,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     LOG(INFO) << "Receiver exited cleanly";
 }
 
-Receiver::~Receiver() 
+Receiver::~Receiver()
 {
     running_ = false;
     verifyQueueCondVar_.notify_all();
@@ -235,7 +235,6 @@ void Receiver::verifyWorker()
     while (running_) {
         std::unique_lock<std::mutex> lock(verifyQueueMtx_);
         verifyQueueCondVar_.wait(lock, [this] { return !verifyQueue_.empty() || !running_; });
-
 
         if (!running_ && verifyQueue_.empty()) {
             LOG(ERROR) << "Verify thread exiting...";

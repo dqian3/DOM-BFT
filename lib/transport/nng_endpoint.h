@@ -41,7 +41,7 @@ public:
     virtual ~NngEndpoint();
 
     // Sends message in buffer
-    virtual int SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr) override;
+    virtual int SendPreparedMsgTo(const Address &dstAddr, byte *buf) override;
 
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
 };

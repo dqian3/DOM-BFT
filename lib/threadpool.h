@@ -1,7 +1,6 @@
 #ifndef VERIFICATION_MANAGER_H
 #define VERIFICATION_MANAGER_H
 
-#include "proto/dombft_proto.pb.h"
 #include "signature_provider.h"
 #include <condition_variable>
 #include <future>
@@ -13,8 +12,21 @@
 // #include <set>
 // #include <string>
 
-// a class that handles all the verification stuff.
+typedef std::function<void(byte *)> TaskFunc;
+class ThreadPool;
+
+struct Worker {
+    // TODO not every worker needs a chunk of memory this big. Should we just allocate?
+    byte buffer[SEND_BUFFER_SIZE];
+    std::thread thd;
+
+    Worker(ThreadPool &pool);
+};
+
+// a class that handles node tasks.
 class ThreadPool {
+    friend Worker;
+
 public:
     ThreadPool(size_t threadPoolSize);
     ~ThreadPool();
@@ -34,13 +46,13 @@ public:
 
 private:
     size_t threadPoolSize_;
-    std::vector<std::thread> workers_;
-    std::queue<std::function<void()>> tasks_;
+    std::vector<Worker> workers_;
+
+    // TODO use the concurrent queue we set up
+    std::queue<TaskFunc> tasks_;
     std::mutex queueMutex_;
     std::condition_variable condition_;
     bool stop_;
-
-    void workerThread();
 };
 
 #endif   // VERIFICATION_MANAGER_H

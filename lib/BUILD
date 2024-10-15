@@ -156,6 +156,8 @@ cc_library(
     srcs = ["threadpool.cc"],
     hdrs = ["threadpool.h"],
     deps = [
+        ":signature_provider",
+        ":utils",
     ],
     visibility = ["//visibility:public"],
 )
