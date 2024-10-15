@@ -59,15 +59,13 @@ UDPEndpoint::UDPEndpoint(const std::string &ip, const int port, const bool isMas
 
 UDPEndpoint::~UDPEndpoint() {}
 
-int UDPEndpoint::SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr)
+int UDPEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
 {
-    if (buf == nullptr) {
-        buf = sendBuffer_;
+    if (hdr == nullptr) {
+        hdr = (MessageHeader *) sendBuffer_;
     }
 
-    MessageHeader *hdr = (MessageHeader *) buf;
-
-    int ret = sendto(fd_, buf, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0,
+    int ret = sendto(fd_, hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0,
                      (struct sockaddr *) (&(dstAddr.addr_)), sizeof(sockaddr_in));
     if (ret < 0) {
         VLOG(1) << "\tSend Fail: " << strerror(errno);

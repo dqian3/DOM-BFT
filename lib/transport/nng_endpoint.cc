@@ -75,13 +75,11 @@ NngEndpoint::~NngEndpoint()
     }
 }
 
-int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr)
+int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
 {
-    if (buf == nullptr) {
-        buf = sendBuffer_;
+    if (hdr == nullptr) {
+        hdr = (MessageHeader *) sendBuffer_;
     }
-
-    MessageHeader *hdr = (MessageHeader *) buf;
 
     if (addrToSocketIdx_.count(dstAddr) == 0) {
         LOG(ERROR) << "Attempt to send to unregistered address " << dstAddr.ip_ << ":" << dstAddr.port_;
@@ -89,7 +87,7 @@ int NngEndpoint::SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr)
     }
 
     nng_socket s = socks_[addrToSocketIdx_[dstAddr]];
-    int ret = nng_send(s, buf, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0);
+    int ret = nng_send(s, hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0);
     if (ret != 0) {
         VLOG(1) << "\tSend to " << dstAddr.ip_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
         return ret;

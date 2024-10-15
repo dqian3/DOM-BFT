@@ -78,7 +78,7 @@ public:
     NngEndpointThreaded(const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false);
     virtual ~NngEndpointThreaded();
 
-    virtual int SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr) override;
+    virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr) override;
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
 };
 

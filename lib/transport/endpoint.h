@@ -98,7 +98,7 @@ public:
 
     // The reason preparing and sending messages are split is so for
     // broadcast we can reuse the same buffer/signatures
-    virtual int SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr) = 0;
+    virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr = nullptr) = 0;
 
     // -------------------- Entrypoints --------------------
     void LoopRun();
