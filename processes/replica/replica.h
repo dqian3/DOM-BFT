@@ -19,9 +19,6 @@
 #include <yaml-cpp/yaml.h>
 
 namespace dombft {
-using msgSigPair = std::pair<const google::protobuf::Message&, const std::span<byte>&>;
-using msgHandlingFunc = std::function<void(const msgSigPair&)>;
-
 class Replica {
 private:
     uint32_t replicaId_;
@@ -56,8 +53,6 @@ private:
     std::map<int, dombft::proto::Commit> checkpointCommits_;
     std::map<int, std::string> checkpointCommitSigs_;
 
-
-
     // State for fallback
     bool fallback_ = false;
     uint32_t fallbackTriggerSeq_ = 0;
@@ -74,38 +69,12 @@ private:
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
-    // dispatching loopback messages
-    const std::unordered_map<MessageType,msgHandlingFunc> loopbackDispatch_ = {
-            {MessageType::REPLY, [this](const msgSigPair& msgSig){
-                handleReply(dynamic_cast<const dombft::proto::Reply&>(msgSig.first), msgSig.second);
-            }},
-            {MessageType::COMMIT, [this](const msgSigPair& msgSig) {
-                handleCommit(dynamic_cast<const dombft::proto::Commit&>(msgSig.first), msgSig.second);
-            }},
-            {MessageType::FALLBACK_TRIGGER, [this](const msgSigPair& msgSig) {
-                return;
-            }},
-            {MessageType::FALLBACK_START, [this](const msgSigPair& msgSig) {
-                handleFallbackStart(dynamic_cast<const dombft::proto::FallbackStart&>(msgSig.first), msgSig.second);
-            }},
-            {MessageType::DUMMY_PREPREPARE, [this](const msgSigPair& msgSig) {
-                handlePrePrepare(dynamic_cast<const dombft::proto::FallbackPrePrepare&>(msgSig.first));
-            }},
-            {MessageType::DUMMY_PREPARE, [this](const msgSigPair& msgSig) {
-                handlePrepare(dynamic_cast<const dombft::proto::FallbackPrepare&>(msgSig.first));
-            }},
-            {MessageType::DUMMY_COMMIT, [this](const msgSigPair& msgSig) {
-                handlePBFTCommit(dynamic_cast<const dombft::proto::FallbackPBFTCommit&>(msgSig.first));
-            }},
-    };
-
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void handleClientRequest(const dombft::proto::ClientRequest &request);
     void handleCert(const dombft::proto::Cert &cert);
     void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
-    void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst);
     void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
     bool verifyCert(const dombft::proto::Cert &cert);
 
