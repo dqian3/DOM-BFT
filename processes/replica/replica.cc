@@ -485,64 +485,59 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
 void Replica::handleClientRequest(const ClientRequest &request)
 {
-    Reply reply;
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
     VLOG(2) << "Received request from client " << clientId << " with seq " << clientSeq;
 
-    if (clientId < 0 || clientId > clientAddrs_.size()) {
-        LOG(ERROR) << "Invalid client id" << clientId;
-        return;
-    }
-    reply.set_client_id(clientId);
-    reply.set_client_seq(clientSeq);
-    reply.set_replica_id(replicaId_);
-    reply.set_instance(instance_);
-
     std::string result;
+    uint32_t seq;
 
-    bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+    {
+        std::lock_guard<std::mutex> guard(replicaStateMutex_);
+        bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+        uint32_t seq = log_->nextSeq - 1;
 
-    if (!success) {
-        // TODO Handle this more gracefully by queuing requests
-        LOG(ERROR) << "Could not add request to log!";
-        return;
+        if (!success) {
+            // TODO Handle this more gracefully by queuing requests
+            LOG(ERROR) << "Could not add request to log!";
+            return;
+        }
     }
 
-    uint32_t seq = log_->nextSeq - 1;
-    reply.set_result(result);
-    reply.set_fast(true);
-    reply.set_seq(seq);
-    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
+    TaskFunc task([=, this](byte *buffer) {
+        Reply reply;
 
-    VLOG(1) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-            << " client_seq=" << clientSeq << " instance=" << instance_
-            << " digest=" << digest_to_hex(log_->getDigest()).substr(56);
+        reply.set_result(result);
+        reply.set_fast(true);
+        reply.set_seq(seq);
+        reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
 
-    // VLOG(4) << "Start prepare message";
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-    // VLOG(4) << "Finish Serialization, start signature";
+        VLOG(1) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+                << " client_seq=" << clientSeq << " instance=" << instance_
+                << " digest=" << digest_to_hex(log_->getDigest()).substr(56);
 
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Finish signature";
+        LOG(INFO) << "Sending reply back to client " << clientId;
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY, buffer);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        LOG(INFO) << "Sending reply back to client " << clientId;
+        endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
 
-    LOG(INFO) << "Sending reply back to client " << clientId;
-    endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+        LOG(INFO) << "Done Sending reply back to client " << clientId;
+        LOG(INFO) << "Done Sending reply back to client " << clientId;
 
-    LOG(INFO) << "Done Sending reply back to client " << clientId;
+        // Try and commit every 10 replies (half of the way before
+        // we can't speculatively execute anymore)
+        if (seq % CHECKPOINT_INTERVAL == 0) {
+            LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+            VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
 
-    // Try and commit every 10 replies (half of the way before
-    // we can't speculatively execute anymore)
-    if (seq % CHECKPOINT_INTERVAL == 0) {
-        LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
-        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+            checkpointSeq_ = seq;
+            checkpointCert_.reset();
 
-        checkpointSeq_ = seq;
-        checkpointCert_.reset();
-
-        // TODO remove execution result here
-        broadcastToReplicas(reply, MessageType::REPLY);
-    }
+            // TODO remove execution result here
+            broadcastToReplicas(reply, MessageType::REPLY, buffer);
+        }
+    });
 }
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
@@ -738,36 +733,15 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     }
 }
 
-<<<<<<< HEAD
-void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst)
+void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf)
 {
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    if (dst == replicaAddrs_[replicaId_]) {
-        loopbackDispatch_.at(type)(msgSigPair(msg, std::span{(byte *) (hdr + 1) + hdr->msgLen, hdr->sigLen}));
-        return;
-    }
-    endpoint_->SendPreparedMsgTo(dst);
-}
-void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
-{
-    const Address &loopbackAddr = replicaAddrs_[replicaId_];
-=======
-void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
-{
->>>>>>> parent of be0d794 (Add a loopback path (#65))
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
     // TODO check errors for all of these lol
     // TODO this sends to self as well, could shortcut this
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     for (const Address &addr : replicaAddrs_) {
-        endpoint_->SendPreparedMsgTo(addr);
+        endpoint_->SendPreparedMsgTo(addr, hdr);
     }
-<<<<<<< HEAD
-    // execute loopback at the end to not blocking sending to other replicas
-    loopbackDispatch_.at(type)(msgSigPair(msg, std::span{(byte *) (hdr + 1) + hdr->msgLen, hdr->sigLen}));
-=======
->>>>>>> parent of be0d794 (Add a loopback path (#65))
 }
 
 bool Replica::verifyCert(const Cert &cert)

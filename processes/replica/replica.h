@@ -33,6 +33,8 @@ private:
     SignatureProvider sigProvider_;
     ThreadPool threadpool_;
 
+    std::mutex replicaStateMutex_;
+
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
     std::unique_ptr<Timer> fallbackTimer_;
@@ -75,7 +77,7 @@ private:
     void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
-    void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
+    void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf = nullptr);
     bool verifyCert(const dombft::proto::Cert &cert);
 
     void startFallback();
