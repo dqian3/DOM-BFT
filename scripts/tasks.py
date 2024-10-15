@@ -30,7 +30,7 @@ def local(c, config_file, v=5):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {v} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
+            cmd = f"valgrind ./bazel-bin/processes/replica/dombft_replica -v {v} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
@@ -48,6 +48,8 @@ def local(c, config_file, v=5):
             print(cmd)
 
             other_handles.append(hdl)
+
+        time.sleep(5)
 
         for id in range(n_clients):
             cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
