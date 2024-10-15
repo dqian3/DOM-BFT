@@ -21,6 +21,12 @@ namespace dombft {
 using msgSigPair = std::pair<const google::protobuf::Message&, const std::span<byte>&>;
 using msgHandlingFunc = std::function<void(const msgSigPair&)>;
 
+struct ClientRecord {
+    uint32_t instance = 0;
+    uint32_t lastSeq = 0;
+    std::unordered_set<uint32_t> missedSeqs;
+};
+
 class Replica {
 private:
     uint32_t replicaId_;
@@ -40,8 +46,7 @@ private:
     std::shared_ptr<Log> log_;
 
     // State for tracking client state
-    // TODO add some parts for caching client results to deal with duplicate requests
-    std::map<int, uint32_t> clientInstance_;
+    std::unordered_map<uint32_t , ClientRecord> clientRecords_;
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
@@ -50,9 +55,11 @@ private:
     std::map<int, dombft::proto::Reply> checkpointReplies_;
     std::map<int, std::string> checkpointReplySigs_;
     std::optional<dombft::proto::Cert> checkpointCert_;
+    std::unordered_map<uint32_t , ClientRecord> checkpointClientRecords_;
+    std::unordered_map<uint32_t , ClientRecord> intermediateCheckpointClientRecords_;
 
-    std::map<int, dombft::proto::Commit> checkpointCommits_;
-    std::map<int, std::string> checkpointCommitSigs_;
+    std::map<uint32_t, dombft::proto::Commit> checkpointCommits_;
+    std::map<uint32_t, std::string> checkpointCommitSigs_;
 
 
 
@@ -123,6 +130,14 @@ private:
     void handlePrePrepare(const dombft::proto::FallbackPrePrepare &msg);
     void handlePrepare(const dombft::proto::FallbackPrepare &msg);
     void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
+
+    // helpers
+    bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
+    void reapplyEntriesWithRecord(uint32_t startingSeq);
+    void getClientRecordsFromProto(const google::protobuf::RepeatedPtrField<proto::CheckpointClientRecord> &records,
+                                            std::unordered_map<uint32_t, ClientRecord> &dst);
+    template <typename MessageType>
+    void toProtoCheckpointClientRecords(MessageType& message);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
