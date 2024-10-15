@@ -33,7 +33,7 @@ namespace dombft {
 class Proxy {
 private:
     /** Each thread is given a unique name (key) */
-    std::map<std::string, std::thread *> threads_;
+    std::map<std::string, std::unique_ptr<std::thread>> threads_;
 
     /** Launch threads:
      * (1) ForwardRequestsTd, which receives client requests, signs and

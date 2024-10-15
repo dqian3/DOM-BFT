@@ -147,6 +147,22 @@ MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg, b
 
 void Endpoint::LoopRun() { ev_run(evLoop_, 0); }
 
+void Endpoint::RegisterSignalHandler(SignalHandlerFunc signalHandler)
+{
+    signalWatcher_.data = this;
+    signalHandler_ = signalHandler;
+
+    // TODO handle other than SIGINT?
+    ev_signal_init(
+        &signalWatcher_,
+        [](struct ev_loop *loop, ev_signal *w, int revents) {
+            Endpoint *e = (Endpoint *) w->data;
+            e->signalHandler_();
+        },
+        SIGINT);
+    ev_signal_start(evLoop_, &signalWatcher_);
+}
+
 void Endpoint::LoopBreak()
 {
     UnRegisterAllTimers();

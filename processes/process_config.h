@@ -48,6 +48,7 @@ struct ProcessConfig {
     std::string receiverKeysDir;
     int receiverShards;
     bool receiverLocal;
+    int numVerifyThreads;
 
     std::vector<std::string> replicaIps;
     int replicaPort;
@@ -146,6 +147,7 @@ struct ProcessConfig {
             receiverKeysDir = parseField<std::string>(receiverNode, "keysDir");
             receiverShards = parseField<int>(receiverNode, "shards");
             receiverLocal = parseField<bool>(receiverNode, "local");
+            numVerifyThreads = parseField<int>(receiverNode, "numVerifyThreads");
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing receiver " + std::string(e.what()));
         }

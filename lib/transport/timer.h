@@ -34,7 +34,7 @@
 typedef std::function<void(void *, void *)> TimerFunc;
 
 struct Timer {
-    std::function<void(void *, void *)> timerFunc_;
+    TimerFunc timerFunc_;
     void *context_;
     void *attachedEndpoint_;
     struct ev_timer *evTimer_;
