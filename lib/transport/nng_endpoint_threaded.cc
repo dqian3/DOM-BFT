@@ -154,9 +154,13 @@ NngEndpointThreaded::NngEndpointThreaded(const std::vector<std::pair<Address, Ad
 
 NngEndpointThreaded::~NngEndpointThreaded() {}
 
-int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr)
+int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr)
 {
-    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
+    if (buf == nullptr) {
+        buf = sendBuffer_;
+    }
+
+    MessageHeader *hdr = (MessageHeader *) buf;
 
     if (addrToSocketIdx_.count(dstAddr) == 0) {
         LOG(ERROR) << "Attempt to send to unregistered address " << dstAddr.ip_ << ":" << dstAddr.port_;
@@ -165,7 +169,7 @@ int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr)
 
     int i = addrToSocketIdx_[dstAddr];
 
-    sendThreads_[i]->sendMsg(sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
+    sendThreads_[i]->sendMsg(buf, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
     return 0;
 }
 

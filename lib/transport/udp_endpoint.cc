@@ -11,9 +11,8 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl)
         struct sockaddr_in sockAddr;
         socklen_t sockAddrLen = sizeof(struct sockaddr_in);
 
-        int msgLen =
-            recvfrom(w->fd, m->recvBuffer_, UDP_BUFFER_SIZE, 0, (struct sockaddr *) &sockAddr, &sockAddrLen);
-        
+        int msgLen = recvfrom(w->fd, m->recvBuffer_, UDP_BUFFER_SIZE, 0, (struct sockaddr *) &sockAddr, &sockAddrLen);
+
         m->sender_ = Address(sockAddr);
 
         if (msgLen > 0 && (uint32_t) msgLen > sizeof(MessageHeader)) {
@@ -60,11 +59,15 @@ UDPEndpoint::UDPEndpoint(const std::string &ip, const int port, const bool isMas
 
 UDPEndpoint::~UDPEndpoint() {}
 
-int UDPEndpoint::SendPreparedMsgTo(const Address &dstAddr)
+int UDPEndpoint::SendPreparedMsgTo(const Address &dstAddr, byte *buf = nullptr)
 {
-    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
+    if (buf == nullptr) {
+        buf = sendBuffer_;
+    }
 
-    int ret = sendto(fd_, sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0,
+    MessageHeader *hdr = (MessageHeader *) buf;
+
+    int ret = sendto(fd_, buf, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen, 0,
                      (struct sockaddr *) (&(dstAddr.addr_)), sizeof(sockaddr_in));
     if (ret < 0) {
         VLOG(1) << "\tSend Fail: " << strerror(errno);
