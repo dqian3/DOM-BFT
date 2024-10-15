@@ -17,9 +17,7 @@ class ThreadPool;
 
 struct Worker {
     // TODO not every worker needs a chunk of memory this big. Should we just allocate?
-    byte buffer[SEND_BUFFER_SIZE];
     std::thread thd;
-
     Worker(ThreadPool &pool);
 };
 
@@ -32,16 +30,13 @@ public:
     ~ThreadPool();
 
     // return a future object so that the result can be later retrieved
-    template <typename F> auto enqueueTask(F &&f) -> std::future<decltype(f())>
+    void enqueueTask(TaskFunc &&f)
     {
-        auto task = std::make_shared<std::packaged_task<decltype(f())()>>(std::forward<F>(f));
-        std::future<decltype(f())> res = task->get_future();
         {
             std::unique_lock<std::mutex> lock(queueMutex_);
-            tasks_.emplace([task]() { (*task)(); });
+            tasks_.emplace(f);
         }
         condition_.notify_one();
-        return res;
     }
 
 private:
