@@ -30,7 +30,7 @@ def local(c, config_file, v=5):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
-            cmd = f"valgrind ./bazel-bin/processes/replica/dombft_replica -v {v} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {v} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
@@ -48,8 +48,6 @@ def local(c, config_file, v=5):
             print(cmd)
 
             other_handles.append(hdl)
-
-        time.sleep(5)
 
         for id in range(n_clients):
             cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
@@ -157,7 +155,7 @@ def get_gcloud_process_group(config, ext_ips):
 
 
 @task
-def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
+def gcloud_clockwork(c, config_file="../configs/remote-prod.yaml", install=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -200,7 +198,7 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
 
 @task
-def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
+def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -217,8 +215,9 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull && bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull --rebase && bazel build //processes/...")
 
+    group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
@@ -226,7 +225,7 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
 
 
 @task
-def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
+def gcloud_copy_keys(c, config_file="../configs/remote-prod.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -244,7 +243,7 @@ def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
 
 
 @task
-def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
+def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -291,7 +290,7 @@ def get_gcloud_process_ips(c, filter):
 
 
 @task
-def gcloud_create_prod(c, config_template="../configs/remote.yaml"):
+def gcloud_create_prod(c, config_template="../configs/remote-prod.yaml"):
     # This is probably better, but can't be across zones:
     # https://cloud.google.com/compute/docs/instances/multiple/create-in-bulk
 
@@ -388,7 +387,7 @@ def get_logs(c, ips, log_prefix):
 
 
 @task
-def gcloud_logs(c, config_file="../configs/remote.yaml"):
+def gcloud_logs(c, config_file="../configs/remote-prod.yaml"):
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
@@ -413,7 +412,7 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
-def gcloud_run(c, config_file="../configs/remote.yaml",
+def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                local_log=False,
                dom_logs=False,
                slow_path_freq=0,
@@ -512,7 +511,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
 
 @task
-def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
+def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml", 
                     poisson=False, ignore_deadlines=False, duration=20, rate=100,
                     local_log=False):
     config_file = os.path.abspath(config_file)
