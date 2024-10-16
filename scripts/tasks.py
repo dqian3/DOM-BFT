@@ -250,7 +250,6 @@ def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
 
     replicas = config["replica"]["ips"]
     receivers = config["receiver"]["ips"]

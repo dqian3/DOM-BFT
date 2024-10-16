@@ -16,6 +16,7 @@ using namespace dombft::proto;
 
 Client::Client(const ProcessConfig &config, size_t id)
     : clientId_(id)
+    , threadpool_(10)
 {
     LOG(INFO) << "clientId=" << clientId_;
     std::string clientIp = config.clientIps[clientId_];
@@ -440,7 +441,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // `replies_.size() == maxMatchSize` iff all replies are yet matching, no need to check for normal/slow path
     // return when normal/slow path is already triggered
-    if(reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent) return;
+    if (reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent)
+        return;
 
     // `hasCert()==true` iff maxMatchSize >= 2 * f_ + 1
     if (reqState.collector.hasCert()) {
@@ -454,13 +456,11 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }
-
     }
-
 
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (reqState.collector.replies_.size()  - maxMatchSize > f_) {
+    if (reqState.collector.replies_.size() - maxMatchSize > f_) {
         LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;

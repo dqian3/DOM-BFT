@@ -80,6 +80,7 @@ private:
     void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf = nullptr);
     bool verifyCert(const dombft::proto::Cert &cert);
 
+    // Fallback Helpers
     void startFallback();
     void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
 

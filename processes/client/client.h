@@ -8,6 +8,7 @@
 #include "lib/message_type.h"
 #include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
+#include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/udp_endpoint.h"
 #include "lib/utils.h"
@@ -74,8 +75,6 @@ private:
     // timer to control sending rate of the client
     std::unique_ptr<Timer> sendTimer_;
 
-    std::unique_ptr<Timer> restartSendTimer_;
-
     /** Timer to stop client after running for configured time */
     std::unique_ptr<Timer> terminateTimer_;
 
@@ -84,6 +83,8 @@ private:
     AppType appType_;
 
     SignatureProvider sigProvider_;
+    ThreadPool threadpool_;
+    std::mutex clientStateLock;
 
     /* Global state */
 

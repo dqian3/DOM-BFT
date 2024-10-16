@@ -28,7 +28,7 @@ private:
     nng_socket sock_;
     Address addr_;   // Just for debugging
 
-    BlockingRWQueue<std::vector<byte>> queue_;
+    BlockingConcurrentQueue<std::vector<byte>> queue_;
 
     friend class NngEndpointThreaded;
 };
@@ -41,7 +41,7 @@ public:
     ~NngRecvThread();
     void run();
 
-    BlockingRWQueue<std::pair<std::vector<byte>, Address>> queue_;
+    BlockingConcurrentQueue<std::pair<std::vector<byte>, Address>> queue_;
 
 private:
     std::thread thread_;

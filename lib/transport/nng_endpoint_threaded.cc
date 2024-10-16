@@ -41,8 +41,7 @@ void NngSendThread::run()
         NngSendThread *t = (NngSendThread *) w->data;
         std::vector<byte> msg;
 
-        while (t->queue_.peek() != nullptr) {
-            t->queue_.wait_dequeue(msg);
+        while (t->queue_.wait_dequeue_timed(msg, 50000)) {
             int ret = nng_send(t->sock_, msg.data(), msg.size(), 0);
             if (ret != 0) {
                 VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
@@ -195,9 +194,7 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
         NngEndpointThreaded *ep = (NngEndpointThreaded *) w->data;
         std::pair<std::vector<byte>, Address> item;
 
-        // Not sure if this usage is the best, but it makes sense to me
-        while (ep->recvThread_->queue_.peek() != nullptr) {
-            ep->recvThread_->queue_.try_dequeue(item);
+        while (ep->recvThread_->queue_.wait_dequeue_timed(item, 50000)) {
             auto &[msg, addr] = item;
             size_t len = msg.size();
 

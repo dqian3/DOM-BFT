@@ -529,7 +529,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
         reply.set_instance(instance);
         reply.set_digest(digest);
 
-        LOG(INFO) << "Sending reply back to client " << clientId;
+        LOG(INFO) << "Sending reply back to c_id=" << clientId << " c_seq=" << clientSeq;
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY, buffer);
 
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
@@ -608,6 +608,8 @@ void Replica::handleCert(const Cert &cert)
 
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
+    std::unique_lock<std::mutex> lock(replicaStateMutex_);
+
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
     checkpointReplies_[reply.replica_id()] = reply;
     checkpointReplySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
@@ -655,22 +657,31 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
 
             const byte *logDigest = log_->getDigest(reply.seq());
+            std::string appDigest = log_->app_->getDigest(reply.seq());
 
-            // Broadcast commmit Message
-            dombft::proto::Commit commit;
-            commit.set_replica_id(replicaId_);
-            commit.set_seq(reply.seq());
-            commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
-            commit.set_app_digest(log_->app_->getDigest(reply.seq()));
+            threadpool_.enqueueTask([=, this](byte *buffer) {
+                // Broadcast commmit Message
+                dombft::proto::Commit commit;
+                commit.set_replica_id(replicaId_);
+                commit.set_seq(reply.seq());
+                commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
+                commit.set_app_digest(appDigest);
 
-            broadcastToReplicas(commit, MessageType::COMMIT);
+                broadcastToReplicas(commit, MessageType::COMMIT, buffer);
+            });
             return;
         }
+    }
+
+    if (lock.owns_lock()) {
+        replicaStateMutex_.unlock();
     }
 }
 
 void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
     VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
 
     checkpointCommits_[commitMsg.replica_id()] = commitMsg;
@@ -807,6 +818,8 @@ bool Replica::verifyCert(const Cert &cert)
 
 void Replica::startFallback()
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
     fallback_ = true;
     instance_++;
     LOG(INFO) << "Starting fallback for instance " << instance_;
@@ -870,6 +883,8 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
 
 void Replica::finishFallback()
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
     if (!fallbackProposal_.has_value()) {
         LOG(ERROR) << "Attempted to finishFallback without a proposal!";
         return;
@@ -941,6 +956,8 @@ void Replica::finishFallback()
 
 void Replica::doPrePreparePhase()
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
     if (!isPrimary()) {
         LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
         return;

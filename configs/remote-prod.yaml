@@ -9,19 +9,19 @@ client:
   - 10.142.0.4
   - 10.202.0.5
 
-  # - 10.138.0.8 
-  # - 10.182.0.6
-  # - 10.142.0.6
-  # - 10.150.0.3
+  - 10.138.0.8 
+  - 10.182.0.6
+  - 10.142.0.6
+  - 10.150.0.3
   keysDir: keys/client
   port: 33000
-  normalPathTimeout: 150000   # 100 ms
+  normalPathTimeout: 200000   # 200 ms
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "maxInFlight"
-  maxInFlight: 80
+  maxInFlight: 100
   sendRate: 500
-  runtimeSeconds: 30
+  runtimeSeconds: 60
 
 proxy:
   forwardPort: 31000
