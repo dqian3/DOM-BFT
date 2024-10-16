@@ -559,6 +559,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 {
+
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
     if (!heldRequest_) {
@@ -575,26 +576,34 @@ void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 
 void Replica::handleCert(const Cert &cert)
 {
-    if (!verifyCert(cert)) {
-        return;
-    }
+    // TODO make sure this works
+    threadpool_.enqueueTask([=, this](byte *buffer) {
+        if (!verifyCert(cert)) {
+            return;
+        }
 
-    const Reply &r = cert.replies()[0];
-    log_->addCert(r.seq(), cert);
+        const Reply &r = cert.replies()[0];
+        CertReply reply;
 
-    CertReply reply;
-    reply.set_client_id(r.client_id());
-    reply.set_client_seq(r.client_seq());
-    reply.set_replica_id(replicaId_);
-    reply.set_seq(r.seq());
-    reply.set_instance(instance_);
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            log_->addCert(r.seq(), cert);
 
-    VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
-            << clientAddrs_[reply.client_id()].ip();
+            reply.set_replica_id(replicaId_);
+            reply.set_instance(instance_);
+        }
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+        reply.set_client_id(r.client_id());
+        reply.set_client_seq(r.client_seq());
+        reply.set_seq(r.seq());
+
+        VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
+                << clientAddrs_[reply.client_id()].ip();
+
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+    });
 }
 
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
