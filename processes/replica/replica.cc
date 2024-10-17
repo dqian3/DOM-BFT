@@ -535,10 +535,6 @@ void Replica::handleClientRequest(const ClientRequest &request)
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
 
-        if (!sigProvider_.verify(hdr, (byte *) (hdr + 1), "replica", reply.replica_id())) {
-            LOG(ERROR) << "own message did not verify!";
-        }
-
         // Try and commit every CHECKPOINT_INTERVAL replies
         if (seq % CHECKPOINT_INTERVAL == 0) {
             LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
