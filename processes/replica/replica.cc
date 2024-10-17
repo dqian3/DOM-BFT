@@ -21,7 +21,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
     , sigProvider_()
-    , threadpool_(10)
+    , threadpool_(12)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -182,24 +182,30 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
         uint32_t clientId = clientHeader.client_id();
 
-        clientInstance_[clientId] = std::max(clientHeader.instance(), clientInstance_[clientId]);
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            clientInstance_[clientId] = std::max(clientHeader.instance(), clientInstance_[clientId]);
 
-        if (clientHeader.instance() < instance_) {
-            LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
-                      << " due to stale instance! Sending blank reply to catch client up";
+            if (clientHeader.instance() < instance_) {
+                LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
+                          << " due to stale instance! Sending blank reply to catch client up";
 
-            // Send blank request to catch up the client
-            Reply reply;
-            reply.set_client_id(clientHeader.client_id());
-            reply.set_instance(instance_);
+                // update this so we don't send this multiple times
+                clientInstance_[clientId] = instance_;
 
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-            endpoint_->SendPreparedMsgTo(clientAddrs_[clientHeader.client_id()]);
+                threadpool_.enqueueTask([this, clientId, inst = instance_](byte *buffer) {
+                    // Send blank request to catch up the client
+                    Reply reply;
+                    reply.set_replica_id(replicaId_);
+                    reply.set_client_id(clientId);
+                    reply.set_instance(inst);
 
-            // update this so we don't send this multiple times
-            clientInstance_[clientId] = instance_;
-            return;
+                    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY, buffer);
+                    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+                    endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
+                    return;
+                });
+            }
         }
 
         if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)

@@ -87,8 +87,16 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     /** Initialize state */
     nextSeq_ = 1;
+    startTime_ = GetMicrosecondTimestamp();
 
-    MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+    MessageHandlerFunc replyHandler = [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr,
+                                                                                    byte *msgBuffer, Address *sender) {
+        if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
+            LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
+            // TODO print some stats
+            exit(0);
+        }
+
         this->handleMessage(msgHdr, msgBuffer, sender);
     };
 
@@ -508,7 +516,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     VLOG(4) << "Received Cert ack client_seq=" << cseq << " seq=" << certReply.seq()
             << " instance=" << certReply.instance();
 
-        if (reqState.certReplies.size() >= 2 * f_ + 1) {
+    if (reqState.certReplies.size() >= 2 * f_ + 1) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " instance=" << certReply.instance()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime
