@@ -531,7 +531,6 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
         LOG(INFO) << "Sending reply back to c_id=" << clientId << " c_seq=" << clientSeq;
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY, buffer);
-
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
 
@@ -669,6 +668,8 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });
+
+            replicaStateMutex_.unlock();
             return;
         }
     }
