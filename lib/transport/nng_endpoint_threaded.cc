@@ -194,7 +194,7 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
         NngEndpointThreaded *ep = (NngEndpointThreaded *) w->data;
         std::pair<std::vector<byte>, Address> item;
 
-        while (ep->recvThread_->queue_.wait_dequeue_timed(item, 50000)) {
+        while (ep->recvThread_->queue_.try_dequeue(item)) {
             auto &[msg, addr] = item;
             size_t len = msg.size();
 
