@@ -106,6 +106,7 @@ private:
 
     /* Global Stats */
     uint64_t totalLatency_ = 0;
+    uint64_t startTime_ = 0;
 
     /* Per request state */
     std::map<uint32_t, RequestState> requestStates_;

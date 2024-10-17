@@ -509,9 +509,15 @@ void Replica::handleClientRequest(const ClientRequest &request)
     //     }
     // }
 
-    uint32_t instance = instance_;
-    std::string digest(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
-    int seq = ++seq_;
+    std::string digest;
+    uint32_t instance;
+    int seq;
+    {
+        std::lock_guard<std::mutex> guard(replicaStateMutex_);
+        instance = instance_;
+        digest = std::string(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
+        ++seq_;
+    }
 
     LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq_ << " client_id=" << clientId
                << " client_seq=" << clientSeq << " instance=" << instance_
