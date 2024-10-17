@@ -352,7 +352,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
 
         if (!sigProvider_.verify(hdr, body, "replica", reply.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
+            LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
             return;
         }
 
@@ -363,12 +363,13 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         CertReply certReply;
 
         if (!certReply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CERT_REPLY message";
+            LOG(ERROR) << "Unable to parse CERT_REPLY message from " << *sender;
             return;
         }
 
         if (certReply.client_id() != clientId_) {
-            VLOG(2) << "Received certReply for client " << certReply.client_id() << " != " << clientId_;
+            VLOG(2) << "Received certReply for client " << certReply.client_id() << " != " << clientId_ << " from "
+                    << certReply.replica_id();
             return;
         }
 
@@ -504,7 +505,10 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     auto &reqState = requestStates_.at(cseq);
     reqState.certReplies.insert(certReply.replica_id());
 
-    if (reqState.certReplies.size() >= 2 * f_ + 1) {
+    VLOG(4) << "Received Cert ack client_seq=" << cseq << " seq=" << certReply.seq()
+            << " instance=" << certReply.instance();
+
+        if (reqState.certReplies.size() >= 2 * f_ + 1) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " instance=" << certReply.instance()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime

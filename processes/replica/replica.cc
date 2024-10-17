@@ -600,9 +600,9 @@ void Replica::handleCert(const Cert &cert)
         VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
                 << clientAddrs_[reply.client_id()].ip();
 
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()], hdr);
     });
 }
 
