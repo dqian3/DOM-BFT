@@ -6,6 +6,12 @@ client:
   ips:
   - "10.128.0.13"
   - "10.128.0.5"
+  - "10.128.0.13"
+  - "10.128.0.5"
+  - "10.128.0.13"
+  - "10.128.0.5"
+  - "10.128.0.13"
+  - "10.128.0.5"
   port: 33000
   keysDir: keys/client
   normalPathTimeout: 15000   # 15 ms
@@ -14,7 +20,7 @@ client:
   sendMode: "maxInFlight"
   maxInFlight: 1
   sendRate: 200
-  runtimeSeconds: 20
+  runtimeSeconds: 30
 
 # Proxy Info
 proxy:

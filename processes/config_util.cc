@@ -17,9 +17,11 @@ vector<pair<Address, Address>> getClientAddrs(ProcessConfig config, uint32_t id)
     // TODO modify config to specify that these are base ports, and not
     vector<pair<Address, Address>> ret;
 
+    // id coeffecient (10) needs to > num_replicas + num_proxies to prevent overlap
+    uint32_t clientBase = config.clientPort + id * 10;
+
     // 1. clientBase + replicaId <==> replicaBase + clientId
     std::string clientIp = config.clientIps[id];
-    uint32_t clientBase = config.clientPort;
     uint32_t replicaPort = config.replicaPort + id;
     addAddrPairs(ret, clientIp, clientBase, config.replicaIps, replicaPort);
 
