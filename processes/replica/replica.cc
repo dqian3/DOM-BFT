@@ -582,6 +582,11 @@ void Replica::handleCert(const Cert &cert)
 
         {
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            if (cert.instance() < instance_) {
+                VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_;
+                return;
+            }
+
             log_->addCert(r.seq(), cert);
 
             reply.set_replica_id(replicaId_);
