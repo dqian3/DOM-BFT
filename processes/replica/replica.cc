@@ -19,6 +19,9 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     : replicaId_(replicaId)
     , instance_(0)
     , swapFreq_(swapFreq)
+    , f_(config.replicaIps.size() / 3)
+    , sigProvider_()
+    , threadpool_(10)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -54,7 +57,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         exit(1);
     }
 
-    f_ = config.replicaIps.size() / 3;
+    // f_ = config.replicaIps.size() / 3;
 
     LOG(INFO) << "instantiating log";
 
@@ -482,7 +485,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
 void Replica::handleClientRequest(const ClientRequest &request)
 {
-    Reply reply;
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
     VLOG(2) << "Received request from client " << clientId << " with seq " << clientSeq;
@@ -491,52 +493,73 @@ void Replica::handleClientRequest(const ClientRequest &request)
         LOG(ERROR) << "Invalid client id" << clientId;
         return;
     }
-    reply.set_client_id(clientId);
-    reply.set_client_seq(clientSeq);
-    reply.set_replica_id(replicaId_);
-    reply.set_instance(instance_);
 
     std::string result;
+    uint32_t seq;
 
-    // bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+    {
+        std::lock_guard<std::mutex> guard(replicaStateMutex_);
+        bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+        seq = log_->nextSeq - 1;
 
-    // if (!success) {
-    //     // TODO Handle this more gracefully by queuing requests
-    //     LOG(ERROR) << "Could not add request to log!";
-    //     return;
-    // }
+        if (!success) {
+            // TODO Handle this more gracefully by queuing requests
+            LOG(ERROR) << "Could not add request to log!";
+            return;
+        }
+    }
 
-    // uint32_t seq = log_->nextSeq - 1;
-    reply.set_result(result);
-    reply.set_fast(true);
-    reply.set_seq(++seq_);
-    reply.set_digest(log_->getDigest(), SHA256_DIGEST_LENGTH);
-    VLOG(1) << "seq_=" << seq_;
+    uint32_t instance = instance_;
+    std::string digest(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
 
-    VLOG(1) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq_ << " client_id=" << clientId
-            << " client_seq=" << clientSeq << " instance=" << instance_
-            << " digest=" << digest_to_hex(log_->getDigest()).substr(56);
+    LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+               << " client_seq=" << clientSeq << " instance=" << instance_
+               << " digest=" << digest_to_hex(digest).substr(56);
 
-    // VLOG(4) << "Start prepare message";
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    endpoint_->SendPreparedMsgTo(clientAddrs_[clientId]);
+    // TODO, only queue signing tasks? Then we don't have to worry about locking replica state
+    threadpool_.enqueueTask([=, this](byte *buffer) {
+        Reply reply;
 
-    // Try and commit every 10 replies (half of the way before
-    // we can't speculatively execute anymore)
-    // if (seq % CHECKPOINT_INTERVAL == 0) {
-    //     LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+        reply.set_client_id(clientId);
+        reply.set_client_seq(clientSeq);
+        reply.set_replica_id(replicaId_);
+        reply.set_result(result);
+        reply.set_fast(true);
+        reply.set_seq(seq);
+        reply.set_instance(instance);
+        reply.set_digest(digest);
 
-    //     checkpointSeq_ = seq;
-    //     checkpointCert_.reset();
+        LOG(INFO) << "Sending reply back to c_id=" << clientId << " c_seq=" << clientSeq;
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY, buffer);
 
-    //     // TODO remove execution result here
-    //     broadcastToReplicas(reply, MessageType::REPLY);
-    // }
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
+
+        if (!sigProvider_.verify(hdr, (byte *) (hdr + 1), "replica", reply.replica_id())) {
+            LOG(ERROR) << "own message did not verify!";
+        }
+
+        // Try and commit every CHECKPOINT_INTERVAL replies
+        if (seq % CHECKPOINT_INTERVAL == 0) {
+            LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+            VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+
+            {
+                std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
+                checkpointSeq_ = seq;
+                checkpointCert_.reset();
+            }
+
+            // TODO remove execution result here
+            broadcastToReplicas(reply, MessageType::REPLY, buffer);
+        }
+    });
 }
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 {
+
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
     if (!heldRequest_) {
@@ -553,30 +576,40 @@ void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 
 void Replica::handleCert(const Cert &cert)
 {
-    if (!verifyCert(cert)) {
-        return;
-    }
+    // TODO make sure this works
+    threadpool_.enqueueTask([=, this](byte *buffer) {
+        if (!verifyCert(cert)) {
+            return;
+        }
 
-    const Reply &r = cert.replies()[0];
-    log_->addCert(r.seq(), cert);
+        const Reply &r = cert.replies()[0];
+        CertReply reply;
 
-    CertReply reply;
-    reply.set_client_id(r.client_id());
-    reply.set_client_seq(r.client_seq());
-    reply.set_replica_id(replicaId_);
-    reply.set_seq(r.seq());
-    reply.set_instance(instance_);
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            log_->addCert(r.seq(), cert);
 
-    VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
-            << clientAddrs_[reply.client_id()].ip();
+            reply.set_replica_id(replicaId_);
+            reply.set_instance(instance_);
+        }
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+        reply.set_client_id(r.client_id());
+        reply.set_client_seq(r.client_seq());
+        reply.set_seq(r.seq());
+
+        VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
+                << clientAddrs_[reply.client_id()].ip();
+
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+    });
 }
 
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
+    std::unique_lock<std::mutex> lock(replicaStateMutex_);
+
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
     checkpointReplies_[reply.replica_id()] = reply;
     checkpointReplySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
@@ -591,7 +624,6 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         VLOG(4) << "Checkpoint: already have cert for seq=" << reply.seq() << ", skipping";
         return;
     }
-
     std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
 
     // Find a cert among a set of replies
@@ -625,22 +657,31 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
 
             const byte *logDigest = log_->getDigest(reply.seq());
+            std::string appDigest = log_->app_->getDigest(reply.seq());
 
-            // Broadcast commmit Message
-            dombft::proto::Commit commit;
-            commit.set_replica_id(replicaId_);
-            commit.set_seq(reply.seq());
-            commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
-            commit.set_app_digest(log_->app_->getDigest(reply.seq()));
+            threadpool_.enqueueTask([=, this](byte *buffer) {
+                // Broadcast commmit Message
+                dombft::proto::Commit commit;
+                commit.set_replica_id(replicaId_);
+                commit.set_seq(reply.seq());
+                commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
+                commit.set_app_digest(appDigest);
 
-            broadcastToReplicas(commit, MessageType::COMMIT);
+                broadcastToReplicas(commit, MessageType::COMMIT, buffer);
+            });
             return;
         }
+    }
+
+    if (lock.owns_lock()) {
+        replicaStateMutex_.unlock();
     }
 }
 
 void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
     VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
 
     checkpointCommits_[commitMsg.replica_id()] = commitMsg;
@@ -729,19 +770,20 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     }
 }
 
-void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type)
+void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf)
 {
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
     // TODO check errors for all of these lol
     // TODO this sends to self as well, could shortcut this
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     for (const Address &addr : replicaAddrs_) {
-        endpoint_->SendPreparedMsgTo(addr);
+        endpoint_->SendPreparedMsgTo(addr, hdr);
     }
 }
 
 bool Replica::verifyCert(const Cert &cert)
 {
+    LOG(INFO) << "Verify cert triggered";
     if (cert.replies().size() < 2 * f_ + 1) {
         LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
@@ -776,6 +818,7 @@ bool Replica::verifyCert(const Cert &cert)
 
 void Replica::startFallback()
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
     fallback_ = true;
     instance_++;
@@ -840,6 +883,8 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
 
 void Replica::finishFallback()
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
     if (!fallbackProposal_.has_value()) {
         LOG(ERROR) << "Attempted to finishFallback without a proposal!";
         return;
@@ -911,6 +956,8 @@ void Replica::finishFallback()
 
 void Replica::doPrePreparePhase()
 {
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+
     if (!isPrimary()) {
         LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
         return;

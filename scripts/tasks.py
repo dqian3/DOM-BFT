@@ -155,7 +155,7 @@ def get_gcloud_process_group(config, ext_ips):
 
 
 @task
-def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
+def gcloud_clockwork(c, config_file="../configs/remote-prod.yaml", install=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -198,7 +198,7 @@ def gcloud_clockwork(c, config_file="../configs/remote.yaml", install=False):
 
 
 @task
-def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
+def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -215,8 +215,9 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull && bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull --rebase && bazel build //processes/...")
 
+    group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
@@ -224,7 +225,7 @@ def gcloud_build(c, config_file="../configs/remote.yaml", setup=False):
 
 
 @task
-def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
+def gcloud_copy_keys(c, config_file="../configs/remote-prod.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -242,39 +243,54 @@ def gcloud_copy_keys(c, config_file="../configs/remote.yaml"):
 
 
 @task
-def gcloud_copy_bin(c, config_file="../configs/remote.yaml"):
+def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
 
     replicas = config["replica"]["ips"]
     receivers = config["receiver"]["ips"]
     proxies = config["proxy"]["ips"]
     clients = config["client"]["ips"]
 
-    replicas = SerialGroup(*[ext_ips[ip] for ip in replicas])
-    receivers = SerialGroup(*[ext_ips[ip] for ip in receivers])
-    proxies = SerialGroup(*[ext_ips[ip] for ip in proxies])
-    clients = SerialGroup(*[ext_ips[ip] for ip in clients])
+    # TODO try and check to see if binaries are stale
+    print("Copying binaries over to one machine")
+    start_time = time.time()
 
-    print("Copying binaries over...")
-    group.run("rm dombft_*", warn=True)
+    conn = Connection(ext_ips[clients[0]])
 
-    replicas.put("../bazel-bin/processes/replica/dombft_replica")
-    print("Copied replica")
+    conn.put("../bazel-bin/processes/replica/dombft_replica")
+    conn.put("../bazel-bin/processes/receiver/dombft_receiver")
+    conn.put("../bazel-bin/processes/proxy/dombft_proxy")
+    conn.put("../bazel-bin/processes/client/dombft_client")
+    conn.run("chmod +w dombft_*", warn=True)
 
-    receivers.put("../bazel-bin/processes/receiver/dombft_receiver")
-    print("Copied receiver")
+    print(f"Copying took {time.time() - start_time:.0f}s")
 
-    proxies.put("../bazel-bin/processes/proxy/dombft_proxy")
-    print("Copied proxy")
 
-    clients.put("../bazel-bin/processes/client/dombft_client")
-    print("Copied client")
+    print(f"Copying to other machines")
+    start_time = time.time()
+
+    for ip in replicas:
+        print(f"Copying dombft_replica to {ip}")
+        conn.run(f"scp dombft_replica {ip}:", warn=True)
+
+    for ip in receivers:
+        print(f"Copying dombft_receiver to {ip}")
+        conn.run(f"scp dombft_receiver {ip}:", warn=True)
+
+    for ip in proxies:
+        print(f"Copying dombft_proxy to {ip}")
+        conn.run(f"scp dombft_proxy {ip}:", warn=True)
+
+    for ip in clients[1:]: # Skip own
+        print(f"Copying dombft_client to {ip}")
+        conn.run(f"scp dombft_client {ip}:", warn=True)
+
+    print(f"Copying to other machines took {time.time() - start_time:.0f}s")
 
 
 def get_gcloud_process_ips(c, filter):
@@ -289,7 +305,7 @@ def get_gcloud_process_ips(c, filter):
 
 
 @task
-def gcloud_create_prod(c, config_template="../configs/remote.yaml"):
+def gcloud_create_prod(c, config_template="../configs/remote-prod.yaml"):
     # This is probably better, but can't be across zones:
     # https://cloud.google.com/compute/docs/instances/multiple/create-in-bulk
 
@@ -374,19 +390,19 @@ def get_logs(c, ips, log_prefix):
         print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
 
-    for id, ip in enumerate(ips):
-        conn = Connection(ip)
+    # for id, ip in enumerate(ips):
+    #     conn = Connection(ip)
 
-        try:
-            print(f"Getting {log_prefix}{id}.prof")
-            conn.get(f"{log_prefix}{id}.prof", "../logs/")
-            print(f"Got profile in {log_prefix}{id}.prof ")
-        except:
-            c.run(f"rm ../logs/{log_prefix}{id}.prof")
+    #     try:
+    #         print(f"Getting {log_prefix}{id}.prof")
+    #         conn.get(f"{log_prefix}{id}.prof", "../logs/")
+    #         print(f"Got profile in {log_prefix}{id}.prof ")
+    #     except:
+    #         c.run(f"rm ../logs/{log_prefix}{id}.prof")
 
 
 @task
-def gcloud_logs(c, config_file="../configs/remote.yaml"):
+def gcloud_logs(c, config_file="../configs/remote-prod.yaml"):
 
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
@@ -411,8 +427,7 @@ def gcloud_logs(c, config_file="../configs/remote.yaml"):
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
-def gcloud_run(c, config_file="../configs/remote.yaml",
-               v=5,
+def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                local_log=False,
                dom_logs=False,
                slow_path_freq=0,
@@ -511,7 +526,7 @@ def gcloud_run(c, config_file="../configs/remote.yaml",
 
 
 @task
-def gcloud_reorder_exp(c, config_file="../configs/remote.yaml", 
+def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml", 
                     poisson=False, ignore_deadlines=False, duration=20, rate=100,
                     local_log=False):
     config_file = os.path.abspath(config_file)

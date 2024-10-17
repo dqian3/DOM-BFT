@@ -10,9 +10,9 @@ cc_library(
         "//lib:utils",
         "//lib:protocol_config",
         "//lib:cert_collector",
+        "//lib:threadpool",
         "//processes:process_config",
-        "//processes:config_util",
-        
+        "//processes:config_util", 
     ],
 )
 

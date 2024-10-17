@@ -4,6 +4,7 @@
 #include "lib/message_type.h"
 #include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
+#include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
@@ -32,6 +33,9 @@ private:
 
     /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
     SignatureProvider sigProvider_;
+    ThreadPool threadpool_;
+
+    std::mutex replicaStateMutex_;
 
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> statsTimer_;
@@ -76,9 +80,10 @@ private:
     void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
-    void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type);
+    void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf = nullptr);
     bool verifyCert(const dombft::proto::Cert &cert);
 
+    // Fallback Helpers
     void startFallback();
     void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
 

@@ -11,10 +11,10 @@ client:
   normalPathTimeout: 15000    # 15ms
   slowPathTimeout:   1000000  # 1 s
 
-  sendMode: "sendRate"
-  maxInFlight: 100
-  sendRate: 100 
-  runtimeSeconds: 30
+  sendMode: "maxInFlight"
+  maxInFlight: 10
+  sendRate: 10 
+  runtimeSeconds: 10
 
 
 # Proxy Info

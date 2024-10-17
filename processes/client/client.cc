@@ -16,6 +16,7 @@ using namespace dombft::proto;
 
 Client::Client(const ProcessConfig &config, size_t id)
     : clientId_(id)
+    , threadpool_(10)
 {
     LOG(INFO) << "clientId=" << clientId_;
     std::string clientIp = config.clientIps[clientId_];

@@ -85,17 +85,24 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 
     // Write signature after msg
     EVP_MD_CTX *mdctx = NULL;
-    if (!(mdctx = EVP_MD_CTX_create()))
+    if (!(mdctx = EVP_MD_CTX_create())) {
+        LOG(ERROR) << "Error EVP_MD_CTX_create!";
         return -1;
+    }
 
     // These are ust taken from examples here:
     // https://www.openssl.org/docs/man3.0/man7/Ed25519.html
     // https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
     if (EVP_PKEY_id(privKey_) == EVP_PKEY_ED25519) {
-        if (1 != EVP_DigestSignInit(mdctx, NULL, NULL, NULL, privKey_))
+        if (1 != EVP_DigestSignInit(mdctx, NULL, NULL, NULL, privKey_)) {
+            LOG(ERROR) << "Error EVP_DigestSignInit!";
             return -1;
-        if (1 != EVP_DigestSign(mdctx, NULL, &sigLen, data, hdr->msgLen))
+        }
+
+        if (1 != EVP_DigestSign(mdctx, NULL, &sigLen, data, hdr->msgLen)) {
+            LOG(ERROR) << "Error EVP_DigestSign!";
             return -1;
+        }
 
         if (hdr->msgLen + hdr->sigLen + sizeof(MessageHeader) > bufLen) {
             LOG(ERROR) << "Error signing message, not enough room in buffer for signature!";
@@ -104,8 +111,10 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 
         hdr->sigLen = sigLen;
 
-        if (1 != EVP_DigestSign(mdctx, sig, &sigLen, data, hdr->msgLen))
+        if (1 != EVP_DigestSign(mdctx, sig, &sigLen, data, hdr->msgLen)) {
+            LOG(ERROR) << "Error EVP_DigestSign!";
             return -1;
+        }
     } else {
         if (1 != EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, privKey_))
             return -1;

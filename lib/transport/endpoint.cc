@@ -102,8 +102,14 @@ uint64_t Endpoint::GetTimerRemaining(Timer *t)
 
 bool Endpoint::isTimerRegistered(Timer *timer) { return (eventTimers_.find(timer) != eventTimers_.end()); }
 
-MessageHeader *Endpoint::PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType)
+MessageHeader *Endpoint::PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType, byte *buf, size_t bufSize)
 {
+    // If no buffer is given, use our own
+    if (buf == nullptr) {
+        buf = sendBuffer_;
+        bufSize = SEND_BUFFER_SIZE;
+    }
+
     MessageHeader *hdr = (MessageHeader *) sendBuffer_;
     hdr->msgType = msgType;
     hdr->msgLen = msgLen;
@@ -112,23 +118,29 @@ MessageHeader *Endpoint::PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgT
         LOG(ERROR) << "Msg too large " << (uint32_t) msgType << "\t length=" << msgLen;
         return nullptr;
     }
-    memcpy(sendBuffer_ + sizeof(MessageHeader), msg, hdr->msgLen);
+    memcpy(buf + sizeof(MessageHeader), msg, hdr->msgLen);
 
     return hdr;
 }
 
-MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg, byte msgType)
+MessageHeader *Endpoint::PrepareProtoMsg(const google::protobuf::Message &msg, byte msgType, byte *buf, size_t bufSize)
 {
-    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
+    // If no buffer is given, use our own
+    if (buf == nullptr) {
+        buf = sendBuffer_;
+        bufSize = SEND_BUFFER_SIZE;
+    }
+
+    MessageHeader *hdr = (MessageHeader *) buf;
     hdr->msgType = msgType;
     hdr->msgLen = msg.ByteSizeLong();
     hdr->sigLen = 0;
 
-    if (hdr->msgLen + sizeof(MessageHeader) > SEND_BUFFER_SIZE) {
+    if (hdr->msgLen + sizeof(MessageHeader) > bufSize) {
         LOG(ERROR) << "Msg too large " << (uint32_t) msgType << "\t length=" << hdr->msgLen;
         return nullptr;
     }
-    msg.SerializeToArray(sendBuffer_ + sizeof(MessageHeader), hdr->msgLen);
+    msg.SerializeToArray(buf + sizeof(MessageHeader), hdr->msgLen);
 
     return hdr;
 }
