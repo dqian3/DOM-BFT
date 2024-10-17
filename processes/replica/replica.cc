@@ -57,8 +57,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         exit(1);
     }
 
-    // f_ = config.replicaIps.size() / 3;
-
     LOG(INFO) << "instantiating log";
 
     if (config.app == AppType::COUNTER) {
