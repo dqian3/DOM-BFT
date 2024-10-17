@@ -262,6 +262,7 @@ def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
 
     conn = Connection(ext_ips[clients[0]])
 
+    conn.run("chmod +w dombft_*", warn=True)
     conn.put("../bazel-bin/processes/replica/dombft_replica")
     conn.put("../bazel-bin/processes/receiver/dombft_receiver")
     conn.put("../bazel-bin/processes/proxy/dombft_proxy")
