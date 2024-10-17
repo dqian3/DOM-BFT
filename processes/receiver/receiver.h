@@ -8,12 +8,12 @@
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 
+#include <condition_variable>
 #include <fstream>
 #include <iostream>
 #include <mutex>
-#include <thread>
 #include <queue>
-#include <condition_variable>
+#include <thread>
 
 #include <yaml-cpp/yaml.h>
 
@@ -46,7 +46,7 @@ private:
 
     // Queue for worker threads to trigger verify tasks through
     std::mutex verifyQueueMtx_;
-    std::condition_variable verifyQueueCondVar_;
+    std::condition_variable verifyCondVar_;
     std::queue<std::shared_ptr<Request>> verifyQueue_;
 
     std::vector<std::thread> verifyThds_;

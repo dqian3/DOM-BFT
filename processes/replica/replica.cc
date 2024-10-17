@@ -537,7 +537,6 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
         // Try and commit every CHECKPOINT_INTERVAL replies
         if (seq % CHECKPOINT_INTERVAL == 0) {
-            LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
             VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
 
             {
