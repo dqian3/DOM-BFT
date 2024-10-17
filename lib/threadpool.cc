@@ -12,12 +12,15 @@ Worker::Worker(ThreadPool &pool)
                 std::unique_lock<std::mutex> lock(pool.queueMutex_);
                 pool.condition_.wait(lock, [&] { return pool.stop_ || !pool.tasks_.empty(); });
                 if (pool.stop_ && pool.tasks_.empty())
-                    return;
+                    break;
                 task = std::move(pool.tasks_.front());
                 pool.tasks_.pop();
             }
             task(buffer);
         }
+
+        // TODO better memory management here?
+        free(buffer);
     });
 }
 

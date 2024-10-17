@@ -8,9 +8,6 @@
 #include <queue>
 #include <thread>
 #include <vector>
-// #include <cstddef>
-// #include <set>
-// #include <string>
 
 typedef std::function<void(byte *)> TaskFunc;
 class ThreadPool;

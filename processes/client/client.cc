@@ -92,10 +92,8 @@ Client::Client(const ProcessConfig &config, size_t id)
     MessageHandlerFunc replyHandler = [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr,
                                                                                     byte *msgBuffer, Address *sender) {
         if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
-            LOG(INFO) << "Exiting  after running for " << runtime << " seconds";
+            LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
             // TODO print some stats
-
-            LOG(INFO) << "Average committed time: " << totalLatency_ / numCommitted_ << " us";
             exit(0);
         }
 
