@@ -11,10 +11,10 @@ client:
   normalPathTimeout: 15000   # 15 ms
   slowPathTimeout:   1000000  # 1 s
 
-  sendMode: "sendRate"
-  maxInFlight: 50
+  sendMode: "maxInFlight"
+  maxInFlight: 1
   sendRate: 200
-  runtimeSeconds: 5
+  runtimeSeconds: 20
 
 # Proxy Info
 proxy:
@@ -40,6 +40,7 @@ receiver:
   keysDir: keys/receiver
   shards: 1 # The number of threads to receive threads 
   local: true
+  numVerifyThreads: 1
 
 
 # Replica Info

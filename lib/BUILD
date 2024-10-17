@@ -149,3 +149,15 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+
+cc_library(
+    name = "threadpool",
+    srcs = ["threadpool.cc"],
+    hdrs = ["threadpool.h"],
+    deps = [
+        ":signature_provider",
+        ":utils",
+    ],
+    visibility = ["//visibility:public"],
+)

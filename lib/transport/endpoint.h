@@ -92,11 +92,14 @@ public:
 
     // -------------------- Message Sending --------------------
 
-    // Loads message with header prepended into buffer and sets
-    // bufReady to true. TODO get some info about buffer size.
-    MessageHeader *PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType);
+    // Loads message into buf and prepends header
+    // If nullptr, use own buffer
+    // TODO use some more sophisticated memory allocation scheme?
+    MessageHeader *PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType, byte *buf = nullptr,
+                              size_t bufSize = SEND_BUFFER_SIZE);
 
-    MessageHeader *PrepareProtoMsg(const google::protobuf::Message &msg, const byte msgType);
+    MessageHeader *PrepareProtoMsg(const google::protobuf::Message &msg, const byte msgType, byte *buf = nullptr,
+                                   size_t bufSize = SEND_BUFFER_SIZE);
 
     // Sends message in buffer to address specifed in dstAddr.
     // Note that the MessageHeader that PrepareMsg creates contains
@@ -104,7 +107,7 @@ public:
 
     // The reason preparing and sending messages are split is so for
     // broadcast we can reuse the same buffer/signatures
-    virtual int SendPreparedMsgTo(const Address &dstAddr) = 0;
+    virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr = nullptr) = 0;
 
     // -------------------- Entry and exit points --------------------
     void LoopRun();

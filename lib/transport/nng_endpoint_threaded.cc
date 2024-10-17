@@ -41,8 +41,7 @@ void NngSendThread::run()
         NngSendThread *t = (NngSendThread *) w->data;
         std::vector<byte> msg;
 
-        while (t->queue_.peek() != nullptr) {
-            t->queue_.wait_dequeue(msg);
+        while (t->queue_.wait_dequeue_timed(msg, 50000)) {
             int ret = nng_send(t->sock_, msg.data(), msg.size(), 0);
             if (ret != 0) {
                 VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
@@ -169,9 +168,11 @@ NngEndpointThreaded::NngEndpointThreaded(const std::vector<std::pair<Address, Ad
 
 NngEndpointThreaded::~NngEndpointThreaded() {}
 
-int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr)
+int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
 {
-    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
+    if (hdr == nullptr) {
+        hdr = (MessageHeader *) sendBuffer_;
+    }
 
     if (addrToSocketIdx_.count(dstAddr) == 0) {
         LOG(ERROR) << "Attempt to send to unregistered address " << dstAddr.ip_ << ":" << dstAddr.port_;
@@ -180,7 +181,7 @@ int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr)
 
     int i = addrToSocketIdx_[dstAddr];
 
-    sendThreads_[i]->sendMsg(sendBuffer_, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
+    sendThreads_[i]->sendMsg((byte *) hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
     return 0;
 }
 
@@ -193,9 +194,7 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
         NngEndpointThreaded *ep = (NngEndpointThreaded *) w->data;
         std::pair<std::vector<byte>, Address> item;
 
-        // Not sure if this usage is the best, but it makes sense to me
-        while (ep->recvThread_->queue_.peek() != nullptr) {
-            ep->recvThread_->queue_.try_dequeue(item);
+        while (ep->recvThread_->queue_.try_dequeue(item)) {
             auto &[msg, addr] = item;
             size_t len = msg.size();
 

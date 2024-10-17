@@ -16,6 +16,7 @@ using namespace dombft::proto;
 
 Client::Client(const ProcessConfig &config, size_t id)
     : clientId_(id)
+    , threadpool_(10)
 {
     LOG(INFO) << "clientId=" << clientId_;
     std::string clientIp = config.clientIps[clientId_];
@@ -86,8 +87,16 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     /** Initialize state */
     nextSeq_ = 1;
+    startTime_ = GetMicrosecondTimestamp();
 
-    MessageHandlerFunc replyHandler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+    MessageHandlerFunc replyHandler = [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr,
+                                                                                    byte *msgBuffer, Address *sender) {
+        if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
+            LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
+            // TODO print some stats
+            exit(0);
+        }
+
         this->handleMessage(msgHdr, msgBuffer, sender);
     };
 
@@ -351,7 +360,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
 
         if (!sigProvider_.verify(hdr, body, "replica", reply.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
+            LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
             return;
         }
 
@@ -362,12 +371,13 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         CertReply certReply;
 
         if (!certReply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CERT_REPLY message";
+            LOG(ERROR) << "Unable to parse CERT_REPLY message from " << *sender;
             return;
         }
 
         if (certReply.client_id() != clientId_) {
-            VLOG(2) << "Received certReply for client " << certReply.client_id() << " != " << clientId_;
+            VLOG(2) << "Received certReply for client " << certReply.client_id() << " != " << clientId_ << " from "
+                    << certReply.replica_id();
             return;
         }
 
@@ -440,7 +450,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // `replies_.size() == maxMatchSize` iff all replies are yet matching, no need to check for normal/slow path
     // return when normal/slow path is already triggered
-    if(reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent) return;
+    if (reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent)
+        return;
 
     // `hasCert()==true` iff maxMatchSize >= 2 * f_ + 1
     if (reqState.collector.hasCert()) {
@@ -454,13 +465,11 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }
-
     }
-
 
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (reqState.collector.replies_.size()  - maxMatchSize > f_) {
+    if (reqState.collector.replies_.size() - maxMatchSize > f_) {
         LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
@@ -503,6 +512,9 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 
     auto &reqState = requestStates_.at(cseq);
     reqState.certReplies.insert(certReply.replica_id());
+
+    VLOG(4) << "Received Cert ack client_seq=" << cseq << " seq=" << certReply.seq()
+            << " instance=" << certReply.instance();
 
     if (reqState.certReplies.size() >= 2 * f_ + 1) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq

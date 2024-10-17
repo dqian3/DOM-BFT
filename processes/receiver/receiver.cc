@@ -55,15 +55,17 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     fwdTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Receiver *) ctx)->checkDeadlines(); }, 1000, this);
 
+    ev_set_priority(fwdTimer_->evTimer_, EV_MAXPRI);
     endpoint_->RegisterTimer(fwdTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
+        checkDeadlines();
     });
     endpoint_->RegisterSignalHandler([&]() {
         running_ = false;
         endpoint_->LoopBreak();
 
-        verifyQueueCondVar_.notify_all();
+        verifyCondVar_.notify_all();
     });
 
     // Start verify threads
@@ -81,10 +83,10 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     LOG(INFO) << "Receiver exited cleanly";
 }
 
-Receiver::~Receiver() 
+Receiver::~Receiver()
 {
     running_ = false;
-    verifyQueueCondVar_.notify_all();
+    verifyCondVar_.notify_all();
 
     // Join the verification threads
     for (std::thread &thd : verifyThds_) {
@@ -132,7 +134,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     if (recv_time > request.deadline()) {
         request.set_late(true);
 
-        VLOG(3) << "Request is late late by " << recv_time - request.deadline() << "us";
+        VLOG(3) << "Request is late by " << recv_time - request.deadline() << "us";
 
         if (lastFwdDeadline > request.deadline()) {
             LOG(WARNING) << "Forwarded request out of order!";
@@ -149,22 +151,21 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
     {
         std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-        deadlineQueue_[{request.deadline(), request.client_id()}] = r;
+        deadlineQueue_[{deadline, request.client_id()}] = r;
     }
 
     if (skipVerify_) {
         r->verified = true;
     } else {
-        // verifyQueue_.enqueue(r);
         {
             std::lock_guard<std::mutex> lock(verifyQueueMtx_);
             verifyQueue_.push(r);
         }
-        verifyQueueCondVar_.notify_one();
+        verifyCondVar_.notify_one();
     }
 
-    // Send measurements replies back to the proxy
-    if (request.client_seq() == 0) {
+    // Send measurements replies back to the proxy, but only sometimes
+    if (request.client_id() / 4 == 0 && request.client_seq() % 10 == 0) {
         MeasurementReply mReply;
         mReply.set_receiver_id(receiverId_);
         mReply.set_owd(recv_time - request.send_time());
@@ -181,7 +182,7 @@ void Receiver::forwardRequest(const DOMRequest &request)
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    LOG(INFO) << "Forwarding request deadline=" << request.deadline() << " now=" << now << " r_id=" << receiverId_
+    LOG(INFO) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
               << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
     if (skipForwarding_) {
@@ -223,7 +224,9 @@ void Receiver::checkDeadlines()
         it = temp;
     }
 
-    uint32_t nextCheck = deadlineQueue_.empty() ? 10000 : deadlineQueue_.begin()->first.first - now;
+    uint32_t nextCheck = deadlineQueue_.empty() ? 1000 : deadlineQueue_.begin()->first.first - now;
+    VLOG(3) << "Next deadline check is in " << nextCheck << " us";
+
     endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 
@@ -234,8 +237,7 @@ void Receiver::verifyWorker()
     std::shared_ptr<Request> request;
     while (running_) {
         std::unique_lock<std::mutex> lock(verifyQueueMtx_);
-        verifyQueueCondVar_.wait(lock, [this] { return !verifyQueue_.empty() || !running_; });
-
+        verifyCondVar_.wait(lock, [this] { return !verifyQueue_.empty() || !running_; });
 
         if (!running_ && verifyQueue_.empty()) {
             LOG(ERROR) << "Verify thread exiting...";
@@ -266,13 +268,15 @@ void Receiver::verifyWorker()
                 std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
                 if (verified) {
                     VLOG(4) << "Verified client signature for c_id=" << request->clientId
-                            << " c_seq=" << request->request.client_seq();
+                            << " c_seq=" << request->request.client_seq() << " time until deadline: "
+                            << ((int64_t) request->request.deadline()) - GetMicrosecondTimestamp() << " us";
                     request->verified = true;
                 } else {
                     LOG(INFO) << "Failed to verify client signature!";
                     deadlineQueue_.erase({request->deadline, request->clientId});
                 }
             }
+
         } else {
             lock.unlock();
         }

@@ -63,7 +63,7 @@ def local(c, config_file, v=5):
 
     finally:
         print("Clients done, waiting for other processes to finish...")
-        c.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True)
+        c.run("killall -SIGINT dombft_client dombft_replica dombft_proxy dombft_receiver", warn=True)
 
         #  stop other processes and then join
         for hdl in other_handles:
@@ -250,32 +250,48 @@ def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
 
     replicas = config["replica"]["ips"]
     receivers = config["receiver"]["ips"]
     proxies = config["proxy"]["ips"]
     clients = config["client"]["ips"]
 
-    replicas = SerialGroup(*[ext_ips[ip] for ip in replicas])
-    receivers = SerialGroup(*[ext_ips[ip] for ip in receivers])
-    proxies = SerialGroup(*[ext_ips[ip] for ip in proxies])
-    clients = SerialGroup(*[ext_ips[ip] for ip in clients])
+    # TODO try and check to see if binaries are stale
+    print("Copying binaries over to one machine")
+    start_time = time.time()
 
-    print("Copying binaries over...")
-    group.run("rm dombft_*", warn=True)
+    conn = Connection(ext_ips[clients[0]])
 
-    replicas.put("../bazel-bin/processes/replica/dombft_replica")
-    print("Copied replica")
+    conn.run("chmod +w dombft_*", warn=True)
+    conn.put("../bazel-bin/processes/replica/dombft_replica")
+    conn.put("../bazel-bin/processes/receiver/dombft_receiver")
+    conn.put("../bazel-bin/processes/proxy/dombft_proxy")
+    conn.put("../bazel-bin/processes/client/dombft_client")
+    conn.run("chmod +w dombft_*", warn=True)
 
-    receivers.put("../bazel-bin/processes/receiver/dombft_receiver")
-    print("Copied receiver")
+    print(f"Copying took {time.time() - start_time:.0f}s")
 
-    proxies.put("../bazel-bin/processes/proxy/dombft_proxy")
-    print("Copied proxy")
 
-    clients.put("../bazel-bin/processes/client/dombft_client")
-    print("Copied client")
+    print(f"Copying to other machines")
+    start_time = time.time()
+
+    for ip in replicas:
+        print(f"Copying dombft_replica to {ip}")
+        conn.run(f"scp dombft_replica {ip}:", warn=True)
+
+    for ip in receivers:
+        print(f"Copying dombft_receiver to {ip}")
+        conn.run(f"scp dombft_receiver {ip}:", warn=True)
+
+    for ip in proxies:
+        print(f"Copying dombft_proxy to {ip}")
+        conn.run(f"scp dombft_proxy {ip}:", warn=True)
+
+    for ip in clients[1:]: # Skip own
+        print(f"Copying dombft_client to {ip}")
+        conn.run(f"scp dombft_client {ip}:", warn=True)
+
+    print(f"Copying to other machines took {time.time() - start_time:.0f}s")
 
 
 def get_gcloud_process_ips(c, filter):
