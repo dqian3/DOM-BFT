@@ -532,13 +532,11 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
         LOG(INFO) << "Sending reply back to c_id=" << clientId << " c_seq=" << clientSeq;
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY, buffer);
-
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
 
         // // Try and commit every CHECKPOINT_INTERVAL replies
         // if (seq % CHECKPOINT_INTERVAL == 0) {
-        //     LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
         //     VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
 
         //     {
@@ -584,6 +582,11 @@ void Replica::handleCert(const Cert &cert)
 
         {
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            if (cert.instance() < instance_) {
+                VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_;
+                return;
+            }
+
             log_->addCert(r.seq(), cert);
 
             reply.set_replica_id(replicaId_);
@@ -597,9 +600,9 @@ void Replica::handleCert(const Cert &cert)
         VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
                 << clientAddrs_[reply.client_id()].ip();
 
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::CERT_REPLY, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()]);
+        endpoint_->SendPreparedMsgTo(clientAddrs_[reply.client_id()], hdr);
     });
 }
 
@@ -666,6 +669,8 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });
+
+            replicaStateMutex_.unlock();
             return;
         }
     }

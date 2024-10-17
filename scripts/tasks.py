@@ -63,7 +63,7 @@ def local(c, config_file, v=5):
 
     finally:
         print("Clients done, waiting for other processes to finish...")
-        c.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True)
+        c.run("killall -SIGINT dombft_client dombft_replica dombft_proxy dombft_receiver", warn=True)
 
         #  stop other processes and then join
         for hdl in other_handles:
