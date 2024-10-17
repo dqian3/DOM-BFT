@@ -494,25 +494,26 @@ void Replica::handleClientRequest(const ClientRequest &request)
         return;
     }
 
-    std::string result;
-    uint32_t seq;
+    // std::string result;
+    // uint32_t seq;
 
-    {
-        std::lock_guard<std::mutex> guard(replicaStateMutex_);
-        bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
-        seq = log_->nextSeq - 1;
+    // {
+    //     std::lock_guard<std::mutex> guard(replicaStateMutex_);
+    //     bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+    //     seq = log_->nextSeq - 1;
 
-        if (!success) {
-            // TODO Handle this more gracefully by queuing requests
-            LOG(ERROR) << "Could not add request to log!";
-            return;
-        }
-    }
+    //     if (!success) {
+    //         // TODO Handle this more gracefully by queuing requests
+    //         LOG(ERROR) << "Could not add request to log!";
+    //         return;
+    //     }
+    // }
 
     uint32_t instance = instance_;
     std::string digest(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
+    int seq = ++seq_;
 
-    LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+    LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq_ << " client_id=" << clientId
                << " client_seq=" << clientSeq << " instance=" << instance_
                << " digest=" << digest_to_hex(digest).substr(56);
 
@@ -523,9 +524,9 @@ void Replica::handleClientRequest(const ClientRequest &request)
         reply.set_client_id(clientId);
         reply.set_client_seq(clientSeq);
         reply.set_replica_id(replicaId_);
-        reply.set_result(result);
+        reply.set_result("");
         reply.set_fast(true);
-        reply.set_seq(seq);
+        reply.set_seq(seq_);
         reply.set_instance(instance);
         reply.set_digest(digest);
 
@@ -535,25 +536,21 @@ void Replica::handleClientRequest(const ClientRequest &request)
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
 
-        if (!sigProvider_.verify(hdr, (byte *) (hdr + 1), "replica", reply.replica_id())) {
-            LOG(ERROR) << "own message did not verify!";
-        }
+        // // Try and commit every CHECKPOINT_INTERVAL replies
+        // if (seq % CHECKPOINT_INTERVAL == 0) {
+        //     LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
+        //     VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
 
-        // Try and commit every CHECKPOINT_INTERVAL replies
-        if (seq % CHECKPOINT_INTERVAL == 0) {
-            LOG(INFO) << "Starting checkpoint cert for seq=" << seq;
-            VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+        //     {
+        //         std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
-            {
-                std::lock_guard<std::mutex> guard(replicaStateMutex_);
+        //         checkpointSeq_ = seq;
+        //         checkpointCert_.reset();
+        //     }
 
-                checkpointSeq_ = seq;
-                checkpointCert_.reset();
-            }
-
-            // TODO remove execution result here
-            broadcastToReplicas(reply, MessageType::REPLY, buffer);
-        }
+        //     // TODO remove execution result here
+        //     broadcastToReplicas(reply, MessageType::REPLY, buffer);
+        // }
     });
 }
 
