@@ -12,20 +12,28 @@ void addAddrPairs(vector<pair<Address, Address>> &pairs, const std::string &myIp
     }
 }
 
+void addAddrPairsToClient(vector<pair<Address, Address>> &pairs, const std::string &myIp, uint32_t myBasePort,
+                          const std::vector<std::string> theirIps, int theirPort, int portRangeWidth)
+{
+    for (uint32_t i = 0; i < theirIps.size(); i++) {
+        pairs.push_back({Address(myIp, myBasePort + i), Address(theirIps[i], theirPort + i * portRangeWidth)});
+    }
+}
+
 vector<pair<Address, Address>> getClientAddrs(ProcessConfig config, uint32_t id)
 {
     // TODO modify config to specify that these are base ports, and not
     vector<pair<Address, Address>> ret;
+    uint32_t portRangeWidth = (config.proxyIps.size() + config.replicaIps.size());
 
-    // id coeffecient (10) needs to > num_replicas + num_proxies to prevent overlap
-    uint32_t clientBase = config.clientPort + id * 10;
+    uint32_t clientBase = config.clientPort + id * portRangeWidth;
 
-    // 1. clientBase + replicaId <==> replicaBase + clientId
+    // 1. clientBase + (clientId  * (numProxies + numReplicas) + replicaId <==> replicaBase + clientId
     std::string clientIp = config.clientIps[id];
     uint32_t replicaPort = config.replicaPort + id;
     addAddrPairs(ret, clientIp, clientBase, config.replicaIps, replicaPort);
 
-    // 2. clientBase + nReplicas + proxyId <==> proxyForwardBase + clientId
+    // 2. clientBase + (clientId  * (numProxies + numReplicas) + nReplicas + proxyId <==> proxyForwardBase + clientId
     clientBase += config.replicaIps.size();
     uint32_t proxyPort = config.proxyForwardPort + id;
     addAddrPairs(ret, clientIp, clientBase, config.proxyIps, proxyPort);
@@ -36,12 +44,13 @@ vector<pair<Address, Address>> getClientAddrs(ProcessConfig config, uint32_t id)
 vector<pair<Address, Address>> getProxyAddrs(ProcessConfig config, uint32_t id)
 {
     vector<pair<Address, Address>> ret;
+    uint32_t portRangeWidth = (config.proxyIps.size() + config.replicaIps.size());
 
-    // 2. clientBase + nReplicas + proxyId <==> proxyForwardBase + clientId
+    // 2. clientBase + (clientId  * (numProxies + numReplicas) + nReplicas + proxyId <==> proxyForwardBase + clientId
     std::string proxyIp = config.proxyIps[id];
     uint32_t proxyBase = config.proxyForwardPort;
     uint32_t clientPort = config.clientPort + id;
-    addAddrPairs(ret, proxyIp, proxyBase, config.clientIps, clientPort);
+    addAddrPairsToClient(ret, proxyIp, proxyBase, config.clientIps, clientPort, portRangeWidth);
 
     // 3. proxyForwardBase + nClients + receiverId <==> receiverBase + proxyId
     proxyBase += config.clientIps.size();
@@ -92,13 +101,13 @@ vector<pair<Address, Address>> getReceiverAddrs(ProcessConfig config, uint32_t i
 vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id)
 {
     vector<pair<Address, Address>> ret;
+    uint32_t portRangeWidth = (config.proxyIps.size() + config.replicaIps.size());
 
-    // 1. clientBase + replicaId <==> replicaBase + clientId
+    // 1. clientBase + (clientId  * (numProxies + numReplicas) + replicaId <==> replicaBase + clientId
     std::string replicaIp = config.replicaIps[id];
     uint32_t replicaBase = config.replicaPort;
     uint32_t clientPort = config.clientPort + id;
-
-    addAddrPairs(ret, replicaIp, replicaBase, config.clientIps, clientPort);
+    addAddrPairsToClient(ret, replicaIp, replicaBase, config.clientIps, clientPort, portRangeWidth);
 
     // 5a. Each replica/receiver own address (i.e. loopback for local exp.)
     //      receiverBase + numProxies * 2 <==> replicaBase + numClients

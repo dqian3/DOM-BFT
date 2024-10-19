@@ -8,7 +8,7 @@ from invoke import task
 
 # TODO we can process output of these here instead of in the terminal
 @task
-def local(c, config_file, v=5):
+def local(c, config_file="../configs/local.yaml", v=5):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 
@@ -287,7 +287,7 @@ def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
         print(f"Copying dombft_proxy to {ip}")
         conn.run(f"scp dombft_proxy {ip}:", warn=True)
 
-    for ip in clients[1:]: # Skip own
+    for ip in set(clients[1:]): # Skip own
         print(f"Copying dombft_client to {ip}")
         conn.run(f"scp dombft_client {ip}:", warn=True)
 
