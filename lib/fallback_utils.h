@@ -2,6 +2,7 @@
 #define FALLBACK_UTILS_H
 
 #include "lib/log.h"
+#include "lib/client_record.h"
 
 #include "proto/dombft_proto.pb.h"
 
@@ -14,9 +15,10 @@ struct LogSuffix {
 
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
+    std::unordered_map<uint32_t , dombft::ClientRecord> clientRecords;
 };
 
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
-bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log);
+bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log);
 
 #endif
