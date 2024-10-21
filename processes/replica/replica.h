@@ -42,7 +42,7 @@ private:
     std::shared_ptr<Log> log_;
 
     // State for tracking client state
-    std::unordered_map<uint32_t , ClientRecord> clientRecords_;
+    ClientRecords clientRecords_;
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
@@ -51,8 +51,8 @@ private:
     std::map<int, dombft::proto::Reply> checkpointReplies_;
     std::map<int, std::string> checkpointReplySigs_;
     std::optional<dombft::proto::Cert> checkpointCert_;
-    std::unordered_map<uint32_t , ClientRecord> checkpointClientRecords_;
-    std::unordered_map<uint32_t , ClientRecord> intermediateCheckpointClientRecords_;
+    ClientRecords checkpointClientRecords_;
+    ClientRecords intermediateCheckpointClientRecords_;
 
     std::map<uint32_t, dombft::proto::Commit> checkpointCommits_;
     std::map<uint32_t, std::string> checkpointCommitSigs_;
@@ -103,7 +103,7 @@ private:
 
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
-    void reapplyEntriesWithRecord(uint32_t startingSeq);
+    void reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum);
 
 
 

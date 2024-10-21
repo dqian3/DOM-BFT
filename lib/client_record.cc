@@ -1,8 +1,7 @@
 #include "client_record.h"
-
 namespace dombft{
     void getClientRecordsFromProto(const google::protobuf::RepeatedPtrField<proto::CheckpointClientRecord> &records,
-                                   std::unordered_map<uint32_t, ClientRecord> &dst)
+                                   ClientRecords &dst)
     {
         for(const auto& cliRecord : records) {
             uint32_t cliId = cliRecord.client_id();
@@ -27,4 +26,44 @@ namespace dombft{
         }
         return updated;
     }
+
+    void getRecordsDigest(const ClientRecords &records, byte *digest)
+    {
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        for(const auto& [cliId, cliRecord] : records) {
+            SHA256_Update(&ctx, &cliId, sizeof(cliId));
+            SHA256_Update(&ctx, &cliRecord.instance_, sizeof(cliRecord.instance_));
+            SHA256_Update(&ctx, &cliRecord.lastSeq_, sizeof(cliRecord.lastSeq_));
+            for(const auto& s : cliRecord.missedSeqs_)
+                SHA256_Update(&ctx, &s, sizeof(s));
+        }
+        SHA256_Final(digest, &ctx);
+    }
+
+    int getRightShiftNumWithRecords(const ClientRecords &records1,const ClientRecords &records2)
+    {
+        int shiftNum = 0;
+        for(const auto& [cliId, cliRecord1] : records1) {
+            if (records2.find(cliId) == records2.end()) {
+                shiftNum+=cliRecord1.lastSeq_ - cliRecord1.missedSeqs_.size();
+                continue;
+            }
+            const ClientRecord& cliRecord2 = records2.at(cliId);
+            shiftNum += static_cast<int>(cliRecord2.missedSeqs_.size() - cliRecord1.missedSeqs_.size());
+            if(cliRecord1.lastSeq_ > cliRecord2.lastSeq_) {
+                shiftNum += cliRecord1.lastSeq_ - cliRecord2.lastSeq_;
+            }
+            if(cliRecord1.lastSeq_ < cliRecord2.lastSeq_){
+                for (uint32_t i: cliRecord2.missedSeqs_) {
+                    if (i > cliRecord1.lastSeq_)
+                        shiftNum--;
+                }
+            }
+        }
+        return shiftNum;
+    }
 }
+
+
+

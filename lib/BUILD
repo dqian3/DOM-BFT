@@ -167,6 +167,8 @@ cc_library(
     hdrs = ["client_record.h"],
     srcs = ["client_record.cc"],
     deps = [
+        ":utils",
+        ":common_struct",
         "//proto:dombft_proto_cc"
     ],
     visibility = ["//visibility:public"],

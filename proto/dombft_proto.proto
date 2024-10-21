@@ -73,7 +73,8 @@ message Commit {
 
     bytes log_digest = 4;
     bytes app_digest = 5;
-    repeated CheckpointClientRecord client_records = 6;
+    bytes client_records_digest = 6;
+    repeated CheckpointClientRecord client_records = 7;
 }
 
 message FallbackTrigger
@@ -133,7 +134,8 @@ message FallbackStart
 
     repeated LogEntry log_entries = 3;
     LogCheckpoint checkpoint = 4;
-    repeated CheckpointClientRecord client_records = 5;
+    bytes client_records_digest = 5;
+    repeated CheckpointClientRecord client_records = 6;
 }
 
 message FallbackProposal

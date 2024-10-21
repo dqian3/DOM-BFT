@@ -15,8 +15,8 @@ using namespace dombft::proto;
 Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq)
     : replicaId_(replicaId)
     , instance_(0)
-    , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
+    , swapFreq_(swapFreq)
     , sigProvider_()
     , threadpool_(12)
 {
@@ -492,7 +492,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
                << " client_seq=" << clientSeq << " instance=" << instance_
                << " digest=" << digest_to_hex(digest).substr(56);
 
-    std::unordered_map<uint32_t , ClientRecord> tmpClientRecords = clientRecords_;
+    ClientRecords tmpClientRecords = clientRecords_;
     // TODO, only queue signing tasks? Then we don't have to worry about locking replica state
     threadpool_.enqueueTask([=, this](byte *buffer) {
         Reply reply;
@@ -629,6 +629,9 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
             const byte *logDigest = log_->getDigest(reply.seq());
             std::string appDigest = log_->app_->getDigest(reply.seq());
+            byte recordDigest[SHA256_DIGEST_LENGTH];
+            getRecordsDigest(checkpointClientRecords_, recordDigest);
+            ClientRecords tmpClientRecords = checkpointClientRecords_;
             threadpool_.enqueueTask([=, this](byte *buffer) {
                 // Broadcast commmit Message
                 dombft::proto::Commit commit;
@@ -637,8 +640,8 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
                 commit.set_instance(instance_);
                 commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
                 commit.set_app_digest(appDigest);
-                toProtoClientRecords(commit, checkpointClientRecords_);
-
+                commit.set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
+                toProtoClientRecords(commit, tmpClientRecords);
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });
 
@@ -666,7 +669,14 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         return;
     }
 
-    std::map<std::tuple<std::string, std::string, int, int>, std::set<int>> matchingCommits;
+    // verify the record is not tampered by a malicious replica
+    if(verifyRecordDigestFromProto(commitMsg)){
+        VLOG(5) << "Client records from commit msg from replica "<<commitMsg.replica_id()
+        << " does not match the carried records digest";
+        return;
+    }
+
+    std::map<std::tuple<std::string, std::string, uint32_t, uint32_t, std::string>, std::set<int>> matchingCommits;
 
     // Find a cert among a set of replies
     for (const auto &[replicaId, commit] : checkpointCommits_) {
@@ -674,9 +684,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         if (commit.seq() <= log_->checkpoint.seq)
             continue;
 
-        std::tuple<std::string, std::string, uint32_t, uint32_t> key = {commit.log_digest(), commit.app_digest(),
-                                                                        commit.instance(), commit.seq()};
-
+        std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key =
+                {commit.log_digest(), commit.app_digest(),commit.instance(), commit.seq(), commit.client_records_digest()};
         matchingCommits[key].insert(replicaId);
 
         // TODO see if there's a better way to do this
@@ -696,6 +705,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             memcpy(log_->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
             memcpy(log_->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
 
+            // TODO(Hao) why store these?
             for (uint32_t r : matchingCommits[key]) {
                 log_->checkpoint.commitMessages[r] = checkpointCommits_[r];
                 log_->checkpoint.signatures[r] = checkpointCommitSigs_[r];
@@ -712,12 +722,14 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 log_->app_->applySnapshot(commit.app_digest());
                 VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
                         << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
-
-                // TODO(Hao) bad replica can send wrong client records, may add digest to verify
                 checkpointClientRecords_.clear();
-                getClientRecordsFromProto(commitMsg.client_records(), checkpointClientRecords_);
+                getClientRecordsFromProto(commit.client_records(), checkpointClientRecords_);
+                int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecords_,intermediateCheckpointClientRecords_);
+                VLOG(1)<< "Right shift log by "<<rShiftNum <<"to align with the checkpoint";
+                // that is, there is never a left shift
+                assert(rShiftNum >= 0);
                 clientRecords_ = checkpointClientRecords_;
-                reapplyEntriesWithRecord(log_->checkpoint.seq + 1);
+                reapplyEntriesWithRecord(log_->checkpoint.seq + 1, rShiftNum);
             }else{
                 checkpointClientRecords_ = intermediateCheckpointClientRecords_;
             }
@@ -806,11 +818,12 @@ void Replica::startFallback()
     fallbackStartMsg.set_instance(instance_);
     fallbackStartMsg.set_replica_id(replicaId_);
     log_->toProto(fallbackStartMsg);
+    byte recordDigest[SHA256_DIGEST_LENGTH];
+    getRecordsDigest(checkpointClientRecords_, recordDigest);
     toProtoClientRecords(fallbackStartMsg, checkpointClientRecords_);
 
     LOG(INFO) << "Sending FALLBACK_START to replica " << instance_ % replicaAddrs_.size();
     sendMsgToDst(fallbackStartMsg, FALLBACK_START, replicaAddrs_[instance_ % replicaAddrs_.size()]);
-    // TEMP: dump the logs
     LOG(INFO) << "DUMP start fallback instance=" << instance_ << " " << *log_;
 }
 
@@ -1042,11 +1055,11 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
 
 }
 
-void Replica::reapplyEntriesWithRecord(uint32_t startingSeq)
+void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
 {
     log_->app_->abort(startingSeq - 1);
     uint32_t curSeq = startingSeq;
-    for (uint32_t s = startingSeq; s < log_->nextSeq; s++) {
+    for (uint32_t s = startingSeq - rShiftNum; s < log_->nextSeq; s++) {
         std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
 
         // record update
@@ -1073,5 +1086,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq)
     if(curSeq != log_->nextSeq)
         log_->nextSeq = curSeq;
 }
+
+
 
 }   // namespace dombft
