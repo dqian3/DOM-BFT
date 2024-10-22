@@ -167,7 +167,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
             exit(1);
         }
 
-        std::unordered_map<uint32_t , dombft::ClientRecord> &clientRecords = logSuffix.clientRecords;
+        dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
 
         // rollbackDone == true iff a mismatch is found
         if (seq < log->nextSeq && !rollbackDone) {

@@ -29,16 +29,29 @@ namespace dombft{
 
     void getRecordsDigest(const ClientRecords &records, byte *digest)
     {
+        // unsorted data structure will produce non-deterministic digest
+        std::map<uint32_t, ClientRecord> sortedRecords;
+        for(const auto& [cliId, cliRecord] : records) {
+            sortedRecords[cliId] = cliRecord;
+        }
         SHA256_CTX ctx;
         SHA256_Init(&ctx);
-        for(const auto& [cliId, cliRecord] : records) {
+        for(const auto& [cliId, cliRecord] : sortedRecords) {
             SHA256_Update(&ctx, &cliId, sizeof(cliId));
             SHA256_Update(&ctx, &cliRecord.instance_, sizeof(cliRecord.instance_));
             SHA256_Update(&ctx, &cliRecord.lastSeq_, sizeof(cliRecord.lastSeq_));
-            for(const auto& s : cliRecord.missedSeqs_)
+            std::vector<int> sortedSeqs(cliRecord.missedSeqs_.begin(), cliRecord.missedSeqs_.end());
+            for(const auto& s : sortedSeqs)
                 SHA256_Update(&ctx, &s, sizeof(s));
         }
         SHA256_Final(digest, &ctx);
+        // print records
+        for (const auto& record: records) {
+            LOG(INFO) << "client id: " << record.first << " instance: " << record.second.instance_ << " lastSeq: " << record.second.lastSeq_;
+            for (const auto& seq: record.second.missedSeqs_) {
+                LOG(INFO) << "missed seq: " << seq;
+            }
+        }
     }
 
     int getRightShiftNumWithRecords(const ClientRecords &records1,const ClientRecords &records2)

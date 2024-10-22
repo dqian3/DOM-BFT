@@ -4,7 +4,7 @@
 #include "lib/common_struct.h"
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
-
+#include <glog/logging.h>
 #include <iostream>
 
 namespace dombft{
@@ -39,9 +39,17 @@ namespace dombft{
     bool verifyRecordDigestFromProto(const MessageType& message){
         ClientRecords tmpClientRecords;
         getClientRecordsFromProto(message.client_records(), tmpClientRecords);
+        for (const auto& record: tmpClientRecords) {
+            LOG(INFO) << "client id: " << record.first << " instance: " << record.second.instance_ << " lastSeq: " << record.second.lastSeq_;
+            for (const auto& seq: record.second.missedSeqs_) {
+                LOG(INFO) << "missed seq: " << seq;
+            }
+        }
         byte recordDigest[SHA256_DIGEST_LENGTH];
         getRecordsDigest(tmpClientRecords, recordDigest);
-        return memcmp(recordDigest, message.client_records_digest().data(), SHA256_DIGEST_LENGTH) == 0;
+        LOG(INFO)<< "record digest: " << digest_to_hex(recordDigest, SHA256_DIGEST_LENGTH);
+        LOG(INFO)<< "message digest: " << digest_to_hex(message.client_records_digest());
+        return digest_to_hex(recordDigest, SHA256_DIGEST_LENGTH) == digest_to_hex(message.client_records_digest());
     }
 }
 
