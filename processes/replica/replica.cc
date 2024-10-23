@@ -612,7 +612,7 @@ void Replica::handleCert(const Cert &cert)
 
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
-    std::unique_lock<std::mutex> lock(replicaStateMutex_);
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
     checkpointReplies_[reply.replica_id()] = reply;
@@ -676,13 +676,8 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });
 
-            replicaStateMutex_.unlock();
             return;
         }
-    }
-
-    if (lock.owns_lock()) {
-        replicaStateMutex_.unlock();
     }
 }
 

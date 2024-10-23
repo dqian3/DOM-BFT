@@ -32,7 +32,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
         auto &fallbackLog = fallbackProposal.logs()[i];
-        // TODO verify each checkpoint
+        // TODO verify each log
 
         for (const dombft::proto::LogEntry &entry : fallbackLog.log_entries()) {
             if (!entry.has_cert())
@@ -46,16 +46,22 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
                 continue;
 
             // TODO verify cert
-            if (entry.seq() > maxCertSeq) {
-                VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
-                        << " c_seq=" << entry.cert().replies()[0].client_seq();
+            // If the cert doesn't match the log, a bad log suffix could be injected
 
+            if (entry.seq() > maxCertSeq) {
                 cert = &entry.cert();
                 logToUseIdx = i;
                 logToUseSeq = entry.seq();
+                maxCertSeq = entry.seq();
             }
         }
     }
+
+    if (cert != nullptr)
+        VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].client_id()
+                << " c_seq=" << cert->replies()[0].client_seq();
+    else
+        VLOG(4) << "No certs found!";
 
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
@@ -97,7 +103,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         }
     }
 
-    VLOG(6) << "f + 1 matching digests found up from maxCertSeq=" << maxCertSeq << " seq=" << logToUseSeq;
+    VLOG(4) << "f + 1 matching digests found up from maxCertSeq=" << maxCertSeq << " seq=" << logToUseSeq;
 
     // Add entries with f + 1 entries
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
@@ -121,6 +127,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             logSuffix.entries.push_back(entry);
         }
     }
+
     return true;
 }
 

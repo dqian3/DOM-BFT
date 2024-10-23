@@ -188,6 +188,7 @@ void Log::commit(uint32_t seq)
 {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
         app_.get()->commit(seq);
+        certs.erase(certs.begin(), certs.lower_bound(seq));
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
     }

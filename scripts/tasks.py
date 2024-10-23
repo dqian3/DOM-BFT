@@ -183,7 +183,7 @@ def gcloud_vm(c, config_file="../configs/remote-prod.yaml", stop=False):
     for h in hdls:
         h.join()
     
-    print("Started all instances!")
+    print(f"{'Stopped' if stop else 'Started'} all instances!")
 
 
 
