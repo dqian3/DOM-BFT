@@ -21,7 +21,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
     , sigProvider_()
-    , threadpool_(12)
+    , threadpool_(8)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -586,7 +586,8 @@ void Replica::handleCert(const Cert &cert)
         {
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
             if (cert.instance() < instance_) {
-                VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_;
+                VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_
+                        << " for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
                 return;
             }
 

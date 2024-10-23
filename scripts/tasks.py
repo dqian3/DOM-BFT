@@ -420,10 +420,10 @@ def gcloud_logs(c, config_file="../configs/remote-prod.yaml"):
     proxies = [ext_ips[ip] for ip in proxies]
     clients = [ext_ips[ip] for ip in clients]
 
-    get_logs(c, replicas, "replica")
+    # get_logs(c, replicas, "replica")
     get_logs(c, receivers, "receiver")
-    get_logs(c, proxies, "proxy")
-    get_logs(c, clients, "client")
+    # get_logs(c, proxies, "proxy")
+    # get_logs(c, clients, "client")
 
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs

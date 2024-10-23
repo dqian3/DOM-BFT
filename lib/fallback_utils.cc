@@ -37,6 +37,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         for (const dombft::proto::LogEntry &entry : fallbackLog.log_entries()) {
             if (!entry.has_cert())
                 continue;
+
             // Already included in checkpoint
             if (entry.seq() <= logSuffix.checkpoint->seq())
                 continue;
@@ -95,6 +96,8 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             }
         }
     }
+
+    VLOG(6) << "f + 1 matching digests found up from maxCertSeq=" << maxCertSeq << " seq=" << logToUseSeq;
 
     // Add entries with f + 1 entries
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {

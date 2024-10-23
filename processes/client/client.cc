@@ -513,8 +513,8 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     auto &reqState = requestStates_.at(cseq);
     reqState.certReplies.insert(certReply.replica_id());
 
-    VLOG(4) << "Received Cert ack client_seq=" << cseq << " seq=" << certReply.seq()
-            << " instance=" << certReply.instance();
+    VLOG(4) << "Received cert ack client_seq=" << cseq << " seq=" << certReply.seq()
+            << " instance=" << certReply.instance() << " replica_id=" << certReply.replica_id();
 
     if (reqState.certReplies.size() >= 2 * f_ + 1) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq

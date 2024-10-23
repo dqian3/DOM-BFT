@@ -148,7 +148,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
         assert(i == entry.seq);
 
         if (certs.count(i)) {
-            (*checkpointProto->mutable_cert()) = *certs[i];
+            (*entryProto->mutable_cert()) = *certs[i];
         }
 
         entryProto->set_seq(i);
