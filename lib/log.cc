@@ -53,7 +53,7 @@ std::ostream &operator<<(std::ostream &out, const LogEntry &le)
     return out;
 }
 
-Log::Log(std::unique_ptr<Application> app)
+Log::Log(std::shared_ptr<Application> app)
     : nextSeq(1)
     , lastExecuted(0)
     , app_(std::move(app))
@@ -148,7 +148,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
         assert(i == entry.seq);
 
         if (certs.count(i)) {
-            (*checkpointProto->mutable_cert()) = *certs[i];
+            (*entryProto->mutable_cert()) = *certs[i];
         }
 
         entryProto->set_seq(i);
@@ -188,6 +188,7 @@ void Log::commit(uint32_t seq)
 {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
         app_.get()->commit(seq);
+        certs.erase(certs.begin(), certs.lower_bound(seq));
     } else {
         LOG(ERROR) << "Sequence number " << seq << " is out of range.";
     }

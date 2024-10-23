@@ -135,10 +135,6 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         request.set_late(true);
 
         VLOG(3) << "Request is late by " << recv_time - request.deadline() << "us";
-
-        if (lastFwdDeadline > request.deadline()) {
-            LOG(WARNING) << "Forwarded request out of order!";
-        }
     }
 
     uint64_t deadline = request.deadline();
@@ -185,6 +181,12 @@ void Receiver::forwardRequest(const DOMRequest &request)
     LOG(INFO) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
               << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
+    if (lastFwdDeadline > request.deadline()) {
+        LOG(WARNING) << "Forwarded request out of order!";
+    }
+
+    lastFwdDeadline = request.deadline();
+
     if (skipForwarding_) {
         return;
     }
@@ -224,8 +226,8 @@ void Receiver::checkDeadlines()
         it = temp;
     }
 
-    uint32_t nextCheck = deadlineQueue_.empty() ? 1000 : deadlineQueue_.begin()->first.first - now;
-    VLOG(3) << "Next deadline check is in " << nextCheck << " us";
+    int64_t nextCheck = deadlineQueue_.empty() ? 1000 : (int64_t) deadlineQueue_.begin()->first.first - now;
+    nextCheck = std::max(1000l, nextCheck);
 
     endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
 }

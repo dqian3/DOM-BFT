@@ -21,7 +21,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
     , sigProvider_()
-    , threadpool_(12)
+    , threadpool_(8)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -60,7 +60,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     LOG(INFO) << "instantiating log";
 
     if (config.app == AppType::COUNTER) {
-        log_ = std::make_shared<Log>(std::make_unique<Counter>());
+        log_ = std::make_shared<Log>(std::make_shared<Counter>());
     } else {
         LOG(ERROR) << "Unrecognized App Type";
         exit(1);
@@ -584,7 +584,8 @@ void Replica::handleCert(const Cert &cert)
         {
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
             if (cert.instance() < instance_) {
-                VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_;
+                VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_
+                        << " for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
                 return;
             }
 
@@ -609,7 +610,7 @@ void Replica::handleCert(const Cert &cert)
 
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
-    std::unique_lock<std::mutex> lock(replicaStateMutex_);
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
     checkpointReplies_[reply.replica_id()] = reply;
@@ -659,6 +660,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
             const byte *logDigest = log_->getDigest(reply.seq());
             std::string appDigest = log_->app_->getDigest(reply.seq());
+            uint64_t inst = instance_;
 
             threadpool_.enqueueTask([=, this](byte *buffer) {
                 // Broadcast commmit Message
@@ -667,17 +669,13 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
                 commit.set_seq(reply.seq());
                 commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
                 commit.set_app_digest(appDigest);
+                commit.set_instance(inst);
 
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });
 
-            replicaStateMutex_.unlock();
             return;
         }
-    }
-
-    if (lock.owns_lock()) {
-        replicaStateMutex_.unlock();
     }
 }
 

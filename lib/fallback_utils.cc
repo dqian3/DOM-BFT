@@ -32,11 +32,12 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
         auto &fallbackLog = fallbackProposal.logs()[i];
-        // TODO verify each checkpoint
+        // TODO verify each log
 
         for (const dombft::proto::LogEntry &entry : fallbackLog.log_entries()) {
             if (!entry.has_cert())
                 continue;
+
             // Already included in checkpoint
             if (entry.seq() <= logSuffix.checkpoint->seq())
                 continue;
@@ -45,16 +46,22 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
                 continue;
 
             // TODO verify cert
-            if (entry.seq() > maxCertSeq) {
-                VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
-                        << " c_seq=" << entry.cert().replies()[0].client_seq();
+            // If the cert doesn't match the log, a bad log suffix could be injected
 
+            if (entry.seq() > maxCertSeq) {
                 cert = &entry.cert();
                 logToUseIdx = i;
                 logToUseSeq = entry.seq();
+                maxCertSeq = entry.seq();
             }
         }
     }
+
+    if (cert != nullptr)
+        VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].client_id()
+                << " c_seq=" << cert->replies()[0].client_seq();
+    else
+        VLOG(4) << "No certs found!";
 
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
@@ -96,6 +103,8 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         }
     }
 
+    VLOG(4) << "f + 1 matching digests found up from maxCertSeq=" << maxCertSeq << " seq=" << logToUseSeq;
+
     // Add entries with f + 1 entries
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
         if (entry.seq() <= maxCertSeq)
@@ -118,11 +127,12 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             logSuffix.entries.push_back(entry);
         }
     }
+
+    return true;
 }
 
 bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
-    LOG(INFO) << "Applying checkpoint";
 
     // TODO this only works with our basic counter because app_digest == counter!
 
@@ -132,7 +142,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
     std::string myCheckpointDigest((char *) myCheckpoint.logDigest, SHA256_DIGEST_LENGTH);
     bool checkpointUsed = false;
 
-    if (checkpoint->log_digest() != myCheckpointDigest) {
+    if (checkpoint->log_digest() != myCheckpointDigest && checkpoint->seq() > myCheckpoint.seq) {
         log->app_->applySnapshot(checkpoint->app_digest());
         log->nextSeq = checkpoint->seq() + 1;
 
@@ -149,9 +159,10 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         }
 
         checkpointUsed = true;
-    }
 
-    LOG(INFO) << "Checkpoint digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
+        LOG(INFO) << "Applying checkpoint seq=" << checkpoint->seq()
+                  << " digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
+    }
 
     bool rollbackDone = false;
 

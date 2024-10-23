@@ -128,7 +128,7 @@ def local_reorder_exp(c, config_file, poisson=False):
 
 def get_gcloud_ext_ips(c):
     # parse gcloud CLI to get internalIP -> externalIP mapping    
-    gcloud_output = c.run("gcloud compute instances list").stdout[1:].splitlines()
+    gcloud_output = c.run("gcloud compute instances list").stdout.splitlines()[1:]
     gcloud_output = map(lambda s: s.split(), gcloud_output)
     ext_ips = {
         # internal ip and external ip are last 2 tokens in each line
@@ -137,21 +137,54 @@ def get_gcloud_ext_ips(c):
     }
     return ext_ips
 
-def get_gcloud_process_group(config, ext_ips):
+
+def get_all_int_ips(config):
     int_ips = set()
     for process in config:
         if process == "transport" or process == "app": continue
         int_ips |= set([ip for ip in config[process]["ips"]])
+    
+    return int_ips
 
+
+def get_all_ext_ips(config, ext_ip_map):
     ips = []
-    for ip in int_ips:  # TODO non local receivers?
-        if (ip not in ext_ips): continue
-        ips.append(ext_ips[ip])
+    for ip in get_all_int_ips(config):  # TODO non local receivers?
+        if (ip not in ext_ip_map): continue
+        ips.append(ext_ip_map[ip])
 
-    group = ThreadingGroup(
-        *ips
-    )
-    return group
+    return ips 
+
+
+@task
+def gcloud_vm(c, config_file="../configs/remote-prod.yaml", stop=False):
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    int_ips = get_all_int_ips(config)
+
+    gcloud_output = c.run("gcloud compute instances list").stdout.splitlines()[1:]
+    gcloud_output = map(lambda s : s.split(), gcloud_output)
+
+    vm_info = {
+        # name, zone, type, internal ip
+        line[3] : (line[0], line[1])
+        for line in gcloud_output
+    }
+
+    hdls = []
+    for ip in int_ips: 
+        name, zone = vm_info[ip]
+        h = c.run(f"gcloud compute instances {'stop' if stop else 'start'} {name} --zone {zone}", asynchronous=True)
+        hdls.append(h)
+
+    for h in hdls:
+        h.join()
+    
+    print(f"{'Stopped' if stop else 'Started'} all instances!")
+
 
 
 @task
@@ -205,7 +238,7 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
+    group = ThreadingGroup(*get_all_ext_ips(config, ext_ips))
     group.put(config_file)
 
     if setup:
@@ -232,7 +265,7 @@ def gcloud_copy_keys(c, config_file="../configs/remote-prod.yaml"):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
+    group = ThreadingGroup(*get_all_ext_ips(config, ext_ips))
     group.put(config_file)
 
     print("Copying keys over...")
@@ -441,7 +474,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
+    group = ThreadingGroup(*get_all_ext_ips(config, ext_ips))
     group.put(config_file)
     group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
 
@@ -536,7 +569,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml",
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    group = get_gcloud_process_group(config, ext_ips)
+    group = ThreadingGroup(*get_all_ext_ips(config, ext_ips))
     group.put(config_file)
     group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
 
