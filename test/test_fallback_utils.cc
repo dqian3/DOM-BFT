@@ -153,7 +153,7 @@ void assertLogSuffixEq(const LogSuffix &suffix, const TestLog &expected)
         EXPECT_EQ(actual->client_seq(), expectedEntry.c_seq);
 
         // You might think we shuold do this (I did at first), but since
-        // the log suffix jumbles the requests, these will not be right
+        // the log suffix doesn't update the underlying seq, these will not be right
         // EXPECT_EQ(actual->seq(), expected.startSeq + i + 1);
     }
 }
@@ -166,8 +166,6 @@ void assertLogEq(Log &log, const TestLog &expected)
 
     // Size of suffixes are the same
     ASSERT_EQ(expected.entries.size(), log.nextSeq - log.checkpoint.seq - 1);
-
-    LOG(INFO) << log;
 
     int n = expected.entries.size();
     for (int i = 0; i < n; i++) {
@@ -313,12 +311,12 @@ TEST(TestFallbackUtils, Catchup)
     assertLogEq(*behindLog, expectedLog);
 }
 
-TEST(TestFallbackUtils, ReplicaAhead)
+TEST(TestFallbackUtils, CheckpointAhead)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
     TestLog ahead{10, "bbbb", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
-    TestLog behind{8, "aaaa", {{0, 1}, {0, 2}, {2, 2}, {1, 2}, {3, 2}, {4, 2}}};
+    TestLog behind{8, "aaaa", {{0, 1}, {0, 2}, {1, 2}, {2, 2}, {3, 2}, {4, 2}}};
 
     TestHistory hist;
 
@@ -334,9 +332,11 @@ TEST(TestFallbackUtils, ReplicaAhead)
 
     // Apply to Log
     auto aheadLog = logFromTestLog(ahead);
+    LOG(INFO) << "Before apply: " << *aheadLog;
     applySuffixToLog(suffix, aheadLog);
+    LOG(INFO) << "After apply: " << *aheadLog;
 
     // Generate protocol log
-    TestLog expected{10, "bbbb", {{2, 2}, {1, 2}, {3, 2}, {4, 2}}};
+    TestLog expected{10, "bbbb", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
     assertLogEq(*aheadLog, expected);
 }

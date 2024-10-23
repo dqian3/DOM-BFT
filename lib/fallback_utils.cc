@@ -123,7 +123,6 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
 bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
-    LOG(INFO) << "Applying checkpoint";
 
     // TODO this only works with our basic counter because app_digest == counter!
 
@@ -133,7 +132,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
     std::string myCheckpointDigest((char *) myCheckpoint.logDigest, SHA256_DIGEST_LENGTH);
     bool checkpointUsed = false;
 
-    if (checkpoint->log_digest() != myCheckpointDigest && checkpoint->seq() <= myCheckpoint.seq) {
+    if (checkpoint->log_digest() != myCheckpointDigest && checkpoint->seq() > myCheckpoint.seq) {
         log->app_->applySnapshot(checkpoint->app_digest());
         log->nextSeq = checkpoint->seq() + 1;
 
@@ -150,9 +149,10 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         }
 
         checkpointUsed = true;
-    }
 
-    LOG(INFO) << "Checkpoint digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
+        LOG(INFO) << "Applying checkpoint seq=" << checkpoint->seq()
+                  << " digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
+    }
 
     bool rollbackDone = false;
 
