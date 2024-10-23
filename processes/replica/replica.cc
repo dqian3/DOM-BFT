@@ -60,7 +60,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     LOG(INFO) << "instantiating log";
 
     if (config.app == AppType::COUNTER) {
-        log_ = std::make_shared<Log>(std::make_unique<Counter>());
+        log_ = std::make_shared<Log>(std::make_shared<Counter>());
     } else {
         LOG(ERROR) << "Unrecognized App Type";
         exit(1);
@@ -661,6 +661,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
             const byte *logDigest = log_->getDigest(reply.seq());
             std::string appDigest = log_->app_->getDigest(reply.seq());
+            uint64_t inst = instance_;
 
             threadpool_.enqueueTask([=, this](byte *buffer) {
                 // Broadcast commmit Message
@@ -669,6 +670,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
                 commit.set_seq(reply.seq());
                 commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
                 commit.set_app_digest(appDigest);
+                commit.set_instance(inst);
 
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });

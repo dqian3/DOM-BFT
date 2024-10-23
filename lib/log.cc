@@ -53,7 +53,7 @@ std::ostream &operator<<(std::ostream &out, const LogEntry &le)
     return out;
 }
 
-Log::Log(std::unique_ptr<Application> app)
+Log::Log(std::shared_ptr<Application> app)
     : nextSeq(1)
     , lastExecuted(0)
     , app_(std::move(app))

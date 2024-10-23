@@ -68,7 +68,7 @@ typedef std::vector<TestLog> TestHistory;
 /************************ Test case generation helpers ************************/
 std::shared_ptr<Log> logFromTestLog(const TestLog &testLog)
 {
-    std::shared_ptr<Log> ret = std::make_shared<Log>(std::make_unique<MockApplication>());
+    std::shared_ptr<Log> ret = std::make_shared<Log>(std::make_shared<MockApplication>());
 
     ret->nextSeq = testLog.startSeq + 1;
 
@@ -236,7 +236,7 @@ TEST(TestFallbackUtils, ApplyLogSuffix)
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
-    MockApplication *mockApp = static_cast<MockApplication *>(log->app_.get());
+    std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(log->app_);
     EXPECT_CALL(*mockApp, abort(11)).WillOnce(Return(true));
 
     applySuffixToLog(suffix, log);
@@ -258,8 +258,6 @@ TEST(TestFallbackUtils, ApplyReplicaAhead)
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
-    MockApplication *mockApp = static_cast<MockApplication *>(log->app_.get());
-
     LOG(INFO) << "Before apply: " << *log;
     applySuffixToLog(suffix, log);
     LOG(INFO) << "After apply: " << *log;
@@ -280,10 +278,7 @@ TEST(TestFallbackUtils, ApplyReplicaInserted)
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
-    MockApplication *mockApp = static_cast<MockApplication *>(log->app_.get());
-
     applySuffixToLog(suffix, log);
-
     assertLogEq(*log, newLog);
 }
 
@@ -302,10 +297,10 @@ TEST(TestFallbackUtils, Catchup)
     hist.push_back({10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}});
     hist.push_back(behindTestLog);
 
-    auto f = generateFallbackProposal(1, hist);
+    auto proposal = generateFallbackProposal(1, hist);
 
     LogSuffix suffix;
-    getLogSuffixFromProposal(*f, suffix);
+    getLogSuffixFromProposal(*proposal, suffix);
 
     // Apply snapshot should be called
     MockApplication *mockApp = static_cast<MockApplication *>(behindLog->app_.get());
@@ -316,4 +311,32 @@ TEST(TestFallbackUtils, Catchup)
 
     TestLog expectedLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}};
     assertLogEq(*behindLog, expectedLog);
+}
+
+TEST(TestFallbackUtils, ReplicaAhead)
+{
+    // Test
+    // TODO we would probably need to mock out verifaction of certs and stuff here
+    TestLog ahead{10, "bbbb", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog behind{8, "aaaa", {{0, 1}, {0, 2}, {2, 2}, {1, 2}, {3, 2}, {4, 2}}};
+
+    TestHistory hist;
+
+    hist.push_back(behind);
+    hist.push_back(behind);
+    hist.push_back(behind);
+
+    auto proposal = generateFallbackProposal(1, hist);
+
+    // Generate suffix for fallback
+    LogSuffix suffix;
+    getLogSuffixFromProposal(*proposal, suffix);
+
+    // Apply to Log
+    auto aheadLog = logFromTestLog(ahead);
+    applySuffixToLog(suffix, aheadLog);
+
+    // Generate protocol log
+    TestLog expected{10, "bbbb", {{2, 2}, {1, 2}, {3, 2}, {4, 2}}};
+    assertLogEq(*aheadLog, expected);
 }

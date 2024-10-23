@@ -118,6 +118,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             logSuffix.entries.push_back(entry);
         }
     }
+    return true;
 }
 
 bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
@@ -132,7 +133,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
     std::string myCheckpointDigest((char *) myCheckpoint.logDigest, SHA256_DIGEST_LENGTH);
     bool checkpointUsed = false;
 
-    if (checkpoint->log_digest() != myCheckpointDigest) {
+    if (checkpoint->log_digest() != myCheckpointDigest && checkpoint->seq() <= myCheckpoint.seq) {
         log->app_->applySnapshot(checkpoint->app_digest());
         log->nextSeq = checkpoint->seq() + 1;
 
