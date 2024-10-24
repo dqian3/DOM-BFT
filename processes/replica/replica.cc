@@ -730,7 +730,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 VLOG(1)<< "Right shift logs by "<<rShiftNum <<" to align with the checkpoint";
                 // that is, there is never a left shift
                 assert(rShiftNum >= 0);
-                reapplyEntriesWithRecord(log_->checkpoint.seq + 1, 0);
+                reapplyEntriesWithRecord(log_->checkpoint.seq + 1, rShiftNum);
             }else{
                 checkpointClientRecords_ = intermediateCheckpointClientRecords_;
             }
