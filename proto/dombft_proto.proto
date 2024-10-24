@@ -40,8 +40,9 @@ message Reply {
 
     uint32 replica_id = 5;
     bool fast = 6;
-    bytes result = 7;
-    bytes digest = 8;
+    bool retry = 7;
+    bytes result = 8;
+    bytes digest = 9;
 }
 
 message Cert {
