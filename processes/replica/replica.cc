@@ -1044,13 +1044,17 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
                   << " due to duplication! Send reply to client";
 
         uint32_t  instance = instance_;
+        byte logDigest[SHA256_DIGEST_LENGTH];
+        memcpy(logDigest, log_->checkpoint.logDigest, SHA256_DIGEST_LENGTH);
         threadpool_.enqueueTask([=, this](byte *buffer) {
             Reply reply;
             // TODO(Hao): is providing these info enough for client?
+            //  use checkpoint digest for now
             reply.set_client_id(clientId);
             reply.set_client_seq(clientSeq);
             reply.set_replica_id(replicaId_);
             reply.set_retry(true);
+            reply.set_digest(logDigest, SHA256_DIGEST_LENGTH);
             reply.set_instance(instance);
 
             LOG(INFO) << "Sending retry reply back to client " << clientId;
