@@ -644,8 +644,8 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
                 commit.set_instance(inst);
 
                 byte recordDigest[SHA256_DIGEST_LENGTH];
-                memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
-                // getRecordsDigest(tmpClientRecords, recordDigest);
+                //memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
+                getRecordsDigest(tmpClientRecords, recordDigest);
                 commit.set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
                 toProtoClientRecords(commit, tmpClientRecords);
                 VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
@@ -813,8 +813,8 @@ void Replica::startFallback()
     fallbackStartMsg.set_replica_id(replicaId_);
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
-    memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
-    // getRecordsDigest(checkpointClientRecords_, recordDigest);
+    //memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
+    getRecordsDigest(checkpointClientRecords_, recordDigest);
     toProtoClientRecords(fallbackStartMsg, checkpointClientRecords_);
 
     LOG(INFO) << "Sending FALLBACK_START to replica " << instance_ % replicaAddrs_.size();
