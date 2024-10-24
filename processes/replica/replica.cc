@@ -632,16 +632,16 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
             const byte *logDigest = log_->getDigest(reply.seq());
             std::string appDigest = log_->app_->getDigest(reply.seq());
-            ClientRecords tmpClientRecords = checkpointClientRecords_;
-            uint64_t inst = instance_;
+            ClientRecords tmpClientRecords = intermediateCheckpointClientRecords_;
+            uint32_t instance = instance_;
             threadpool_.enqueueTask([=, this](byte *buffer) {
                 // Broadcast commmit Message
                 dombft::proto::Commit commit;
                 commit.set_replica_id(replicaId_);
                 commit.set_seq(reply.seq());
+                commit.set_instance(instance);
                 commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
                 commit.set_app_digest(appDigest);
-                commit.set_instance(inst);
 
                 byte recordDigest[SHA256_DIGEST_LENGTH];
                 //memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
