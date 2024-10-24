@@ -46,8 +46,6 @@ namespace dombft{
             }
         }
         byte recordDigest[SHA256_DIGEST_LENGTH];
-        // zero out the digest
-        //memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
         getRecordsDigest(tmpClientRecords, recordDigest);
         LOG(INFO)<< "record digest: " << digest_to_hex(recordDigest, SHA256_DIGEST_LENGTH);
         LOG(INFO)<< "message digest: " << digest_to_hex(message.client_records_digest());

@@ -644,7 +644,6 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
                 commit.set_app_digest(appDigest);
 
                 byte recordDigest[SHA256_DIGEST_LENGTH];
-                //memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
                 getRecordsDigest(tmpClientRecords, recordDigest);
                 commit.set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
                 toProtoClientRecords(commit, tmpClientRecords);
@@ -727,6 +726,10 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 checkpointClientRecords_.clear();
                 getClientRecordsFromProto(commit.client_records(), checkpointClientRecords_);
                 clientRecords_ = checkpointClientRecords_;
+                int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecords_,intermediateCheckpointClientRecords_);
+                VLOG(1)<< "Right shift logs by "<<rShiftNum <<" to align with the checkpoint";
+                // that is, there is never a left shift
+                assert(rShiftNum >= 0);
                 reapplyEntriesWithRecord(log_->checkpoint.seq + 1, 0);
             }else{
                 checkpointClientRecords_ = intermediateCheckpointClientRecords_;
@@ -813,7 +816,6 @@ void Replica::startFallback()
     fallbackStartMsg.set_replica_id(replicaId_);
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
-    //memset(recordDigest, 0, SHA256_DIGEST_LENGTH);
     getRecordsDigest(checkpointClientRecords_, recordDigest);
     toProtoClientRecords(fallbackStartMsg, checkpointClientRecords_);
 
