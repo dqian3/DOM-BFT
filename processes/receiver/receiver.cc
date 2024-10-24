@@ -177,7 +177,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 void Receiver::forwardRequest(const DOMRequest &request)
 {
     // DEDUP TEST
-    if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 10000 && 0) {
+    if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 10000 && !missed_) {
         missed_ = true;
         VLOG(1)<<"Dropping";
         return;

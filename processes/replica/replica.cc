@@ -1091,12 +1091,14 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
 
         log_->app_->execute(entry->request, curSeq);
 
-        entry->updateDigest(curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
-                                         : log_->getEntry(curSeq-1)->digest);
+        auto prevDigest = curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
+                                                             : log_->getEntry(curSeq-1)->digest;
+
+        entry->updateDigest(prevDigest);
 
         VLOG(5) << "PERF event=update_digest seq=" << curSeq
                 << " digest=" << digest_to_hex(entry->digest).substr(56) << " c_id=" << clientId
-                << " c_seq=" << clientSeq;
+                << " c_seq=" << clientSeq << " prevDigest=" << digest_to_hex(prevDigest).substr(56);
         curSeq++;
     }
 
