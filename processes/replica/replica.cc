@@ -2,13 +2,10 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
-#include "lib/fallback_utils.h"
-#include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
-#include <assert.h>
 #include <openssl/pem.h>
 #include <sstream>
 
@@ -18,8 +15,8 @@ using namespace dombft::proto;
 Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq)
     : replicaId_(replicaId)
     , instance_(0)
-    , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
+    , swapFreq_(swapFreq)
     , sigProvider_()
     , threadpool_(config.replicaNumWorkerThreads)
 {
@@ -82,7 +79,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true,
+                                                          replicaAddrs_[replicaId]);
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
 
@@ -99,7 +97,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         }
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender){
         this->handleMessage(msgHdr, msgBuffer, sender, *sender == replicaAddrs_[replicaId_]);
     };
 
@@ -172,36 +170,12 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
         }
 
         if (fallback_) {
-            LOG(INFO) << "Dropping request due to fallback";
+            VLOG(6) << "Dropping request due to fallback";
             return;
         }
-        uint32_t clientId = clientHeader.client_id();
 
-        {
-            std::lock_guard<std::mutex> guard(replicaStateMutex_);
-            clientInstance_[clientId] = std::max(clientHeader.instance(), clientInstance_[clientId]);
-
-            if (clientHeader.instance() < instance_) {
-                LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientHeader.client_seq()
-                          << " due to stale instance! Sending blank reply to catch client up";
-
-                // update this so we don't send this multiple times
-                clientInstance_[clientId] = instance_;
-
-                threadpool_.enqueueTask([this, clientId, inst = instance_](byte *buffer) {
-                    // Send blank request to catch up the client
-                    Reply reply;
-                    reply.set_replica_id(replicaId_);
-                    reply.set_client_id(clientId);
-                    reply.set_instance(inst);
-
-                    MessageHeader *hdr = endpoint_->PrepareProtoMsg(reply, MessageType::REPLY, buffer);
-                    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-                    endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
-                    return;
-                });
-            }
-        }
+        // TODO(Hao) should this be in handleClientRequest?
+        if (!checkAndUpdateClientRecord(clientHeader)) return;
 
         if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
             holdAndSwapCliReq(clientHeader);
@@ -270,7 +244,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
+        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
             LOG(INFO) << "Failed to verify client signature of c_id=" << fallbackTriggerMsg.client_id();
             return;
         }
@@ -285,7 +259,6 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
         if (fallbackTriggerMsg.has_proof()) {
             // TODO verify proof
             LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
-
             broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
             startFallback();
         } else {
@@ -306,7 +279,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -699,10 +672,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     std::map<std::tuple<std::string, std::string, int, int>, std::set<int>> matchingCommits;
 
     // Find a cert among a set of replies
-    for (const auto &entry : checkpointCommits_) {
-        uint32_t replicaId = entry.first;
-        const Commit &commit = entry.second;
-
+    for (const auto &[replicaId, commit] : checkpointCommits_) {
         // Already committed
         if (commit.seq() <= log_->checkpoint.seq)
             continue;
@@ -719,16 +689,17 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         // Need 2f + 1 and own commit
         // Modifies log if checkpoint is incosistent with our current log
         if (matchingCommits[key].size() >= 2 * f_ + 1 && hasOwnCommit) {
-            uint32_t seq = std::get<3>(key);
+            uint32_t seq = commit.seq();
 
             LOG(INFO) << "Committing seq=" << seq;
             VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
 
-            log_->checkpoint.seq = std::get<3>(key);
+            log_->checkpoint.seq = seq;
 
             memcpy(log_->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
             memcpy(log_->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
 
+            // TODO(Hao) why store these?
             for (uint32_t r : matchingCommits[key]) {
                 log_->checkpoint.commitMessages[r] = checkpointCommits_[r];
                 log_->checkpoint.signatures[r] = checkpointCommitSigs_[r];
@@ -772,6 +743,11 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             return;
         }
     }
+void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
+{
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    endpoint_->SendPreparedMsgTo(dst, hdr);
 }
 
 void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf)
@@ -1037,11 +1013,79 @@ void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
     }
 }
 
-void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
-{
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    endpoint_->SendPreparedMsgTo(dst, hdr);
+
+bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
+    uint32_t clientId = clientHeader.client_id();
+    uint32_t clientSeq = clientHeader.client_seq();
+    uint32_t clientInstance = clientHeader.instance();
+
+    std::lock_guard<std::mutex> guard(replicaStateMutex_);
+    ClientRecord &cliRecord = clientRecords_[clientId];
+    cliRecord.instance_ = std::max(clientInstance, cliRecord.instance_);
+
+    if (clientInstance < instance_) {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
+                  << " due to stale instance! Sending blank reply to catch client up";
+        if (cliRecord.instance_ < instance_) {
+            // Send blank request to catch up the client
+            // update this so we don't send this multiple times
+            cliRecord.instance_ = instance_;
+            threadpool_.enqueueTask([this, clientId, inst = instance_](byte *buffer) {
+                // Send blank request to catch up the client
+                Reply reply;
+                reply.set_replica_id(replicaId_);
+                reply.set_client_id(clientId);
+                reply.set_instance(inst);
+
+                sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
+                return;
+            });
+        }
+        return false;
+    }
+
+    if (!updateRecordWithSeq(cliRecord, clientSeq)) {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
+                  << " due to duplication!";
+        return false;
+    }
+
+    return true;
+
 }
+
+void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
+{
+    log_->app_->abort(startingSeq - 1);
+    uint32_t curSeq = startingSeq;
+    for (uint32_t s = startingSeq - rShiftNum; s < log_->nextSeq; s++) {
+        std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
+
+        // record update
+        uint32_t clientId = entry->client_id;
+        uint32_t clientSeq = entry->client_seq;
+        ClientRecord& cliRecord = clientRecords_[clientId];
+        cliRecord.instance_ = instance_;
+        if(!updateRecordWithSeq(cliRecord, clientSeq)) {
+            LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
+                      << " due to duplication in reapplying with record!";
+            continue;
+        }
+
+        log_->app_->execute(entry->request, curSeq);
+
+        entry->updateDigest(curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
+                                         : log_->getEntry(curSeq-1)->digest);
+
+        VLOG(5) << "PERF event=update_digest seq=" << curSeq
+                << " digest=" << digest_to_hex(entry->digest).substr(56);
+        curSeq++;
+    }
+
+    if(curSeq != log_->nextSeq)
+        log_->nextSeq = curSeq;
+}
+
+
 
 }   // namespace dombft

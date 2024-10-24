@@ -14,7 +14,7 @@ cc_library(
         "//lib:fallback_utils",
         "//lib:threadpool",
         "//processes:process_config",
-        "//processes:config_util",
+        "//processes:config_util"
     ],
 )
 
