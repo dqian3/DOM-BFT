@@ -639,7 +639,11 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
                 commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
                 commit.set_app_digest(appDigest);
 
+                byte recordDigest[SHA256_DIGEST_LENGTH];
+                getRecordsDigest(tmpClientRecords, recordDigest);
+                commit.set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
                 toProtoClientRecords(commit, tmpClientRecords);
+                VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });
 
@@ -667,7 +671,14 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         return;
     }
 
-    std::map<std::tuple<std::string, std::string, int, int>, std::set<int>> matchingCommits;
+    // verify the record is not tampered by a malicious replica
+    if(!verifyRecordDigestFromProto(commitMsg)){
+        VLOG(5) << "Client records from commit msg from replica "<<commitMsg.replica_id()
+        << " does not match the carried records digest";
+        return;
+    }
+
+    std::map<std::tuple<std::string, std::string, uint32_t, uint32_t, std::string>, std::set<int>> matchingCommits;
 
     // Find a cert among a set of replies
     for (const auto &[replicaId, commit] : checkpointCommits_) {
@@ -675,9 +686,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         if (commit.seq() <= log_->checkpoint.seq)
             continue;
 
-        std::tuple<std::string, std::string, uint32_t, uint32_t> key = {commit.log_digest(), commit.app_digest(),
-                                                                        commit.instance(), commit.seq()};
-
+        std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key =
+                {commit.log_digest(), commit.app_digest(),commit.instance(), commit.seq(), commit.client_records_digest()};
         matchingCommits[key].insert(replicaId);
 
         // TODO see if there's a better way to do this
@@ -806,7 +816,8 @@ void Replica::startFallback()
     fallbackStartMsg.set_instance(instance_);
     fallbackStartMsg.set_replica_id(replicaId_);
     log_->toProto(fallbackStartMsg);
-
+    byte recordDigest[SHA256_DIGEST_LENGTH];
+    getRecordsDigest(checkpointClientRecords_, recordDigest);
     toProtoClientRecords(fallbackStartMsg, checkpointClientRecords_);
 
     LOG(INFO) << "Sending FALLBACK_START to replica " << instance_ % replicaAddrs_.size();
@@ -919,7 +930,7 @@ void Replica::finishFallback()
     broadcastToReplicas(reply, MessageType::REPLY);
 }
 
-// dummy fallbacl PBFT
+// dummy fallback PBFT
 
 void Replica::doPrePreparePhase()
 {
