@@ -14,7 +14,6 @@ namespace dombft{
 
     bool updateRecordWithSeq(ClientRecord& cliRecord, uint32_t newSeq)
     {
-        bool updated = true;
         if(cliRecord.lastSeq_ < newSeq) {
             for (uint32_t i = cliRecord.lastSeq_ + 1; i < newSeq; i++)
                 cliRecord.missedSeqs_.insert(i);
@@ -22,9 +21,9 @@ namespace dombft{
         } else if(cliRecord.missedSeqs_.contains(newSeq)) {
             cliRecord.missedSeqs_.erase(newSeq);
         } else {
-            updated = false;
+            return false;
         }
-        return updated;
+        return true;
     }
 
     void getRecordsDigest(const ClientRecords &records, byte *digest)
