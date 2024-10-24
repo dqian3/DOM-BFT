@@ -132,6 +132,7 @@ cc_library(
         "@openssl//:openssl",
         "//lib:log",
         "//proto:dombft_proto_cc",
+        "//lib:client_record"
     ],
     visibility = ["//visibility:public"],
 )
@@ -150,7 +151,6 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-
 cc_library(
     name = "threadpool",
     srcs = ["threadpool.cc"],
@@ -158,6 +158,18 @@ cc_library(
     deps = [
         ":signature_provider",
         ":utils",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "client_record",
+    hdrs = ["client_record.h"],
+    srcs = ["client_record.cc"],
+    deps = [
+        ":utils",
+        ":common_struct",
+        "//proto:dombft_proto_cc"
     ],
     visibility = ["//visibility:public"],
 )
