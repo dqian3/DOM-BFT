@@ -743,6 +743,9 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             return;
         }
     }
+}
+
+
 void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
 {
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
