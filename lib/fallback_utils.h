@@ -2,6 +2,7 @@
 #define FALLBACK_UTILS_H
 
 #include "lib/log.h"
+#include "lib/client_record.h"
 
 #include "proto/dombft_proto.pb.h"
 
