@@ -727,9 +727,11 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 getClientRecordsFromProto(commit.client_records(), checkpointClientRecords_);
                 clientRecords_ = checkpointClientRecords_;
                 int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecords_,intermediateCheckpointClientRecords_);
-                VLOG(1)<< "Right shift logs by "<<rShiftNum <<" to align with the checkpoint";
                 // that is, there is never a left shift
                 assert(rShiftNum >= 0);
+                if(rShiftNum > 0) {
+                    VLOG(1) << "Right shift logs by " << rShiftNum << " to align with the checkpoint";
+                }
                 reapplyEntriesWithRecord(log_->checkpoint.seq + 1, rShiftNum);
             }else{
                 checkpointClientRecords_ = intermediateCheckpointClientRecords_;
@@ -1093,7 +1095,8 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
                                          : log_->getEntry(curSeq-1)->digest);
 
         VLOG(5) << "PERF event=update_digest seq=" << curSeq
-                << " digest=" << digest_to_hex(entry->digest).substr(56);
+                << " digest=" << digest_to_hex(entry->digest).substr(56) << " c_id=" << clientId
+                << " c_seq=" << clientSeq;
         curSeq++;
     }
 
