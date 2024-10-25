@@ -1073,9 +1073,12 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
 
 void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
 {
+    if(rShiftNum){
+        log_->rightShiftEntries(startingSeq - rShiftNum,rShiftNum);
+    }
     log_->app_->abort(startingSeq - 1);
     uint32_t curSeq = startingSeq;
-    for (uint32_t s = startingSeq - rShiftNum; s < log_->nextSeq; s++) {
+    for (uint32_t s = startingSeq; s < log_->nextSeq; s++) {
 
         // get entry to be updated FROM
         std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
@@ -1093,9 +1096,6 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
 
         log_->app_->execute(clientReq, curSeq);
 
-        auto prevDigest = curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
-                                                             : log_->getEntry(curSeq-1)->digest;
-
         // get the entry to be updated TO
         if(curSeq != s) {
             entry = log_->getEntry(curSeq);
@@ -1104,6 +1104,9 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
             entry->seq = curSeq;
             entry->request = clientReq;
         }
+
+        auto prevDigest = curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
+                                                             : log_->getEntry(curSeq-1)->digest;
 
         entry->updateDigest(prevDigest);
 

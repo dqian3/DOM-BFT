@@ -101,6 +101,7 @@ struct Log {
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 
     std::shared_ptr<LogEntry> getEntry(uint32_t seq);
+    void rightShiftEntries(uint32_t startSeq, uint32_t num);
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);

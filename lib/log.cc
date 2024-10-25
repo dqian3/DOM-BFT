@@ -184,6 +184,23 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
     }
 }
 
+void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
+{
+    // TODO(Hao): an offset counter will be more efficient
+    //  but use this to prove correctness for now... trust user for other boundary check...
+    if (startSeq < nextSeq && (startSeq >= nextSeq - MAX_SPEC_HIST || startSeq < MAX_SPEC_HIST)) {
+        // iterate from back
+        for (uint32_t i = nextSeq - 1 + num; i - num >= startSeq; i--) {
+            uint32_t idx = i % MAX_SPEC_HIST;
+            uint32_t prevIdx = (i - num) % MAX_SPEC_HIST;
+            log[idx] = log[prevIdx];
+        }
+        nextSeq += num;
+    } else {
+        LOG(ERROR) << "Sequence number " << startSeq << " is out of range.";
+    }
+}
+
 void Log::commit(uint32_t seq)
 {
     if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
