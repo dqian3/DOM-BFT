@@ -1076,11 +1076,13 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
     log_->app_->abort(startingSeq - 1);
     uint32_t curSeq = startingSeq;
     for (uint32_t s = startingSeq - rShiftNum; s < log_->nextSeq; s++) {
-        std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
 
-        // record update
+        // get entry to be updated FROM
+        std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
         uint32_t clientId = entry->client_id;
         uint32_t clientSeq = entry->client_seq;
+        std::string clientReq = entry->request;
+
         ClientRecord& cliRecord = clientRecords_[clientId];
         cliRecord.instance_ = instance_;
         if(!updateRecordWithSeq(cliRecord, clientSeq)) {
@@ -1089,12 +1091,20 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
             continue;
         }
 
-        log_->app_->execute(entry->request, curSeq);
+        log_->app_->execute(clientReq, curSeq);
 
         auto prevDigest = curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
                                                              : log_->getEntry(curSeq-1)->digest;
 
-        entry = log_->getEntry(curSeq);
+        // get the entry to be updated TO
+        if(curSeq != s) {
+            entry = log_->getEntry(curSeq);
+            entry->client_id = clientId;
+            entry->client_seq = clientSeq;
+            entry->seq = curSeq;
+            entry->request = clientReq;
+        }
+
         entry->updateDigest(prevDigest);
 
         VLOG(5) << "PERF event=update_digest seq=" << curSeq
