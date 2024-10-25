@@ -187,7 +187,7 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
 // only shifts entries, no change in entry field
 void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
 {
-    // TODO(Hao): an offset counter will be more efficient
+    // TODO(Hao): an offset counter (prefix sum?) will be more efficient
     //  but use this to prove correctness for now... trust user for other boundary check...
     if (startSeq < nextSeq && (startSeq >= nextSeq - MAX_SPEC_HIST || startSeq < MAX_SPEC_HIST)) {
         // iterate from back
