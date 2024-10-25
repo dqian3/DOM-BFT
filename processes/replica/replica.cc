@@ -1094,6 +1094,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
         auto prevDigest = curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
                                                              : log_->getEntry(curSeq-1)->digest;
 
+        entry = log_->getEntry(curSeq);
         entry->updateDigest(prevDigest);
 
         VLOG(5) << "PERF event=update_digest seq=" << curSeq
