@@ -1101,10 +1101,9 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
             entry = log_->getEntry(curSeq);
             entry->client_id = clientId;
             entry->client_seq = clientSeq;
-            entry->seq = curSeq;
             entry->request = clientReq;
         }
-
+        entry->seq = curSeq;
         auto prevDigest = curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
                                                              : log_->getEntry(curSeq-1)->digest;
 

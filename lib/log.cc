@@ -184,6 +184,7 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
     }
 }
 
+// only shifts entries, no change in entry field
 void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
 {
     // TODO(Hao): an offset counter will be more efficient
