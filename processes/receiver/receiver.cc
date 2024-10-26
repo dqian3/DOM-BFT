@@ -9,8 +9,9 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines,
-                   bool skipVerify)
+Receiver::Receiver(
+    const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines, bool skipVerify
+)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
@@ -177,9 +178,9 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 void Receiver::forwardRequest(const DOMRequest &request)
 {
     // DEDUP TEST
-    if(receiverId_ == 1 && request.client_id() == 1 &&   request.client_seq() == 10000 && !0) {
+    if (receiverId_ == 1 && request.client_id() == 1 && request.client_seq() == 10000 && !0) {
         missed_ = true;
-        VLOG(1)<<"Dropping";
+        VLOG(1) << "Dropping";
         return;
     }
     //////////////////////
@@ -197,7 +198,6 @@ void Receiver::forwardRequest(const DOMRequest &request)
     if (skipForwarding_) {
         return;
     }
-
 
     if (false)   // receiverConfig_.ipcReplica)
     {

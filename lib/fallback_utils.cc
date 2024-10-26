@@ -12,15 +12,15 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     uint32_t maxCheckpointSeq = 0;
 
     // First find highest commit point
-    const google::protobuf::RepeatedPtrField<dombft::proto::CheckpointClientRecord> *tmpClientRecordsPtr = nullptr;
+    google::protobuf::RepeatedPtrField<dombft::proto::CheckpointClientRecord> tmpClientRecordsPtr;
     for (auto &log : fallbackProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
             maxCheckpointSeq = log.checkpoint().seq();
-            tmpClientRecordsPtr = &log.client_records();
+            tmpClientRecordsPtr = log.client_records();
         }
     }
-    getClientRecordsFromProto(*tmpClientRecordsPtr, logSuffix.clientRecords);
+    getClientRecordsFromProto(tmpClientRecordsPtr, logSuffix.clientRecords);
     VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
 
     // Find highest request with a cert
@@ -191,7 +191,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
                 VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                         << " since already in log at seq=" << seq;
                 continue;
-            }else{
+            } else {
                 log->nextSeq = seq;
                 log->app_->abort(seq - 1);
                 rollbackDone = true;
@@ -201,7 +201,7 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         assert(seq == log->nextSeq);
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
-        if(updateRecordWithSeq(clientRecords[clientId], clientSeq)){
+        if (updateRecordWithSeq(clientRecords[clientId], clientSeq)) {
             clientRecords[clientId].instance_ = logSuffix.instance;
 
             std::string result;
@@ -211,8 +211,9 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
             VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                     << " instance=" << logSuffix.instance << " client_id=" << clientId
-                    << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
-        }else{
+                    << " client_seq=" << entry->client_seq()
+                    << " digest=" << digest_to_hex(log->getDigest()).substr(56);
+        } else {
             seq--;
             LOG(INFO) << "Dropping request c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                       << " due to duplication in applying suffix!";

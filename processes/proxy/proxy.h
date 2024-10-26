@@ -84,8 +84,9 @@ public:
     Proxy(const ProcessConfig &config, uint32_t proxyId_);
 
     // Create a proxy that generates requests on its own, for DOM experiments
-    Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t genReqFreq, uint32_t genReqDuration,
-          bool genReqPoisson);
+    Proxy(
+        const ProcessConfig &config, uint32_t proxyId, uint32_t genReqFreq, uint32_t genReqDuration, bool genReqPoisson
+    );
     ~Proxy();
 
     void run();

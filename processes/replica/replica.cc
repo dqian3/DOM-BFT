@@ -508,23 +508,23 @@ void Replica::handleClientRequest(const ClientRequest &request)
         reply.set_instance(instance);
         reply.set_digest(digest);
 
-    LOG(INFO) << "Sending reply back to client " << clientId;
-    sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
+        LOG(INFO) << "Sending reply back to client " << clientId;
+        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
 
-    // Try and commit every CHECKPOINT_INTERVAL replies
-    if (seq % CHECKPOINT_INTERVAL == 0) {
-        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
-        {
-            std::lock_guard<std::mutex> guard(replicaStateMutex_);
-            // an intermediate record is needed as current checkpointing can be interrupted by fallback
-            // so only when the checkpoint is finished, the checkpoint record is updated
-            intermediateCheckpointClientRecords_ = tmpClientRecords;
-            checkpointSeq_ = seq;
-            checkpointCert_.reset();
+        // Try and commit every CHECKPOINT_INTERVAL replies
+        if (seq % CHECKPOINT_INTERVAL == 0) {
+            VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+            {
+                std::lock_guard<std::mutex> guard(replicaStateMutex_);
+                // an intermediate record is needed as current checkpointing can be interrupted by fallback
+                // so only when the checkpoint is finished, the checkpoint record is updated
+                intermediateCheckpointClientRecords_ = tmpClientRecords;
+                checkpointSeq_ = seq;
+                checkpointCert_.reset();
+            }
+            // TODO remove execution result here
+            broadcastToReplicas(reply, MessageType::REPLY, buffer);
         }
-        // TODO remove execution result here
-        broadcastToReplicas(reply, MessageType::REPLY, buffer);
-    }
     });
 }
 
@@ -671,9 +671,9 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     }
 
     // verify the record is not tampered by a malicious replica
-    if(!verifyRecordDigestFromProto(commitMsg)){
-        VLOG(5) << "Client records from commit msg from replica "<<commitMsg.replica_id()
-        << " does not match the carried records digest";
+    if (!verifyRecordDigestFromProto(commitMsg)) {
+        VLOG(5) << "Client records from commit msg from replica " << commitMsg.replica_id()
+                << " does not match the carried records digest";
         return;
     }
 
@@ -685,8 +685,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         if (commit.seq() <= log_->checkpoint.seq)
             continue;
 
-        std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key =
-                {commit.log_digest(), commit.app_digest(),commit.instance(), commit.seq(), commit.client_records_digest()};
+        std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key = {
+            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_records_digest()};
         matchingCommits[key].insert(replicaId);
 
         // TODO see if there's a better way to do this
@@ -726,14 +726,15 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 checkpointClientRecords_.clear();
                 getClientRecordsFromProto(commit.client_records(), checkpointClientRecords_);
                 clientRecords_ = checkpointClientRecords_;
-                int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecords_,intermediateCheckpointClientRecords_);
+                int rShiftNum =
+                    getRightShiftNumWithRecords(checkpointClientRecords_, intermediateCheckpointClientRecords_);
                 // that is, there is never a left shift
                 assert(rShiftNum >= 0);
-                if(rShiftNum > 0) {
+                if (rShiftNum > 0) {
                     VLOG(1) << "Right shift logs by " << rShiftNum << " to align with the checkpoint";
                 }
                 reapplyEntriesWithRecord(log_->checkpoint.seq + 1, rShiftNum);
-            }else{
+            } else {
                 checkpointClientRecords_ = intermediateCheckpointClientRecords_;
             }
 
@@ -741,7 +742,6 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
         }
     }
 }
-
 
 void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
 {
@@ -783,8 +783,10 @@ bool Replica::verifyCert(const Cert &cert)
         const std::string &sig = cert.signatures()[i];
         std::string serializedReply = reply.SerializeAsString();
 
-        if (!sigProvider_.verify((byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(),
-                                 sig.size(), "replica", reply.replica_id())) {
+        if (!sigProvider_.verify(
+                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
+                reply.replica_id()
+            )) {
             LOG(INFO) << "Cert failed to verify!";
             return false;
         }
@@ -838,8 +840,9 @@ void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
     }
 
     // First check if we have 2f + 1 fallback start messages for the same instance
-    auto numStartMsgs = std::count_if(fallbackHistory_.begin(), fallbackHistory_.end(),
-                                      [&](auto &startMsg) { return startMsg.second.instance() == msg.instance(); });
+    auto numStartMsgs = std::count_if(fallbackHistory_.begin(), fallbackHistory_.end(), [&](auto &startMsg) {
+        return startMsg.second.instance() == msg.instance();
+    });
 
     if (numStartMsgs == 2 * f_ + 1) {
         doPrePreparePhase();
@@ -992,8 +995,9 @@ void Replica::handlePrepare(const FallbackPrepare &msg)
 {
     VLOG(6) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPrepares_[msg.replica_id()] = msg;
-    auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(),
-                                 [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+    auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(), [this](auto &curMsg) {
+        return curMsg.second.instance() == instance_;
+    });
     if (numMsgs == 2 * f_ + 1) {
         VLOG(6) << "DUMMY Prepare received from 2f + 1 replicas, Prepared!";
         doCommitPhase();
@@ -1004,16 +1008,17 @@ void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
 {
     VLOG(6) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPBFTCommits_[msg.replica_id()] = msg;
-    auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(),
-                                 [this](auto &curMsg) { return curMsg.second.instance() == instance_; });
+    auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
+        return curMsg.second.instance() == instance_;
+    });
     if (numMsgs == 2 * f_ + 1) {
         VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
         finishFallback();
     }
 }
 
-
-bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
+bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
+{
     uint32_t clientId = clientHeader.client_id();
     uint32_t clientSeq = clientHeader.client_seq();
     uint32_t clientInstance = clientHeader.instance();
@@ -1047,7 +1052,7 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                   << " due to duplication! Send reply to client";
 
-        uint32_t  instance = instance_;
+        uint32_t instance = instance_;
         byte logDigest[SHA256_DIGEST_LENGTH];
         memcpy(logDigest, log_->checkpoint.logDigest, SHA256_DIGEST_LENGTH);
         threadpool_.enqueueTask([=, this](byte *buffer) {
@@ -1068,13 +1073,12 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader){
     }
 
     return true;
-
 }
 
 void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
 {
-    if(rShiftNum){
-        log_->rightShiftEntries(startingSeq - rShiftNum,rShiftNum);
+    if (rShiftNum) {
+        log_->rightShiftEntries(startingSeq - rShiftNum, rShiftNum);
     }
     log_->app_->abort(startingSeq - 1);
     uint32_t curSeq = startingSeq;
@@ -1086,9 +1090,9 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
         uint32_t clientSeq = entry->client_seq;
         std::string clientReq = entry->request;
 
-        ClientRecord& cliRecord = clientRecords_[clientId];
+        ClientRecord &cliRecord = clientRecords_[clientId];
         cliRecord.instance_ = instance_;
-        if(!updateRecordWithSeq(cliRecord, clientSeq)) {
+        if (!updateRecordWithSeq(cliRecord, clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                       << " due to duplication in reapplying with record!";
             continue;
@@ -1097,28 +1101,26 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
         log_->app_->execute(clientReq, curSeq);
 
         // get the entry to be updated TO
-        if(curSeq != s) {
+        if (curSeq != s) {
             entry = log_->getEntry(curSeq);
             entry->client_id = clientId;
             entry->client_seq = clientSeq;
             entry->request = clientReq;
         }
         entry->seq = curSeq;
-        auto prevDigest = curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest
-                                                             : log_->getEntry(curSeq-1)->digest;
+        auto prevDigest =
+            curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest : log_->getEntry(curSeq - 1)->digest;
 
         entry->updateDigest(prevDigest);
 
-        VLOG(5) << "PERF event=update_digest seq=" << curSeq
-                << " digest=" << digest_to_hex(entry->digest).substr(56) << " c_id=" << clientId
-                << " c_seq=" << clientSeq << " prevDigest=" << digest_to_hex(prevDigest).substr(56);
+        VLOG(5) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
+                << " c_id=" << clientId << " c_seq=" << clientSeq
+                << " prevDigest=" << digest_to_hex(prevDigest).substr(56);
         curSeq++;
     }
 
-    if(curSeq != log_->nextSeq)
+    if (curSeq != log_->nextSeq)
         log_->nextSeq = curSeq;
 }
-
-
 
 }   // namespace dombft

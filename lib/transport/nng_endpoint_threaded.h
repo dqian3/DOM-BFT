@@ -36,8 +36,10 @@ private:
 class NngRecvThread {
 
 public:
-    NngRecvThread(const std::vector<nng_socket> &socks, const std::unordered_map<int, Address> &sockToAddr,
-                  struct ev_loop *parentLoop, ev_async *recvWatcher);
+    NngRecvThread(
+        const std::vector<nng_socket> &socks, const std::unordered_map<int, Address> &sockToAddr,
+        struct ev_loop *parentLoop, ev_async *recvWatcher
+    );
     ~NngRecvThread();
     void run();
 

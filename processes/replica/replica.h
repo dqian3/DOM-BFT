@@ -1,5 +1,6 @@
 #include "processes/process_config.h"
 
+#include "lib/fallback_utils.h"
 #include "lib/common.h"
 #include "lib/log.h"
 #include "lib/message_type.h"
@@ -8,7 +9,6 @@
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
-#include "lib/fallback_utils.h"
 #include "proto/dombft_proto.pb.h"
 
 #include <fstream>
@@ -79,7 +79,7 @@ private:
     void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
-    void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf= nullptr);
+    void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf = nullptr);
     void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf = nullptr);
     bool verifyCert(const dombft::proto::Cert &cert);
 
@@ -104,8 +104,6 @@ private:
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
     void reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum);
-
-
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

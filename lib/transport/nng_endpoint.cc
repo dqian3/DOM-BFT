@@ -2,8 +2,9 @@
 
 #include <nng/protocol/pair0/pair.h>
 
-NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, const Address &otherAddr,
-                                     byte *recvBuffer)
+NngMessageHandler::NngMessageHandler(
+    MessageHandlerFunc msghdl, nng_socket s, const Address &otherAddr, byte *recvBuffer
+)
     : handlerFunc_(msghdl)
     , sock_(s)
     , srcAddr_(otherAddr)

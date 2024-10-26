@@ -34,10 +34,12 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         // connections
         size_t nClients = config.clientIps.size();
         size_t nReplicas = config.replicaIps.size();
-        std::vector<std::pair<Address, Address>> forwardAddrs(addrPairs.begin(),
-                                                              addrPairs.end() - config.receiverIps.size());
-        std::vector<std::pair<Address, Address>> measurementAddrs(addrPairs.end() - config.receiverIps.size(),
-                                                                  addrPairs.end());
+        std::vector<std::pair<Address, Address>> forwardAddrs(
+            addrPairs.begin(), addrPairs.end() - config.receiverIps.size()
+        );
+        std::vector<std::pair<Address, Address>> measurementAddrs(
+            addrPairs.end() - config.receiverIps.size(), addrPairs.end()
+        );
 
         forwardEps_.push_back(std::make_unique<NngEndpointThreaded>(forwardAddrs, false));
         measurementEp_ = std::make_unique<NngEndpointThreaded>(measurementAddrs);
@@ -49,7 +51,8 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     } else {
         for (int i = 0; i < numShards_; i++) {
             forwardEps_.push_back(
-                std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false));
+                std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
+            );
         }
 
         measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
@@ -308,7 +311,8 @@ void Proxy::GenerateRequestsTd()
                 VLOG(1) << "Waiting for " << interval_us << " usec";
                 ep->ResetTimer(&timer, interval_us);
             },
-            1000, this);   // initial time doesn't matter, since it's reset
+            1000, this
+        );   // initial time doesn't matter, since it's reset
 
         Timer endExperiment(
             [&seq, this](void *ctx, void *endpoint) {
@@ -317,7 +321,8 @@ void Proxy::GenerateRequestsTd()
                 LOG(INFO) << "Sent " << seq << " requests";
                 ((Endpoint *) endpoint)->LoopBreak();
             },
-            genReqDuration_ * 1000000, this);
+            genReqDuration_ * 1000000, this
+        );
 
         /* Checks every 10ms to see if we are done*/
         auto checkEnd = [](void *ctx, void *ep) {

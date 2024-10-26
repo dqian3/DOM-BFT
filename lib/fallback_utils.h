@@ -1,8 +1,8 @@
 #ifndef FALLBACK_UTILS_H
 #define FALLBACK_UTILS_H
 
-#include "lib/log.h"
 #include "lib/client_record.h"
+#include "lib/log.h"
 
 #include "proto/dombft_proto.pb.h"
 
@@ -19,6 +19,6 @@ struct LogSuffix {
 };
 
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
-bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log);
+bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log);
 
 #endif

@@ -96,11 +96,12 @@ public:
     // Loads message into buf and prepends header
     // If nullptr, use own buffer
     // TODO use some more sophisticated memory allocation scheme?
-    MessageHeader *PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType, byte *buf = nullptr,
-                              size_t bufSize = SEND_BUFFER_SIZE);
+    MessageHeader *
+    PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgType, byte *buf = nullptr, size_t bufSize = SEND_BUFFER_SIZE);
 
-    MessageHeader *PrepareProtoMsg(const google::protobuf::Message &msg, const byte msgType, byte *buf = nullptr,
-                                   size_t bufSize = SEND_BUFFER_SIZE);
+    MessageHeader *PrepareProtoMsg(
+        const google::protobuf::Message &msg, const byte msgType, byte *buf = nullptr, size_t bufSize = SEND_BUFFER_SIZE
+    );
 
     // Sends message in buffer to address specifed in dstAddr.
     // Note that the MessageHeader that PrepareMsg creates contains

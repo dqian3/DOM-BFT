@@ -89,16 +89,16 @@ Client::Client(const ProcessConfig &config, size_t id)
     nextSeq_ = 1;
     startTime_ = GetMicrosecondTimestamp();
 
-    MessageHandlerFunc replyHandler = [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr,
-                                                                                    byte *msgBuffer, Address *sender) {
-        if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
-            LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
-            // TODO print some stats
-            exit(0);
-        }
+    MessageHandlerFunc replyHandler =
+        [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+            if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
+                LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
+                // TODO print some stats
+                exit(0);
+            }
 
-        this->handleMessage(msgHdr, msgBuffer, sender);
-    };
+            this->handleMessage(msgHdr, msgBuffer, sender);
+        };
 
     endpoint_->RegisterMsgHandler(replyHandler);
 
@@ -114,7 +114,8 @@ Client::Client(const ProcessConfig &config, size_t id)
             exit(0);
         },
         config.clientRuntimeSeconds * 1000000,   // timer is in us.
-        this);
+        this
+    );
 
     // Set high priority (lower is more priority) to terminate properly.
     ev_set_priority(terminateTimer_->evTimer_, EV_MAXPRI);
@@ -158,7 +159,8 @@ Client::Client(const ProcessConfig &config, size_t id)
                 // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
                 endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / actualSendRate);
             },
-            1000000 / sendRate_, this);
+            1000000 / sendRate_, this
+        );
 
         endpoint_->RegisterTimer(sendTimer_.get());
     } else if (sendMode_ == dombft::MaxInFlightBased) {
@@ -207,8 +209,8 @@ void Client::submitRequest()
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
-    VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
-            << " in_flight=" << numInFlight_;
+    VLOG(1) << "PERF event=send"
+            << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
 
     nextSeq_++;
     numInFlight_++;
@@ -492,8 +494,9 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
-                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+        VLOG(1) << "PERF event=commit path=fast"
+                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << reply.seq()
+                << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;

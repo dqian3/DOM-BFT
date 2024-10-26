@@ -75,8 +75,10 @@ private:
     bool missed_;
 
 public:
-    Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false,
-             bool ignoreDeadlines = false, bool skipVerify = false);
+    Receiver(
+        const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false, bool ignoreDeadlines = false,
+        bool skipVerify = false
+    );
     ~Receiver();
 };
 
