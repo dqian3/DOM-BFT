@@ -44,6 +44,7 @@ protected:
     std::set<struct Timer *> eventTimers_;
 
     byte sendBuffer_[SEND_BUFFER_SIZE];
+    std::optional<Address> loopbackAddr_;
 
 public:
     int epId_;   // The id of the endpoint, mainly for debug
@@ -54,7 +55,7 @@ public:
     ev_signal signalWatcher_;
     SignalHandlerFunc signalHandler_;
 
-    Endpoint(const bool isMasterReceiver = false);
+    explicit Endpoint(const bool isMasterReceiver = false, const std::optional<Address>& loopbackAddr = std::nullopt);
     virtual ~Endpoint();
 
     // -------------------- Socket/IO Handling --------------------

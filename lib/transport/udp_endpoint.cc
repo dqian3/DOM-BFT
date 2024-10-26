@@ -26,8 +26,9 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl)
 
 UDPMessageHandler::~UDPMessageHandler() {}
 
-UDPEndpoint::UDPEndpoint(const std::string &ip, const int port, const bool isMasterReceiver)
-    : Endpoint(isMasterReceiver)
+UDPEndpoint::UDPEndpoint(const std::string &ip, const int port, const bool isMasterReceiver,
+                         const std::optional<Address> &loopbackAddr)
+    : Endpoint(isMasterReceiver, loopbackAddr)
 {
     fd_ = socket(PF_INET, SOCK_DGRAM, 0);
     if (fd_ < 0) {

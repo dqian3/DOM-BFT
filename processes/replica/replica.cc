@@ -69,7 +69,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
     if (config.transport == "nng") {
         auto addrPairs = getReplicaAddrs(config, replicaId_);
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
         size_t nClients = config.clientIps.size();
         for (size_t i = 0; i < nClients; i++) {
@@ -80,12 +79,11 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         receiverAddr_ = addrPairs[nClients].second;
 
         for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
-            // Skip adding one side of self connection so replica chooses one side to send to
-            // TODO this is very ugly.
-            if (i - (nClients + 1) == replicaId_)
-                continue;
             replicaAddrs_.push_back(addrPairs[i].second);
         }
+
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true,
+                                                          replicaAddrs_[replicaId]);
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
 
@@ -102,8 +100,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         }
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->handleMessage(msgHdr, msgBuffer, sender);
+    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender){
+        this->handleMessage(msgHdr, msgBuffer, sender, *sender == replicaAddrs_[replicaId_]);
     };
 
     endpoint_->RegisterMsgHandler(handler);
@@ -143,7 +141,7 @@ void Replica::run()
 }
 
 #if PROTOCOL == DOMBFT
-void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
+void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, const bool skipVerify)
 {
     if (hdr->msgLen < 0) {
         return;
@@ -231,7 +229,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -247,7 +245,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", commitMsg.replica_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", commitMsg.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -273,7 +271,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
+        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
             LOG(INFO) << "Failed to verify client signature of c_id=" << fallbackTriggerMsg.client_id();
             return;
         }
@@ -309,7 +307,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -326,7 +324,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", msg.primary_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.primary_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -347,7 +345,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -368,7 +366,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -1037,6 +1035,14 @@ void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
         VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
         finishFallback();
     }
+}
+
+
+void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
+{
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    endpoint_->SendPreparedMsgTo(dst, hdr);
 }
 
 }   // namespace dombft

@@ -71,7 +71,7 @@ private:
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
-    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender, bool skipVerify = false);
     void handleClientRequest(const dombft::proto::ClientRequest &request);
     void handleCert(const dombft::proto::Cert &cert);
     void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
@@ -97,6 +97,8 @@ private:
     void handlePrePrepare(const dombft::proto::FallbackPrePrepare &msg);
     void handlePrepare(const dombft::proto::FallbackPrepare &msg);
     void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
+
+    void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf = nullptr);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
