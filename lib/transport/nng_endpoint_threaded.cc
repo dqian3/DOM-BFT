@@ -153,8 +153,9 @@ void NngRecvThread::run()
 
 /*************************** NngEndpointThreaded ***************************/
 NngEndpointThreaded::NngEndpointThreaded(const std::vector<std::pair<Address, Address>> &addrPairs,
-                                         bool isMasterReceiver)
-    : NngEndpoint(addrPairs, isMasterReceiver)
+                                         bool isMasterReceiver,
+                                         const std::optional<Address> &loopbackAddr)
+    : NngEndpoint(addrPairs, isMasterReceiver, loopbackAddr)
 {
     // Parent class initializes sockets and address state
 
@@ -172,6 +173,16 @@ int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr, MessageHeader
 {
     if (hdr == nullptr) {
         hdr = (MessageHeader *) sendBuffer_;
+    }
+
+    // check for loopback
+    if (loopbackAddr_.has_value() && dstAddr == loopbackAddr_.value()){
+        byte *msg = (byte *) hdr;
+        recvThread_->queue_.enqueue({std::vector<byte>(msg,
+                                                       msg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen),
+                                                        dstAddr});
+        ev_async_send(evLoop_, &recvWatcher_);
+        return 0;
     }
 
     if (addrToSocketIdx_.count(dstAddr) == 0) {

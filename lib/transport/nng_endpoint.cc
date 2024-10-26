@@ -33,8 +33,9 @@ NngMessageHandler::NngMessageHandler(MessageHandlerFunc msghdl, nng_socket s, co
 
 NngMessageHandler::~NngMessageHandler() {}
 
-NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPairs, bool isMasterReceiver)
-    : Endpoint(isMasterReceiver)
+NngEndpoint::NngEndpoint(const std::vector<std::pair<Address, Address>> &addrPairs, bool isMasterReceiver,
+                         const std::optional<Address> &loopbackAddr)
+    : Endpoint(isMasterReceiver, loopbackAddr)
 {
     int ret;
 
