@@ -3,7 +3,7 @@
 
 #include <memory>
 
-#include "common_struct.h"
+#include "common.h"
 
 #include <glog/logging.h>
 #include <google/protobuf/message.h>

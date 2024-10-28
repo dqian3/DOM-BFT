@@ -1,7 +1,7 @@
 #ifndef CERT_COLLECTOR_H
 #define CERT_COLELCTOR_H
 
-#include "common_struct.h"
+#include "common.h"
 #include "proto/dombft_proto.pb.h"
 
 #include <map>

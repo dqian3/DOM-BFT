@@ -1,17 +1,9 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
-
 cc_library(
-    name = "protocol_config",
-    srcs = ["protocol_config.h"],
-    hdrs = ["protocol_config.h"],
-    visibility = ["//visibility:public"],
-)
-
-cc_library(
-    name = "common_struct",
-    srcs = ["common_struct.h"],
-    hdrs = ["common_struct.h"],
+    name = "common",
+    srcs = ["common.h"],
+    hdrs = ["common.h"],
     visibility = ["//visibility:public"],
 )
 
@@ -47,7 +39,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":address",
-        ":common_struct",
+        ":common",
         "@openssl//:openssl",
         "@com_github_google_glog//:glog",
     ]
@@ -60,7 +52,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":address",
-        ":common_struct",
+        ":common",
         ":utils",
         "//proto:dombft_proto_cc",
         "//proto:dombft_apps_cc",
@@ -76,7 +68,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":address",
-        ":common_struct",
+        ":common",
         ":timer",
         ":signature_provider",
         ":utils",
@@ -93,7 +85,7 @@ cc_library(
     srcs = ["utils.cc"],
     hdrs = ["utils.h"],
     deps = [
-        ":common_struct",
+        ":common",
         "@com_github_gflags_gflags//:gflags",
         "@com_github_google_glog//:glog",
         "@com_github_cameron314_concurrentqueue//:concurrentqueue",
@@ -109,8 +101,7 @@ cc_library(
     hdrs = ["log.h"],
     srcs = ["log.cc"],
     deps = [
-        ":common_struct",
-        ":protocol_config",
+        ":common",
         ":utils",
         "@com_github_google_glog//:glog",
         "@openssl//:openssl",
@@ -125,8 +116,7 @@ cc_library(
     hdrs = ["fallback_utils.h"],
     srcs = ["fallback_utils.cc"],
     deps = [
-        ":common_struct",
-        ":protocol_config",
+        ":common",
         ":utils",
         "@com_github_google_glog//:glog",
         "@openssl//:openssl",
@@ -142,8 +132,7 @@ cc_library(
     srcs = glob(["apps/*.cc"]),
     deps = [
         "//proto:dombft_apps_cc",
-        ":common_struct",
-        ":protocol_config",
+        ":common",
         "@openssl//:openssl",
         "@com_github_google_glog//:glog",
     ],

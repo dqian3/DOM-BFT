@@ -4,7 +4,7 @@
 
 #include <functional>
 
-#include "lib/common_struct.h"
+#include "lib/common.h"
 
 /**
  * MessageHeader* describes the type and length of the received message

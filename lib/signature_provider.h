@@ -1,7 +1,7 @@
 #ifndef SIGNED_UDP_ENDPOINT_H
 #define SIGNED_UDP_ENDPOINT_H
 
-#include "lib/common_struct.h"
+#include "lib/common.h"
 #include <map>
 #include <openssl/evp.h>
 

@@ -9,12 +9,23 @@
 #include <string>
 #include <vector>
 
-#define SIGNED_FLAG
+// Compile time configs
+
+// In general, these are for changing major changes to the behavior of the protocols
+// rather than for tunable parameters such as timeouts or changeable information such
+// as IPs and ports. Generally these will be used for experiments
 
 #define SEND_BUFFER_SIZE (20000000)
 #define UDP_BUFFER_SIZE  (1024)
 #define NNG_BUFFER_SIZE  (20000000)
 #define IPC_BUFFER_SIZE  (1024)
+
+#define USE_PROXY 1
+
+#define FABRIC_CRYPTO 0
+
+#define MAX_SPEC_HIST       50000
+#define CHECKPOINT_INTERVAL 500
 
 typedef unsigned char byte;
 
