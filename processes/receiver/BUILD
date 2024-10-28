@@ -9,7 +9,7 @@ cc_library(
         "//lib:endpoint",
         "//lib:signature_provider",
         "//lib:message_type",
-        "//lib:protocol_config",
+        "//lib:common",
         "//processes:process_config",
         "//processes:config_util",
     ],

@@ -19,7 +19,7 @@
 #include <glog/logging.h>
 #include <junction/ConcurrentMap_Leapfrog.h>
 
-#include "common_struct.h"
+#include "common.h"
 
 template <typename T1> using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
 template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcurrentQueue<T1>;

@@ -1,9 +1,8 @@
 #ifndef LOG_H
 #define LOG_H
 
-#include "common_struct.h"
+#include "common.h"
 #include "proto/dombft_proto.pb.h"
-#include "protocol_config.h"
 
 #include <openssl/sha.h>
 

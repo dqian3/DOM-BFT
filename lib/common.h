@@ -1,7 +1,7 @@
 
 
-#ifndef COMMON_STRUCT_H
-#define COMMON_STRUCT_H
+#ifndef COMMON_H
+#define COMMON_H
 #include <cstring>
 #include <openssl/sha.h>
 #include <stdio.h>

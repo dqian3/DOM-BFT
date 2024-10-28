@@ -1,7 +1,7 @@
 #ifndef ENDPOINT_H
 #define ENDPOINT_H
 
-#include "lib/common_struct.h"
+#include "lib/common.h"
 #include "lib/transport/address.h"
 #include "lib/transport/message_handler.h"
 #include "lib/transport/timer.h"

@@ -1,8 +1,8 @@
 #include "processes/process_config.h"
 
+#include "lib/common.h"
 #include "lib/log.h"
 #include "lib/message_type.h"
-#include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
