@@ -9,8 +9,8 @@
 #include <yaml-cpp/yaml.h>
 
 // Own libraries
+#include "lib/common.h"
 #include "lib/message_type.h"
-#include "lib/protocol_config.h"
 #include "lib/signature_provider.h"
 #include "lib/transport/endpoint.h"
 #include "lib/transport/nng_endpoint.h"

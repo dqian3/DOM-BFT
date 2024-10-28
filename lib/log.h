@@ -3,7 +3,6 @@
 
 #include "common.h"
 #include "proto/dombft_proto.pb.h"
-#include "protocol_config.h"
 
 #include <openssl/sha.h>
 

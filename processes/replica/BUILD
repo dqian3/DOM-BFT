@@ -8,7 +8,7 @@ cc_library(
         "//lib:address",
         "//lib:endpoint",
         "//lib:message_type",
-        "//lib:protocol_config",
+        "//lib:common",
         "//lib:log",
         "//lib:cert_collector",
         "//lib:fallback_utils",
