@@ -1048,6 +1048,12 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         return false;
     }
 
+    if(!log_->canAddEntry()) {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
+                  << " due to log full!";
+        return false;
+    }
+
     if (!updateRecordWithSeq(cliRecord, clientSeq)) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                   << " due to duplication! Send reply to client";

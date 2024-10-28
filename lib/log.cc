@@ -77,7 +77,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
         prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
 
-    if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
+    if (!canAddEntry()) {
         LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
         // TODO error out properly
         return false;
@@ -112,7 +112,7 @@ const byte *Log::getDigest() const
 
 const byte *Log::getDigest(uint32_t seq) const
 {
-    if (seq + MAX_SPEC_HIST < nextSeq) {
+    if (!inRange(seq)){
         LOG(ERROR) << "Tried to access digest of seq=" << seq << " but nextSeq=" << nextSeq;
         return nullptr;
     }
@@ -175,7 +175,7 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 
 std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
 {
-    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+    if (inRange(seq)) {
         uint32_t index = seq % MAX_SPEC_HIST;
         return log[index];
     } else {
@@ -189,7 +189,7 @@ void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
 {
     // TODO(Hao): an offset counter (prefix sum?) will be more efficient
     //  but use this to prove correctness for now... trust user for other boundary check...
-    if (startSeq < nextSeq && (startSeq >= nextSeq - MAX_SPEC_HIST || startSeq < MAX_SPEC_HIST)) {
+    if (inRange(startSeq)) {
         // iterate from back
         for (uint32_t i = nextSeq - 1 + num; i - num >= startSeq; i--) {
             uint32_t idx = i % MAX_SPEC_HIST;
@@ -204,7 +204,7 @@ void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
 
 void Log::commit(uint32_t seq)
 {
-    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+    if (inRange(seq)) {
         app_.get()->commit(seq);
         certs.erase(certs.begin(), certs.lower_bound(seq));
     } else {

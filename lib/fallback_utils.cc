@@ -201,23 +201,29 @@ bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
         assert(seq == log->nextSeq);
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
-        if (updateRecordWithSeq(clientRecords[clientId], clientSeq)) {
-            clientRecords[clientId].instance_ = logSuffix.instance;
 
-            std::string result;
-            if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
-                LOG(ERROR) << "Failure to add log entry!";
-            }
-
-            VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
-                    << " instance=" << logSuffix.instance << " client_id=" << clientId
-                    << " client_seq=" << entry->client_seq()
-                    << " digest=" << digest_to_hex(log->getDigest()).substr(56);
-        } else {
+        if(!log->canAddEntry()){
+            LOG(INFO) << "nextSeq=" << log->nextSeq << " too far ahead of commitPoint.seq=" << log->checkpoint.seq;
+            break;
+        }
+        if (!updateRecordWithSeq(clientRecords[clientId], clientSeq)) {
             seq--;
             LOG(INFO) << "Dropping request c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                       << " due to duplication in applying suffix!";
+            continue;
         }
+        clientRecords[clientId].instance_ = logSuffix.instance;
+
+        std::string result;
+        if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
+            LOG(ERROR) << "Failure to add log entry!";
+        }
+
+        VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
+                << " instance=" << logSuffix.instance << " client_id=" << clientId
+                << " client_seq=" << entry->client_seq()
+                << " digest=" << digest_to_hex(log->getDigest()).substr(56);
+
     }
 
     if (!rollbackDone) {
