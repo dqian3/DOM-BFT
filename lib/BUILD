@@ -5,6 +5,12 @@ cc_library(
     srcs = ["common.h"],
     hdrs = ["common.h"],
     visibility = ["//visibility:public"],
+    deps=[
+        "@com_github_cameron314_concurrentqueue//:concurrentqueue",
+        "@com_github_cameron314_readerwriterqueue//:readerwriterqueue",
+        "@com_github_preshing_junction//:libjunction",
+        "@openssl//:openssl",
+    ]
 )
 
 cc_library(
@@ -88,10 +94,6 @@ cc_library(
         ":common",
         "@com_github_gflags_gflags//:gflags",
         "@com_github_google_glog//:glog",
-        "@com_github_cameron314_concurrentqueue//:concurrentqueue",
-        "@com_github_cameron314_readerwriterqueue//:readerwriterqueue",
-        "@com_github_preshing_junction//:libjunction",
-        "@openssl//:openssl",
     ],
     visibility = ["//visibility:public"],
 )

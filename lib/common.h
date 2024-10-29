@@ -3,11 +3,19 @@
 #ifndef COMMON_H
 #define COMMON_H
 #include <cstring>
-#include <openssl/sha.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
 #include <vector>
+
+#include <openssl/sha.h>
+
+#include "blockingconcurrentqueue.h"
+#include "concurrentqueue.h"
+#include "readerwriterqueue.h"
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <junction/ConcurrentMap_Leapfrog.h>
 
 // Compile time configs
 
@@ -28,6 +36,12 @@
 #define CHECKPOINT_INTERVAL 500
 
 typedef unsigned char byte;
+
+template <typename T1> using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
+template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcurrentQueue<T1>;
+template <typename T1> using RWQueue = moodycamel::ReaderWriterQueue<T1>;
+template <typename T1> using BlockingRWQueue = moodycamel::BlockingReaderWriterQueue<T1>;
+template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
 /**
  * When the message has been serialized and is about to be sent by the
