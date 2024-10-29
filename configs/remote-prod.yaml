@@ -22,6 +22,7 @@ client:
   maxInFlight: 20
   sendRate: 500
   runtimeSeconds: 20
+  numWorkerThreads: 8
 
 proxy:
   forwardPort: 31000
@@ -45,7 +46,7 @@ receiver:
   local: true
   port: 33000
   shards: 1
-  numVerifyThreads: 10
+  numVerifyThreads: 6
 
 replica:
   ips:

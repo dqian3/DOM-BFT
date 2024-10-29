@@ -21,7 +21,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , swapFreq_(swapFreq)
     , f_(config.replicaIps.size() / 3)
     , sigProvider_()
-    , threadpool_(8)
+    , threadpool_(config.replicaNumWorkerThreads)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -82,8 +82,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true,
-                                                          replicaAddrs_[replicaId]);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
 
@@ -100,7 +99,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         }
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender){
+    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender, *sender == replicaAddrs_[replicaId_]);
     };
 
@@ -271,7 +270,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
             LOG(INFO) << "Failed to verify client signature of c_id=" << fallbackTriggerMsg.client_id();
             return;
         }
@@ -307,7 +306,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -1034,7 +1033,6 @@ void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
         finishFallback();
     }
 }
-
 
 void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
 {
