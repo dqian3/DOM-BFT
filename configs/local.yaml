@@ -15,7 +15,6 @@ client:
   maxInFlight: 10
   sendRate: 10 
   runtimeSeconds: 10
-  numWorkerThreads: 8
 
 
 # Proxy Info
@@ -54,4 +53,5 @@ replica:
   keysDir: "keys/replica"
   fallbackTimeout: 200000
   fallbackStartTimeout: 50000
+  numWorkerThreads: 8
 

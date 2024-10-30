@@ -22,7 +22,6 @@ client:
   maxInFlight: 20
   sendRate: 500
   runtimeSeconds: 20
-  numWorkerThreads: 8
 
 proxy:
   forwardPort: 31000
@@ -58,3 +57,4 @@ replica:
   port: 34000
   fallbackTimeout: 5000000
   fallbackStartTimeout: 500000
+  numWorkerThreads: 8
