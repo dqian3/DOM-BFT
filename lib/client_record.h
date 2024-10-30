@@ -1,7 +1,7 @@
 #ifndef DOM_BFT_CLIENT_RECORD_H
 #define DOM_BFT_CLIENT_RECORD_H
 
-#include "lib/common_struct.h"
+#include "lib/common.h"
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 #include <glog/logging.h>

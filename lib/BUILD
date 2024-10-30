@@ -159,7 +159,7 @@ cc_library(
     srcs = ["client_record.cc"],
     deps = [
         ":utils",
-        ":common_struct",
+        ":common",
         "//proto:dombft_proto_cc"
     ],
     visibility = ["//visibility:public"],

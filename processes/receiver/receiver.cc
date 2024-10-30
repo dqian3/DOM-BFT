@@ -177,13 +177,6 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
 void Receiver::forwardRequest(const DOMRequest &request)
 {
-    // DEDUP TEST
-    if (receiverId_ == 1 && request.client_id() == 1 && request.client_seq() == 10000 && !0) {
-        missed_ = true;
-        VLOG(1) << "Dropping";
-        return;
-    }
-    //////////////////////
     uint64_t now = GetMicrosecondTimestamp();
 
     LOG(INFO) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
