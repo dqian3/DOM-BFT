@@ -78,9 +78,8 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     }
 
     if (!canAddEntry()) {
-        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
-        // TODO error out properly
-        return false;
+        throw std::runtime_error("nextSeq = " + std::to_string(nextSeq) + " too far ahead of commitPoint.seq = " +
+                                 std::to_string(checkpoint.seq));
     }
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
@@ -184,17 +183,26 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
     }
 }
 
+void Log::setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry)
+{
+    if (inRange(seq)) {
+        uint32_t index = seq % MAX_SPEC_HIST;
+        log[index] = entry;
+    } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
+    }
+}
+
 // only shifts entries, no change in entry field
 void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
 {
-    // TODO(Hao): an offset counter (prefix sum?) will be more efficient
-    //  but use this to prove correctness for now... trust user for other boundary check...
     if (inRange(startSeq)) {
-        // iterate from back
-        for (uint32_t i = nextSeq - 1 + num; i - num >= startSeq; i--) {
-            uint32_t idx = i % MAX_SPEC_HIST;
-            uint32_t prevIdx = (i - num) % MAX_SPEC_HIST;
-            log[idx] = log[prevIdx];
+        std::vector<std::shared_ptr<LogEntry>> temp(nextSeq - startSeq);
+        for(uint32_t i = startSeq; i < nextSeq; i++) {
+            temp[i - startSeq] = log[i % MAX_SPEC_HIST];
+        }
+        for(uint32_t i = startSeq + num; i < nextSeq + num; i++) {
+            log[i % MAX_SPEC_HIST] = temp[i - startSeq - num];
         }
         nextSeq += num;
     } else {

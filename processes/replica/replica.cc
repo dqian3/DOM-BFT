@@ -733,7 +733,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 if (rShiftNum > 0) {
                     VLOG(1) << "Right shift logs by " << rShiftNum << " to align with the checkpoint";
                 }
-                reapplyEntriesWithRecord(log_->checkpoint.seq + 1, rShiftNum);
+                reapplyEntriesWithRecord(rShiftNum);
             } else {
                 checkpointClientRecords_ = intermediateCheckpointClientRecords_;
             }
@@ -920,9 +920,7 @@ void Replica::finishFallback()
     fallback_ = false;
     fallbackProposal_.reset();
 
-    // Start checkpoint for last spot in the log, which should finish if fallback was sucessful
-    // TODO, we could also directly just set the checkpoint here.
-
+    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
     checkpointSeq_ = log_->nextSeq - 1;
     intermediateCheckpointClientRecords_ = clientRecords_;
     LOG(INFO) << "Starting checkpoint cert for seq=" << checkpointSeq_;
@@ -1081,16 +1079,16 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
     return true;
 }
 
-void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
+void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 {
+    uint32_t startingSeq = log_->checkpoint.seq + 1;
     if (rShiftNum) {
         log_->rightShiftEntries(startingSeq - rShiftNum, rShiftNum);
     }
     log_->app_->abort(startingSeq - 1);
     uint32_t curSeq = startingSeq;
+    std::vector<std::shared_ptr<::LogEntry>> temp(log_->nextSeq - startingSeq);
     for (uint32_t s = startingSeq; s < log_->nextSeq; s++) {
-
-        // get entry to be updated FROM
         std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
         uint32_t clientId = entry->client_id;
         uint32_t clientSeq = entry->client_seq;
@@ -1106,16 +1104,10 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
 
         log_->app_->execute(clientReq, curSeq);
 
-        // get the entry to be updated TO
-        if (curSeq != s) {
-            entry = log_->getEntry(curSeq);
-            entry->client_id = clientId;
-            entry->client_seq = clientSeq;
-            entry->request = clientReq;
-        }
+        temp[curSeq - startingSeq] = entry;
         entry->seq = curSeq;
         auto prevDigest =
-            curSeq == log_->checkpoint.seq + 1 ? log_->checkpoint.logDigest : log_->getEntry(curSeq - 1)->digest;
+            curSeq == startingSeq ? log_->checkpoint.logDigest : temp[curSeq - startingSeq-1]->digest;
 
         entry->updateDigest(prevDigest);
 
@@ -1125,8 +1117,12 @@ void Replica::reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum)
         curSeq++;
     }
 
-    if (curSeq != log_->nextSeq)
+    if (curSeq != log_->nextSeq) {
         log_->nextSeq = curSeq;
+        for (uint32_t i = startingSeq; i < curSeq; i++) {
+            log_->setEntry(i, temp[i - startingSeq]);
+        }
+    }
 }
 
 }   // namespace dombft

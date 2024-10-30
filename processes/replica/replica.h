@@ -103,7 +103,7 @@ private:
 
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
-    void reapplyEntriesWithRecord(uint32_t startingSeq, uint32_t rShiftNum);
+    void reapplyEntriesWithRecord(uint32_t rShiftNum);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

@@ -55,22 +55,30 @@ void getRecordsDigest(const ClientRecords &records, byte *digest)
     }
 }
 
-int getRightShiftNumWithRecords(const ClientRecords &records1, const ClientRecords &records2)
+int getRightShiftNumWithRecords(const ClientRecords &checkpointRecords, const ClientRecords &replicaRecords)
 {
     int shiftNum = 0;
-    for (const auto &[cliId, cliRecord1] : records1) {
-        if (records2.find(cliId) == records2.end()) {
-            shiftNum += cliRecord1.lastSeq_ - cliRecord1.missedSeqs_.size();
+    for (const auto &[cliId, cpRecord] : checkpointRecords) {
+        // 1. if replica does not have the record for this client, add all req in the checkpoint
+        if (replicaRecords.find(cliId) == replicaRecords.end()) {
+            shiftNum += cpRecord.lastSeq_ - cpRecord.missedSeqs_.size();
             continue;
         }
-        const ClientRecord &cliRecord2 = records2.at(cliId);
-        shiftNum += static_cast<int>(cliRecord2.missedSeqs_.size() - cliRecord1.missedSeqs_.size());
-        if (cliRecord1.lastSeq_ > cliRecord2.lastSeq_) {
-            shiftNum += cliRecord1.lastSeq_ - cliRecord2.lastSeq_;
+        const ClientRecord &repRecord = replicaRecords.at(cliId);
+        // 2. get the diff in missed reqs
+        //  negatives are fine as then there will be misses in other cliId since the checkpoint interval is a constant
+        shiftNum += static_cast<int>(repRecord.missedSeqs_.size()) - static_cast<int>(cpRecord.missedSeqs_.size());
+        // 3. include the reqs that replica has not received before this checkpoint
+        //   note: case2 deducts the reqs missed in cpRecord that in repRecord.lastSeq_ ~ cpRecord.lastSeq_, so it is
+        //  fine to add the diff directly here.
+        if (cpRecord.lastSeq_ > repRecord.lastSeq_) {
+            shiftNum += cpRecord.lastSeq_ - repRecord.lastSeq_;
         }
-        if (cliRecord1.lastSeq_ < cliRecord2.lastSeq_) {
-            for (uint32_t i : cliRecord2.missedSeqs_) {
-                if (i > cliRecord1.lastSeq_)
+        // 4. we add back the missed reqs that has seq > cpRecord.lastSeq_ as they are not missed in this
+        //  round of checkpointing but was included in the 2nd case
+        if (cpRecord.lastSeq_ < repRecord.lastSeq_) {
+            for (uint32_t i : repRecord.missedSeqs_) {
+                if (i > cpRecord.lastSeq_)
                     shiftNum--;
             }
         }
