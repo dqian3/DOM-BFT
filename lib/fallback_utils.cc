@@ -12,15 +12,15 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     uint32_t maxCheckpointSeq = 0;
 
     // First find highest commit point
-    google::protobuf::RepeatedPtrField<dombft::proto::CheckpointClientRecord> tmpClientRecordsPtr;
+    const dombft::proto::CheckpointClientRecordsSet* tmpClientRecordsSetPtr;
     for (auto &log : fallbackProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
             maxCheckpointSeq = log.checkpoint().seq();
-            tmpClientRecordsPtr = log.client_records();
+            tmpClientRecordsSetPtr = &log.client_records_set();
         }
     }
-    getClientRecordsFromProto(tmpClientRecordsPtr, logSuffix.clientRecords);
+    getClientRecordsFromProto(*tmpClientRecordsSetPtr, logSuffix.clientRecords);
     VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
 
     // Find highest request with a cert
@@ -131,7 +131,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     return true;
 }
 
-bool applySuffixToLog(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
+bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
 {
     LOG(INFO) << "Applying checkpoint";
 

@@ -74,8 +74,7 @@ message Commit {
 
     bytes log_digest = 4;
     bytes app_digest = 5;
-    bytes client_records_digest = 6;
-    repeated CheckpointClientRecord client_records = 7;
+    CheckpointClientRecordsSet client_records_set = 6;
 }
 
 message FallbackTrigger
@@ -98,6 +97,13 @@ message CheckpointClientRecord
     uint32 last_seq = 3;
 
     repeated uint32 missed_seqs = 4;
+}
+
+// wraps records and digest
+message CheckpointClientRecordsSet
+{
+    bytes client_records_digest = 1;
+    repeated CheckpointClientRecord records = 2;
 }
 
 message LogEntry
@@ -135,8 +141,7 @@ message FallbackStart
 
     repeated LogEntry log_entries = 3;
     LogCheckpoint checkpoint = 4;
-    bytes client_records_digest = 5;
-    repeated CheckpointClientRecord client_records = 6;
+    CheckpointClientRecordsSet client_records_set = 5;
 }
 
 message FallbackProposal

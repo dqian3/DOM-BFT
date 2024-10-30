@@ -645,8 +645,8 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 
                 byte recordDigest[SHA256_DIGEST_LENGTH];
                 getRecordsDigest(tmpClientRecords, recordDigest);
-                commit.set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
-                toProtoClientRecords(commit, tmpClientRecords);
+                commit.mutable_client_records_set()->set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
+                toProtoClientRecords(*commit.mutable_client_records_set(), tmpClientRecords);
                 VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
                 broadcastToReplicas(commit, MessageType::COMMIT, buffer);
             });
@@ -671,7 +671,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
     }
 
     // verify the record is not tampered by a malicious replica
-    if (!verifyRecordDigestFromProto(commitMsg)) {
+    if (!verifyRecordDigestFromProto(commitMsg.client_records_set())) {
         VLOG(5) << "Client records from commit msg from replica " << commitMsg.replica_id()
                 << " does not match the carried records digest";
         return;
@@ -686,7 +686,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             continue;
 
         std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key = {
-            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_records_digest()};
+            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_records_set().client_records_digest()};
         matchingCommits[key].insert(replicaId);
 
         // TODO see if there's a better way to do this
@@ -724,7 +724,7 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
                 VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
                         << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
                 checkpointClientRecords_.clear();
-                getClientRecordsFromProto(commit.client_records(), checkpointClientRecords_);
+                getClientRecordsFromProto(commit.client_records_set(), checkpointClientRecords_);
                 clientRecords_ = checkpointClientRecords_;
                 int rShiftNum =
                     getRightShiftNumWithRecords(checkpointClientRecords_, intermediateCheckpointClientRecords_);
@@ -821,7 +821,7 @@ void Replica::startFallback()
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
     getRecordsDigest(checkpointClientRecords_, recordDigest);
-    toProtoClientRecords(fallbackStartMsg, checkpointClientRecords_);
+    toProtoClientRecords(*fallbackStartMsg.mutable_client_records_set(), checkpointClientRecords_);
 
     LOG(INFO) << "Sending FALLBACK_START to replica " << instance_ % replicaAddrs_.size();
     sendMsgToDst(fallbackStartMsg, FALLBACK_START, replicaAddrs_[instance_ % replicaAddrs_.size()]);
