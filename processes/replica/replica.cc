@@ -939,8 +939,7 @@ void Replica::finishFallback()
     fallbackProposal_.reset();
 
     // Start checkpoint for last spot in the log, which should finish if fallback was sucessful
-    // TODO, as implemented, this is a potential vulnerability,
-    // This needs to succeed so that the next time slow path is invoked everything is committed
+    // TODO, we could also directly just set the checkpoint here.
 
     checkpointSeq_ = log_->nextSeq - 1;
 
