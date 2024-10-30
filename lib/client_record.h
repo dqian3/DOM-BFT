@@ -26,7 +26,7 @@ bool updateRecordWithSeq(ClientRecord &cliRecord, uint32_t newSeq);
 void getRecordsDigest(const std::unordered_map<uint32_t, ClientRecord> &records, byte *digest);
 int getRightShiftNumWithRecords(const ClientRecords &records1, const ClientRecords &records2);
 
-    bool verifyRecordDigestFromProto(const CheckpointClientRecordsSet &recordsSet);
+bool verifyRecordDigestFromProto(const CheckpointClientRecordsSet &recordsSet);
 void toProtoClientRecords(CheckpointClientRecordsSet &recordsSet, const std::unordered_map<uint32_t, ClientRecord> &clientRecords);
 }   // namespace dombft
 

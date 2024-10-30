@@ -45,14 +45,6 @@ void getRecordsDigest(const ClientRecords &records, byte *digest)
             SHA256_Update(&ctx, &s, sizeof(s));
     }
     SHA256_Final(digest, &ctx);
-    // print records
-    for (const auto &record : records) {
-        LOG(INFO) << "client id: " << record.first << " instance: " << record.second.instance_
-                  << " lastSeq: " << record.second.lastSeq_;
-        for (const auto &seq : record.second.missedSeqs_) {
-            LOG(INFO) << "missed seq: " << seq;
-        }
-    }
 }
 
 int getRightShiftNumWithRecords(const ClientRecords &checkpointRecords, const ClientRecords &replicaRecords)

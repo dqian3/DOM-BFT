@@ -193,7 +193,7 @@ void Log::setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry)
     }
 }
 
-// only shifts entries, no change in entry field
+// copies the entries at idx to idx + num, starting from startSeq
 void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
 {
     if (inRange(startSeq)) {

@@ -141,7 +141,6 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
     LogCheckpoint &myCheckpoint = log->checkpoint;
 
     std::string myCheckpointDigest((char *) myCheckpoint.logDigest, SHA256_DIGEST_LENGTH);
-    bool checkpointUsed = false;
 
     if (checkpoint->log_digest() != myCheckpointDigest&& checkpoint->seq() > myCheckpoint.seq) {
         log->app_->applySnapshot(checkpoint->app_digest());
@@ -159,46 +158,36 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
             myCheckpoint.signatures[commit.replica_id()] = checkpoint->signatures()[i];
         }
 
-        checkpointUsed = true;
-
         LOG(INFO) << "Applying checkpoint seq=" << checkpoint->seq()
                   << " digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
     }
 
-    bool rollbackDone = false;
-
     uint32_t seq = checkpoint->seq();
+    uint32_t idx = 0;
+    dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
+    // skip the entries that are already in the log
+    for(; idx < logSuffix.entries.size(); idx++){
+        seq++; // First sequence to apply is right after checkpoint
+        assert(seq < log->nextSeq);
+        const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
-    for (const dombft::proto::LogEntry *entry : logSuffix.entries) {
-        seq++;   // First sequence to apply is right after checkpoint
-        // This shouldn't happen, since these should go from the latest checkpoint
-        if (seq > log->nextSeq) {
-            LOG(ERROR) << "Missing some log entries before first in log suffix firstSeq is " << entry->seq()
-                       << " my nextSeq=" << log->nextSeq;
-
-            exit(1);
+        std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
+        std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
+        // mismatch found, rollback
+        if (myDigest != entry->digest()) {
+            log->nextSeq = seq;
+            log->app_->abort(seq - 1);
+            break;
         }
+        // the skipped entries cannot be duplicates
+        assert(updateRecordWithSeq(clientRecords[entry->client_id()], entry->client_seq()));
+        VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
+                << " since already in log at seq=" << seq;
+    }
 
-        dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
-
-        // rollbackDone == true iff a mismatch is found
-        if (seq < log->nextSeq && !rollbackDone) {
-            std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
-            std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
-            if (myDigest == entry->digest()) {
-                // the skipped entries cannot be duplicates
-                assert(updateRecordWithSeq(clientRecords[entry->client_id()], entry->client_seq()));
-                VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
-                        << " since already in log at seq=" << seq;
-                continue;
-            } else {
-                log->nextSeq = seq;
-                log->app_->abort(seq - 1);
-                rollbackDone = true;
-            }
-        }
-
+    for(; idx < logSuffix.entries.size(); idx++) {
         assert(seq == log->nextSeq);
+        const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
 
@@ -207,7 +196,6 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
             break;
         }
         if (!updateRecordWithSeq(clientRecords[clientId], clientSeq)) {
-            seq--;
             LOG(INFO) << "Dropping request c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                       << " due to duplication in applying suffix!";
             continue;
@@ -219,17 +207,12 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
             LOG(ERROR) << "Failure to add log entry!";
         }
 
+        // TODO(Hao): should it reply to client?
         VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                 << " instance=" << logSuffix.instance << " client_id=" << clientId
                 << " client_seq=" << entry->client_seq()
                 << " digest=" << digest_to_hex(log->getDigest()).substr(56);
-
+        seq++;
     }
-
-    if (!rollbackDone) {
-        log->nextSeq = seq + 1;
-        log->app_->abort(seq);
-    }
-
     return true;
 }
