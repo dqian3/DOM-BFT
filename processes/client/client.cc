@@ -223,6 +223,11 @@ void Client::submitRequestBurst(uint32_t numToSend)
     for (uint32_t i = 0; i < numToSend; i++) {
         now = GetMicrosecondTimestamp();
 
+        if (numInFlight_ >= maxInFlight_) {
+            VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
+            break;
+        }
+
         ClientRequest &request = requests.emplace_back();
 
         // submit new request
