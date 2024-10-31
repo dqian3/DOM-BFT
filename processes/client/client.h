@@ -118,7 +118,7 @@ private:
     void submitRequestBurst(uint32_t numToSend);   // For sending in open loop.
 
     void retryRequests();
-    void sendRequest(const dombft::proto::ClientRequest &request);
+    void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);
     void commitRequest(uint32_t clientSeq);
 
     bool updateInstance();

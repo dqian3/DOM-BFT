@@ -16,7 +16,7 @@ using namespace dombft::proto;
 
 Client::Client(const ProcessConfig &config, size_t id)
     : clientId_(id)
-    , threadpool_(2)
+    , threadpool_(4)
 {
     LOG(INFO) << "clientId=" << clientId_;
     std::string clientIp = config.clientIps[clientId_];
@@ -147,7 +147,7 @@ Client::Client(const ProcessConfig &config, size_t id)
                 uint64_t actualSendRate =
                     lastFastPath_ < lastNormalPath_ ? sendRate_ / replicaAddrs_.size() : sendRate_;
 
-                double numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
+                uint64_t numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
 
                 VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
                         << " us since last burst";
@@ -205,7 +205,7 @@ void Client::submitRequest()
 
     requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
 
-    threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request); });
+    threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
     VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
             << " in_flight=" << numInFlight_;
@@ -249,7 +249,7 @@ void Client::submitRequestBurst(uint32_t numToSend)
 
     threadpool_.enqueueTask([=, this](byte *buffer) {
         for (const ClientRequest &req : requests) {
-            sendRequest(req);
+            sendRequest(req, buffer);
         }
     });
 }
@@ -264,19 +264,19 @@ void Client::retryRequests()
     }
 }
 
-void Client::sendRequest(const ClientRequest &request)
+void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
     // VLOG(4) << "Begin sending request number " << nextReqSeq_;
     Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
     // TODO maybe client should own the memory instead of endpoint.
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
     // VLOG(4) << "Serialization Done " << nextReqSeq_;
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     // VLOG(4) << "Signature Done " << nextReqSeq_;
 
-    endpoint_->SendPreparedMsgTo(addr);
+    endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
     // TODO check errors for all of these lol
