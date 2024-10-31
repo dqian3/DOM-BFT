@@ -499,7 +499,11 @@ void Replica::handleClientRequest(const ClientRequest &request)
     uint32_t seq;
 
     {
+        // Check lock contention time here
+        uint64_t now = GetMicrosecondTimestamp();
         std::lock_guard<std::mutex> guard(replicaStateMutex_);
+        VLOG(5) << "Waited " << GetMicrosecondTimestamp() - now << " usec for lock on log apply";
+
         bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
         seq = log_->nextSeq - 1;
 
