@@ -16,7 +16,7 @@ using namespace dombft::proto;
 
 Client::Client(const ProcessConfig &config, size_t id)
     : clientId_(id)
-    , threadpool_(10)
+    , threadpool_(2)
 {
     LOG(INFO) << "clientId=" << clientId_;
     std::string clientIp = config.clientIps[clientId_];
@@ -130,6 +130,8 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     if (sendMode_ == dombft::RateBased) {
 
+        lastSendTime_ = GetMicrosecondTimestamp();
+
         sendTimer_ = std::make_unique<Timer>(
             [&](void *ctx, void *endpoint) {
                 // If we are in the slow path, don't submit anymore
@@ -141,14 +143,20 @@ Client::Client(const ProcessConfig &config, size_t id)
                     return;
                 }
 
-                submitRequest();
+                uint64_t startSendTime = GetMicrosecondTimestamp();
+                uint64_t actualSendRate =
+                    lastFastPath_ < lastNormalPath_ ? sendRate_ / replicaAddrs_.size() : sendRate_;
+
+                double numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
+
+                VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
+                        << " us since last burst";
+
+                submitRequestBurst(numToSend);
+                lastSendTime_ = startSendTime;
 
                 // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
-                if (lastFastPath_ < lastNormalPath_) {
-                    endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / sendRate_);
-                } else {
-                    endpoint_->ResetTimer(sendTimer_.get(), 1000000 / sendRate_);
-                }
+                endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / actualSendRate);
             },
             1000000 / sendRate_, this);
 
@@ -196,13 +204,54 @@ void Client::submitRequest()
     }
 
     requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
-    sendRequest(request);
+
+    threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request); });
 
     VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
             << " in_flight=" << numInFlight_;
 
     nextSeq_++;
     numInFlight_++;
+}
+
+void Client::submitRequestBurst(uint32_t numToSend)
+{
+    std::vector<ClientRequest> requests;
+
+    uint64_t now;
+
+    for (uint32_t i = 0; i < numToSend; i++) {
+        now = GetMicrosecondTimestamp();
+
+        ClientRequest &request = requests.emplace_back();
+
+        // submit new request
+        request.set_client_id(clientId_);
+        request.set_client_seq(nextSeq_);
+        request.set_instance(myInstance_);
+        request.set_send_time(now);
+        request.set_is_write(true);   // TODO modify this based on some random chance
+
+        auto appRequest = trafficGen_->generateAppTraffic();
+
+        if (appType_ == AppType::COUNTER) {
+            dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+            request.set_req_data(counterReq->SerializeAsString());
+        }
+
+        requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
+        VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+                << " in_flight=" << numInFlight_;
+
+        nextSeq_++;
+        numInFlight_++;
+    }
+
+    threadpool_.enqueueTask([=, this](byte *buffer) {
+        for (const ClientRequest &req : requests) {
+            sendRequest(req);
+        }
+    });
 }
 
 void Client::retryRequests()
@@ -528,7 +577,6 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 
 void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig)
 {
-
     VLOG(2) << "Received fallback summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();
 

@@ -24,7 +24,6 @@ struct RequestState {
         , request(req)
         , client_seq(req.client_seq())
         , sendTime(sendT)
-
     {
     }
     CertCollector collector;
@@ -92,6 +91,9 @@ private:
     std::map<uint32_t, uint32_t> replicaInstances_;
     uint32_t myInstance_ = 0;
 
+    // Keeping track of sending rate
+    uint64_t lastSendTime_ = 0;
+
     uint32_t nextSeq_ = 0;
     uint32_t numInFlight_ = 0;
     uint32_t numCommitted_ = 0;
@@ -113,6 +115,8 @@ private:
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 
     void submitRequest();
+    void submitRequestBurst(uint32_t numToSend);   // For sending in open loop.
+
     void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request);
     void commitRequest(uint32_t clientSeq);
