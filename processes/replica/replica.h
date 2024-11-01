@@ -1,7 +1,7 @@
 #include "processes/process_config.h"
 
-#include "lib/fallback_utils.h"
 #include "lib/common.h"
+#include "lib/fallback_utils.h"
 #include "lib/log.h"
 #include "lib/message_type.h"
 #include "lib/signature_provider.h"

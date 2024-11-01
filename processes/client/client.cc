@@ -247,8 +247,8 @@ void Client::submitRequestBurst(uint32_t numToSend)
         }
 
         requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
-        VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
-                << " in_flight=" << numInFlight_;
+        VLOG(1) << "PERF event=send"
+                << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
 
         nextSeq_++;
         numInFlight_++;

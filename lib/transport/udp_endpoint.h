@@ -22,8 +22,10 @@ protected:
     bool bound_ = false;
 
 public:
-    UDPEndpoint(const std::string &ip, const int port, const bool isMasterReceiver = false,
-                const std::optional<Address> &loopbackAddr = std::nullopt);
+    UDPEndpoint(
+        const std::string &ip, const int port, const bool isMasterReceiver = false,
+        const std::optional<Address> &loopbackAddr = std::nullopt
+    );
     ~UDPEndpoint();
     // Sends message in buffer
     virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr) override;

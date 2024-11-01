@@ -60,7 +60,7 @@ struct MessageHeader {
     MessageHeader(const byte t, const uint32_t l, const uint32_t sl)
         : msgType(t)
         , msgLen(l)
-        , sigLen(sl) {};
+        , sigLen(sl){};
 };
 
 #endif

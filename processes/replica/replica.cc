@@ -79,8 +79,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true,
-                                                          replicaAddrs_[replicaId]);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
 
@@ -97,7 +96,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         }
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender){
+    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender, *sender == replicaAddrs_[replicaId_]);
     };
 
@@ -108,14 +107,16 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
             endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
             this->startFallback();
         },
-        config.replicaFallbackStartTimeout, this);
+        config.replicaFallbackStartTimeout, this
+    );
 
     fallbackTimer_ = std::make_unique<Timer>(
         [this](void *ctx, void *endpoint) {
             LOG(INFO) << "Fallback for instance=" << instance_ << " failed!";
             this->startFallback();
         },
-        config.replicaFallbackTimeout, this);
+        config.replicaFallbackTimeout, this
+    );
 
     endpoint_->RegisterSignalHandler([&]() {
         LOG(INFO) << "Received interrupt signal!";
@@ -175,7 +176,8 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
         }
 
         // TODO(Hao) should this be in handleClientRequest?
-        if (!checkAndUpdateClientRecord(clientHeader)) return;
+        if (!checkAndUpdateClientRecord(clientHeader))
+            return;
 
         if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
             holdAndSwapCliReq(clientHeader);
@@ -244,7 +246,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
             LOG(INFO) << "Failed to verify client signature of c_id=" << fallbackTriggerMsg.client_id();
             return;
         }
@@ -279,7 +281,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        if (!skipVerify &&  !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
+        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
@@ -686,7 +688,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
             continue;
 
         std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key = {
-            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_records_set().client_records_digest()};
+            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
+            commit.client_records_set().client_records_digest()};
         matchingCommits[key].insert(replicaId);
 
         // TODO see if there's a better way to do this
@@ -1046,9 +1049,8 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         return false;
     }
 
-    if(!log_->canAddEntry()) {
-        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
-                  << " due to log full!";
+    if (!log_->canAddEntry()) {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to log full!";
         return false;
     }
 
@@ -1106,8 +1108,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 
         temp[curSeq - startingSeq] = entry;
         entry->seq = curSeq;
-        auto prevDigest =
-            curSeq == startingSeq ? log_->checkpoint.logDigest : temp[curSeq - startingSeq-1]->digest;
+        auto prevDigest = curSeq == startingSeq ? log_->checkpoint.logDigest : temp[curSeq - startingSeq - 1]->digest;
 
         entry->updateDigest(prevDigest);
 

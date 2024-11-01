@@ -78,8 +78,10 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     }
 
     if (!canAddEntry()) {
-        throw std::runtime_error("nextSeq = " + std::to_string(nextSeq) + " too far ahead of commitPoint.seq = " +
-                                 std::to_string(checkpoint.seq));
+        throw std::runtime_error(
+            "nextSeq = " + std::to_string(nextSeq) +
+            " too far ahead of commitPoint.seq = " + std::to_string(checkpoint.seq)
+        );
     }
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
@@ -111,7 +113,7 @@ const byte *Log::getDigest() const
 
 const byte *Log::getDigest(uint32_t seq) const
 {
-    if (!inRange(seq)){
+    if (!inRange(seq)) {
         LOG(ERROR) << "Tried to access digest of seq=" << seq << " but nextSeq=" << nextSeq;
         return nullptr;
     }
@@ -198,10 +200,10 @@ void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
 {
     if (inRange(startSeq)) {
         std::vector<std::shared_ptr<LogEntry>> temp(nextSeq - startSeq);
-        for(uint32_t i = startSeq; i < nextSeq; i++) {
+        for (uint32_t i = startSeq; i < nextSeq; i++) {
             temp[i - startSeq] = log[i % MAX_SPEC_HIST];
         }
-        for(uint32_t i = startSeq + num; i < nextSeq + num; i++) {
+        for (uint32_t i = startSeq + num; i < nextSeq + num; i++) {
             log[i % MAX_SPEC_HIST] = temp[i - startSeq - num];
         }
         nextSeq += num;

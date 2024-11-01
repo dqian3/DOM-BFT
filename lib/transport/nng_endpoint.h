@@ -37,8 +37,10 @@ protected:
 
 public:
     // Takes a number of addresses
-    NngEndpoint(const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false,
-                const std::optional<Address> &loopbackAddr = std::nullopt);
+    NngEndpoint(
+        const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false,
+        const std::optional<Address> &loopbackAddr = std::nullopt
+    );
     virtual ~NngEndpoint();
 
     // Sends message in buffer

@@ -1,6 +1,6 @@
 #include "lib/transport/endpoint.h"
 
-Endpoint::Endpoint(const bool isMasterReceiver, const std::optional<Address>& loopbackAddr)
+Endpoint::Endpoint(const bool isMasterReceiver, const std::optional<Address> &loopbackAddr)
     : loopbackAddr_(loopbackAddr)
 {
     evLoop_ = isMasterReceiver ? ev_default_loop() : ev_loop_new();

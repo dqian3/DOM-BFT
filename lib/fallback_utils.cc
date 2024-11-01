@@ -12,7 +12,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     uint32_t maxCheckpointSeq = 0;
 
     // First find highest commit point
-    const dombft::proto::CheckpointClientRecordsSet* tmpClientRecordsSetPtr;
+    const dombft::proto::CheckpointClientRecordsSet *tmpClientRecordsSetPtr;
     for (auto &log : fallbackProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
@@ -131,7 +131,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     return true;
 }
 
-bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
+bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
 {
     LOG(INFO) << "Applying checkpoint";
 
@@ -142,7 +142,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
 
     std::string myCheckpointDigest((char *) myCheckpoint.logDigest, SHA256_DIGEST_LENGTH);
 
-    if (checkpoint->log_digest() != myCheckpointDigest&& checkpoint->seq() > myCheckpoint.seq) {
+    if (checkpoint->log_digest() != myCheckpointDigest && checkpoint->seq() > myCheckpoint.seq) {
         log->app_->applySnapshot(checkpoint->app_digest());
         log->nextSeq = checkpoint->seq() + 1;
 
@@ -166,8 +166,8 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
     uint32_t idx = 0;
     dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
     // skip the entries that are already in the log
-    for(; idx < logSuffix.entries.size(); idx++){
-        seq++; // First sequence to apply is right after checkpoint
+    for (; idx < logSuffix.entries.size(); idx++) {
+        seq++;   // First sequence to apply is right after checkpoint
         assert(seq < log->nextSeq);
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
@@ -185,13 +185,13 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
                 << " since already in log at seq=" << seq;
     }
 
-    for(; idx < logSuffix.entries.size(); idx++) {
+    for (; idx < logSuffix.entries.size(); idx++) {
         assert(seq == log->nextSeq);
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
 
-        if(!log->canAddEntry()){
+        if (!log->canAddEntry()) {
             LOG(INFO) << "nextSeq=" << log->nextSeq << " too far ahead of commitPoint.seq=" << log->checkpoint.seq;
             break;
         }
@@ -210,8 +210,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log>& log)
         // TODO(Hao): should it reply to client?
         VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                 << " instance=" << logSuffix.instance << " client_id=" << clientId
-                << " client_seq=" << entry->client_seq()
-                << " digest=" << digest_to_hex(log->getDigest()).substr(56);
+                << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
         seq++;
     }
     return true;

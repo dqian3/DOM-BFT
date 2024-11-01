@@ -80,8 +80,10 @@ protected:
     MessageHandlerFunc hdlrFunc_;
 
 public:
-    NngEndpointThreaded(const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false,
-                        const std::optional<Address> &loopbackAddr = std::nullopt);
+    NngEndpointThreaded(
+        const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false,
+        const std::optional<Address> &loopbackAddr = std::nullopt
+    );
     virtual ~NngEndpointThreaded();
 
     virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr) override;

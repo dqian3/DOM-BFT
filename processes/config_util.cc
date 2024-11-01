@@ -4,16 +4,20 @@
 
 using namespace std;
 
-void addAddrPairs(vector<pair<Address, Address>> &pairs, const std::string &myIp, uint32_t myBasePort,
-                  const std::vector<std::string> theirIps, int theirPort)
+void addAddrPairs(
+    vector<pair<Address, Address>> &pairs, const std::string &myIp, uint32_t myBasePort,
+    const std::vector<std::string> theirIps, int theirPort
+)
 {
     for (uint32_t i = 0; i < theirIps.size(); i++) {
         pairs.push_back({Address(myIp, myBasePort + i), Address(theirIps[i], theirPort)});
     }
 }
 
-void addAddrPairsToClient(vector<pair<Address, Address>> &pairs, const std::string &myIp, uint32_t myBasePort,
-                          const std::vector<std::string> theirIps, int theirPort, int portRangeWidth)
+void addAddrPairsToClient(
+    vector<pair<Address, Address>> &pairs, const std::string &myIp, uint32_t myBasePort,
+    const std::vector<std::string> theirIps, int theirPort, int portRangeWidth
+)
 {
     for (uint32_t i = 0; i < theirIps.size(); i++) {
         pairs.push_back({Address(myIp, myBasePort + i), Address(theirIps[i], theirPort + i * portRangeWidth)});

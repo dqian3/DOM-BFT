@@ -19,15 +19,16 @@ public:
 typedef std::unordered_map<uint32_t, ClientRecord> ClientRecords;
 
 void getClientRecordsFromProto(
-    const CheckpointClientRecordsSet &records,
-    std::unordered_map<uint32_t, ClientRecord> &dst
+    const CheckpointClientRecordsSet &records, std::unordered_map<uint32_t, ClientRecord> &dst
 );
 bool updateRecordWithSeq(ClientRecord &cliRecord, uint32_t newSeq);
 void getRecordsDigest(const std::unordered_map<uint32_t, ClientRecord> &records, byte *digest);
 int getRightShiftNumWithRecords(const ClientRecords &records1, const ClientRecords &records2);
 
 bool verifyRecordDigestFromProto(const CheckpointClientRecordsSet &recordsSet);
-void toProtoClientRecords(CheckpointClientRecordsSet &recordsSet, const std::unordered_map<uint32_t, ClientRecord> &clientRecords);
+void toProtoClientRecords(
+    CheckpointClientRecordsSet &recordsSet, const std::unordered_map<uint32_t, ClientRecord> &clientRecords
+);
 }   // namespace dombft
 
 #endif   // DOM_BFT_CLIENT_RECORD_H

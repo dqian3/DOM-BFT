@@ -73,8 +73,10 @@ void NngSendThread::sendMsg(const byte *msg, size_t len)
 }
 
 /*************************** NngRecvThread ***************************/
-NngRecvThread::NngRecvThread(const std::vector<nng_socket> &socks, const std::unordered_map<int, Address> &sockToAddr,
-                             struct ev_loop *parentLoop, ev_async *recvWatcher)
+NngRecvThread::NngRecvThread(
+    const std::vector<nng_socket> &socks, const std::unordered_map<int, Address> &sockToAddr,
+    struct ev_loop *parentLoop, ev_async *recvWatcher
+)
     : socks_(socks)
     , parentLoop_(parentLoop)
     , parentRecvWatcher_(recvWatcher)
@@ -152,9 +154,10 @@ void NngRecvThread::run()
 }
 
 /*************************** NngEndpointThreaded ***************************/
-NngEndpointThreaded::NngEndpointThreaded(const std::vector<std::pair<Address, Address>> &addrPairs,
-                                         bool isMasterReceiver,
-                                         const std::optional<Address> &loopbackAddr)
+NngEndpointThreaded::NngEndpointThreaded(
+    const std::vector<std::pair<Address, Address>> &addrPairs, bool isMasterReceiver,
+    const std::optional<Address> &loopbackAddr
+)
     : NngEndpoint(addrPairs, isMasterReceiver, loopbackAddr)
 {
     // Parent class initializes sockets and address state
@@ -176,11 +179,11 @@ int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr, MessageHeader
     }
 
     // check for loopback
-    if (loopbackAddr_.has_value() && dstAddr == loopbackAddr_.value()){
+    if (loopbackAddr_.has_value() && dstAddr == loopbackAddr_.value()) {
         byte *msg = (byte *) hdr;
-        recvThread_->queue_.enqueue({std::vector<byte>(msg,
-                                                       msg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen),
-                                                        dstAddr});
+        recvThread_->queue_.enqueue(
+            {std::vector<byte>(msg, msg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen), dstAddr}
+        );
         ev_async_send(evLoop_, &recvWatcher_);
         return 0;
     }

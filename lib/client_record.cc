@@ -1,8 +1,6 @@
 #include "client_record.h"
 namespace dombft {
-void getClientRecordsFromProto(
-    const CheckpointClientRecordsSet &recordsSet, ClientRecords &dst
-)
+void getClientRecordsFromProto(const CheckpointClientRecordsSet &recordsSet, ClientRecords &dst)
 {
     for (const auto &cliRecord : recordsSet.records()) {
         uint32_t cliId = cliRecord.client_id();
@@ -96,7 +94,9 @@ bool verifyRecordDigestFromProto(const CheckpointClientRecordsSet &recordsSet)
     return digest_to_hex(recordDigest, SHA256_DIGEST_LENGTH) == digest_to_hex(recordsSet.client_records_digest());
 }
 
-void toProtoClientRecords(CheckpointClientRecordsSet &recordsSet, const std::unordered_map<uint32_t, ClientRecord> &clientRecords)
+void toProtoClientRecords(
+    CheckpointClientRecordsSet &recordsSet, const std::unordered_map<uint32_t, ClientRecord> &clientRecords
+)
 {
     for (const auto &[cliId, cliRecord] : clientRecords) {
         proto::CheckpointClientRecord *record = recordsSet.add_records();
@@ -108,6 +108,5 @@ void toProtoClientRecords(CheckpointClientRecordsSet &recordsSet, const std::uno
         }
     }
 }
-
 
 }   // namespace dombft

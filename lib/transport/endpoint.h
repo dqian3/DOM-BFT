@@ -55,7 +55,7 @@ public:
     ev_signal signalWatcher_;
     SignalHandlerFunc signalHandler_;
 
-    explicit Endpoint(const bool isMasterReceiver = false, const std::optional<Address>& loopbackAddr = std::nullopt);
+    explicit Endpoint(const bool isMasterReceiver = false, const std::optional<Address> &loopbackAddr = std::nullopt);
     virtual ~Endpoint();
 
     // -------------------- Socket/IO Handling --------------------
