@@ -1,5 +1,6 @@
 #include "processes/process_config.h"
 
+#include "lib/fallback_utils.h"
 #include "lib/common.h"
 #include "lib/log.h"
 #include "lib/message_type.h"
@@ -41,8 +42,7 @@ private:
     std::shared_ptr<Log> log_;
 
     // State for tracking client state
-    // TODO add some parts for caching client results to deal with duplicate requests
-    std::map<int, uint32_t> clientInstance_;
+    ClientRecords clientRecords_;
 
     // State for commit/checkpoint protocol
     // TODO move this somewhere else?
@@ -51,9 +51,11 @@ private:
     std::map<int, dombft::proto::Reply> checkpointReplies_;
     std::map<int, std::string> checkpointReplySigs_;
     std::optional<dombft::proto::Cert> checkpointCert_;
+    ClientRecords checkpointClientRecords_;
+    ClientRecords intermediateCheckpointClientRecords_;
 
-    std::map<int, dombft::proto::Commit> checkpointCommits_;
-    std::map<int, std::string> checkpointCommitSigs_;
+    std::map<uint32_t, dombft::proto::Commit> checkpointCommits_;
+    std::map<uint32_t, std::string> checkpointCommitSigs_;
 
     // State for fallback
     bool fallback_ = false;
@@ -77,6 +79,7 @@ private:
     void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
 
+    void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf = nullptr);
     void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf = nullptr);
     bool verifyCert(const dombft::proto::Cert &cert);
 
@@ -98,7 +101,9 @@ private:
     void handlePrepare(const dombft::proto::FallbackPrepare &msg);
     void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
 
-    void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf = nullptr);
+    // helpers
+    bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
+    void reapplyEntriesWithRecord(uint32_t rShiftNum);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

@@ -95,8 +95,9 @@ private:
 
 class PercentileCtx : public BaseCalcCtx {
 public:
-    explicit PercentileCtx(uint32_t numReceivers, uint32_t cap, uint32_t windowSize, uint32_t percentile,
-                           uint32_t initialMeasure = 0)
+    explicit PercentileCtx(
+        uint32_t numReceivers, uint32_t cap, uint32_t windowSize, uint32_t percentile, uint32_t initialMeasure = 0
+    )
         : BaseCalcCtx(numReceivers, cap, windowSize, initialMeasure)
         , percentile_(percentile)
     {

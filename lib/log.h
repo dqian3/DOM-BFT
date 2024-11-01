@@ -101,6 +101,15 @@ struct Log {
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 
     std::shared_ptr<LogEntry> getEntry(uint32_t seq);
+    void setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry);
+    void rightShiftEntries(uint32_t startSeq, uint32_t num);
+
+    bool inRange(uint32_t seq) const{
+        return seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST);
+    }
+    bool canAddEntry() const{
+        return nextSeq <= checkpoint.seq + MAX_SPEC_HIST;
+    }
 };
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le);

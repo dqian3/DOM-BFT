@@ -147,8 +147,9 @@ std::vector<byte> SignatureProvider::getSignature(MessageHeader *hdr, byte *body
     return std::vector<byte>(data + hdr->msgLen, data + hdr->sigLen);
 }
 
-bool SignatureProvider::verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType,
-                               int pubKeyId)
+bool SignatureProvider::verify(
+    byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId
+)
 {
     if (!pubKeys_[pubKeyType].count(pubKeyId)) {
         LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";

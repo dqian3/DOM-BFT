@@ -23,7 +23,7 @@ typedef struct AppLayerResponse {
 class Application {
 
 public:
-    virtual ~Application() {};
+    virtual ~Application(){};
 
     virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) = 0;
 

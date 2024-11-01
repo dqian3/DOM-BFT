@@ -48,8 +48,9 @@ bool Counter::commit(uint32_t commit_idx)
 {
     LOG(INFO) << "Committing counter value at idx: " << commit_idx;
 
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
-                           [commit_idx](const VersionedValue &v) { return v.version <= commit_idx; });
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [commit_idx](const VersionedValue &v) {
+        return v.version <= commit_idx;
+    });
 
     if (it != version_hist.rend()) {
         committed_state.value = it->value;
@@ -68,8 +69,9 @@ bool Counter::commit(uint32_t commit_idx)
 std::string Counter::getDigest(uint32_t digest_idx)
 {
     // Find the latest versioned value at or before digest_idx
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
-                           [digest_idx](const VersionedValue &v) { return v.version <= digest_idx; });
+    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [digest_idx](const VersionedValue &v) {
+        return v.version <= digest_idx;
+    });
 
     VersionedValue digest;
     if (it != version_hist.rend()) {
@@ -95,7 +97,6 @@ void Counter::applySnapshot(const std::string &snapshot)
     version_hist.clear();
 
     LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
-
 }
 
 void *CounterTrafficGen::generateAppTraffic()
@@ -109,19 +110,21 @@ void *CounterTrafficGen::generateAppTraffic()
 bool Counter::abort(const uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-    if(abort_idx < committed_state.version){
+    if (abort_idx < committed_state.version) {
         // or revert to committed state?
-        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version <<". Unable to revert.";
+        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version
+                   << ". Unable to revert.";
         return false;
     }
-    if(abort_idx < version_hist.front().version){
+    if (abort_idx < version_hist.front().version) {
         version_hist.erase(version_hist.begin(), version_hist.end());
-    }else if(abort_idx >= version_hist.back().version){
+    } else if (abort_idx >= version_hist.back().version) {
         LOG(WARNING) << "Requested abort index is greater than the last version in history. No aborting";
         return true;
-    }else{
-        auto it = std::find_if(version_hist.rbegin(), version_hist.rend(),
-                               [abort_idx](const VersionedValue &v) { return v.version <= abort_idx; });
+    } else {
+        auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [abort_idx](const VersionedValue &v) {
+            return v.version <= abort_idx;
+        });
         if (it != version_hist.rend()) {
             // Erase all entries from the point found + 1 to the end entries from the point found to the end
             version_hist.erase(it.base(), version_hist.end());

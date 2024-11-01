@@ -77,10 +77,9 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
         prevDigest = log[(nextSeq - 1) % log.size()]->digest;
     }
 
-    if (nextSeq > checkpoint.seq + MAX_SPEC_HIST) {
-        LOG(INFO) << "nextSeq=" << nextSeq << " too far ahead of commitPoint.seq=" << checkpoint.seq;
-        // TODO error out properly
-        return false;
+    if (!canAddEntry()) {
+        throw std::runtime_error("nextSeq = " + std::to_string(nextSeq) + " too far ahead of commitPoint.seq = " +
+                                 std::to_string(checkpoint.seq));
     }
 
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
@@ -112,7 +111,7 @@ const byte *Log::getDigest() const
 
 const byte *Log::getDigest(uint32_t seq) const
 {
-    if (seq + MAX_SPEC_HIST < nextSeq) {
+    if (!inRange(seq)){
         LOG(ERROR) << "Tried to access digest of seq=" << seq << " but nextSeq=" << nextSeq;
         return nullptr;
     }
@@ -175,7 +174,7 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 
 std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
 {
-    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+    if (inRange(seq)) {
         uint32_t index = seq % MAX_SPEC_HIST;
         return log[index];
     } else {
@@ -184,9 +183,36 @@ std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
     }
 }
 
+void Log::setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry)
+{
+    if (inRange(seq)) {
+        uint32_t index = seq % MAX_SPEC_HIST;
+        log[index] = entry;
+    } else {
+        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
+    }
+}
+
+// copies the entries at idx to idx + num, starting from startSeq
+void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
+{
+    if (inRange(startSeq)) {
+        std::vector<std::shared_ptr<LogEntry>> temp(nextSeq - startSeq);
+        for(uint32_t i = startSeq; i < nextSeq; i++) {
+            temp[i - startSeq] = log[i % MAX_SPEC_HIST];
+        }
+        for(uint32_t i = startSeq + num; i < nextSeq + num; i++) {
+            log[i % MAX_SPEC_HIST] = temp[i - startSeq - num];
+        }
+        nextSeq += num;
+    } else {
+        LOG(ERROR) << "Sequence number " << startSeq << " is out of range.";
+    }
+}
+
 void Log::commit(uint32_t seq)
 {
-    if (seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST)) {
+    if (inRange(seq)) {
         app_.get()->commit(seq);
         certs.erase(certs.begin(), certs.lower_bound(seq));
     } else {

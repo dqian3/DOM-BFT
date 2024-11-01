@@ -10,7 +10,7 @@ AlignTrailingComments: true
 SpacesBeforeTrailingComments: 3
 
 AlignConsecutiveMacros: Consecutive
-AlignAfterOpenBrack: BlockIndent
+AlignAfterOpenBracket: BlockIndent
 # Makes functions clearer
 BreakConstructorInitializers: BeforeComma
 BreakBeforeBraces: Custom

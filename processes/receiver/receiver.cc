@@ -9,8 +9,9 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines,
-                   bool skipVerify)
+Receiver::Receiver(
+    const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines, bool skipVerify
+)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)

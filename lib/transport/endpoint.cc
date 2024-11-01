@@ -160,7 +160,8 @@ void Endpoint::RegisterSignalHandler(SignalHandlerFunc signalHandler)
             Endpoint *e = (Endpoint *) w->data;
             e->signalHandler_();
         },
-        SIGINT);
+        SIGINT
+    );
     ev_signal_start(evLoop_, &signalWatcher_);
 }
 
