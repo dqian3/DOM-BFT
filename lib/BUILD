@@ -164,3 +164,17 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "checkpoint_collector",
+    hdrs = ["checkpoint_collector.h"],
+    srcs = ["checkpoint_collector.cc"],
+    deps = [
+        ":utils",
+        ":log",
+        ":common",
+        ":client_record",
+        "//proto:dombft_proto_cc"
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -14,11 +14,12 @@ using namespace dombft::proto;
 
 Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq)
     : replicaId_(replicaId)
-    , instance_(0)
     , f_(config.replicaIps.size() / 3)
-    , swapFreq_(swapFreq)
+    , instance_(0)
     , sigProvider_()
     , threadpool_(config.replicaNumWorkerThreads)
+    , checkpointCollector_(replicaId,f_)
+    , swapFreq_(swapFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -498,7 +499,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
 
     ClientRecords tmpClientRecords = clientRecords_;
     // TODO, only queue signing tasks? Then we don't have to worry about locking replica state
-    threadpool_.enqueueTask([=, this](byte *buffer) {
+    threadpool_.enqueueTask([=, this](byte *buffer) mutable {
         Reply reply;
 
         reply.set_client_id(clientId);
@@ -518,11 +519,15 @@ void Replica::handleClientRequest(const ClientRequest &request)
             VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
             {
                 std::lock_guard<std::mutex> guard(replicaStateMutex_);
-                // an intermediate record is needed as current checkpointing can be interrupted by fallback
-                // so only when the checkpoint is finished, the checkpoint record is updated
-                intermediateCheckpointClientRecords_ = tmpClientRecords;
-                checkpointSeq_ = seq;
-                checkpointCert_.reset();
+
+                // TODO(Hao): see how often overlapping happens
+                if(checkpointCollector_.inProgress){
+                    LOG(INFO)<< "Checkpointing is IN PROGRESS for seq="<<checkpointCollector_.endSeq_;
+                }
+                // an intermediate record(checkpointCollector_.clientRecords_) is needed as
+                // current checkpointing can be interrupted by fallback/overlapped checkpoint
+                checkpointCollector_.checkpointStart(log_->checkpoint.seq + 1,
+                                                     seq, tmpClientRecords);
             }
             // TODO remove execution result here
             broadcastToReplicas(reply, MessageType::REPLY, buffer);
@@ -588,162 +593,87 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
-    checkpointReplies_[reply.replica_id()] = reply;
-    checkpointReplySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
 
-    // Don't try finishing the commit if our log hasn't reached the seq being committed
-    if (checkpointReplies_[replicaId_].seq() != checkpointSeq_) {
-        VLOG(4) << "Skipping processing of commit messages until we receive our own...";
+    if (checkpointCollector_.addAndCheckReplyCollection(reply, sig)) {
+        const byte *logDigest = log_->getDigest(reply.seq());
+        std::string appDigest = log_->app_->getDigest(reply.seq());
+        ClientRecords tmpClientRecords = checkpointCollector_.clientRecords_;
+        uint32_t instance = instance_;
+        threadpool_.enqueueTask([=, this](byte *buffer) {
+            // Broadcast commmit Message
+            dombft::proto::Commit commit;
+            commit.set_replica_id(replicaId_);
+            commit.set_seq(reply.seq());
+            commit.set_instance(instance);
+            commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
+            commit.set_app_digest(appDigest);
+
+            byte recordDigest[SHA256_DIGEST_LENGTH];
+            getRecordsDigest(tmpClientRecords, recordDigest);
+            commit.mutable_client_records_set()->set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
+            toProtoClientRecords(*commit.mutable_client_records_set(), tmpClientRecords);
+            VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
+            broadcastToReplicas(commit, MessageType::COMMIT, buffer);
+        });
+
         return;
     }
 
-    if (checkpointCert_.has_value() && checkpointCert_->seq() >= reply.seq()) {
-        VLOG(4) << "Checkpoint: already have cert for seq=" << reply.seq() << ", skipping";
-        return;
-    }
-    std::map<std::tuple<std::string, int, int>, std::set<int>> matchingReplies;
-
-    // Find a cert among a set of replies
-    for (const auto &entry : checkpointReplies_) {
-        uint32_t replicaId = entry.first;
-        const Reply &reply = entry.second;
-
-        // Already committed
-        if (reply.seq() <= log_->checkpoint.seq)
-            continue;
-
-        VLOG(4) << digest_to_hex(reply.digest()).substr(0, 8) << " " << reply.seq() << " " << reply.instance();
-
-        std::tuple<std::string, uint32_t, uint32_t> key = {reply.digest(), reply.instance(), reply.seq()};
-
-        matchingReplies[key].insert(replicaId);
-
-        bool hasOwnReply = checkpointReplies_.count(replicaId_) && checkpointReplies_[replicaId_].seq() == reply.seq();
-
-        // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= 2 * f_ + 1 && hasOwnReply) {
-            checkpointCert_ = Cert();
-            checkpointCert_->set_seq(std::get<2>(key));
-
-            for (auto repId : matchingReplies[key]) {
-                checkpointCert_->add_signatures(checkpointReplySigs_[repId]);
-                (*checkpointCert_->add_replies()) = checkpointReplies_[repId];
-            }
-
-            VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
-
-            const byte *logDigest = log_->getDigest(reply.seq());
-            std::string appDigest = log_->app_->getDigest(reply.seq());
-            ClientRecords tmpClientRecords = intermediateCheckpointClientRecords_;
-            uint32_t instance = instance_;
-            threadpool_.enqueueTask([=, this](byte *buffer) {
-                // Broadcast commmit Message
-                dombft::proto::Commit commit;
-                commit.set_replica_id(replicaId_);
-                commit.set_seq(reply.seq());
-                commit.set_instance(instance);
-                commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
-                commit.set_app_digest(appDigest);
-
-                byte recordDigest[SHA256_DIGEST_LENGTH];
-                getRecordsDigest(tmpClientRecords, recordDigest);
-                commit.mutable_client_records_set()->set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
-                toProtoClientRecords(*commit.mutable_client_records_set(), tmpClientRecords);
-                VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
-                broadcastToReplicas(commit, MessageType::COMMIT, buffer);
-            });
-
-            return;
-        }
-    }
 }
 
-void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
+void Replica::handleCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
-    VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
-
-    checkpointCommits_[commitMsg.replica_id()] = commitMsg;
-    checkpointCommitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
-
-    if (log_->checkpoint.seq >= commitMsg.seq()) {
-        VLOG(4) << "Checkpoint: already committed for seq=" << commitMsg.seq() << ", skipping";
+    VLOG(3) << "Processing COMMIT from " << commit.replica_id() << " for seq " << commit.seq();
+    if (!checkpointCollector_.addAndCheckCommitCollection(commit, sig)) {
         return;
     }
+    uint32_t seq = commit.seq();
 
-    // verify the record is not tampered by a malicious replica
-    if (!verifyRecordDigestFromProto(commitMsg.client_records_set())) {
-        VLOG(5) << "Client records from commit msg from replica " << commitMsg.replica_id()
-                << " does not match the carried records digest";
-        return;
+    LOG(INFO) << "Committing seq=" << seq;
+    VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
+
+    log_->checkpoint.seq = seq;
+
+    memcpy(log_->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
+    memcpy(log_->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
+
+    for (uint32_t r : checkpointCollector_.commitMatchedReplicas_) {
+        log_->checkpoint.commitMessages[r] = checkpointCollector_.commits_[r];
+        log_->checkpoint.signatures[r] = checkpointCollector_.commitSigs_[r];
     }
+    log_->commit(log_->checkpoint.seq);
 
-    std::map<std::tuple<std::string, std::string, uint32_t, uint32_t, std::string>, std::set<int>> matchingCommits;
+    const byte *myDigestBytes = log_->getDigest(seq);
+    std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
+    // Modifies log if checkpoint is inconsistent with our current log
+    if (myDigest != commit.log_digest()) {
+        LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot and modifying "
+                     "log...";
 
-    // Find a cert among a set of replies
-    for (const auto &[replicaId, commit] : checkpointCommits_) {
-        // Already committed
-        if (commit.seq() <= log_->checkpoint.seq)
-            continue;
+        // TODO: counter uses digest as snapshot, need to generalize this
+        log_->app_->applySnapshot(commit.app_digest());
+        VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
+                << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
 
-        std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key = {
-            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
-            commit.client_records_set().client_records_digest()};
-        matchingCommits[key].insert(replicaId);
+        checkpointClientRecords_.clear();
+        getClientRecordsFromProto(commit.client_records_set(), checkpointClientRecords_);
+        clientRecords_ = checkpointClientRecords_;
 
-        // TODO see if there's a better way to do this
-        bool hasOwnCommit =
-            checkpointCommits_.count(replicaId_) && checkpointCommits_[replicaId_].seq() == commit.seq();
-
-        // Need 2f + 1 and own commit
-        // Modifies log if checkpoint is incosistent with our current log
-        if (matchingCommits[key].size() >= 2 * f_ + 1 && hasOwnCommit) {
-            uint32_t seq = commit.seq();
-
-            LOG(INFO) << "Committing seq=" << seq;
-            VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
-
-            log_->checkpoint.seq = seq;
-
-            memcpy(log_->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
-            memcpy(log_->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
-
-            // TODO(Hao) why store these?
-            for (uint32_t r : matchingCommits[key]) {
-                log_->checkpoint.commitMessages[r] = checkpointCommits_[r];
-                log_->checkpoint.signatures[r] = checkpointCommitSigs_[r];
-            }
-            log_->commit(log_->checkpoint.seq);
-
-            const byte *myDigestBytes = log_->getDigest(seq);
-            std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
-
-            if (myDigest != commit.log_digest()) {
-                LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot and modifying "
-                             "log...";
-                // TODO: counter uses digest as snapshot, need to generalize this
-                log_->app_->applySnapshot(commit.app_digest());
-                VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
-                        << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
-                checkpointClientRecords_.clear();
-                getClientRecordsFromProto(commit.client_records_set(), checkpointClientRecords_);
-                clientRecords_ = checkpointClientRecords_;
-                int rShiftNum =
-                    getRightShiftNumWithRecords(checkpointClientRecords_, intermediateCheckpointClientRecords_);
-                // that is, there is never a left shift
-                assert(rShiftNum >= 0);
-                if (rShiftNum > 0) {
-                    VLOG(1) << "Right shift logs by " << rShiftNum << " to align with the checkpoint";
-                }
-                reapplyEntriesWithRecord(rShiftNum);
-            } else {
-                checkpointClientRecords_ = intermediateCheckpointClientRecords_;
-            }
-
-            return;
+        int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecords_,
+                                                    checkpointCollector_.clientRecords_);
+        // that is, there is never a left shift
+        assert(rShiftNum >= 0);
+        if (rShiftNum > 0) {
+            VLOG(1) << "Right shift logs by " << rShiftNum << " to align with the checkpoint";
         }
+        reapplyEntriesWithRecord(rShiftNum);
+    } else {
+        checkpointClientRecords_ = checkpointCollector_.clientRecords_;
     }
+
+    checkpointCollector_.inProgress = false;
 }
 
 void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
@@ -922,17 +852,26 @@ void Replica::finishFallback()
 
     fallback_ = false;
     fallbackProposal_.reset();
+    LOG(INFO) << "Commited checkpoint for seq=" << log_->nextSeq - 1<<" after fallback finished";
 
-    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
-    checkpointSeq_ = log_->nextSeq - 1;
-    intermediateCheckpointClientRecords_ = clientRecords_;
-    LOG(INFO) << "Starting checkpoint cert for seq=" << checkpointSeq_;
-
-    checkpointCert_.reset();
-    Reply reply;
-    replyFromLogEntry(reply, checkpointSeq_);
-    broadcastToReplicas(reply, MessageType::REPLY);
 }
+
+//void Replica::commitCheckpointAfterFallback()
+//{
+//    // resolve instance .........
+//    uint32_t commitSeq = log_->nextSeq - 1;
+//    log_->checkpoint.seq = commitSeq;
+//    memcpy(log_->checkpoint.appDigest,log_->app_->getDigest(commitSeq).c_str(), SHA256_DIGEST_LENGTH);
+//    memcpy(log_->checkpoint.logDigest, log_->getDigest(commitSeq), SHA256_DIGEST_LENGTH);
+//
+//    for (uint32_t r : checkpointCollector_.commitMatchedReplicas_) {
+//        log_->checkpoint.commitMessages[r] = checkpointCollector_.commits_[r];
+//        log_->checkpoint.signatures[r] = checkpointCollector_.commitSigs_[r];
+//    }
+//    log_->commit(commitSeq);
+//    checkpointClientRecords_ = clientRecords_;
+//    LOG(INFO) << "Commited checkpoint for seq=" << log_->nextSeq - 1<<" after fallback finished";
+//}
 
 // dummy fallback PBFT
 
@@ -1054,7 +993,7 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         return false;
     }
 
-    if (!updateRecordWithSeq(cliRecord, clientSeq)) {
+    if (!cliRecord.updateRecordWithSeq(clientSeq)) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                   << " due to duplication! Send reply to client";
 
@@ -1098,7 +1037,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 
         ClientRecord &cliRecord = clientRecords_[clientId];
         cliRecord.instance_ = instance_;
-        if (!updateRecordWithSeq(cliRecord, clientSeq)) {
+        if (!cliRecord.updateRecordWithSeq(clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                       << " due to duplication in reapplying with record!";
             continue;

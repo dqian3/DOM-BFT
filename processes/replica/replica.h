@@ -9,6 +9,7 @@
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
+#include "lib/checkpoint_collector.h"
 #include "proto/dombft_proto.pb.h"
 
 #include <fstream>
@@ -41,22 +42,12 @@ private:
     std::unique_ptr<Timer> fallbackTimer_;
     std::shared_ptr<Log> log_;
 
-    // State for tracking client state
+    // State for tracking clients' state
     ClientRecords clientRecords_;
-
-    // State for commit/checkpoint protocol
-    // TODO move this somewhere else?
-    // TODO this assumes non-overlapping checkpoint protocol
-    uint32_t checkpointSeq_ = 0;
-    std::map<int, dombft::proto::Reply> checkpointReplies_;
-    std::map<int, std::string> checkpointReplySigs_;
-    std::optional<dombft::proto::Cert> checkpointCert_;
     ClientRecords checkpointClientRecords_;
-    ClientRecords intermediateCheckpointClientRecords_;
-
-    std::map<uint32_t, dombft::proto::Commit> checkpointCommits_;
-    std::map<uint32_t, std::string> checkpointCommitSigs_;
-
+    // State for commit/checkpoint protocol
+    // TODO this assumes non-overlapping checkpoint protocol
+    CheckpointCollector checkpointCollector_;
     // State for fallback
     bool fallback_ = false;
     uint32_t fallbackTriggerSeq_ = 0;
