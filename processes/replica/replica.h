@@ -22,26 +22,28 @@
 namespace dombft {
 class Replica {
 private:
+    // Replica static config
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
     Address receiverAddr_;
     std::vector<Address> clientAddrs_;
-
     uint32_t f_;
-    uint32_t instance_ = 0;
 
-    /** The replica uses this endpoint to receive requests from receivers and reply to clients*/
+    // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
     ThreadPool threadpool_;
 
-    std::mutex replicaStateMutex_;
+    // Control flow/endpoint objects
+    ConcurrentQueue<std::tuple<google::protobuf::Message, std::string, MessageType>> processQueue;
+    ConcurrentQueue<std::pair<google::protobuf::Message, MessageType>> signSendQueue;
 
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
     std::unique_ptr<Timer> fallbackTimer_;
-    std::shared_ptr<Log> log_;
 
-    // State for tracking client state
+    // Replica state
+    uint32_t instance_ = 0;
+    std::shared_ptr<Log> log_;
     ClientRecords clientRecords_;
 
     // State for commit/checkpoint protocol
@@ -73,11 +75,17 @@ private:
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
-    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender, bool skipVerify = false);
-    void handleClientRequest(const dombft::proto::ClientRequest &request);
-    void handleCert(const dombft::proto::Cert &cert);
-    void handleReply(const dombft::proto::Reply &reply, std::span<byte> sig);
-    void handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
+    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+
+    void verifyMessagesThd();
+    void signAndSendMessageThd();
+
+    void processMessagesThd();
+    void processClientRequest(const dombft::proto::ClientRequest &request);
+    void processCert(const dombft::proto::Cert &cert);
+    void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
+    void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
+    void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
 
     void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf = nullptr);
     void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf = nullptr);
@@ -85,11 +93,8 @@ private:
 
     // Fallback Helpers
     void startFallback();
-    void handleFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
-
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
     void finishFallback();
-
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // dummy fallback PBFT
@@ -97,9 +102,9 @@ private:
     void doPrePreparePhase();
     void doPreparePhase();
     void doCommitPhase();
-    void handlePrePrepare(const dombft::proto::FallbackPrePrepare &msg);
-    void handlePrepare(const dombft::proto::FallbackPrepare &msg);
-    void handlePBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
+    void processPrePrepare(const dombft::proto::FallbackPrePrepare &msg);
+    void processPrepare(const dombft::proto::FallbackPrepare &msg);
+    void processPBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
 
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);

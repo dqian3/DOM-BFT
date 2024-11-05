@@ -97,7 +97,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     }
 
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->handleMessage(msgHdr, msgBuffer, sender, *sender == replicaAddrs_[replicaId_]);
+        this->processMessage(msgHdr, msgBuffer, sender, *sender == replicaAddrs_[replicaId_]);
     };
 
     endpoint_->RegisterMsgHandler(handler);
@@ -138,8 +138,11 @@ void Replica::run()
     LOG(INFO) << "Finishing main event loop...";
 }
 
-#if PROTOCOL == DOMBFT
-void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, const bool skipVerify)
+void Replica::verifyMessagesThd() {}
+
+void Replica::signAndSendMessageThd() {}
+
+void Replica::processMessagesThd()
 {
     if (hdr->msgLen < 0) {
         return;
@@ -182,7 +185,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
         if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
             holdAndSwapCliReq(clientHeader);
         else
-            handleClientRequest(clientHeader);
+            processClientRequest(clientHeader);
     }
 
     if (hdr->msgType == CERT) {
@@ -193,7 +196,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        handleCert(cert);
+        processCert(cert);
     }
 
     if (hdr->msgType == REPLY) {
@@ -204,12 +207,12 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id())) {
+        if (sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
 
-        handleReply(replyHeader, std::span{body + hdr->msgLen, hdr->sigLen});
+        processReply(replyHeader, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 
     if (hdr->msgType == COMMIT) {
@@ -225,7 +228,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
             return;
         }
 
-        handleCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
+        processCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 
     if (hdr->msgType == FALLBACK_TRIGGER) {
@@ -287,7 +290,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
         }
 
         // TODO handle case where instance is higher
-        handleFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+        processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 
     if (hdr->msgType == DUMMY_PREPREPARE) {
@@ -308,7 +311,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
                       << instance_;
             return;
         }
-        handlePrePrepare(msg);
+        processPrePrepare(msg);
     }
 
     if (hdr->msgType == DUMMY_PREPARE) {
@@ -329,7 +332,7 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
                       << instance_;
             return;
         }
-        handlePrepare(msg);
+        processPrepare(msg);
     }
 
     if (hdr->msgType == DUMMY_COMMIT) {
@@ -350,116 +353,11 @@ void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender, con
                       << instance_;
             return;
         }
-        handlePBFTCommit(msg);
+        processPBFTCommit(msg);
     }
 }
 
-#else   // if not DOM_BFT
-void Replica::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
-{
-    if (hdr->msgLen < 0) {
-        return;
-    }
-
-    if (hdr->msgType == CLIENT_REQUEST) {
-        // Only leader should get client requests for now
-        if (replicaId_ != 0) {
-            LOG(ERROR) << "Non leader got CLIENT_REQUEST in dummy PBFT/ZYZZYVA";
-            return;
-        }
-
-        ClientRequest clientHeader;
-
-        if (!clientHeader.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-            return;
-        }
-
-        if (!sigProvider_.verify(hdr, body, "client", clientHeader.client_id())) {
-            LOG(INFO) << "Failed to verify client signature!";
-            return;
-        }
-
-        DummyProto prePrepare;
-        prePrepare.set_client_id(clientHeader.client_id());
-        prePrepare.set_client_seq(clientHeader.client_seq());
-        prePrepare.set_stage(0);
-        prePrepare.set_replica_id(replicaId_);
-        prePrepare.set_replica_seq(seq_);
-
-        VLOG(3) << "Leader preprepare " << clientHeader.client_id() << ", " << clientHeader.client_seq()
-                << " at sequence number " << seq_;
-
-        seq_++;
-
-        broadcastToReplicas(prePrepare, MessageType::DUMMY_PROTO);
-    }
-
-    if (hdr->msgType == DUMMY_PROTO) {
-        DummyProto msg;
-        if (!msg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DUMMY_PROTO message";
-            return;
-        }
-
-        if (!sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
-            return;
-        }
-
-#if PROTOCOL == ZYZ
-
-        // Handle client request currently just replies back to client,
-        // Use that here as a hack lol.
-        VLOG(2) << "Replica " << replicaId_ << " got preprepare for " << msg.replica_seq();
-        ClientRequest dummyReq;
-        dummyReq.set_client_id(msg.client_id());
-        dummyReq.set_client_seq(msg.client_seq());
-        handleClientRequest(dummyReq, msg.replica_seq());
-
-#elif PROTOCOL == PBFT
-        std::pair<int, int> key = {msg.client_id(), msg.client_seq()};
-
-        if (msg.stage() == 0) {
-            VLOG(2) << "Replica " << replicaId_ << " got preprepare for " << msg.replica_seq();
-            msg.set_stage(1);
-            msg.set_replica_id(replicaId_);
-            broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
-        } else if (msg.stage() == 1) {
-            prepareCount[key]++;
-
-            VLOG(4) << "Prepare received from " << msg.replica_id() << " now " << prepareCount[key] << " out of "
-                    << replicaAddrs_.size() / 3 * 2 + 1;
-
-            if (prepareCount[key] == replicaAddrs_.size() / 3 * 2 + 1) {
-                VLOG(2) << "Replica " << replicaId_ << " is prepared on " << msg.replica_seq();
-
-                msg.set_stage(2);
-                msg.set_replica_id(replicaId_);
-
-                broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
-            }
-        } else if (msg.stage() == 2) {
-            commitCount[key]++;
-
-            VLOG(4) << "Commit received from " << msg.replica_id() << " now " << commitCount[key] << " out of "
-                    << replicaAddrs_.size() / 3 * 2 + 1;
-
-            if (commitCount[key] == replicaAddrs_.size() / 3 * 2 + 1) {
-                VLOG(2) << "Replica " << replicaId_ << " is committed on " << msg.replica_seq();
-
-                ClientRequest dummyReq;
-                dummyReq.set_client_id(msg.client_id());
-                dummyReq.set_client_seq(msg.client_seq());
-                handleClientRequest(dummyReq, msg.replica_seq());
-            }
-        }
-#endif
-    }
-}
-#endif
-
-void Replica::handleClientRequest(const ClientRequest &request)
+void Replica::processClientRequest(const ClientRequest &request)
 {
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
@@ -540,14 +438,14 @@ void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
         VLOG(2) << "Holding request (" << clientId << ", " << clientSeq << ") for swapping";
         return;
     }
-    handleClientRequest(request);
-    handleClientRequest(heldRequest_.value());
+    processClientRequest(request);
+    processClientRequest(heldRequest_.value());
     VLOG(2) << "Swapped requests (" << clientId << ", " << clientSeq << ") and (" << heldRequest_->client_id() << ", "
             << heldRequest_->client_seq() << ")";
     heldRequest_.reset();
 }
 
-void Replica::handleCert(const Cert &cert)
+void Replica::processCert(const Cert &cert)
 {
     // TODO make sure this works
     threadpool_.enqueueTask([=, this](byte *buffer) {
@@ -583,7 +481,7 @@ void Replica::handleCert(const Cert &cert)
     });
 }
 
-void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
+void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
@@ -658,7 +556,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
     }
 }
 
-void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
+void Replica::processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
 {
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
@@ -689,7 +587,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commitMsg, std::span<byt
 
         std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> key = {
             commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
-            commit.client_records_set().client_records_digest()};
+            commit.client_records_set().client_records_digest()
+        };
         matchingCommits[key].insert(replicaId);
 
         // TODO see if there's a better way to do this
@@ -831,7 +730,7 @@ void Replica::startFallback()
     LOG(INFO) << "DUMP start fallback instance=" << instance_ << " " << *log_;
 }
 
-void Replica::handleFallbackStart(const FallbackStart &msg, std::span<byte> sig)
+void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 {
     fallbackHistory_[msg.replica_id()] = msg;
     fallbackHistorySigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
@@ -980,7 +879,7 @@ void Replica::doCommitPhase()
     cmt.set_instance(instance_);
     broadcastToReplicas(cmt, DUMMY_COMMIT);
 }
-void Replica::handlePrePrepare(const FallbackPrePrepare &msg)
+void Replica::processPrePrepare(const FallbackPrePrepare &msg)
 {
     VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     // TODO Verify FallbackProposal
@@ -992,7 +891,7 @@ void Replica::handlePrePrepare(const FallbackPrePrepare &msg)
     doPreparePhase();
 }
 
-void Replica::handlePrepare(const FallbackPrepare &msg)
+void Replica::processPrepare(const FallbackPrepare &msg)
 {
     VLOG(6) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPrepares_[msg.replica_id()] = msg;
@@ -1005,7 +904,7 @@ void Replica::handlePrepare(const FallbackPrepare &msg)
     }
 }
 
-void Replica::handlePBFTCommit(const FallbackPBFTCommit &msg)
+void Replica::processPBFTCommit(const FallbackPBFTCommit &msg)
 {
     VLOG(6) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPBFTCommits_[msg.replica_id()] = msg;

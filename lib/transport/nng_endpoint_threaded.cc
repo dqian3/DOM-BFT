@@ -59,11 +59,7 @@ void NngSendThread::run()
 
     ev_set_priority(&stopWatcher_, EV_MAXPRI);
 
-    // LOG(INFO) << "NngEndpointThreaded send thread started!";
-
     ev_run(evLoop_, 0);
-
-    // LOG(INFO) << "NngEndpointThreaded send thread finished!";
 }
 
 void NngSendThread::sendMsg(const byte *msg, size_t len)
