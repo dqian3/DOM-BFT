@@ -16,8 +16,15 @@
 #include <memory>
 #include <span>
 #include <thread>
+#include <chrono>
 
 #include <yaml-cpp/yaml.h>
+
+
+// temp batch resp parameters
+#define REPLY_BATCH_SIZE 5 
+// if cannot gather 5 resp in 0.1 seconds, send out the batch anyway. 
+#define BATCH_TIMEOUT_MS 100
 
 namespace dombft {
 class Replica {
@@ -73,6 +80,23 @@ private:
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
+    // memebers for the client response batching
+    std::mutex batchMutex_;  // Mutex for synchronizing access to the batch
+    std::vector<Reply> replyBatch_;  // Buffer to store replies before batching
+    std::set<uint32_t> clientsInBatch_;  // Set of client IDs in the current batch
+    std::condition_variable batchCondVar_;  // Condition variable for batch processing
+    std::chrono::steady_clock::time_point batchStartTime_;  // Time of the last batch processing
+
+
+    // commented out fro now, maybe we should just use the generic threadpool for signing here
+    // use a dedicated batch processing thread to avoid contention with send and recv
+    // because batch processing is time sensitive, and contention with others delay the handling
+    // std::thread batchProcessingThread_;
+    // the shutdown vatiable here is intenderd for clearing the thread when the time ha come .
+    // bool shutdown_ = false;
+
+
+
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender, bool skipVerify = false);
     void handleClientRequest(const dombft::proto::ClientRequest &request);
     void handleCert(const dombft::proto::Cert &cert);
@@ -104,6 +128,14 @@ private:
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
     void reapplyEntriesWithRecord(uint32_t rShiftNum);
+
+    // batch reply
+    // void processReplyBatch();
+
+    void processReplyBatch(std::vector<Reply> batchToSend, std::set<uint32_t> clientsToNotify, byte *buffer);
+   
+    void sendBatchedReplyToClients(const BatchedReply &batchedReply, const std::set<uint32_t> &clients, byte *buffer);
+
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

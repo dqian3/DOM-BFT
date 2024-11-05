@@ -191,4 +191,11 @@ message FallbackPBFTCommit
 }
 
 
+message BatchedReply {
+    uint32 replica_id = 1;
+    repeated Reply replies = 2;
+    // repeated bytes signatures = 2;
+}
+
+
 

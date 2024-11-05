@@ -460,6 +460,39 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         handleFallbackSummary(fallbackSummary, std::span{body + hdr->msgLen, hdr->sigLen});
     }
+
+    else if (hdr->msgType == MessageType::BATCHED_REPLY) {
+        // New handler for batched replies
+        BatchedReply batchedReply;
+        if (!batchedReply.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse BATCHED_REPLY message";
+            return;
+        }
+
+        uint32_t replicaId = batchedReply.replica_id();
+
+        if (!sigProvider_.verify(hdr, body, "replica", replicaId)) {
+            LOG(INFO) << "Failed to verify replica signature for batched reply from replica " << replicaId;
+            return;
+        }
+
+        LOG(INFO) << "Received batched reply successfully from replica " << replicaId;
+
+        // The signature is valid for the entire batch.
+        std::vector<byte> batchSignature(body + hdr->msgLen, body + hdr->msgLen + hdr->sigLen);
+
+        // Process each reply in batchedReply
+        for (const Reply &reply : batchedReply.replies()) {
+            if (reply.client_id() != clientId_) {
+                continue;  // Not for this client
+            }
+
+            // create a mutable version to circumvent the issue with const
+            dombft::proto::Reply mutableReply = reply;
+            // Since the signature is for the entire batch, we pass the same signature for each reply
+            handleReply(mutableReply, batchSignature);
+        }
+    }
 }
 
 void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)

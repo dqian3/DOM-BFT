@@ -28,7 +28,10 @@ enum MessageType {
     DUMMY_PROTO = 13,
     DUMMY_PREPREPARE = 14,
     DUMMY_PREPARE = 15,
-    DUMMY_COMMIT = 16
+    DUMMY_COMMIT = 16,
+
+    // Add more message types here
+    BATCHED_REPLY = 17
 };
 
 #endif

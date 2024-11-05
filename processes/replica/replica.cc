@@ -497,38 +497,117 @@ void Replica::handleClientRequest(const ClientRequest &request)
                << " digest=" << digest_to_hex(digest).substr(56);
 
     ClientRecords tmpClientRecords = clientRecords_;
-    // TODO, only queue signing tasks? Then we don't have to worry about locking replica state
-    threadpool_.enqueueTask([=, this](byte *buffer) {
-        Reply reply;
 
-        reply.set_client_id(clientId);
-        reply.set_client_seq(clientSeq);
-        reply.set_replica_id(replicaId_);
-        reply.set_result(result);
-        reply.set_fast(true);
-        reply.set_seq(seq);
-        reply.set_instance(instance);
-        reply.set_digest(digest);
+    // for bacthing of client response
+    Reply reply;
+    reply.set_client_id(clientId);
+    reply.set_client_seq(clientSeq);
+    reply.set_replica_id(replicaId_);
+    reply.set_result(result);
+    reply.set_fast(true);
+    reply.set_seq(seq);
+    reply.set_instance(instance);
+    reply.set_digest(digest);
 
-        LOG(INFO) << "Sending reply back to client " << clientId;
-        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
 
-        // Try and commit every CHECKPOINT_INTERVAL replies
-        if (seq % CHECKPOINT_INTERVAL == 0) {
-            VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
-            {
-                std::lock_guard<std::mutex> guard(replicaStateMutex_);
-                // an intermediate record is needed as current checkpointing can be interrupted by fallback
-                // so only when the checkpoint is finished, the checkpoint record is updated
-                intermediateCheckpointClientRecords_ = tmpClientRecords;
-                checkpointSeq_ = seq;
-                checkpointCert_.reset();
-            }
-            // TODO remove execution result here
-            broadcastToReplicas(reply, MessageType::REPLY, buffer);
+    bool shouldProcessBatch = false;
+
+
+    // prevent multiple access to the batch tiself
+    {
+        std::lock_guard<std::mutex> batchGuard(batchMutex_);
+
+        // for the timeout operations:
+        if (replyBatch_.empty()) {
+            batchStartTime_ = std::chrono::steady_clock::now();
         }
-    });
+
+        replyBatch_.push_back(reply);
+        clientsInBatch_.insert(clientId);
+
+        // notofy a thread to process the batch, do the signatire and send it out
+        if (replyBatch_.size() >= REPLY_BATCH_SIZE) {
+            shouldProcessBatch = true;
+        } else {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - batchStartTime_);
+            if (elapsed.count() >= BATCH_TIMEOUT_MS) {
+                shouldProcessBatch = true;
+            }   
+        }
+
+        if (shouldProcessBatch) {
+            std::vector<Reply> batchToSend;
+            std::set<uint32_t> clientsToNotify;
+
+            batchToSend.swap(replyBatch_);
+            clientsInBatch_.swap(clientsToNotify);
+
+            threadpool_.enqueueTask([batchToSend = std::move(batchToSend), clientsToNotify = std::move(clientsToNotify), this](byte *buffer) mutable {
+                this->processReplyBatch(batchToSend, clientsToNotify, buffer);
+            });
+        }
+    }
+
+
+    if (seq % CHECKPOINT_INTERVAL == 0) {
+        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            intermediateCheckpointClientRecords_ = tmpClientRecords;
+            checkpointSeq_ = seq;
+            checkpointCert_.reset();
+        }
+        // Broadcast the reply to other replicas for checkpointing
+        // We'll need to adjust this to batch as well if desired
+        threadpool_.enqueueTask([=, this](byte *buffer) {
+            broadcastToReplicas(reply, MessageType::REPLY, buffer);
+        });
+    }
 }
+
+
+// process the batch of responses:
+// called as a function of the thread pool 
+void Replica::processReplyBatch(std::vector<Reply> batchToSend, std::set<uint32_t> clientsToNotify, byte *buffer)
+{
+    // Serialize the batch of replies
+    BatchedReply batchedReply;
+
+    batchedReply.set_replica_id(replicaId_);
+    for (const Reply &reply : batchToSend) {
+        *batchedReply.add_replies() = reply;
+    }
+
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(batchedReply, MessageType::BATCHED_REPLY, buffer);
+
+    // Sign the entire batch message
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+    // Send the batch to each client
+    for (uint32_t clientId : clientsToNotify) {
+        if (clientId < clientAddrs_.size()) {
+            endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
+        } else {
+            LOG(ERROR) << "Invalid client ID in batch: " << clientId;
+        }
+    }
+}
+
+
+// void Replica::sendBatchedReplyToClients(const BatchedReply &batchedReply, const std::set<uint32_t> &clients, byte *buffer)
+// {
+//     MessageHeader *hdr = endpoint_->PrepareProtoMsg(batchedReply, MessageType::BATCHED_REPLY, buffer);
+//     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+//     for (uint32_t clientId : clients) {
+//         if (clientId < clientAddrs_.size()) {
+//             endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
+//         } else {
+//             LOG(ERROR) << "Invalid client ID in batch: " << clientId;
+//         }
+//     }
+// }
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 {

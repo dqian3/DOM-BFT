@@ -23,6 +23,9 @@ public:
     uint32_t f_;
     size_t maxMatchSize_;
 
+    // map from a reply hash to a set of replica IDs that snet that reply
+    // std::map<std::string, std::set<int>> replyHashes_;
+
     // maps from replica
     std::map<int, dombft::proto::Reply> replies_;
     std::map<int, std::vector<byte>> signatures_;
