@@ -18,6 +18,8 @@
 #include <thread>
 #include <chrono>
 
+#include <set>
+
 #include <yaml-cpp/yaml.h>
 
 
@@ -26,7 +28,28 @@
 // if cannot gather 5 resp in 0.1 seconds, send out the batch anyway. 
 #define BATCH_TIMEOUT_MS 100
 
+
+
 namespace dombft {
+
+
+struct BatchID {
+    uint32_t startSeq;
+    uint32_t endSeq;
+
+    bool operator==(const BatchID &other) const {
+        return startSeq == other.startSeq && endSeq == other.endSeq;
+    }
+};
+
+
+
+struct BatchCertInfo {
+    dombft::proto::Cert cert;
+    bool verified;
+};
+
+
 class Replica {
 private:
     uint32_t replicaId_;
@@ -145,3 +168,12 @@ public:
 };
 
 }   // namespace dombft
+
+namespace std {
+    template <>
+    struct hash<dombft::BatchID> {
+        size_t operator()(const dombft::BatchID &batchID) const {
+            return std::hash<uint32_t>()(batchID.startSeq) ^ std::hash<uint32_t>()(batchID.endSeq);
+        }
+    };
+}

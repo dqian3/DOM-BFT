@@ -518,9 +518,9 @@ void Replica::handleClientRequest(const ClientRequest &request)
         std::lock_guard<std::mutex> batchGuard(batchMutex_);
 
         // for the timeout operations:
-        if (replyBatch_.empty()) {
-            batchStartTime_ = std::chrono::steady_clock::now();
-        }
+        // if (replyBatch_.empty()) {
+        //     batchStartTime_ = std::chrono::steady_clock::now();
+        // }
 
         replyBatch_.push_back(reply);
         clientsInBatch_.insert(clientId);
@@ -528,13 +528,14 @@ void Replica::handleClientRequest(const ClientRequest &request)
         // notofy a thread to process the batch, do the signatire and send it out
         if (replyBatch_.size() >= REPLY_BATCH_SIZE) {
             shouldProcessBatch = true;
-        } else {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - batchStartTime_);
-            if (elapsed.count() >= BATCH_TIMEOUT_MS) {
-                shouldProcessBatch = true;
-            }   
         }
+        // } else {
+        //     auto now = std::chrono::steady_clock::now();
+        //     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - batchStartTime_);
+        //     if (elapsed.count() >= BATCH_TIMEOUT_MS) {
+        //         shouldProcessBatch = true;
+        //     }   
+        // }
 
         if (shouldProcessBatch) {
             std::vector<Reply> batchToSend;
@@ -635,6 +636,10 @@ void Replica::handleCert(const Cert &cert)
         }
 
         const Reply &r = cert.replies()[0];
+
+        uint32_t seq = r.seq();
+        uint32_t batchEndSeq = ((seq - 1) / REPLY_BATCH_SIZE + 1) * REPLY_BATCH_SIZE;
+
         CertReply reply;
 
         {
@@ -645,7 +650,9 @@ void Replica::handleCert(const Cert &cert)
                 return;
             }
 
-            log_->addCert(r.seq(), cert);
+            // log_->addCert(r.seq(), cert);
+            // add only at the end of the batch
+            log_->addCert(batchEndSeq, cert);   
 
             reply.set_replica_id(replicaId_);
             reply.set_instance(instance_);
@@ -857,25 +864,84 @@ bool Replica::verifyCert(const Cert &cert)
         return false;
     }
 
+    // TODO Peter: make the timeout compatible for this, specify explicitly somewhere the beginning and end of the batch to acoomodate timeout in batching 
+    // Determine the batch boundaries
+    uint32_t seq = cert.seq();
+    uint32_t batchEndSeq = ((seq - 1) / REPLY_BATCH_SIZE + 1) * REPLY_BATCH_SIZE;  // Calculate the end sequence number of the batch
+    uint32_t batchStartSeq = batchEndSeq - REPLY_BATCH_SIZE + 1;
+
+    // Retrieve the log entry corresponding to batchEndSeq
+    std::shared_ptr<::LogEntry> batchEndEntry = log_->getEntry(batchEndSeq);
+
+    if (!batchEndEntry) {
+        LOG(INFO) << "No log entry for batch end seq " << batchEndSeq << ", cannot verify cert";
+        return false;
+    }
+
+    bool allVerified = true;
+
     // TODO check cert instance
 
     // Verify each signature in the cert
     for (int i = 0; i < cert.replies().size(); i++) {
         const Reply &reply = cert.replies()[i];
         const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();
+
+        uint32_t replicaId = reply.replica_id();
+
+        // Check if this replica's signature has already been verified for this batch
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            auto it = batchEndEntry->batchSignatures.find(replicaId);
+            if (it != batchEndEntry->batchSignatures.end() && it->second == sig) {
+                continue; // Signature already verified for this batch
+            }
+        }
+
+        std::string serializedReply= reply.SerializeAsString();
 
         if (!sigProvider_.verify(
                 (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 reply.replica_id()
             )) {
-            LOG(INFO) << "Cert failed to verify!";
-            return false;
+            LOG(INFO) << "Signature verification failed for replica " << reply.replica_id();
+            allVerified = false;
+            break;
         }
+
+        // Store the verified signature in the log entry
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            batchEndEntry->batchSignatures[replicaId] = sig;
+        }
+
+    }
+
+
+    if (!allVerified) {
+        LOG(INFO) << "Cert verification failed, not all replies are valid";
+        return false;
     }
 
     // TOOD verify that cert actually contains matching replies...
     // And that there aren't signatures from the same replica.
+
+    // Additional checks for consistency in replies
+    std::set<uint32_t> replicaIds;
+    std::string expectedDigest = cert.replies(0).digest();
+
+    for (const auto &reply : cert.replies()) {
+        if (replicaIds.count(reply.replica_id()) > 0) {
+            LOG(INFO) << "Duplicate reply from replica " << reply.replica_id();
+            return false;
+        }
+        replicaIds.insert(reply.replica_id());
+
+        if (reply.digest() != expectedDigest) {
+            LOG(INFO) << "Mismatched digest in cert replies";
+            return false;
+        }
+    }
 
     return true;
 }

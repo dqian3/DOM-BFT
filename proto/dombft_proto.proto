@@ -53,6 +53,7 @@ message Cert {
     // seq is also just for convenience
     uint32 seq = 4;
     uint32 instance = 5; 
+    uint32 batch_size = 6;
     
     repeated Reply replies    = 7;
     repeated bytes signatures = 8;
