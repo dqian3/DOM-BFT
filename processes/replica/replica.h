@@ -34,8 +34,9 @@ private:
     ThreadPool threadpool_;
 
     // Control flow/endpoint objects
-    ConcurrentQueue<std::tuple<google::protobuf::Message, std::string, MessageType>> processQueue;
-    ConcurrentQueue<std::pair<google::protobuf::Message, MessageType>> signSendQueue;
+    ConcurrentQueue<std::string> verifyQueue_;
+    ConcurrentQueue<std::string> processQueue_;
+    ConcurrentQueue<std::tuple<google::protobuf::Message, MessageType, Address>> signSendQueue_;
 
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
@@ -81,6 +82,8 @@ private:
     void signAndSendMessageThd();
 
     void processMessagesThd();
+
+    void processMessage(MessageHeader *msgHdr, byte *msgBuffer);
     void processClientRequest(const dombft::proto::ClientRequest &request);
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);

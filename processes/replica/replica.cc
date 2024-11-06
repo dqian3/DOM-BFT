@@ -138,12 +138,27 @@ void Replica::run()
     LOG(INFO) << "Finishing main event loop...";
 }
 
-void Replica::verifyMessagesThd() {}
+void Replica::verifyMessagesThd()
+{
+
+    while (verifyMessagesThd.try_dequeue(msg)) {
+        int ret = nng_send(t->sock_, msg.data(), msg.size(), 0);
+        if (ret != 0) {
+            VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
+            return;
+        }
+        VLOG(6) << "Sent to " << t->addr_;
+    }
+}
 
 void Replica::signAndSendMessageThd() {}
 
-void Replica::processMessagesThd()
+void Replica::processMessagesThd() {}
+
+void Replica::processMessage()
 {
+    /* Note, only 1 instance of this thread should be running*/
+
     if (hdr->msgLen < 0) {
         return;
     }

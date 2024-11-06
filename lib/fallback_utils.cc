@@ -179,8 +179,13 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             log->app_->abort(seq - 1);
             break;
         }
-        // the skipped entries cannot be duplicates
-        assert(updateRecordWithSeq(clientRecords[entry->client_id()], entry->client_seq()));
+
+        if (updateRecordWithSeq(clientRecords[entry->client_id()], entry->client_seq())) {
+            // TODO this is not ideal; we will reppeat client ops, but replicas will still be
+            // consistent.
+            LOG(WARNING) << "Skipped entry seq=" << seq << " c_id=" << entry->client_id()
+                         << " c_seq=" << entry->client_seq() << " a duplicate!";
+        }
         VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                 << " since already in log at seq=" << seq;
     }
@@ -207,7 +212,6 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             LOG(ERROR) << "Failure to add log entry!";
         }
 
-        // TODO(Hao): should it reply to client?
         VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                 << " instance=" << logSuffix.instance << " client_id=" << clientId
                 << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
