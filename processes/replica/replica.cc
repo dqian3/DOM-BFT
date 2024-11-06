@@ -18,7 +18,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , f_(config.replicaIps.size() / 3)
     , swapFreq_(swapFreq)
     , sigProvider_()
-    , threadpool_(config.replicaNumWorkerThreads)
+    , sendThreadpool_(config.replicaNumWorkerThreads)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -162,11 +162,80 @@ void Replica::verifyMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        //
-        if (hdr->msgType == FALLBACK_TRIGGER) {
+        if (hdr->msgType == CERT) {
+            Cert cert;
+
+            if (!cert.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CERT message";
+                continue;
+            }
+
+            if (!verifyCert(cert)) {
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
         }
 
-        if (hdr->msgType == CERT) {
+        else if (hdr->msgType == REPLY) {
+            Reply replyHeader;
+
+            if (!replyHeader.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPLY message";
+                continue;
+            }
+
+            if (sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id())) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == COMMIT) {
+            Commit commitMsg;
+
+            if (!commitMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse COMMIT message";
+                continue;
+            }
+
+            if (!sigProvider_.verify(hdr, body, "replica", commitMsg.replica_id())) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == FALLBACK_TRIGGER) {
+            FallbackTrigger fallbackTriggerMsg;
+
+            if (!sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
+                LOG(INFO) << "Failed to verify client signature!";
+                continue;
+            }
+
+            if (fallbackTriggerMsg.has_proof()) {
+                // TODO verify proof if it exsits
+            }
+            processQueue_.enqueue(msg);
+        }
+
+        // TODO do verification of the rest of the cases
+        else if (hdr->msgType == FALLBACK_START) {
+            processQueue_.enqueue(msg);
+        } else if (hdr->msgType == DUMMY_PREPREPARE) {
+            processQueue_.enqueue(msg);
+        } else if (hdr->msgType == DUMMY_PREPARE) {
+            processQueue_.enqueue(msg);
+        } else if (hdr->msgType == DUMMY_COMMIT) {
+            processQueue_.enqueue(msg);
+        } else {
+            // DOM_Requests from the receiver skip this step. We should drop
+            // request types from other processes.
+            LOG(ERROR) << "Verify thread does not handle message with unknown type " << hdr->msgType;
         }
     }
 }
@@ -180,206 +249,119 @@ void Replica::processMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        processMessage();
-    }
-}
+        if (hdr->msgType == MessageType::DOM_REQUEST) {
+            DOMRequest domHeader;
+            ClientRequest clientHeader;
 
-void Replica::processMessage()
-{
-    /* Note, only 1 instance of this thread should be running*/
+            if (!domHeader.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+                return;
+            }
 
-    MessageHeader *hdr = (MessageHeader *) msg.data();
-    byte *body = (byte *) (hdr + 1);
+            // Separate this out into another function probably.
+            MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();
+            byte *clientBody = (byte *) (clientMsgHdr + 1);
+            if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                return;
+            }
 
-    // Note, here we skip verifying the underlying client message,
-    // since this is offloaded to the receiver process
-
-    if (hdr->msgType == MessageType::DOM_REQUEST) {
-        DOMRequest domHeader;
-        ClientRequest clientHeader;
-
-        if (*sender != receiverAddr_) {
-            LOG(ERROR) << "Received DOM_REQUEST message from non-receiever!";
-            return;
+            if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
+                holdAndSwapCliReq(clientHeader);
+            else
+                processClientRequest(clientHeader);
         }
 
-        if (!domHeader.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
-            return;
+        if (hdr->msgType == CERT) {
+            Cert cert;
+
+            if (!cert.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CERT message";
+                return;
+            }
+
+            processCert(cert);
+        } else if (hdr->msgType == REPLY) {
+            Reply replyHeader;
+
+            if (!replyHeader.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPLY message";
+                return;
+            }
+
+            processReply(replyHeader, std::span{body + hdr->msgLen, hdr->sigLen});
+        } else if (hdr->msgType == COMMIT) {
+            Commit commitMsg;
+
+            if (!commitMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse COMMIT message";
+                return;
+            }
+
+            processCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        // Separate this out into another function probably.
-        MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();
-        byte *clientBody = (byte *) (clientMsgHdr + 1);
-        if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-            return;
+        else if (hdr->msgType == FALLBACK_TRIGGER) {
+            FallbackTrigger fallbackTriggerMsg;
+
+            if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+                return;
+            }
+
+            processFallbackTrigger(fallbackTriggerMsg);
         }
 
-        if (fallback_) {
-            VLOG(6) << "Dropping request due to fallback";
-            return;
+        if (hdr->msgType == FALLBACK_START) {
+            FallbackStart msg;
+
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+                return;
+            }
+            processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        // TODO(Hao) should this be in handleClientRequest?
-        if (!checkAndUpdateClientRecord(clientHeader))
-            return;
+        if (hdr->msgType == DUMMY_PREPREPARE) {
+            FallbackPrePrepare msg;
 
-        if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
-            holdAndSwapCliReq(clientHeader);
-        else
-            processClientRequest(clientHeader);
-    }
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse DUMMY_PREPREPARE message";
+                return;
+            }
 
-    if (hdr->msgType == CERT) {
-        Cert cert;
-
-        if (!cert.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CERT message";
-            return;
+            processPrePrepare(msg);
         }
 
-        processCert(cert);
-    }
+        if (hdr->msgType == DUMMY_PREPARE) {
+            FallbackPrepare msg;
 
-    if (hdr->msgType == REPLY) {
-        Reply replyHeader;
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse DUMMY_PREPARE message";
+                return;
+            }
 
-        if (!replyHeader.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
-            return;
+            processPrepare(msg);
         }
 
-        if (sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
-            return;
-        }
+        if (hdr->msgType == DUMMY_COMMIT) {
+            FallbackPBFTCommit msg;
 
-        processReply(replyHeader, std::span{body + hdr->msgLen, hdr->sigLen});
-    }
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse DUMMY_COMMIT message";
+                return;
+            }
 
-    if (hdr->msgType == COMMIT) {
-        Commit commitMsg;
-
-        if (!commitMsg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
-            return;
-        }
-
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", commitMsg.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
-            return;
-        }
-
-        processCommit(commitMsg, std::span{body + hdr->msgLen, hdr->sigLen});
-    }
-
-    if (hdr->msgType == FALLBACK_TRIGGER) {
-        FallbackTrigger fallbackTriggerMsg;
-
-        if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
-            return;
-        }
-
-        // Ignore any messages not for your current instance
-        if (fallbackTriggerMsg.instance() != instance_) {
-            return;
-        }
-
-        if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
-            LOG(INFO) << "Received fallback trigger again!";
-            return;
-        }
-
-        LOG(INFO) << "Received fallback trigger from " << fallbackTriggerMsg.client_id()
-                  << " for cseq=" << fallbackTriggerMsg.client_seq()
-                  << " and instance=" << fallbackTriggerMsg.instance();
-
-        // TODO if attached request has been executed in another view,
-        // send result back
-
-        if (fallbackTriggerMsg.has_proof()) {
-            // TODO verify proof
-            LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
-            broadcastToReplicas(fallbackTriggerMsg, FALLBACK_TRIGGER);
-            startFallback();
-        } else {
-            endpoint_->RegisterTimer(fallbackStartTimer_.get());
+            processPBFTCommit(msg);
         }
     }
-
-    if (hdr->msgType == FALLBACK_START) {
-        FallbackStart msg;
-
-        if (!msg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
-            return;
-        }
-
-        if ((msg.instance() % replicaAddrs_.size()) != replicaId_) {
-            LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " where I am not leader";
-            return;
-        }
-
-        // TODO handle case where instance is higher
-        processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
-    }
-
-    if (hdr->msgType == DUMMY_PREPREPARE) {
-        FallbackPrePrepare msg;
-
-        if (!msg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DUMMY_PREPREPARE message";
-            return;
-        }
-
-        if (msg.instance() < instance_) {
-            LOG(INFO) << "Received old fallback preprepare from instance=" << msg.instance() << " own instance is "
-                      << instance_;
-            return;
-        }
-        processPrePrepare(msg);
-    }
-
-    if (hdr->msgType == DUMMY_PREPARE) {
-        FallbackPrepare msg;
-
-        if (!msg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DUMMY_PREPARE message";
-            return;
-        }
-
-        if (msg.instance() < instance_) {
-            LOG(INFO) << "Received old fallback prepare from instance=" << msg.instance() << " own instance is "
-                      << instance_;
-            return;
-        }
-        processPrepare(msg);
-    }
-
-    if (hdr->msgType == DUMMY_COMMIT) {
-        FallbackPBFTCommit msg;
-
-        if (!msg.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse DUMMY_COMMIT message";
-            return;
-        }
-
-        if (msg.instance() < instance_) {
-            LOG(INFO) << "Received old fallback commit from instance=" << msg.instance() << " own instance is "
-                      << instance_;
-            return;
-        }
-        processPBFTCommit(msg);
-    }
-}
 }
 
 void Replica::processClientRequest(const ClientRequest &request)
 {
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
+
     VLOG(2) << "Received request from client " << clientId << " with seq " << clientSeq;
 
     if (clientId < 0 || clientId > clientAddrs_.size()) {
@@ -387,64 +369,57 @@ void Replica::processClientRequest(const ClientRequest &request)
         return;
     }
 
+    if (fallback_) {
+        VLOG(6) << "Dropping request due to fallback";
+        return;
+    }
+
+    if (!checkAndUpdateClientRecord(request))
+        return;
+
     std::string result;
     uint32_t seq;
 
-    {
-        // Check lock contention time here
-        uint64_t now = GetMicrosecondTimestamp();
-        std::lock_guard<std::mutex> guard(replicaStateMutex_);
-        VLOG(5) << "Waited " << GetMicrosecondTimestamp() - now << " usec for lock on log apply";
+    bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
+    seq = log_->nextSeq - 1;
 
-        bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
-        seq = log_->nextSeq - 1;
-
-        if (!success) {
-            // TODO Handle this more gracefully by queuing requests
-            LOG(ERROR) << "Could not add request to log!";
-            return;
-        }
+    if (!success) {
+        // TODO Handle this more gracefully by queuing requests
+        LOG(ERROR) << "Could not add request to log!";
+        return;
     }
 
-    uint32_t instance = instance_;
     std::string digest(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
 
     LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
                << " client_seq=" << clientSeq << " instance=" << instance_
                << " digest=" << digest_to_hex(digest).substr(56);
 
-    ClientRecords tmpClientRecords = clientRecords_;
-    // TODO, only queue signing tasks? Then we don't have to worry about locking replica state
-    threadpool_.enqueueTask([=, this](byte *buffer) {
-        Reply reply;
+    Reply reply;
 
-        reply.set_client_id(clientId);
-        reply.set_client_seq(clientSeq);
-        reply.set_replica_id(replicaId_);
-        reply.set_result(result);
-        reply.set_fast(true);
-        reply.set_seq(seq);
-        reply.set_instance(instance);
-        reply.set_digest(digest);
+    reply.set_client_id(clientId);
+    reply.set_client_seq(clientSeq);
+    reply.set_replica_id(replicaId_);
+    reply.set_result(result);
+    reply.set_fast(true);
+    reply.set_seq(seq);
+    reply.set_instance(instance_);
+    reply.set_digest(digest);
 
-        LOG(INFO) << "Sending reply back to client " << clientId;
-        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
+    LOG(INFO) << "Sending reply back to client " << clientId;
+    sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
-        // Try and commit every CHECKPOINT_INTERVAL replies
-        if (seq % CHECKPOINT_INTERVAL == 0) {
-            VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
-            {
-                std::lock_guard<std::mutex> guard(replicaStateMutex_);
-                // an intermediate record is needed as current checkpointing can be interrupted by fallback
-                // so only when the checkpoint is finished, the checkpoint record is updated
-                intermediateCheckpointClientRecords_ = tmpClientRecords;
-                checkpointSeq_ = seq;
-                checkpointCert_.reset();
-            }
-            // TODO remove execution result here
-            broadcastToReplicas(reply, MessageType::REPLY, buffer);
-        }
-    });
+    // Try and commit every CHECKPOINT_INTERVAL replies
+    if (seq % CHECKPOINT_INTERVAL == 0) {
+        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+        // an intermediate record is needed as current checkpointing can be interrupted by fallback
+        // so only when the checkpoint is finished, the checkpoint record is updated
+        intermediateCheckpointClientRecords_ = clientRecords_;
+        checkpointSeq_ = seq;
+        checkpointCert_.reset();
+    }
+    // TODO remove execution result here
+    broadcastToReplicas(reply, MessageType::REPLY);
 }
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
@@ -467,43 +442,31 @@ void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 void Replica::processCert(const Cert &cert)
 {
     // TODO make sure this works
-    threadpool_.enqueueTask([=, this](byte *buffer) {
-        if (!verifyCert(cert)) {
-            return;
-        }
+    const Reply &r = cert.replies()[0];
+    CertReply reply;
 
-        const Reply &r = cert.replies()[0];
-        CertReply reply;
+    if (cert.instance() < instance_) {
+        VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_
+                << " for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
+        return;
+    }
 
-        {
-            std::lock_guard<std::mutex> guard(replicaStateMutex_);
-            if (cert.instance() < instance_) {
-                VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_
-                        << " for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
-                return;
-            }
+    log_->addCert(r.seq(), cert);
 
-            log_->addCert(r.seq(), cert);
+    reply.set_replica_id(replicaId_);
+    reply.set_instance(instance_);
+    reply.set_client_id(r.client_id());
+    reply.set_client_seq(r.client_seq());
+    reply.set_seq(r.seq());
 
-            reply.set_replica_id(replicaId_);
-            reply.set_instance(instance_);
-        }
+    VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
+            << clientAddrs_[reply.client_id()].ip();
 
-        reply.set_client_id(r.client_id());
-        reply.set_client_seq(r.client_seq());
-        reply.set_seq(r.seq());
-
-        VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
-                << clientAddrs_[reply.client_id()].ip();
-
-        sendMsgToDst(reply, MessageType::CERT_REPLY, clientAddrs_[reply.client_id()], buffer);
-    });
+    sendMsgToDst(reply, MessageType::CERT_REPLY, clientAddrs_[reply.client_id()]);
 }
 
 void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
-    std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
     checkpointReplies_[reply.replica_id()] = reply;
     checkpointReplySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
@@ -553,22 +516,20 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
             std::string appDigest = log_->app_->getDigest(reply.seq());
             ClientRecords tmpClientRecords = intermediateCheckpointClientRecords_;
             uint32_t instance = instance_;
-            threadpool_.enqueueTask([=, this](byte *buffer) {
-                // Broadcast commmit Message
-                dombft::proto::Commit commit;
-                commit.set_replica_id(replicaId_);
-                commit.set_seq(reply.seq());
-                commit.set_instance(instance);
-                commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
-                commit.set_app_digest(appDigest);
+            // Broadcast commmit Message
+            dombft::proto::Commit commit;
+            commit.set_replica_id(replicaId_);
+            commit.set_seq(reply.seq());
+            commit.set_instance(instance);
+            commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
+            commit.set_app_digest(appDigest);
 
-                byte recordDigest[SHA256_DIGEST_LENGTH];
-                getRecordsDigest(tmpClientRecords, recordDigest);
-                commit.mutable_client_records_set()->set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
-                toProtoClientRecords(*commit.mutable_client_records_set(), tmpClientRecords);
-                VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
-                broadcastToReplicas(commit, MessageType::COMMIT, buffer);
-            });
+            byte recordDigest[SHA256_DIGEST_LENGTH];
+            getRecordsDigest(tmpClientRecords, recordDigest);
+            commit.mutable_client_records_set()->set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
+            toProtoClientRecords(*commit.mutable_client_records_set(), tmpClientRecords);
+            VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
+            broadcastToReplicas(commit, MessageType::COMMIT);
 
             return;
         }
@@ -577,8 +538,6 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 
 void Replica::processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig)
 {
-    std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
     VLOG(3) << "Processing COMMIT from " << commitMsg.replica_id() << " for seq " << commitMsg.seq();
 
     checkpointCommits_[commitMsg.replica_id()] = commitMsg;
@@ -664,22 +623,75 @@ void Replica::processCommit(const dombft::proto::Commit &commitMsg, std::span<by
     }
 }
 
-void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
+void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
 {
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    endpoint_->SendPreparedMsgTo(dst, hdr);
+    if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
+        LOG(INFO) << "Received fallback trigger again!";
+        return;
+    }
+
+    LOG(INFO) << "Received fallback trigger from " << msg.client_id() << " for cseq=" << msg.client_seq()
+              << " and instance=" << msg.instance();
+
+    // TODO if attached request has been executed in another view,
+    // send result back
+
+    if (msg.has_proof()) {
+        // Proof is verified by verify thread
+        LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+        broadcastToReplicas(msg, FALLBACK_TRIGGER);
+        startFallback();
+    } else {
+        endpoint_->RegisterTimer(fallbackStartTimer_.get());
+    }
 }
 
-void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf)
+void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 {
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buf);
-    // TODO check errors for all of these lol
-    // TODO this sends to self as well, could shortcut this
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    for (const Address &addr : replicaAddrs_) {
-        endpoint_->SendPreparedMsgTo(addr, hdr);
+    if ((msg.instance() % replicaAddrs_.size()) != replicaId_) {
+        LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " where I am not proposer";
+        return;
     }
+
+    fallbackHistory_[msg.replica_id()] = msg;
+    fallbackHistorySigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
+
+    LOG(INFO) << "Received fallback message from " << msg.replica_id();
+
+    if (!isPrimary()) {
+        return;
+    }
+
+    // First check if we have 2f + 1 fallback start messages for the same instance
+    auto numStartMsgs = std::count_if(fallbackHistory_.begin(), fallbackHistory_.end(), [&](auto &startMsg) {
+        return startMsg.second.instance() == msg.instance();
+    });
+
+    if (numStartMsgs == 2 * f_ + 1) {
+        doPrePreparePhase();
+    }
+}
+
+// sending helpers
+template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
+{
+    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        endpoint_->SendPreparedMsgTo(dst, hdr);
+    });
+}
+
+template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageType type)
+{
+    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
+        // TODO check errors for all of these lol
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        for (const Address &addr : replicaAddrs_) {
+            endpoint_->SendPreparedMsgTo(addr, hdr);
+        }
+    });
 }
 
 bool Replica::verifyCert(const Cert &cert)
@@ -721,8 +733,6 @@ bool Replica::verifyCert(const Cert &cert)
 
 void Replica::startFallback()
 {
-    std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
     fallback_ = true;
     instance_++;
     LOG(INFO) << "Starting fallback for instance " << instance_;
@@ -749,27 +759,6 @@ void Replica::startFallback()
     LOG(INFO) << "DUMP start fallback instance=" << instance_ << " " << *log_;
 }
 
-void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig)
-{
-    fallbackHistory_[msg.replica_id()] = msg;
-    fallbackHistorySigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
-
-    LOG(INFO) << "Received fallback message from " << msg.replica_id();
-
-    if (!isPrimary()) {
-        return;
-    }
-
-    // First check if we have 2f + 1 fallback start messages for the same instance
-    auto numStartMsgs = std::count_if(fallbackHistory_.begin(), fallbackHistory_.end(), [&](auto &startMsg) {
-        return startMsg.second.instance() == msg.instance();
-    });
-
-    if (numStartMsgs == 2 * f_ + 1) {
-        doPrePreparePhase();
-    }
-}
-
 void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
 {
     std::shared_ptr<::LogEntry> entry = log_->getEntry(seq);   // TODO better namespace
@@ -785,8 +774,6 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
 
 void Replica::finishFallback()
 {
-    std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
     if (!fallbackProposal_.has_value()) {
         LOG(ERROR) << "Attempted to finishFallback without a proposal!";
         return;
@@ -856,8 +843,6 @@ void Replica::finishFallback()
 
 void Replica::doPrePreparePhase()
 {
-    std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
     if (!isPrimary()) {
         LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
         return;
@@ -900,6 +885,12 @@ void Replica::doCommitPhase()
 }
 void Replica::processPrePrepare(const FallbackPrePrepare &msg)
 {
+    if (msg.instance() < instance_) {
+        LOG(INFO) << "Received old fallback preprepare from instance=" << msg.instance() << " own instance is "
+                  << instance_;
+        return;
+    }
+
     VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     // TODO Verify FallbackProposal
     if (fallbackProposal_.has_value()) {
@@ -912,6 +903,13 @@ void Replica::processPrePrepare(const FallbackPrePrepare &msg)
 
 void Replica::processPrepare(const FallbackPrepare &msg)
 {
+
+    if (msg.instance() < instance_) {
+        LOG(INFO) << "Received old fallback prepare from instance=" << msg.instance() << " own instance is "
+                  << instance_;
+        return;
+    }
+
     VLOG(6) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPrepares_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(), [this](auto &curMsg) {
@@ -925,6 +923,12 @@ void Replica::processPrepare(const FallbackPrepare &msg)
 
 void Replica::processPBFTCommit(const FallbackPBFTCommit &msg)
 {
+    if (msg.instance() < instance_) {
+        LOG(INFO) << "Received old fallback commit from instance=" << msg.instance() << " own instance is "
+                  << instance_;
+        return;
+    }
+
     VLOG(6) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPBFTCommits_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
@@ -942,28 +946,19 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
     uint32_t clientSeq = clientHeader.client_seq();
     uint32_t clientInstance = clientHeader.instance();
 
-    std::lock_guard<std::mutex> guard(replicaStateMutex_);
     ClientRecord &cliRecord = clientRecords_[clientId];
     cliRecord.instance_ = std::max(clientInstance, cliRecord.instance_);
 
     if (clientInstance < instance_) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                   << " due to stale instance! Sending blank reply to catch client up";
-        if (cliRecord.instance_ < instance_) {
-            // Send blank request to catch up the client
-            // update this so we don't send this multiple times
-            cliRecord.instance_ = instance_;
-            threadpool_.enqueueTask([this, clientId, inst = instance_](byte *buffer) {
-                // Send blank request to catch up the client
-                Reply reply;
-                reply.set_replica_id(replicaId_);
-                reply.set_client_id(clientId);
-                reply.set_instance(inst);
+        // Send blank request to catch up the client
+        Reply reply;
+        reply.set_replica_id(replicaId_);
+        reply.set_client_id(clientId);
+        reply.set_instance(instance_);
 
-                sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
-                return;
-            });
-        }
+        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
         return false;
     }
 
@@ -979,20 +974,18 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         uint32_t instance = instance_;
         byte logDigest[SHA256_DIGEST_LENGTH];
         memcpy(logDigest, log_->checkpoint.logDigest, SHA256_DIGEST_LENGTH);
-        threadpool_.enqueueTask([=, this](byte *buffer) {
-            Reply reply;
-            // TODO(Hao): is providing these info enough for client?
-            //  use checkpoint digest for now
-            reply.set_client_id(clientId);
-            reply.set_client_seq(clientSeq);
-            reply.set_replica_id(replicaId_);
-            reply.set_retry(true);
-            reply.set_digest(logDigest, SHA256_DIGEST_LENGTH);
-            reply.set_instance(instance);
+        Reply reply;
+        // TODO(Hao): is providing these info enough for client?
+        //  use checkpoint digest for now
+        reply.set_client_id(clientId);
+        reply.set_client_seq(clientSeq);
+        reply.set_replica_id(replicaId_);
+        reply.set_retry(true);
+        reply.set_digest(logDigest, SHA256_DIGEST_LENGTH);
+        reply.set_instance(instance);
 
-            LOG(INFO) << "Sending retry reply back to client " << clientId;
-            sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
-        });
+        LOG(INFO) << "Sending retry reply back to client " << clientId;
+        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
         return false;
     }
 

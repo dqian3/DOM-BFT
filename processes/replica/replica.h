@@ -30,11 +30,11 @@ private:
 
     // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
-    ThreadPool threadpool_;
 
     // Control flow/endpoint objects
     ConcurrentQueue<std::vector<byte>> verifyQueue_;
     ConcurrentQueue<std::vector<byte>> processQueue_;
+    ThreadPool sendThreadpool_;
 
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
@@ -84,10 +84,9 @@ private:
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
+    void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg);
     void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
 
-    void sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf = nullptr);
-    void broadcastToReplicas(const google::protobuf::Message &msg, MessageType type, byte *buf = nullptr);
     bool verifyCert(const dombft::proto::Cert &cert);
 
     // Fallback Helpers
@@ -105,9 +104,15 @@ private:
     void processPrepare(const dombft::proto::FallbackPrepare &msg);
     void processPBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
 
-    // helpers
+    // helpers for client records
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
     void reapplyEntriesWithRecord(uint32_t rShiftNum);
+
+    // sending helpers
+    // note even though these are templates, we can define them in the cpp file because they are private
+    // to this class.
+    template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
+    template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
