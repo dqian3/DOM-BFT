@@ -44,6 +44,36 @@ template <typename T1> using BlockingRWQueue = moodycamel::BlockingReaderWriterQ
 template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
 /**
+ * The message types are defined according to the proto files and the
+ * information will be included in each message to facilitate
+ * serialize/deserialize proto messages
+ */
+enum MessageType {
+    // DOM Sending Messages
+    CLIENT_REQUEST = 1,
+    DOM_REQUEST = 2,
+    MEASUREMENT_REPLY = 3,
+
+    // Fast/normal path messages
+    FAST_REPLY = 4,
+    REPLY = 5,
+    CERT = 6,
+    CERT_REPLY = 7,
+
+    COMMIT = 8,
+
+    FALLBACK_TRIGGER = 9,
+    FALLBACK_START = 10,
+    FALLBACK_PROPOSAL = 11,
+    FALLBACK_SUMMARY = 12,
+
+    DUMMY_PROTO = 13,
+    DUMMY_PREPREPARE = 14,
+    DUMMY_PREPARE = 15,
+    DUMMY_COMMIT = 16
+};
+
+/**
  * When the message has been serialized and is about to be sent by the
  * endpoint, MessageHeader is prepended to the head of message which
  * describes the type of message and its length. In this way, when the
@@ -55,12 +85,14 @@ template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMa
  */
 struct MessageHeader {
     byte msgType;
+    uint32_t senderType;
+    uint32_t sender;
     uint32_t msgLen;
     uint32_t sigLen;
     MessageHeader(const byte t, const uint32_t l, const uint32_t sl)
         : msgType(t)
         , msgLen(l)
-        , sigLen(sl){};
+        , sigLen(sl) {};
 };
 
 #endif

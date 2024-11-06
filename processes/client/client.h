@@ -6,7 +6,6 @@
 
 #include "lib/cert_collector.h"
 #include "lib/common.h"
-#include "lib/message_type.h"
 #include "lib/signature_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"

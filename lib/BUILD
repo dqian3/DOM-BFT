@@ -14,14 +14,6 @@ cc_library(
 )
 
 cc_library(
-    name = "message_type",
-    srcs = ["message_type.h"],
-    hdrs = ["message_type.h"],
-    visibility = ["//visibility:public"],
-)
-
-
-cc_library(
     name = "address",
     srcs = ["transport/address.cc"],
     hdrs = ["transport/address.h"],

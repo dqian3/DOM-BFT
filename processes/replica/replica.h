@@ -3,7 +3,6 @@
 #include "lib/common.h"
 #include "lib/fallback_utils.h"
 #include "lib/log.h"
-#include "lib/message_type.h"
 #include "lib/signature_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
@@ -34,9 +33,8 @@ private:
     ThreadPool threadpool_;
 
     // Control flow/endpoint objects
-    ConcurrentQueue<std::string> verifyQueue_;
-    ConcurrentQueue<std::string> processQueue_;
-    ConcurrentQueue<std::tuple<google::protobuf::Message, MessageType, Address>> signSendQueue_;
+    ConcurrentQueue<std::vector<byte>> verifyQueue_;
+    ConcurrentQueue<std::vector<byte>> processQueue_;
 
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
@@ -79,8 +77,6 @@ private:
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
     void verifyMessagesThd();
-    void signAndSendMessageThd();
-
     void processMessagesThd();
 
     void processMessage(MessageHeader *msgHdr, byte *msgBuffer);

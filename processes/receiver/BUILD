@@ -8,7 +8,6 @@ cc_library(
         "//lib:address",
         "//lib:endpoint",
         "//lib:signature_provider",
-        "//lib:message_type",
         "//lib:common",
         "//processes:process_config",
         "//processes:config_util",

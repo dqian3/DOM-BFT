@@ -97,7 +97,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     }
 
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->processMessage(msgHdr, msgBuffer, sender, *sender == replicaAddrs_[replicaId_]);
+        this->handleMessage(msgHdr, msgBuffer, sender);
     };
 
     endpoint_->RegisterMsgHandler(handler);
@@ -138,30 +138,58 @@ void Replica::run()
     LOG(INFO) << "Finishing main event loop...";
 }
 
-void Replica::verifyMessagesThd()
+void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
+    // First make sure message is well formed
 
-    while (verifyMessagesThd.try_dequeue(msg)) {
-        int ret = nng_send(t->sock_, msg.data(), msg.size(), 0);
-        if (ret != 0) {
-            VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
-            return;
-        }
-        VLOG(6) << "Sent to " << t->addr_;
+    // We skip verification of our own messages, and any message from the receiver
+    // process (which does its own verification)
+    byte *rawMsg = (byte *) msgHdr;
+    std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
+    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+        processQueue_.enqueue(msg);
+    } else {
+        verifyQueue_.enqueue(msg);
     }
 }
 
-void Replica::signAndSendMessageThd() {}
+void Replica::verifyMessagesThd()
+{
+    // TODO we do some redundant work deserializing messages here
+    std::vector<byte> msg;
 
-void Replica::processMessagesThd() {}
+    while (verifyQueue_.try_dequeue(msg)) {
+        MessageHeader *hdr = (MessageHeader *) msg.data();
+        byte *body = (byte *) (hdr + 1);
+
+        //
+        if (hdr->msgType == FALLBACK_TRIGGER) {
+        }
+
+        if (hdr->msgType == CERT) {
+        }
+    }
+}
+
+void Replica::processMessagesThd()
+{
+    // TODO we do some redundant work deserializing messages here
+    std::vector<byte> msg;
+
+    while (verifyQueue_.try_dequeue(msg)) {
+        MessageHeader *hdr = (MessageHeader *) msg.data();
+        byte *body = (byte *) (hdr + 1);
+
+        processMessage();
+    }
+}
 
 void Replica::processMessage()
 {
     /* Note, only 1 instance of this thread should be running*/
 
-    if (hdr->msgLen < 0) {
-        return;
-    }
+    MessageHeader *hdr = (MessageHeader *) msg.data();
+    byte *body = (byte *) (hdr + 1);
 
     // Note, here we skip verifying the underlying client message,
     // since this is offloaded to the receiver process
@@ -264,11 +292,6 @@ void Replica::processMessage()
             return;
         }
 
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
-            LOG(INFO) << "Failed to verify client signature of c_id=" << fallbackTriggerMsg.client_id();
-            return;
-        }
-
         LOG(INFO) << "Received fallback trigger from " << fallbackTriggerMsg.client_id()
                   << " for cseq=" << fallbackTriggerMsg.client_seq()
                   << " and instance=" << fallbackTriggerMsg.instance();
@@ -299,11 +322,6 @@ void Replica::processMessage()
             return;
         }
 
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
-            return;
-        }
-
         // TODO handle case where instance is higher
         processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
     }
@@ -313,11 +331,6 @@ void Replica::processMessage()
 
         if (!msg.ParseFromArray(body, hdr->msgLen)) {
             LOG(ERROR) << "Unable to parse DUMMY_PREPREPARE message";
-            return;
-        }
-
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.primary_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
             return;
         }
 
@@ -337,11 +350,6 @@ void Replica::processMessage()
             return;
         }
 
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
-            return;
-        }
-
         if (msg.instance() < instance_) {
             LOG(INFO) << "Received old fallback prepare from instance=" << msg.instance() << " own instance is "
                       << instance_;
@@ -358,11 +366,6 @@ void Replica::processMessage()
             return;
         }
 
-        if (!skipVerify && !sigProvider_.verify(hdr, body, "replica", msg.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature!";
-            return;
-        }
-
         if (msg.instance() < instance_) {
             LOG(INFO) << "Received old fallback commit from instance=" << msg.instance() << " own instance is "
                       << instance_;
@@ -370,6 +373,7 @@ void Replica::processMessage()
         }
         processPBFTCommit(msg);
     }
+}
 }
 
 void Replica::processClientRequest(const ClientRequest &request)

@@ -1,7 +1,6 @@
 #include "processes/process_config.h"
 
 #include "lib/common.h"
-#include "lib/message_type.h"
 #include "lib/signature_provider.h"
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
