@@ -45,19 +45,38 @@ message Reply {
     bytes digest = 9;
 }
 
-message Cert {
-    // A cert logically is a set of 2f + 1 replies
-    
-    // TODO to save space, we would only store 1 copy of each common field. Instead
-    // we just repeat them here since it's easier
-    // seq is also just for convenience
-    uint32 seq = 4;
-    uint32 instance = 5; 
-    uint32 batch_size = 6;
-    
-    repeated Reply replies    = 7;
-    repeated bytes signatures = 8;
+
+// cert entry would be a batch reply from a replica. 
+message CertEntry {
+    uint32 replica_id = 1;
+    BatchedReply batched_reply = 2;
+    bytes signature = 3;
 }
+
+// I do not think that the batch start and end is neeeded, fro now just keep it. 
+// each cert entry is from a replica.
+message Cert {
+    uint32 seq = 1;
+    uint32 instance = 2;
+    uint32 batch_start_seq = 3; // Start of the batch
+    uint32 batch_end_seq = 4;   // End of the batch
+    uint32 client_id = 5;
+    repeated CertEntry cert_entries = 6;
+}
+
+// message Cert {
+//     // A cert logically is a set of 2f + 1 replies
+    
+//     // TODO to save space, we would only store 1 copy of each common field. Instead
+//     // we just repeat them here since it's easier
+//     // seq is also just for convenience
+//     uint32 seq = 4;
+//     uint32 instance = 5; 
+//     uint32 batch_size = 6;
+    
+//     repeated Reply replies    = 7;
+//     repeated bytes signatures = 8;
+// }
 
 
 message CertReply {
@@ -195,6 +214,8 @@ message FallbackPBFTCommit
 message BatchedReply {
     uint32 replica_id = 1;
     repeated Reply replies = 2;
+    uint32 batch_start_seq = 3;
+    uint32 batch_end_seq = 4;
     // repeated bytes signatures = 2;
 }
 

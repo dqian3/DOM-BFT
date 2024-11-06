@@ -635,9 +635,7 @@ void Replica::handleCert(const Cert &cert)
             return;
         }
 
-        const Reply &r = cert.replies()[0];
-
-        uint32_t seq = r.seq();
+        uint32_t seq = cert.seq();
         uint32_t batchEndSeq = ((seq - 1) / REPLY_BATCH_SIZE + 1) * REPLY_BATCH_SIZE;
 
         CertReply reply;
@@ -646,7 +644,7 @@ void Replica::handleCert(const Cert &cert)
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
             if (cert.instance() < instance_) {
                 VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_
-                        << " for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
+                        << " for seq=" << cert.seq() << " c_id=" << cert.client_id() << " c_seq=" << cert.cert_entries(0).batched_reply().replies(0).client_seq();
                 return;
             }
 
@@ -658,9 +656,31 @@ void Replica::handleCert(const Cert &cert)
             reply.set_instance(instance_);
         }
 
-        reply.set_client_id(r.client_id());
-        reply.set_client_seq(r.client_seq());
-        reply.set_seq(r.seq());
+        // Extract client_id and client_seq from the batched replies
+        uint32_t clientId = 0;
+        uint32_t clientSeq = 0;
+        for (const CertEntry &entry : cert.cert_entries()) {
+            const BatchedReply &batchedReply = entry.batched_reply();
+            for (const Reply &r : batchedReply.replies()) {
+                if (r.client_id() == cert.client_id()) { // Assuming you have client_id in Cert
+                    clientId = r.client_id();
+                    clientSeq = r.client_seq();
+                    break;
+                }
+            }
+            if (clientId != 0) {
+                break;
+            }
+        }
+
+        if (clientId == 0) {
+            LOG(ERROR) << "Client ID not found in cert's batched replies";
+            return;
+        }
+
+        reply.set_client_id(clientId);
+        reply.set_client_seq(clientSeq);
+        reply.set_seq(seq);
 
         VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
                 << clientAddrs_[reply.client_id()].ip();
@@ -712,8 +732,18 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             checkpointCert_->set_seq(std::get<2>(key));
 
             for (auto repId : matchingReplies[key]) {
-                checkpointCert_->add_signatures(checkpointReplySigs_[repId]);
-                (*checkpointCert_->add_replies()) = checkpointReplies_[repId];
+                // Create a new CertEntry
+                CertEntry* certEntry = checkpointCert_->add_cert_entries();
+
+                // Set the replica ID
+                certEntry->set_replica_id(repId);
+
+                // Set the BatchedReply
+                BatchedReply* batchedReply = certEntry->mutable_batched_reply();
+                batchedReply->set_replica_id(repId); // Set replica ID for BatchedReply
+
+                // Set the signature
+                certEntry->set_signature(checkpointReplySigs_[repId]);
             }
 
             VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
@@ -853,16 +883,16 @@ void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageT
 bool Replica::verifyCert(const Cert &cert)
 {
     LOG(INFO) << "Verify cert triggered";
-    if (cert.replies().size() < 2 * f_ + 1) {
-        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
+    if (cert.cert_entries().size() < 2 * f_ + 1) {
+        LOG(INFO) << "Received cert of size " << cert.cert_entries().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
     }
 
-    if (cert.replies().size() != cert.signatures().size()) {
-        LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
-                  << "cert signatures size" << cert.signatures().size();
-        return false;
-    }
+    // if (cert.replies().size() != cert.signatures().size()) {
+    //     LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
+    //               << "cert signatures size" << cert.signatures().size();
+    //     return false;
+    // }
 
     // TODO Peter: make the timeout compatible for this, specify explicitly somewhere the beginning and end of the batch to acoomodate timeout in batching 
     // Determine the batch boundaries
@@ -882,12 +912,10 @@ bool Replica::verifyCert(const Cert &cert)
 
     // TODO check cert instance
 
-    // Verify each signature in the cert
-    for (int i = 0; i < cert.replies().size(); i++) {
-        const Reply &reply = cert.replies()[i];
-        const std::string &sig = cert.signatures()[i];
-
-        uint32_t replicaId = reply.replica_id();
+    for (const CertEntry &entry : cert.cert_entries()) {
+        uint32_t replicaId = entry.replica_id();
+        const BatchedReply &batchedReply = entry.batched_reply();
+        const std::string &sig = entry.signature();
 
         // Check if this replica's signature has already been verified for this batch
         {
@@ -895,16 +923,18 @@ bool Replica::verifyCert(const Cert &cert)
             auto it = batchEndEntry->batchSignatures.find(replicaId);
             if (it != batchEndEntry->batchSignatures.end() && it->second == sig) {
                 continue; // Signature already verified for this batch
+            } else {
+                LOG(INFO) << "[cert] Did not verify already. Verifying signature for replica " << replicaId;
             }
         }
 
-        std::string serializedReply= reply.SerializeAsString();
+        // Serialize the BatchedReply
+        std::string serializedBatchedReply = batchedReply.SerializeAsString();
 
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                reply.replica_id()
-            )) {
-            LOG(INFO) << "Signature verification failed for replica " << reply.replica_id();
+                (byte *)(serializedBatchedReply.c_str()), serializedBatchedReply.size(),
+                (byte *)(sig.c_str()), sig.size(), "replica", replicaId)) {
+            LOG(INFO) << "Signature verification failed for replica " << replicaId;
             allVerified = false;
             break;
         }
@@ -914,31 +944,50 @@ bool Replica::verifyCert(const Cert &cert)
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
             batchEndEntry->batchSignatures[replicaId] = sig;
         }
-
     }
-
 
     if (!allVerified) {
-        LOG(INFO) << "Cert verification failed, not all replies are valid";
+        LOG(INFO) << "Cert verification failed, not all entries are valid";
         return false;
     }
+
 
     // TOOD verify that cert actually contains matching replies...
     // And that there aren't signatures from the same replica.
 
     // Additional checks for consistency in replies
     std::set<uint32_t> replicaIds;
-    std::string expectedDigest = cert.replies(0).digest();
+    std::string expectedDigest = cert.cert_entries(0).batched_reply().replies(0).digest();
 
-    for (const auto &reply : cert.replies()) {
-        if (replicaIds.count(reply.replica_id()) > 0) {
-            LOG(INFO) << "Duplicate reply from replica " << reply.replica_id();
+    // Assume that the first entry's batched reply contains the expected digest
+    if (cert.cert_entries_size() > 0 && cert.cert_entries(0).batched_reply().replies_size() > 0) {
+        expectedDigest = cert.cert_entries(0).batched_reply().replies(0).digest();
+    } else {
+        LOG(INFO) << "Cert entries or batched replies are empty";
+        return false;
+    }
+
+    for (const CertEntry &entry : cert.cert_entries()) {
+        uint32_t replicaId = entry.replica_id();
+        const BatchedReply &batchedReply = entry.batched_reply();
+
+        if (replicaIds.count(replicaId) > 0) {
+            LOG(INFO) << "Duplicate entry from replica " << replicaId;
             return false;
         }
-        replicaIds.insert(reply.replica_id());
+        replicaIds.insert(replicaId);
 
-        if (reply.digest() != expectedDigest) {
-            LOG(INFO) << "Mismatched digest in cert replies";
+        // Check that the batched reply contains the expected digest for the client request
+        bool digestMatch = false;
+        for (const Reply &reply : batchedReply.replies()) {
+            if (reply.digest() == expectedDigest) {
+                digestMatch = true;
+                break;
+            }
+        }
+
+        if (!digestMatch) {
+            LOG(INFO) << "Mismatched digest in batched replies from replica " << replicaId;
             return false;
         }
     }
