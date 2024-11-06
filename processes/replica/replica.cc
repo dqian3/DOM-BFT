@@ -519,11 +519,6 @@ void Replica::handleClientRequest(const ClientRequest &request)
             VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
             {
                 std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
-                // TODO(Hao): see how often overlapping happens
-                if(checkpointCollector_.inProgress){
-                    LOG(INFO)<< "Checkpointing is IN PROGRESS for seq="<<checkpointCollector_.endSeq_;
-                }
                 // an intermediate record(checkpointCollector_.clientRecords_) is needed as
                 // current checkpointing can be interrupted by fallback/overlapped checkpoint
                 checkpointCollector_.checkpointStart(log_->checkpoint.seq + 1,
@@ -591,7 +586,10 @@ void Replica::handleCert(const Cert &cert)
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
+    if (reply.instance() < instance_) {
+        VLOG(4) << "Checkpoint reply instance outdated, skipping";
+        return;
+    }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
 
     if (checkpointCollector_.addAndCheckReplyCollection(reply, sig)) {
@@ -600,7 +598,7 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
         ClientRecords tmpClientRecords = checkpointCollector_.clientRecords_;
         uint32_t instance = instance_;
         threadpool_.enqueueTask([=, this](byte *buffer) {
-            // Broadcast commmit Message
+            // Broadcast commit Message
             dombft::proto::Commit commit;
             commit.set_replica_id(replicaId_);
             commit.set_seq(reply.seq());
@@ -626,6 +624,10 @@ void Replica::handleCommit(const dombft::proto::Commit &commit, std::span<byte> 
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
 
     VLOG(3) << "Processing COMMIT from " << commit.replica_id() << " for seq " << commit.seq();
+    if (commit.instance() < instance_) {
+        VLOG(4) << "Checkpoint commit instance outdated, skipping";
+        return;
+    }
     if (!checkpointCollector_.addAndCheckCommitCollection(commit, sig)) {
         return;
     }

@@ -6,6 +6,12 @@ namespace dombft {
 
 // TODO(Hao): should be used to resolve the checkpoint overlapping issue later..
 void CheckpointCollector::checkpointStart(uint32_t start_seq, uint32_t end_seq, ClientRecords& records) {
+
+    // TODO(Hao): see how often overlapping happens
+    if(inProgress){
+        LOG(INFO)<< "Checkpointing is IN PROGRESS for seq="<<endSeq_;
+    }
+
     startSeq_ = start_seq;
     endSeq_ = end_seq;
     clientRecords_ = std::move(records);
@@ -19,6 +25,7 @@ void CheckpointCollector::checkpointStart(uint32_t start_seq, uint32_t end_seq, 
 }
 
 bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig){
+
 
     // TODO(Hao): overlapping issue fix here
     replies_[reply.replica_id()] = reply;
