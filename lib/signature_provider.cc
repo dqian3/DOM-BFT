@@ -151,12 +151,12 @@ bool SignatureProvider::verify(
     byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId
 )
 {
-    if (!pubKeys_[pubKeyType].count(pubKeyId)) {
+    if (!pubKeys_.count(pubKeyType) || !pubKeys_.at(pubKeyType).count(pubKeyId)) {
         LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";
         return false;
     }
 
-    EVP_PKEY *key = pubKeys_[pubKeyType][pubKeyId];
+    EVP_PKEY *key = pubKeys_.at(pubKeyType).at(pubKeyId);
     EVP_MD_CTX *mdctx = NULL;
 
     /* Create the Message Digest Context */

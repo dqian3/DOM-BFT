@@ -15,11 +15,11 @@ using namespace dombft::proto;
 
 Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq)
     : replicaId_(replicaId)
-    , instance_(0)
     , f_(config.replicaIps.size() / 3)
-    , swapFreq_(swapFreq)
     , sigProvider_()
+    , instance_(0)
     , sendThreadpool_(config.replicaNumWorkerThreads)
+    , swapFreq_(swapFreq)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -161,6 +161,7 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
     // process (which does its own verification)
     byte *rawMsg = (byte *) msgHdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
+
     if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
@@ -177,6 +178,7 @@ void Replica::verifyMessagesThd()
         if (!verifyQueue_.try_dequeue(msg)) {
             continue;
         }
+
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
@@ -203,8 +205,8 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (sigProvider_.verify(hdr, "replica", reply.replica_id())) {
-                LOG(INFO) << "Failed to verify replica signature!";
+            if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+                LOG(INFO) << "Failed to verify replica signature f!";
                 continue;
             }
 
@@ -692,9 +694,8 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
 // sending helpers
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
 {
-    T copy = msg;
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(copy, type, buffer);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(dst, hdr);
     });
@@ -702,10 +703,8 @@ template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type,
 
 template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageType type)
 {
-    // This copy should be unecessary, but I'm not sure how to only copy it once into the lambda..
-    T copy = msg;
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(copy, type, buffer);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr, hdr);
@@ -922,7 +921,6 @@ void Replica::processPrePrepare(const FallbackPrePrepare &msg)
 
 void Replica::processPrepare(const FallbackPrepare &msg)
 {
-
     if (msg.instance() < instance_) {
         LOG(INFO) << "Received old fallback prepare from instance=" << msg.instance() << " own instance is "
                   << instance_;
