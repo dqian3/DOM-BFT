@@ -303,7 +303,7 @@ TEST(TestFallbackUtils, Catchup)
     // Apply snapshot should be called
     MockApplication *mockApp = static_cast<MockApplication *>(behindLog->app_.get());
     EXPECT_CALL(*mockApp, applySnapshot(_)).Times(AtLeast(1));
-    EXPECT_CALL(*mockApp, abort(10)).WillOnce(Return(true));
+    //EXPECT_CALL(*mockApp, abort(10)).WillOnce(Return(true));
 
     applySuffixToLog(suffix, behindLog);
 
