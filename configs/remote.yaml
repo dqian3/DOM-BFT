@@ -61,5 +61,7 @@ replica:
   keysDir: "keys/replica"
   fallbackTimeout: 2000000
   fallbackStartTimeout: 500000
-  numWorkerThreads: 8
+  numVerifyThreads: 2
+  numSendThreads: 4
+
 

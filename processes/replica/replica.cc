@@ -18,7 +18,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , f_(config.replicaIps.size() / 3)
     , sigProvider_()
     , instance_(0)
-    , sendThreadpool_(config.replicaNumWorkerThreads)
+    , numVerifyThreads_(config.replicaNumVerifyThreads)
+    , sendThreadpool_(config.replicaNumSendThreads)
     , swapFreq_(swapFreq)
 {
     // TODO check for config errors
@@ -134,9 +135,9 @@ Replica::~Replica()
 void Replica::run()
 {
     // Submit first request
-    LOG(INFO) << "Starting 1 verify threads";
+    LOG(INFO) << "Starting " << numVerifyThreads_ << " verify threads";
     running_ = true;
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < numVerifyThreads_; i++) {
         verifyThreads_.emplace_back(&Replica::verifyMessagesThd, this);
     }
 

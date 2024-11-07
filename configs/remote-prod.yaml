@@ -9,19 +9,19 @@ client:
   - 10.142.0.4
   - 10.202.0.5
 
-  # - 10.138.0.8 
-  # - 10.182.0.6
-  # - 10.142.0.6
-  # - 10.150.0.3
+  - 10.138.0.8 
+  - 10.182.0.6
+  - 10.142.0.6
+  - 10.150.0.3
   keysDir: keys/client
   port: 33000
   normalPathTimeout: 200000   # 200 ms
   slowPathTimeout:   1000000  # 1 s
 
   sendMode: "maxInFlight"
-  maxInFlight: 20
+  maxInFlight: 75
   sendRate: 500
-  runtimeSeconds: 20
+  runtimeSeconds: 80
 
 proxy:
   forwardPort: 31000
@@ -33,7 +33,6 @@ proxy:
   keysDir: keys/proxy
   maxOwd: 100000
   measurementPort: 32000
-  shards: 1
 
 receiver:
   ips:
@@ -45,7 +44,7 @@ receiver:
   local: true
   port: 33000
   shards: 1
-  numVerifyThreads: 6
+  numVerifyThreads: 4
 
 replica:
   ips:
@@ -57,4 +56,5 @@ replica:
   port: 34000
   fallbackTimeout: 5000000
   fallbackStartTimeout: 500000
-  numWorkerThreads: 8
+  numVerifyThreads: 2
+  numSendThreads: 4
