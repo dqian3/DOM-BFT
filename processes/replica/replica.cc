@@ -2,6 +2,7 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/common.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
@@ -120,6 +121,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
     endpoint_->RegisterSignalHandler([&]() {
         LOG(INFO) << "Received interrupt signal!";
+        running_ = false;
         endpoint_->LoopBreak();
     });
 }
@@ -132,10 +134,23 @@ Replica::~Replica()
 void Replica::run()
 {
     // Submit first request
+    LOG(INFO) << "Starting 1 verify threads";
+    running_ = true;
+    for (int i = 0; i < 1; i++) {
+        verifyThreads_.emplace_back(&Replica::verifyMessagesThd, this);
+    }
+
+    LOG(INFO) << "Starting process thread";
+    processThread_ = std::thread(&Replica::processMessagesThd, this);
+
     LOG(INFO) << "Starting main event loop...";
     endpoint_->LoopRun();
-
     LOG(INFO) << "Finishing main event loop...";
+
+    for (std::thread &thd : verifyThreads_) {
+        thd.join();
+    }
+    processThread_.join();
 }
 
 void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
@@ -158,7 +173,10 @@ void Replica::verifyMessagesThd()
     // TODO we do some redundant work deserializing messages here
     std::vector<byte> msg;
 
-    while (verifyQueue_.try_dequeue(msg)) {
+    while (running_) {
+        if (!verifyQueue_.try_dequeue(msg)) {
+            continue;
+        }
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
@@ -178,14 +196,14 @@ void Replica::verifyMessagesThd()
         }
 
         else if (hdr->msgType == REPLY) {
-            Reply replyHeader;
+            Reply reply;
 
-            if (!replyHeader.ParseFromArray(body, hdr->msgLen)) {
+            if (!reply.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse REPLY message";
                 continue;
             }
 
-            if (sigProvider_.verify(hdr, body, "replica", replyHeader.replica_id())) {
+            if (sigProvider_.verify(hdr, "replica", reply.replica_id())) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -201,7 +219,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, body, "replica", commitMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, "replica", commitMsg.replica_id())) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -212,7 +230,7 @@ void Replica::verifyMessagesThd()
         else if (hdr->msgType == FALLBACK_TRIGGER) {
             FallbackTrigger fallbackTriggerMsg;
 
-            if (!sigProvider_.verify(hdr, body, "client", fallbackTriggerMsg.client_id())) {
+            if (!sigProvider_.verify(hdr, "client", fallbackTriggerMsg.client_id())) {
                 LOG(INFO) << "Failed to verify client signature!";
                 continue;
             }
@@ -245,7 +263,10 @@ void Replica::processMessagesThd()
     // TODO we do some redundant work deserializing messages here
     std::vector<byte> msg;
 
-    while (verifyQueue_.try_dequeue(msg)) {
+    while (running_) {
+        if (!processQueue_.try_dequeue(msg)) {
+            continue;
+        }
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
@@ -362,8 +383,6 @@ void Replica::processClientRequest(const ClientRequest &request)
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
 
-    VLOG(2) << "Received request from client " << clientId << " with seq " << clientSeq;
-
     if (clientId < 0 || clientId > clientAddrs_.size()) {
         LOG(ERROR) << "Invalid client id" << clientId;
         return;
@@ -401,7 +420,6 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_client_seq(clientSeq);
     reply.set_replica_id(replicaId_);
     reply.set_result(result);
-    reply.set_fast(true);
     reply.set_seq(seq);
     reply.set_instance(instance_);
     reply.set_digest(digest);
@@ -417,9 +435,9 @@ void Replica::processClientRequest(const ClientRequest &request)
         intermediateCheckpointClientRecords_ = clientRecords_;
         checkpointSeq_ = seq;
         checkpointCert_.reset();
+
+        broadcastToReplicas(reply, MessageType::REPLY);
     }
-    // TODO remove execution result here
-    broadcastToReplicas(reply, MessageType::REPLY);
 }
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
@@ -530,7 +548,6 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
             toProtoClientRecords(*commit.mutable_client_records_set(), tmpClientRecords);
             VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
             broadcastToReplicas(commit, MessageType::COMMIT);
-
             return;
         }
     }
@@ -675,8 +692,9 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
 // sending helpers
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
 {
+    T copy = msg;
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(copy, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         endpoint_->SendPreparedMsgTo(dst, hdr);
     });
@@ -684,9 +702,10 @@ template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type,
 
 template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageType type)
 {
+    // This copy should be unecessary, but I'm not sure how to only copy it once into the lambda..
+    T copy = msg;
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        // TODO check errors for all of these lol
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(copy, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr, hdr);

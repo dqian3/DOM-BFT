@@ -415,7 +415,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", reply.replica_id())) {
+        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
             return;
         }
@@ -437,7 +437,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", certReply.replica_id())) {
+        if (!sigProvider_.verify(hdr, "replica", certReply.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature for CERT_REPLY!";
             return;
         }
@@ -453,7 +453,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, body, "replica", fallbackSummary.replica_id())) {
+        if (!sigProvider_.verify(hdr, "replica", fallbackSummary.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature for FALLBACK_SUMMARY!";
             return;
         }

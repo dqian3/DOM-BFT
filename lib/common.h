@@ -85,8 +85,6 @@ enum MessageType {
  */
 struct MessageHeader {
     byte msgType;
-    uint32_t senderType;
-    uint32_t sender;
     uint32_t msgLen;
     uint32_t sigLen;
     MessageHeader(const byte t, const uint32_t l, const uint32_t sl)

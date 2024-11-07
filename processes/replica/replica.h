@@ -36,6 +36,10 @@ private:
     ConcurrentQueue<std::vector<byte>> processQueue_;
     ThreadPool sendThreadpool_;
 
+    bool running_;
+    std::vector<std::thread> verifyThreads_;
+    std::thread processThread_;
+
     std::unique_ptr<Endpoint> endpoint_;
     std::unique_ptr<Timer> fallbackStartTimer_;
     std::unique_ptr<Timer> fallbackTimer_;
