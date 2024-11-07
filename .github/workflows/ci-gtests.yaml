@@ -1,0 +1,40 @@
+name: ci-gtests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Restore cache
+        id: cache-bazel
+        uses: actions/cache@v3
+        with:
+          path: "~/.cache/bazel"
+          key: ${{ runner.os }}-build-direct-${{ github.ref_name }}
+          restore-keys: |
+            ${{ runner.os }}-build-direct-
+
+      - name: Setup
+        run: |
+          chmod +x ./scripts/setup.sh && sudo ./scripts/setup.sh
+
+      - name: Build and test
+        run: |
+          bazel test //test/... --test_output=all
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: bazel-testlogs/
