@@ -46,8 +46,8 @@ private:
     ClientRecords clientRecords_;
     ClientRecords checkpointClientRecords_;
     // State for commit/checkpoint protocol
-    // TODO this assumes non-overlapping checkpoint protocol
-    CheckpointCollector checkpointCollector_;
+    // checkpoint seq -> CheckpointCollector
+    std::map<uint32_t, CheckpointCollector> checkpointCollectors_;
     // State for fallback
     bool fallback_ = false;
     uint32_t fallbackTriggerSeq_ = 0;
@@ -95,6 +95,7 @@ private:
     // helpers
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
     void reapplyEntriesWithRecord(uint32_t rShiftNum);
+    void tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records = std::nullopt);
 
 public:
     Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);

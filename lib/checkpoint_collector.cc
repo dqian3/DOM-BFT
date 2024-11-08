@@ -1,43 +1,18 @@
 #include "checkpoint_collector.h"
-
-#include <utility>
-
 namespace dombft {
-
-// TODO(Hao): should be used to resolve the checkpoint overlapping issue later..
-void CheckpointCollector::checkpointStart(uint32_t start_seq, uint32_t end_seq, ClientRecords& records) {
-
-    // TODO(Hao): see how often overlapping happens
-    if(inProgress){
-        LOG(INFO)<< "Checkpointing is IN PROGRESS for seq="<<endSeq_;
-    }
-
-    startSeq_ = start_seq;
-    endSeq_ = end_seq;
-    clientRecords_ = std::move(records);
-    replies_.clear();
-    replySigs_.clear();
-    commits_.clear();
-    commitSigs_.clear();
-    commitMatchedReplicas_.clear();
-    inProgress = true;
-    cert_.reset();
-}
 
 bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig){
 
-
-    // TODO(Hao): overlapping issue fix here
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
-    
+    hasOwnReply_ = hasOwnReply_ || reply.replica_id() == replicaId_;
     // Don't try finishing the commit if our log hasn't reached the seq being committed
-    if (replies_[replicaId_].seq() != endSeq_) {
+    if (!hasOwnReply_) {
         VLOG(4) << "Skipping processing of commit messages until we receive our own...";
         return false;
     }
 
-    if (cert_.has_value() && cert_->seq() >= reply.seq()) {
+    if (cert_.has_value()) {
         VLOG(4) << "Checkpoint: already have cert for seq=" << reply.seq() << ", skipping";
         return false;
     }
@@ -48,9 +23,6 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
 
-        // Already committed
-        if (reply.seq() < startSeq_)
-            continue;
 
         VLOG(4) << digest_to_hex(reply.digest()).substr(0, 8) << " " << reply.seq() << " " << reply.instance();
 
@@ -58,10 +30,8 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
 
         matchingReplies[key].insert(replicaId);
 
-        bool hasOwnReply = replies_.count(replicaId_) && replies_[replicaId_].seq() == reply.seq();
-
         // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= 2 * f_ + 1 && hasOwnReply) {
+        if (matchingReplies[key].size() >= 2 * f_ + 1) {
             cert_ = Cert();
             cert_->set_seq(std::get<2>(key));
 
@@ -76,14 +46,7 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     }
     return false;
 }
-bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, std::span<byte> sig) {
-    //TODO(Hao) this will drop the earlier commit message when there is an overlapping
-    if (startSeq_ > commitMsg.seq()) {
-        VLOG(4) << "Checkpoint: already committed for seq=" << commitMsg.seq() << ", skipping";
-        return false;
-    }
-    commits_[commitMsg.replica_id()] = commitMsg;
-    commitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
+bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, const std::span<byte>& sig) {
 
     // verify the record is not tampered by a malicious replica
     if (!verifyRecordDigestFromProto(commitMsg.client_records_set())) {
@@ -91,28 +54,64 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, s
                 << " does not match the carried records digest";
         return false;
     }
+    commits_[commitMsg.replica_id()] = commitMsg;
+    commitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
+    hasOwnCommit_ = hasOwnCommit_ || commitMsg.replica_id() == replicaId_;
+
+    if (!hasOwnCommit_) {
+        VLOG(4) << "Skipping processing of commit messages until we receive our own...";
+        return false;
+    }
     std::map<CommitKeyTuple, std::set<uint32_t>> matchingCommits;
     // Find a cert among a set of replies
     for (const auto &[replicaId, commit] : commits_) {
-        // Already committed
-        if (commit.seq() < startSeq_)
-            continue;
         
         CommitKeyTuple key = {
             commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
             commit.client_records_set().client_records_digest()};
         matchingCommits[key].insert(replicaId);
 
-        // TODO see if there's a better way to do this
-        bool hasOwnCommit =
-            commits_.count(replicaId_) && commits_[replicaId_].seq() == commit.seq();
-
         // Need 2f + 1 and own commit
-        if (matchingCommits[key].size() >= 2 * f_ + 1 && hasOwnCommit) {
+        if (matchingCommits[key].size() >= 2 * f_ + 1) {
             commitMatchedReplicas_ = matchingCommits[key];
             return true;
         }
     }
     return false;
 }
+
+CommitResInfo CheckpointCollector::commitToLog(const std::shared_ptr<Log>& log, const dombft::proto::Commit &commit){
+    CommitResInfo res = {false, false};
+    uint32_t seq = commit.seq();
+
+    LOG(INFO) << "Committing seq=" << seq;
+    VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
+    res.committed = true;
+    log->checkpoint.seq = seq;
+
+    memcpy(log->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
+    memcpy(log->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
+
+    for (uint32_t r : commitMatchedReplicas_) {
+        log->checkpoint.commitMessages[r] = commits_[r];
+        log->checkpoint.signatures[r] = commitSigs_[r];
+    }
+    log->commit(log->checkpoint.seq);
+
+    const byte *myDigestBytes = log->getDigest(seq);
+    std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
+
+    // Modifies log if checkpoint is inconsistent with our current log
+    if (myDigest != commit.log_digest()) {
+        res.digest_updated = true;
+        LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot";
+
+        // TODO: counter uses digest as snapshot, need to generalize this
+        log->app_->applySnapshot(commit.app_digest());
+        VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
+                << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
+    }
+    return res;
+}
+
 } // dombft

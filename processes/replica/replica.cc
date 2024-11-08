@@ -18,7 +18,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , instance_(0)
     , sigProvider_()
     , threadpool_(config.replicaNumWorkerThreads)
-    , checkpointCollector_(replicaId,f_)
     , swapFreq_(swapFreq)
 {
     // TODO check for config errors
@@ -519,10 +518,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
             VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
             {
                 std::lock_guard<std::mutex> guard(replicaStateMutex_);
-                // an intermediate record(checkpointCollector_.clientRecords_) is needed as
-                // current checkpointing can be interrupted by fallback/overlapped checkpoint
-                checkpointCollector_.checkpointStart(log_->checkpoint.seq + 1,
-                                                     seq, tmpClientRecords);
+                tryInitCheckpointCollector(seq, instance, std::optional<ClientRecords>(tmpClientRecords));
             }
             // TODO remove execution result here
             broadcastToReplicas(reply, MessageType::REPLY, buffer);
@@ -586,22 +582,29 @@ void Replica::handleCert(const Cert &cert)
 void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
+    uint32_t rSeq = reply.seq();
     if (reply.instance() < instance_) {
-        VLOG(4) << "Checkpoint reply instance outdated, skipping";
+        VLOG(4) << "Checkpoint reply seq="<<rSeq<<" instance outdated, skipping";
         return;
     }
-    VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << reply.seq();
+    VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
+    if (rSeq <= log_->checkpoint.seq) {
+        VLOG(4) << "Seq "<<rSeq<" is already committed, skipping";
+        return;
+    }
 
-    if (checkpointCollector_.addAndCheckReplyCollection(reply, sig)) {
-        const byte *logDigest = log_->getDigest(reply.seq());
-        std::string appDigest = log_->app_->getDigest(reply.seq());
-        ClientRecords tmpClientRecords = checkpointCollector_.clientRecords_;
+    tryInitCheckpointCollector(rSeq, instance_);
+    CheckpointCollector& collector = checkpointCollectors_.at(rSeq);
+    if (collector.addAndCheckReplyCollection(reply, sig)) {
+        const byte *logDigest = log_->getDigest(rSeq);
+        std::string appDigest = log_->app_->getDigest(rSeq);
+        ClientRecords tmpClientRecords = collector.clientRecords_.value();
         uint32_t instance = instance_;
         threadpool_.enqueueTask([=, this](byte *buffer) {
             // Broadcast commit Message
             dombft::proto::Commit commit;
             commit.set_replica_id(replicaId_);
-            commit.set_seq(reply.seq());
+            commit.set_seq(rSeq);
             commit.set_instance(instance);
             commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
             commit.set_app_digest(appDigest);
@@ -622,49 +625,37 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
 void Replica::handleCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
     std::lock_guard<std::mutex> guard(replicaStateMutex_);
-
-    VLOG(3) << "Processing COMMIT from " << commit.replica_id() << " for seq " << commit.seq();
+    uint32_t seq = commit.seq();
+    VLOG(3) << "Processing COMMIT from " << commit.replica_id() << " for seq " << seq;
     if (commit.instance() < instance_) {
         VLOG(4) << "Checkpoint commit instance outdated, skipping";
         return;
     }
-    if (!checkpointCollector_.addAndCheckCommitCollection(commit, sig)) {
+    if (seq <= log_->checkpoint.seq) {
+        VLOG(4) << "Seq "<<seq<<" is already committed, skipping";
         return;
     }
-    uint32_t seq = commit.seq();
 
-    LOG(INFO) << "Committing seq=" << seq;
-    VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
-
-    log_->checkpoint.seq = seq;
-
-    memcpy(log_->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
-    memcpy(log_->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
-
-    for (uint32_t r : checkpointCollector_.commitMatchedReplicas_) {
-        log_->checkpoint.commitMessages[r] = checkpointCollector_.commits_[r];
-        log_->checkpoint.signatures[r] = checkpointCollector_.commitSigs_[r];
+    tryInitCheckpointCollector(seq, instance_);
+    CheckpointCollector& collector = checkpointCollectors_.at(seq);
+    // add current commit msg to collector
+    if (!collector.addAndCheckCommitCollection(commit, sig)) {
+        return;
     }
-    log_->commit(log_->checkpoint.seq);
+    // try commit
+    CommitResInfo res = collector.commitToLog(log_,commit);
 
-    const byte *myDigestBytes = log_->getDigest(seq);
-    std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
-    // Modifies log if checkpoint is inconsistent with our current log
-    if (myDigest != commit.log_digest()) {
-        LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot and modifying "
-                     "log...";
+    if(!res.committed) {
+        return;
+    }
 
-        // TODO: counter uses digest as snapshot, need to generalize this
-        log_->app_->applySnapshot(commit.app_digest());
-        VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
-                << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
-
+    if (res.digest_updated) {
         checkpointClientRecords_.clear();
         getClientRecordsFromProto(commit.client_records_set(), checkpointClientRecords_);
         clientRecords_ = checkpointClientRecords_;
 
         int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecords_,
-                                                    checkpointCollector_.clientRecords_);
+                                                    collector.clientRecords_.value());
         // that is, there is never a left shift
         assert(rShiftNum >= 0);
         if (rShiftNum > 0) {
@@ -672,10 +663,9 @@ void Replica::handleCommit(const dombft::proto::Commit &commit, std::span<byte> 
         }
         reapplyEntriesWithRecord(rShiftNum);
     } else {
-        checkpointClientRecords_ = checkpointCollector_.clientRecords_;
+        checkpointClientRecords_ = collector.clientRecords_.value();
     }
 
-    checkpointCollector_.inProgress = false;
 }
 
 void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
@@ -1067,4 +1057,21 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
     }
 }
 
+
+void Replica::tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records){
+
+    if(checkpointCollectors_.contains(seq)){
+        CheckpointCollector &collector = checkpointCollectors_.at(seq);
+        //Note: both instance and records are from current replica not others
+        // clear the collector if the instance is outdated
+        if(collector.instance_ < instance) {
+            checkpointCollectors_.erase(seq);
+            checkpointCollectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
+        }else if(records.has_value()) {
+            collector.clientRecords_ = std::move(records);
+        }
+    }else{
+        checkpointCollectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
+    }
+}
 }   // namespace dombft
