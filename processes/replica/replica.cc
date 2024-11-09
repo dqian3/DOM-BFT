@@ -18,6 +18,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , instance_(0)
     , sigProvider_()
     , threadpool_(config.replicaNumWorkerThreads)
+    , checkpointCollectors_(replicaId_, f_)
     , swapFreq_(swapFreq)
 {
     // TODO check for config errors
@@ -518,7 +519,7 @@ void Replica::handleClientRequest(const ClientRequest &request)
             VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
             {
                 std::lock_guard<std::mutex> guard(replicaStateMutex_);
-                tryInitCheckpointCollector(seq, instance, std::optional<ClientRecords>(tmpClientRecords));
+                checkpointCollectors_.tryInitCheckpointCollector(seq, instance, std::optional<ClientRecords>(tmpClientRecords));
             }
             // TODO remove execution result here
             broadcastToReplicas(reply, MessageType::REPLY, buffer);
@@ -589,11 +590,11 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
     if (rSeq <= log_->checkpoint.seq) {
-        VLOG(4) << "Seq "<<rSeq<" is already committed, skipping";
+        VLOG(4) << "Seq "<<rSeq<<" is already committed, skipping";
         return;
     }
 
-    tryInitCheckpointCollector(rSeq, instance_);
+    checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_);
     CheckpointCollector& collector = checkpointCollectors_.at(rSeq);
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         const byte *logDigest = log_->getDigest(rSeq);
@@ -636,20 +637,18 @@ void Replica::handleCommit(const dombft::proto::Commit &commit, std::span<byte> 
         return;
     }
 
-    tryInitCheckpointCollector(seq, instance_);
+    checkpointCollectors_.tryInitCheckpointCollector(seq, instance_);
     CheckpointCollector& collector = checkpointCollectors_.at(seq);
     // add current commit msg to collector
     if (!collector.addAndCheckCommitCollection(commit, sig)) {
         return;
     }
+    LOG(INFO) << "Committing seq=" << seq;
+    VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
     // try commit
-    CommitResInfo res = collector.commitToLog(log_,commit);
+    bool digest_changed = collector.commitToLog(log_,commit);
 
-    if(!res.committed) {
-        return;
-    }
-
-    if (res.digest_updated) {
+    if (digest_changed) {
         checkpointClientRecords_.clear();
         getClientRecordsFromProto(commit.client_records_set(), checkpointClientRecords_);
         clientRecords_ = checkpointClientRecords_;
@@ -666,6 +665,8 @@ void Replica::handleCommit(const dombft::proto::Commit &commit, std::span<byte> 
         checkpointClientRecords_ = collector.clientRecords_.value();
     }
 
+    // if there is overlapping and later checkpoint commits first, skip earlier ones
+    checkpointCollectors_.cleanSkippedCheckpointCollectors(seq, instance_);
 }
 
 void Replica::sendMsgToDst(const google::protobuf::Message &msg, MessageType type, const Address &dst, byte *buf)
@@ -844,26 +845,13 @@ void Replica::finishFallback()
 
     fallback_ = false;
     fallbackProposal_.reset();
-    LOG(INFO) << "Commited checkpoint for seq=" << log_->nextSeq - 1<<" after fallback finished";
 
+    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
+    checkpointCollectors_.tryInitCheckpointCollector(log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_));
+    Reply reply;
+    replyFromLogEntry(reply, log_->nextSeq - 1);
+    broadcastToReplicas(reply, MessageType::REPLY);
 }
-
-//void Replica::commitCheckpointAfterFallback()
-//{
-//    // resolve instance .........
-//    uint32_t commitSeq = log_->nextSeq - 1;
-//    log_->checkpoint.seq = commitSeq;
-//    memcpy(log_->checkpoint.appDigest,log_->app_->getDigest(commitSeq).c_str(), SHA256_DIGEST_LENGTH);
-//    memcpy(log_->checkpoint.logDigest, log_->getDigest(commitSeq), SHA256_DIGEST_LENGTH);
-//
-//    for (uint32_t r : checkpointCollector_.commitMatchedReplicas_) {
-//        log_->checkpoint.commitMessages[r] = checkpointCollector_.commits_[r];
-//        log_->checkpoint.signatures[r] = checkpointCollector_.commitSigs_[r];
-//    }
-//    log_->commit(commitSeq);
-//    checkpointClientRecords_ = clientRecords_;
-//    LOG(INFO) << "Commited checkpoint for seq=" << log_->nextSeq - 1<<" after fallback finished";
-//}
 
 // dummy fallback PBFT
 
@@ -1057,21 +1045,4 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
     }
 }
 
-
-void Replica::tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records){
-
-    if(checkpointCollectors_.contains(seq)){
-        CheckpointCollector &collector = checkpointCollectors_.at(seq);
-        //Note: both instance and records are from current replica not others
-        // clear the collector if the instance is outdated
-        if(collector.instance_ < instance) {
-            checkpointCollectors_.erase(seq);
-            checkpointCollectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
-        }else if(records.has_value()) {
-            collector.clientRecords_ = std::move(records);
-        }
-    }else{
-        checkpointCollectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
-    }
-}
 }   // namespace dombft

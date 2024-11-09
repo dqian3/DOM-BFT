@@ -80,13 +80,9 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     return false;
 }
 
-CommitResInfo CheckpointCollector::commitToLog(const std::shared_ptr<Log>& log, const dombft::proto::Commit &commit){
-    CommitResInfo res = {false, false};
+bool CheckpointCollector::commitToLog(const std::shared_ptr<Log>& log, const dombft::proto::Commit &commit){
     uint32_t seq = commit.seq();
 
-    LOG(INFO) << "Committing seq=" << seq;
-    VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
-    res.committed = true;
     log->checkpoint.seq = seq;
 
     memcpy(log->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
@@ -103,15 +99,43 @@ CommitResInfo CheckpointCollector::commitToLog(const std::shared_ptr<Log>& log, 
 
     // Modifies log if checkpoint is inconsistent with our current log
     if (myDigest != commit.log_digest()) {
-        res.digest_updated = true;
         LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot";
 
         // TODO: counter uses digest as snapshot, need to generalize this
         log->app_->applySnapshot(commit.app_digest());
         VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
                 << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
+        return true;
     }
-    return res;
+    return false;
+}
+void CheckpointCollectors::tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records){
+
+    if(collectors_.contains(seq)){
+        CheckpointCollector &collector = collectors_.at(seq);
+        //Note: both instance and records are from current replica not others
+        // clear the collector if the instance is outdated
+        if(collector.instance_ < instance) {
+            collectors_.erase(seq);
+            collectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
+        }else if(records.has_value()) {
+            collector.clientRecords_ = std::move(records);
+        }
+    }else{
+        collectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
+    }
 }
 
+void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance) {
+    std::vector<uint32_t> seqsToRemove;
+    for (auto &[seq, collector]: collectors_) {
+        if (seq <= committedSeq || collector.instance_ < committedInstance) {
+            seqsToRemove.push_back(seq);
+        }
+    }
+    for (uint32_t seq: seqsToRemove) {
+        VLOG(1) << "PERF event=checkpoint_skipped seq=" << seq;
+        collectors_.erase(seq);
+    }
+}
 } // dombft
