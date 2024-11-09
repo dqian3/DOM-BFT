@@ -123,6 +123,7 @@ void CheckpointCollectors::tryInitCheckpointCollector(uint32_t seq, uint32_t ins
         }
     }else{
         collectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
+        VLOG(3) << "Collector for seq "<<seq<<" is added. Now number of checkpoint collectors : " << collectors_.size();
     }
 }
 
