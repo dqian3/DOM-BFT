@@ -39,6 +39,7 @@ void getRecordsDigest(const ClientRecords &records, byte *digest)
         SHA256_Update(&ctx, &cliRecord.instance_, sizeof(cliRecord.instance_));
         SHA256_Update(&ctx, &cliRecord.lastSeq_, sizeof(cliRecord.lastSeq_));
         std::vector<int> sortedSeqs(cliRecord.missedSeqs_.begin(), cliRecord.missedSeqs_.end());
+        std::sort(sortedSeqs.begin(), sortedSeqs.end());
         for (const auto &s : sortedSeqs)
             SHA256_Update(&ctx, &s, sizeof(s));
     }
