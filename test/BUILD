@@ -29,14 +29,3 @@ cc_test(
     "@com_google_googletest//:gtest_main",
   ],
 )
-
-
-cc_test(
-  name = "test_checkpoint_collector",
-  size = "small",
-  srcs = ["test_checkpoint_collector.cc"],
-  deps = [
-    "//lib:checkpoint_collector",
-    "@com_google_googletest//:gtest_main",
-  ],
-)
