@@ -15,7 +15,10 @@ public:
 
     // Inserts reply/signature with move semantics
     // Assumes that reply has already been verified
-    size_t insertReply(dombft::proto::Reply &reply, std::vector<byte> &&sig);
+    // size_t insertReply(dombft::proto::Reply &reply, std::vector<byte> &&sig);
+
+    size_t insertBatchedReply(uint32_t replicaId, dombft::proto::BatchedReply &batchedReply, std::vector<byte> &&sig);
+
 
     bool hasCert();
     const dombft::proto::Cert &getCert();
@@ -23,9 +26,15 @@ public:
     uint32_t f_;
     size_t maxMatchSize_;
 
+    // map from a reply hash to a set of replica IDs that snet that reply
+    // std::map<std::string, std::set<int>> replyHashes_;
+
     // maps from replica
-    std::map<int, dombft::proto::Reply> replies_;
-    std::map<int, std::vector<byte>> signatures_;
+    // std::map<int, dombft::proto::Reply> replies_;
+    // std::map<int, std::vector<byte>> signatures_;
+
+    // Maps from replica_id to CertEntry
+    std::map<uint32_t, dombft::proto::CertEntry> certEntries_;
 
     std::optional<dombft::proto::Cert> cert_;
 };

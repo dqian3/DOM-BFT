@@ -26,6 +26,10 @@ struct RequestState {
         , sendTime(sendT)
     {
     }
+
+    // TODO: add locking here
+    // std::mutex mutex
+
     CertCollector collector;
     dombft::proto::ClientRequest request;
 
@@ -37,6 +41,8 @@ struct RequestState {
     bool certSent = false;
     uint64_t certSendTime = false;
     std::set<int> certReplies;
+    // store the batched repleis and their signature
+    std::map<uint32_t, std::pair<dombft::proto::BatchedReply, std::vector<byte>>> batchedReplies; // replica_id -> (batchedReply, signature)
 
     // Slow Path state
     bool triggerSent = false;
@@ -111,6 +117,10 @@ private:
     /** The message handler to handle messages */
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
+
+    void handleReply(dombft::proto::Reply &reply, std::span<byte> sig, dombft::proto::BatchedReply &batchedReply);
+
+
     void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 

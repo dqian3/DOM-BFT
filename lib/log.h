@@ -27,6 +27,9 @@ struct LogEntry {
 
     byte digest[SHA256_DIGEST_LENGTH];
 
+    // New member to store verified signatures for the batch
+    std::map<uint32_t, std::string> batchSignatures; // Maps replica_id to signature
+
     LogEntry();
 
     LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, const byte *prev_digest);
@@ -65,6 +68,13 @@ struct LogCheckpoint {
     }
 };
 
+struct BatchInfo {
+    uint32_t startSeq;
+    uint32_t endSeq;
+
+    BatchInfo(uint32_t start, uint32_t end) : startSeq(start), endSeq(end) {}
+};
+
 struct Log {
 
     // Circular buffer of LogEntry, since we know the history won't exceed MAX_SPEC_HIST
@@ -86,6 +96,9 @@ struct Log {
     std::shared_ptr<Application> app_;
 
     Log(std::shared_ptr<Application> app);
+
+    // New map to track batch boundaries
+    // std::map<uint32_t, BatchInfo> batchInfoMap; // Key: batch end seq, Value: BatchInfo
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);

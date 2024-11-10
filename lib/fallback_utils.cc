@@ -48,8 +48,10 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             // TODO verify cert
             // If the cert doesn't match the log, a bad log suffix could be injected
             if (entry.seq() > maxCertSeq) {
-                VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
-                        << " c_seq=" << entry.cert().replies()[0].client_seq();
+                VLOG(4) << "Cert found for seq=" << entry.seq() 
+                        << " c_id=" << entry.cert().cert_entries(0).batched_reply().replies(0).client_id()
+                        << " c_seq=" << entry.cert().cert_entries(0).batched_reply().replies(0).client_seq();
+
 
                 cert = &entry.cert();
                 logToUseIdx = i;
@@ -60,8 +62,9 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     }
 
     if (cert != nullptr)
-        VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].client_id()
-                << " c_seq=" << cert->replies()[0].client_seq();
+        VLOG(4) << "Max cert found for seq=" << maxCertSeq 
+                << " c_id=" << cert->cert_entries(0).batched_reply().replies(0).client_id()
+                << " c_seq=" << cert->cert_entries(0).batched_reply().replies(0).client_seq();
     else
         VLOG(4) << "No certs found!";
 

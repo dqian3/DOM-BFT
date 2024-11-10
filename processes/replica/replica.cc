@@ -497,38 +497,118 @@ void Replica::handleClientRequest(const ClientRequest &request)
                << " digest=" << digest_to_hex(digest).substr(56);
 
     ClientRecords tmpClientRecords = clientRecords_;
-    // TODO, only queue signing tasks? Then we don't have to worry about locking replica state
-    threadpool_.enqueueTask([=, this](byte *buffer) {
-        Reply reply;
 
-        reply.set_client_id(clientId);
-        reply.set_client_seq(clientSeq);
-        reply.set_replica_id(replicaId_);
-        reply.set_result(result);
-        reply.set_fast(true);
-        reply.set_seq(seq);
-        reply.set_instance(instance);
-        reply.set_digest(digest);
+    // for bacthing of client response
+    Reply reply;
+    reply.set_client_id(clientId);
+    reply.set_client_seq(clientSeq);
+    reply.set_replica_id(replicaId_);
+    reply.set_result(result);
+    reply.set_fast(true);
+    reply.set_seq(seq);
+    reply.set_instance(instance);
+    reply.set_digest(digest);
 
-        LOG(INFO) << "Sending reply back to client " << clientId;
-        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId], buffer);
 
-        // Try and commit every CHECKPOINT_INTERVAL replies
-        if (seq % CHECKPOINT_INTERVAL == 0) {
-            VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
-            {
-                std::lock_guard<std::mutex> guard(replicaStateMutex_);
-                // an intermediate record is needed as current checkpointing can be interrupted by fallback
-                // so only when the checkpoint is finished, the checkpoint record is updated
-                intermediateCheckpointClientRecords_ = tmpClientRecords;
-                checkpointSeq_ = seq;
-                checkpointCert_.reset();
-            }
-            // TODO remove execution result here
-            broadcastToReplicas(reply, MessageType::REPLY, buffer);
+    bool shouldProcessBatch = false;
+
+
+    // prevent multiple access to the batch tiself
+    {
+        std::lock_guard<std::mutex> batchGuard(batchMutex_);
+
+        // for the timeout operations:
+        // if (replyBatch_.empty()) {
+        //     batchStartTime_ = std::chrono::steady_clock::now();
+        // }
+
+        replyBatch_.push_back(reply);
+        clientsInBatch_.insert(clientId);
+
+        // notofy a thread to process the batch, do the signatire and send it out
+        if (replyBatch_.size() >= REPLY_BATCH_SIZE) {
+            shouldProcessBatch = true;
         }
-    });
+        // } else {
+        //     auto now = std::chrono::steady_clock::now();
+        //     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - batchStartTime_);
+        //     if (elapsed.count() >= BATCH_TIMEOUT_MS) {
+        //         shouldProcessBatch = true;
+        //     }   
+        // }
+
+        if (shouldProcessBatch) {
+            std::vector<Reply> batchToSend;
+            std::set<uint32_t> clientsToNotify;
+
+            batchToSend.swap(replyBatch_);
+            clientsInBatch_.swap(clientsToNotify);
+
+            threadpool_.enqueueTask([batchToSend = std::move(batchToSend), clientsToNotify = std::move(clientsToNotify), this](byte *buffer) mutable {
+                this->processReplyBatch(batchToSend, clientsToNotify, buffer);
+            });
+        }
+    }
+
+
+    if (seq % CHECKPOINT_INTERVAL == 0) {
+        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            intermediateCheckpointClientRecords_ = tmpClientRecords;
+            checkpointSeq_ = seq;
+            checkpointCert_.reset();
+        }
+        // Broadcast the reply to other replicas for checkpointing
+        // We'll need to adjust this to batch as well if desired
+        threadpool_.enqueueTask([=, this](byte *buffer) {
+            broadcastToReplicas(reply, MessageType::REPLY, buffer);
+        });
+    }
 }
+
+
+// process the batch of responses:
+// called as a function of the thread pool 
+void Replica::processReplyBatch(std::vector<Reply> batchToSend, std::set<uint32_t> clientsToNotify, byte *buffer)
+{
+    // Serialize the batch of replies
+    BatchedReply batchedReply;
+
+    batchedReply.set_replica_id(replicaId_);
+    for (const Reply &reply : batchToSend) {
+        *batchedReply.add_replies() = reply;
+    }
+
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(batchedReply, MessageType::BATCHED_REPLY, buffer);
+
+    // Sign the entire batch message
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+    // Send the batch to each client
+    for (uint32_t clientId : clientsToNotify) {
+        if (clientId < clientAddrs_.size()) {
+            endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
+        } else {
+            LOG(ERROR) << "Invalid client ID in batch: " << clientId;
+        }
+    }
+}
+
+
+// void Replica::sendBatchedReplyToClients(const BatchedReply &batchedReply, const std::set<uint32_t> &clients, byte *buffer)
+// {
+//     MessageHeader *hdr = endpoint_->PrepareProtoMsg(batchedReply, MessageType::BATCHED_REPLY, buffer);
+//     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+//     for (uint32_t clientId : clients) {
+//         if (clientId < clientAddrs_.size()) {
+//             endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
+//         } else {
+//             LOG(ERROR) << "Invalid client ID in batch: " << clientId;
+//         }
+//     }
+// }
 
 void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 {
@@ -555,26 +635,52 @@ void Replica::handleCert(const Cert &cert)
             return;
         }
 
-        const Reply &r = cert.replies()[0];
+        uint32_t seq = cert.seq();
+        uint32_t batchEndSeq = ((seq - 1) / REPLY_BATCH_SIZE + 1) * REPLY_BATCH_SIZE;
+
         CertReply reply;
 
         {
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
             if (cert.instance() < instance_) {
                 VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_
-                        << " for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
+                        << " for seq=" << cert.seq() << " c_id=" << cert.client_id() << " c_seq=" << cert.cert_entries(0).batched_reply().replies(0).client_seq();
                 return;
             }
 
-            log_->addCert(r.seq(), cert);
+            // log_->addCert(r.seq(), cert);
+            // add only at the end of the batch
+            log_->addCert(batchEndSeq, cert);   
 
             reply.set_replica_id(replicaId_);
             reply.set_instance(instance_);
         }
 
-        reply.set_client_id(r.client_id());
-        reply.set_client_seq(r.client_seq());
-        reply.set_seq(r.seq());
+        // Extract client_id and client_seq from the batched replies
+        uint32_t clientId = 0;
+        uint32_t clientSeq = 0;
+        for (const CertEntry &entry : cert.cert_entries()) {
+            const BatchedReply &batchedReply = entry.batched_reply();
+            for (const Reply &r : batchedReply.replies()) {
+                if (r.client_id() == cert.client_id()) { // Assuming you have client_id in Cert
+                    clientId = r.client_id();
+                    clientSeq = r.client_seq();
+                    break;
+                }
+            }
+            if (clientId != 0) {
+                break;
+            }
+        }
+
+        if (clientId == 0) {
+            LOG(ERROR) << "Client ID not found in cert's batched replies";
+            return;
+        }
+
+        reply.set_client_id(clientId);
+        reply.set_client_seq(clientSeq);
+        reply.set_seq(seq);
 
         VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
                 << clientAddrs_[reply.client_id()].ip();
@@ -626,8 +732,18 @@ void Replica::handleReply(const dombft::proto::Reply &reply, std::span<byte> sig
             checkpointCert_->set_seq(std::get<2>(key));
 
             for (auto repId : matchingReplies[key]) {
-                checkpointCert_->add_signatures(checkpointReplySigs_[repId]);
-                (*checkpointCert_->add_replies()) = checkpointReplies_[repId];
+                // Create a new CertEntry
+                CertEntry* certEntry = checkpointCert_->add_cert_entries();
+
+                // Set the replica ID
+                certEntry->set_replica_id(repId);
+
+                // Set the BatchedReply
+                BatchedReply* batchedReply = certEntry->mutable_batched_reply();
+                batchedReply->set_replica_id(repId); // Set replica ID for BatchedReply
+
+                // Set the signature
+                certEntry->set_signature(checkpointReplySigs_[repId]);
             }
 
             VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
@@ -767,36 +883,114 @@ void Replica::broadcastToReplicas(const google::protobuf::Message &msg, MessageT
 bool Replica::verifyCert(const Cert &cert)
 {
     LOG(INFO) << "Verify cert triggered";
-    if (cert.replies().size() < 2 * f_ + 1) {
-        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
+    if (cert.cert_entries().size() < 2 * f_ + 1) {
+        LOG(INFO) << "Received cert of size " << cert.cert_entries().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
     }
 
-    if (cert.replies().size() != cert.signatures().size()) {
-        LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
-                  << "cert signatures size" << cert.signatures().size();
+    // if (cert.replies().size() != cert.signatures().size()) {
+    //     LOG(INFO) << "Cert replies size " << cert.replies().size() << " is not equal to "
+    //               << "cert signatures size" << cert.signatures().size();
+    //     return false;
+    // }
+
+    // TODO Peter: make the timeout compatible for this, specify explicitly somewhere the beginning and end of the batch to acoomodate timeout in batching 
+    // Determine the batch boundaries
+    uint32_t seq = cert.seq();
+    uint32_t batchEndSeq = ((seq - 1) / REPLY_BATCH_SIZE + 1) * REPLY_BATCH_SIZE;  // Calculate the end sequence number of the batch
+    uint32_t batchStartSeq = batchEndSeq - REPLY_BATCH_SIZE + 1;
+
+    // Retrieve the log entry corresponding to batchEndSeq
+    std::shared_ptr<::LogEntry> batchEndEntry = log_->getEntry(batchEndSeq);
+
+    if (!batchEndEntry) {
+        LOG(INFO) << "No log entry for batch end seq " << batchEndSeq << ", cannot verify cert";
         return false;
     }
+
+    bool allVerified = true;
 
     // TODO check cert instance
 
-    // Verify each signature in the cert
-    for (int i = 0; i < cert.replies().size(); i++) {
-        const Reply &reply = cert.replies()[i];
-        const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();
+    for (const CertEntry &entry : cert.cert_entries()) {
+        uint32_t replicaId = entry.replica_id();
+        const BatchedReply &batchedReply = entry.batched_reply();
+        const std::string &sig = entry.signature();
+
+        // Check if this replica's signature has already been verified for this batch
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            auto it = batchEndEntry->batchSignatures.find(replicaId);
+            if (it != batchEndEntry->batchSignatures.end() && it->second == sig) {
+                continue; // Signature already verified for this batch
+            } else {
+                LOG(INFO) << "[cert] Did not verify already. Verifying signature for replica " << replicaId;
+            }
+        }
+
+        // Serialize the BatchedReply
+        std::string serializedBatchedReply = batchedReply.SerializeAsString();
 
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                reply.replica_id()
-            )) {
-            LOG(INFO) << "Cert failed to verify!";
-            return false;
+                (byte *)(serializedBatchedReply.c_str()), serializedBatchedReply.size(),
+                (byte *)(sig.c_str()), sig.size(), "replica", replicaId)) {
+            LOG(INFO) << "Signature verification failed for replica " << replicaId;
+            allVerified = false;
+            break;
+        }
+
+        // Store the verified signature in the log entry
+        {
+            std::lock_guard<std::mutex> guard(replicaStateMutex_);
+            batchEndEntry->batchSignatures[replicaId] = sig;
         }
     }
 
+    if (!allVerified) {
+        LOG(INFO) << "Cert verification failed, not all entries are valid";
+        return false;
+    }
+
+
     // TOOD verify that cert actually contains matching replies...
     // And that there aren't signatures from the same replica.
+
+    // Additional checks for consistency in replies
+    std::set<uint32_t> replicaIds;
+    std::string expectedDigest = cert.cert_entries(0).batched_reply().replies(0).digest();
+
+    // Assume that the first entry's batched reply contains the expected digest
+    if (cert.cert_entries_size() > 0 && cert.cert_entries(0).batched_reply().replies_size() > 0) {
+        expectedDigest = cert.cert_entries(0).batched_reply().replies(0).digest();
+    } else {
+        LOG(INFO) << "Cert entries or batched replies are empty";
+        return false;
+    }
+
+    for (const CertEntry &entry : cert.cert_entries()) {
+        uint32_t replicaId = entry.replica_id();
+        const BatchedReply &batchedReply = entry.batched_reply();
+
+        if (replicaIds.count(replicaId) > 0) {
+            LOG(INFO) << "Duplicate entry from replica " << replicaId;
+            return false;
+        }
+        replicaIds.insert(replicaId);
+
+        // Check that the batched reply contains the expected digest for the client request
+        bool digestMatch = false;
+        for (const Reply &reply : batchedReply.replies()) {
+            if (reply.digest() == expectedDigest) {
+                digestMatch = true;
+                break;
+            }
+        }
+
+        if (!digestMatch) {
+            LOG(INFO) << "Mismatched digest in batched replies from replica " << replicaId;
+            return false;
+        }
+    }
 
     return true;
 }
