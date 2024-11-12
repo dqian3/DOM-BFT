@@ -62,6 +62,8 @@ struct TestLog {
     std::string logDigest;
 
     std::vector<TestLogEntry> entries;
+
+    uint32_t instanceNum = 5;
 };
 
 typedef std::vector<TestLog> TestHistory;
@@ -89,7 +91,15 @@ std::shared_ptr<Log> logFromTestLog(const TestLog &testLog)
 
         if (e.cert) {
             // TODO make this cert "real"
-            ret->addCert(ret->nextSeq - 1, dombft::proto::Cert());
+            dombft::proto::Cert cert;
+            cert.set_instance(testLog.instanceNum);
+            cert.set_seq(ret->nextSeq - 1);
+
+            auto &r = (*cert.add_replies());
+            r.set_client_id(e.c_id);
+            r.set_client_seq(e.c_seq);
+
+            ret->addCert(ret->nextSeq - 1, cert);
         }
     }
 
@@ -118,7 +128,8 @@ std::unique_ptr<dombft::proto::FallbackStart> suffixFromTestLog(const TestLog &t
 std::unique_ptr<dombft::proto::FallbackProposal> generateFallbackProposal(int f, TestHistory &history)
 {
     std::unique_ptr<dombft::proto::FallbackProposal> ret = std::make_unique<dombft::proto::FallbackProposal>();
-    ret->set_instance(0);
+    int instanceNum = 5;
+
     for (TestLog &t : history) {
         auto l = logFromTestLog(t);
 
@@ -130,7 +141,6 @@ std::unique_ptr<dombft::proto::FallbackProposal> generateFallbackProposal(int f,
         ret->add_signatures("");
     }
 
-    int instanceNum = 5;
     ret->set_instance(instanceNum);
     ret->set_replica_id(instanceNum % (3 * f + 1));
 
@@ -284,6 +294,31 @@ TEST(TestFallbackUtils, ApplyReplicaInserted)
 // TODO add case where checkpoitn is used
 
 /************************ Start end to end tests ************************/
+
+TEST(TestFallbackUtils, Cert)
+{
+    // Test
+    TestHistory hist;
+    TestLog curLog{10, "aaaa", {{1, 2}}};
+
+    hist.push_back(curLog);
+    hist.push_back(curLog);
+    // Logs with certs
+    hist.push_back({10, "aaaa", {{1, 3, true}, {2, 3, true}, {3, 3, true}}});
+    TestLog expectedLog{10, "aaaa", {{1, 3}, {2, 3}, {3, 3}, {1, 2}}};
+
+    auto proposal = generateFallbackProposal(1, hist);
+
+    // Test suffix
+    LogSuffix suffix;
+    getLogSuffixFromProposal(*proposal, suffix);
+    assertLogSuffixEq(suffix, expectedLog);
+
+    // Test apply
+    auto log = logFromTestLog(curLog);
+    applySuffixToLog(suffix, log);
+    assertLogEq(*log, expectedLog);
+}
 
 TEST(TestFallbackUtils, Catchup)
 {

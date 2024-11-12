@@ -577,8 +577,16 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
     LOG(INFO) << "Received fallback trigger from " << msg.client_id() << " for cseq=" << msg.client_seq()
               << " and instance=" << msg.instance();
 
-    // TODO if attached request has been executed in another view,
-    // send result back
+    // TODO if attached request has been executed in previous instance
+    // Ignore any messages not for your current instance
+    if (msg.instance() != instance_) {
+        return;
+    }
+
+    if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
+        LOG(INFO) << "Received fallback trigger again!";
+        return;
+    }
 
     if (msg.has_proof()) {
         // Proof is verified by verify thread

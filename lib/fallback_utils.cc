@@ -48,8 +48,8 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             // TODO verify cert
             // If the cert doesn't match the log, a bad log suffix could be injected
             if (entry.seq() > maxCertSeq) {
-                VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
-                        << " c_seq=" << entry.cert().replies()[0].client_seq();
+                // VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
+                //         << " c_seq=" << entry.cert().replies()[0].client_seq();
 
                 cert = &entry.cert();
                 logToUseIdx = i;
@@ -59,11 +59,12 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         }
     }
 
-    if (cert != nullptr)
+    if (cert != nullptr) {
         VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].client_id()
                 << " c_seq=" << cert->replies()[0].client_seq();
-    else
+    } else {
         VLOG(4) << "No certs found!";
+    }
 
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
@@ -75,12 +76,6 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
     // Counts of matching digests for each seq coming after max cert
     std::map<uint32_t, std::map<std::string, uint32_t>> matchingEntries;
-    // Track latest applied clientSequence number
-    // TODO we make some assumptions about client requests coming in order, which aren't ideal.
-    std::map<uint32_t, uint32_t> maxMatchClientSeq;
-
-    // TODO save this info in the checkpoint
-    std::map<uint32_t, std::map<uint32_t, const dombft::proto::LogEntry *>> clientReqs;
 
     // Find the common suffix after the max cert position
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
@@ -91,21 +86,18 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
                 continue;
 
             matchingEntries[entry.seq()][entry.digest()]++;
-            clientReqs[entry.client_id()][entry.client_seq()] = &entry;
 
             if (matchingEntries[entry.seq()][entry.digest()] == f + 1) {
                 VLOG(6) << "f + 1 matching digests found for seq=" << entry.seq() << " c_id=" << entry.client_id()
                         << " c_seq=" << entry.client_seq();
 
-                maxMatchClientSeq[entry.client_id()] =
-                    std::max(maxMatchClientSeq[entry.client_id()], entry.client_seq());
                 logToUseIdx = i;
                 logToUseSeq = entry.seq();
             }
         }
     }
 
-    VLOG(4) << "f + 1 matching digests found up from maxCertSeq=" << maxCertSeq << " seq=" << logToUseSeq;
+    VLOG(4) << "f + 1 matching digests found from maxCertSeq=" << maxCertSeq << " to seq=" << logToUseSeq;
 
     // Add entries with f + 1 entries
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
@@ -118,16 +110,33 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         logSuffix.entries.push_back(&entry);
     }
 
-    // Add rest of client requests in deterministic order lexicographically by (client_id, client_seq)
-    for (auto &[c_id, reqs] : clientReqs) {
-        for (auto &[c_seq, entry] : reqs) {
-            // Already matched and added
-            if (c_seq <= maxMatchClientSeq[c_id])
-                continue;
+    // Compute all client requests and which ones are already in suffix
+    // and add rest of client requests in deterministic order lexicographically by (client_id, client_seq)
 
-            logSuffix.entries.push_back(entry);
+    std::map<uint32_t, std::map<uint32_t, const dombft::proto::LogEntry *>> remainingClientReqs;
+
+    for (int i = 0; i < fallbackProposal.logs().size(); i++) {
+        auto &log = fallbackProposal.logs()[i];
+        // TODO verify each checkpoint
+        for (const dombft::proto::LogEntry &entry : log.log_entries()) {
+            remainingClientReqs[entry.client_id()][entry.client_seq()] = &entry;
         }
     }
+    // Remove all requests already in the log suffix
+    for (const auto &entry : logSuffix.entries) {
+        remainingClientReqs[entry->client_id()].erase(entry->client_seq());
+    }
+
+    uint32_t finalLogSeq = logToUseSeq;
+    for (auto &[c_id, reqs] : remainingClientReqs) {
+        for (auto &[c_seq, entry] : reqs) {
+            logSuffix.entries.push_back(entry);
+            finalLogSeq++;
+        }
+    }
+
+    VLOG(4) << "Rest of client requestes added from seq=" << logToUseSeq << " to seq=" << finalLogSeq;
+
     return true;
 }
 
