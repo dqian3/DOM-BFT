@@ -141,7 +141,7 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
     return 0;
 }
 
-std::vector<byte> SignatureProvider::getSignature(MessageHeader *hdr, byte *body)
+std::vector<byte> SignatureProvider::getSignature(MessageHeader *hdr)
 {
     byte *data = (byte *) (hdr + 1);
     return std::vector<byte>(data + hdr->msgLen, data + hdr->sigLen);
@@ -151,12 +151,12 @@ bool SignatureProvider::verify(
     byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId
 )
 {
-    if (!pubKeys_[pubKeyType].count(pubKeyId)) {
+    if (!pubKeys_.count(pubKeyType) || !pubKeys_.at(pubKeyType).count(pubKeyId)) {
         LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";
         return false;
     }
 
-    EVP_PKEY *key = pubKeys_[pubKeyType][pubKeyId];
+    EVP_PKEY *key = pubKeys_.at(pubKeyType).at(pubKeyId);
     EVP_MD_CTX *mdctx = NULL;
 
     /* Create the Message Digest Context */
@@ -198,7 +198,7 @@ bool SignatureProvider::verify(
     }
 }
 
-bool SignatureProvider::verify(MessageHeader *hdr, byte *body, const std::string &pubKeyType, int pubKeyId)
+bool SignatureProvider::verify(MessageHeader *hdr, const std::string &pubKeyType, int pubKeyId)
 {
     byte *data = (byte *) (hdr + 1);
     return verify(data, hdr->msgLen, data + hdr->msgLen, hdr->sigLen, pubKeyType, pubKeyId);

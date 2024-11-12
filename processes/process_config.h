@@ -55,7 +55,8 @@ struct ProcessConfig {
     int replicaFallbackStartTimeout;
     int replicaFallbackTimeout;
     std::string replicaKeysDir;
-    int replicaNumWorkerThreads;
+    int replicaNumSendThreads;
+    int replicaNumVerifyThreads;
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -167,7 +168,8 @@ struct ProcessConfig {
             replicaFallbackStartTimeout = parseField<int>(replicaNode, "fallbackStartTimeout");
             replicaFallbackTimeout = parseField<int>(replicaNode, "fallbackTimeout");
 
-            replicaNumWorkerThreads = parseField<int>(replicaNode, "numWorkerThreads");
+            replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads");
+            replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing replica " + std::string(e.what()));

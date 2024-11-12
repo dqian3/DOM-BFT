@@ -23,9 +23,9 @@ public:
     int appendSignature(MessageHeader *hdr, uint32_t bufLen);
 
     bool verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId);
-    bool verify(MessageHeader *hdr, byte *body, const std::string &pubKeyType, int pubKeyId);
+    bool verify(MessageHeader *hdr, const std::string &pubKeyType, int pubKeyId);
     // get signature as a byte vector (to be stored elsewhere) after receiving a message.
-    std::vector<byte> getSignature(MessageHeader *hdr, byte *body);
+    std::vector<byte> getSignature(MessageHeader *hdr);
 
     bool loadPrivateKey(const std::string &privateKeyPath);
 

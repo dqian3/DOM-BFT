@@ -106,7 +106,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     }
 
 #if FABRIC_CRYPTO
-    if (!sigProvider_.verify(hdr, body, "proxy", 0)) {
+    if (!sigProvider_.verify(hdr, "proxy", 0)) {
         LOG(INFO) << "Failed to verify proxy signature";
         return;
     }
@@ -265,7 +265,7 @@ void Receiver::verifyWorker()
                 return;
             }
 
-            bool verified = sigProvider_.verify(clientMsgHdr, clientBody, "client", request->clientId);
+            bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
 
             {
                 std::lock_guard<std::mutex> guard(deadlineQueueMtx_);

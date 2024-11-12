@@ -10,7 +10,6 @@
 
 // Own libraries
 #include "lib/common.h"
-#include "lib/message_type.h"
 #include "lib/signature_provider.h"
 #include "lib/transport/endpoint.h"
 #include "lib/transport/nng_endpoint.h"
