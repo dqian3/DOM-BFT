@@ -387,7 +387,7 @@ bool Client::updateInstance()
 
         myInstance_ = newInstance;
 
-        // TODO TODO this is really fragile doing it here for some reason, figure it out
+        // TODO this is really fragile doing it here for some reason, figure it out
         retryRequests();
         return true;
     }

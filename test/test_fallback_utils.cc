@@ -14,9 +14,10 @@ using namespace ::testing;
 // TODO Mock out signatures
 class MockSignatureProvider : public SignatureProvider {
 public:
-    MOCK_METHOD(bool, verify,
-                (byte * data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType,
-                 int pubKeyId));
+    MOCK_METHOD(
+        bool, verify,
+        (byte * data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId)
+    );
     MOCK_METHOD(bool, verify, (MessageHeader * hdr, byte *body, const std::string &pubKeyType, int pubKeyId));
 
     MockSignatureProvider()
@@ -303,7 +304,6 @@ TEST(TestFallbackUtils, Catchup)
     // Apply snapshot should be called
     MockApplication *mockApp = static_cast<MockApplication *>(behindLog->app_.get());
     EXPECT_CALL(*mockApp, applySnapshot(_)).Times(AtLeast(1));
-    EXPECT_CALL(*mockApp, abort(10)).WillOnce(Return(true));
 
     applySuffixToLog(suffix, behindLog);
 

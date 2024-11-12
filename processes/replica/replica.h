@@ -1,5 +1,6 @@
 #include "processes/process_config.h"
 
+#include "lib/checkpoint_collector.h"
 #include "lib/common.h"
 #include "lib/fallback_utils.h"
 #include "lib/log.h"
@@ -49,20 +50,10 @@ private:
     uint32_t instance_ = 0;
     std::shared_ptr<Log> log_;
     ClientRecords clientRecords_;
-
-    // State for commit/checkpoint protocol
-    // TODO move this somewhere else?
-    // TODO this assumes non-overlapping checkpoint protocol
-    uint32_t checkpointSeq_ = 0;
-    std::map<int, dombft::proto::Reply> checkpointReplies_;
-    std::map<int, std::string> checkpointReplySigs_;
-    std::optional<dombft::proto::Cert> checkpointCert_;
     ClientRecords checkpointClientRecords_;
-    ClientRecords intermediateCheckpointClientRecords_;
-
-    std::map<uint32_t, dombft::proto::Commit> checkpointCommits_;
-    std::map<uint32_t, std::string> checkpointCommitSigs_;
-
+    // State for commit/checkpoint protocol
+    // checkpoint seq -> CheckpointCollector
+    CheckpointCollectors checkpointCollectors_;
     // State for fallback
     bool fallback_ = false;
     uint32_t fallbackTriggerSeq_ = 0;

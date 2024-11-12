@@ -1,5 +1,20 @@
 #include "client_record.h"
 namespace dombft {
+
+bool ClientRecord::updateRecordWithSeq(uint32_t newSeq)
+{
+    if (lastSeq_ < newSeq) {
+        for (uint32_t i = lastSeq_ + 1; i < newSeq; i++)
+            missedSeqs_.insert(i);
+        lastSeq_ = newSeq;
+    } else if (missedSeqs_.contains(newSeq)) {
+        missedSeqs_.erase(newSeq);
+    } else {
+        return false;
+    }
+    return true;
+}
+
 void getClientRecordsFromProto(const CheckpointClientRecordsSet &recordsSet, ClientRecords &dst)
 {
     for (const auto &cliRecord : recordsSet.records()) {
@@ -9,20 +24,6 @@ void getClientRecordsFromProto(const CheckpointClientRecordsSet &recordsSet, Cli
         for (const auto &s : cliRecord.missed_seqs())
             dst[cliId].missedSeqs_.insert(s);
     }
-}
-
-bool updateRecordWithSeq(ClientRecord &cliRecord, uint32_t newSeq)
-{
-    if (cliRecord.lastSeq_ < newSeq) {
-        for (uint32_t i = cliRecord.lastSeq_ + 1; i < newSeq; i++)
-            cliRecord.missedSeqs_.insert(i);
-        cliRecord.lastSeq_ = newSeq;
-    } else if (cliRecord.missedSeqs_.contains(newSeq)) {
-        cliRecord.missedSeqs_.erase(newSeq);
-    } else {
-        return false;
-    }
-    return true;
 }
 
 void getRecordsDigest(const ClientRecords &records, byte *digest)
@@ -39,6 +40,7 @@ void getRecordsDigest(const ClientRecords &records, byte *digest)
         SHA256_Update(&ctx, &cliRecord.instance_, sizeof(cliRecord.instance_));
         SHA256_Update(&ctx, &cliRecord.lastSeq_, sizeof(cliRecord.lastSeq_));
         std::vector<int> sortedSeqs(cliRecord.missedSeqs_.begin(), cliRecord.missedSeqs_.end());
+        std::sort(sortedSeqs.begin(), sortedSeqs.end());
         for (const auto &s : sortedSeqs)
             SHA256_Update(&ctx, &s, sizeof(s));
     }

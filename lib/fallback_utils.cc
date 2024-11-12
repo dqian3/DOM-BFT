@@ -162,25 +162,22 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
                   << " digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
     }
 
-    uint32_t seq = checkpoint->seq();
+    uint32_t seq = checkpoint->seq() + 1;
     uint32_t idx = 0;
     dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
     // skip the entries that are already in the log
-    for (; idx < logSuffix.entries.size(); idx++) {
-        seq++;   // First sequence to apply is right after checkpoint
-        assert(seq < log->nextSeq);
+    // First sequence to apply is right after checkpoint
+    for (; idx < logSuffix.entries.size() && seq < log->nextSeq; idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
-
         std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
         std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
-        // mismatch found, rollback
+
         if (myDigest != entry->digest()) {
-            log->nextSeq = seq;
             log->app_->abort(seq - 1);
             break;
         }
 
-        if (updateRecordWithSeq(clientRecords[entry->client_id()], entry->client_seq())) {
+        if (clientRecords[entry->client_id()].updateRecordWithSeq(entry->client_seq())) {
             // TODO this is not ideal; we will reppeat client ops, but replicas will still be
             // consistent.
             LOG(WARNING) << "Skipped entry seq=" << seq << " c_id=" << entry->client_id()
@@ -188,8 +185,9 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
         }
         VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                 << " since already in log at seq=" << seq;
+        seq++;
     }
-
+    log->nextSeq = seq;
     for (; idx < logSuffix.entries.size(); idx++) {
         assert(seq == log->nextSeq);
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
@@ -200,7 +198,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             LOG(INFO) << "nextSeq=" << log->nextSeq << " too far ahead of commitPoint.seq=" << log->checkpoint.seq;
             break;
         }
-        if (!updateRecordWithSeq(clientRecords[clientId], clientSeq)) {
+        if (!clientRecords[entry->client_id()].updateRecordWithSeq(clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                       << " due to duplication in applying suffix!";
             continue;
