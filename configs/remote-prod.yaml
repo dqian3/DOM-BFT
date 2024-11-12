@@ -31,6 +31,7 @@ proxy:
   - 10.142.0.5
   - 10.202.0.4
   keysDir: keys/proxy
+  shards: 1 
   maxOwd: 100000
   measurementPort: 32000
 
