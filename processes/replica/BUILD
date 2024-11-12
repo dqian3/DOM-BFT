@@ -11,6 +11,7 @@ cc_library(
         "//lib:common",
         "//lib:log",
         "//lib:cert_collector",
+        "//lib:checkpoint_collector",
         "//lib:fallback_utils",
         "//lib:threadpool",
         "//processes:process_config",
