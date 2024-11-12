@@ -177,7 +177,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             break;
         }
         // the skipped entries cannot be duplicates
-        assert(updateRecordWithSeq(clientRecords[entry->client_id()], entry->client_seq()));
+        assert(clientRecords[entry->client_id()].updateRecordWithSeq(entry->client_seq()));
         VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                 << " since already in log at seq=" << seq;
         seq++;
@@ -193,7 +193,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             LOG(INFO) << "nextSeq=" << log->nextSeq << " too far ahead of commitPoint.seq=" << log->checkpoint.seq;
             break;
         }
-        if (!updateRecordWithSeq(clientRecords[clientId], clientSeq)) {
+        if (!clientRecords[entry->client_id()].updateRecordWithSeq(clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                       << " due to duplication in applying suffix!";
             continue;
