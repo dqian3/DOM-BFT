@@ -184,7 +184,7 @@ def gcloud_vm(c, config_file="../configs/remote-prod.yaml", stop=False):
         h.join()
     
     print(f"{'Stopped' if stop else 'Started'} all instances!")
-
+    time.sleep(3) # Give time for ssh daemons to start for other tasks
 
 
 @task
@@ -195,7 +195,7 @@ def gcloud_clockwork(c, config_file="../configs/remote-prod.yaml", install=False
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     ext_ips = get_gcloud_ext_ips(c)
-    int_ips = config["proxy"]["ips"] + config["receiver"]["ips"]
+    int_ips =  config["receiver"]["ips"] + config["proxy"]["ips"]
 
     # Only need to do this on proxies and receivers
     group = ThreadingGroup(

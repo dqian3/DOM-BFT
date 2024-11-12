@@ -114,7 +114,7 @@ private:
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 
     void submitRequest();
-    void submitRequestBurst(uint32_t numToSend);   // For sending in open loop.
+    void submitRequestsOpenLoop();   // For sending in open loop.
 
     void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);

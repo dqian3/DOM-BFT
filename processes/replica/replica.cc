@@ -234,6 +234,11 @@ void Replica::verifyMessagesThd()
         else if (hdr->msgType == FALLBACK_TRIGGER) {
             FallbackTrigger fallbackTriggerMsg;
 
+            if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse COMMIT message";
+                continue;
+            }
+
             if (!sigProvider_.verify(hdr, "client", fallbackTriggerMsg.client_id())) {
                 LOG(INFO) << "Failed to verify client signature from " << fallbackTriggerMsg.client_id();
                 continue;
@@ -652,7 +657,6 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
 
 bool Replica::verifyCert(const Cert &cert)
 {
-    LOG(INFO) << "Verify cert triggered";
     if (cert.replies().size() < 2 * f_ + 1) {
         LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
@@ -663,8 +667,6 @@ bool Replica::verifyCert(const Cert &cert)
                   << "cert signatures size" << cert.signatures().size();
         return false;
     }
-
-    // TODO check cert instance
 
     // Verify each signature in the cert
     for (int i = 0; i < cert.replies().size(); i++) {
