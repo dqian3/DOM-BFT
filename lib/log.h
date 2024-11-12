@@ -91,7 +91,7 @@ struct Log {
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
     void commit(uint32_t seq);
 
-    void addCert(uint32_t seq, const dombft::proto::Cert &cert);
+    bool addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
     const byte *getDigest() const;
     const byte *getDigest(uint32_t seq) const;

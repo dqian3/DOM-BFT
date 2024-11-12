@@ -320,6 +320,30 @@ TEST(TestFallbackUtils, Cert)
     assertLogEq(*log, expectedLog);
 }
 
+TEST(TestFallbackUtils, Cert2)
+{
+    // Test
+    TestHistory hist;
+    TestLog curLog{10, "aaaa", {{1, 2}, {2, 2}, {4, 2}, {3, 2}}};
+
+    hist.push_back(curLog);
+    hist.push_back(curLog);
+    // Logs with certs
+    hist.push_back({10, "aaaa", {{1, 2}, {2, 2}, {3, 2, true}}});
+    TestLog expectedLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+
+    auto proposal = generateFallbackProposal(1, hist);
+
+    // Test suffix
+    LogSuffix suffix;
+    getLogSuffixFromProposal(*proposal, suffix);
+
+    // Test apply
+    auto log = logFromTestLog(curLog);
+    applySuffixToLog(suffix, log);
+    assertLogEq(*log, expectedLog);
+}
+
 TEST(TestFallbackUtils, Catchup)
 {
     // Test

@@ -53,7 +53,6 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
                 cert = &entry.cert();
                 logToUseIdx = i;
-                logToUseSeq = entry.seq();
                 maxCertSeq = entry.seq();
             }
         }
@@ -68,7 +67,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
-        if (entry.seq() > logToUseSeq)
+        if (entry.seq() > maxCertSeq)
             break;
 
         logSuffix.entries.push_back(&entry);
@@ -186,11 +185,12 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             break;
         }
 
-        if (clientRecords[entry->client_id()].updateRecordWithSeq(entry->client_seq())) {
+        if (!clientRecords[entry->client_id()].updateRecordWithSeq(entry->client_seq())) {
             // TODO this is not ideal; we will reppeat client ops, but replicas will still be
             // consistent.
-            LOG(WARNING) << "Skipped entry seq=" << seq << " c_id=" << entry->client_id()
-                         << " c_seq=" << entry->client_seq() << " a duplicate!";
+            VLOG(4) << "Skipped entry seq=" << seq << " c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
+                    << " because it is a duplicate!";
+            continue;
         }
         VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                 << " since already in log at seq=" << seq;

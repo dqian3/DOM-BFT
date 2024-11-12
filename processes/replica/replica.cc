@@ -208,7 +208,7 @@ void Replica::verifyMessagesThd()
             }
 
             if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
-                LOG(INFO) << "Failed to verify replica signature f!";
+                LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
 
@@ -235,7 +235,7 @@ void Replica::verifyMessagesThd()
             FallbackTrigger fallbackTriggerMsg;
 
             if (!sigProvider_.verify(hdr, "client", fallbackTriggerMsg.client_id())) {
-                LOG(INFO) << "Failed to verify client signature!";
+                LOG(INFO) << "Failed to verify client signature from " << fallbackTriggerMsg.client_id();
                 continue;
             }
 
@@ -470,7 +470,10 @@ void Replica::processCert(const Cert &cert)
         return;
     }
 
-    log_->addCert(r.seq(), cert);
+    if (!log_->addCert(cert.seq(), cert)) {
+        // If we don't have the matching operation, return false so we don't falsely ack
+        return;
+    }
 
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);

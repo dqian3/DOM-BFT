@@ -96,9 +96,15 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     return true;
 }
 
-void Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
+bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 {
+    const dombft::proto::Reply &r = cert.replies()[0];
+    if (r.client_id() != getEntry(seq)->client_id || r.client_seq() != getEntry(seq)->client_seq) {
+        return false;
+    }
+
     certs[seq] = std::make_shared<dombft::proto::Cert>(cert);
+    return true;
 }
 
 const byte *Log::getDigest() const
