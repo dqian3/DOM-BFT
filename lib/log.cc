@@ -98,8 +98,16 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 
 bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 {
+    if (!inRange(seq)) {
+        VLOG(5) << "Fail adding cert because out of range!";
+        return false;
+    }
+
+    auto entry = getEntry(seq);   // will not be nullptr because range is checked above
     const dombft::proto::Reply &r = cert.replies()[0];
-    if (r.client_id() != getEntry(seq)->client_id || r.client_seq() != getEntry(seq)->client_seq) {
+
+    if (r.client_id() != entry->client_id || r.client_seq() != entry->client_seq) {
+        VLOG(5) << "Fail adding cert because mismatching request!";
         return false;
     }
 
