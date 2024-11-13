@@ -4,18 +4,18 @@
 #include "lib/transport/endpoint.h"
 
 struct TCPMessageHandler {
-    byte recvBuffer_[TCP_BUFFER_SIZE];
 
     int fd_;
     MessageHandlerFunc handlerFunc_;
     Address other_;
+    byte *recvBuffer_;
     struct ev_io *evWatcher_;
 
     // Offset in reading current message
     uint32_t offset_ = 0;
     uint32_t remaining_ = 0;
 
-    TCPMessageHandler(int fd, const Address &other, MessageHandlerFunc msghdl);
+    TCPMessageHandler(int fd, const Address &other, MessageHandlerFunc msghdl, byte *buffer);
 
     ~TCPMessageHandler();
 };
@@ -24,11 +24,11 @@ class TCPEndpoint : public Endpoint {
 protected:
     /** The socket fd it uses to listen for connections */
     int listenFd_;
-    /* data */
 
+    byte recvBuffer_[TCP_BUFFER_SIZE];
     MessageHandlerFunc handlerFunc_;
     std::unordered_map<int, TCPMessageHandler> msgHandlers_;
-    std::unordered_map<Address, int> addressToSock_;
+    std::unordered_map<Address, int> addressToSendSock_;
 
 public:
     TCPEndpoint(
@@ -36,9 +36,11 @@ public:
         const std::optional<Address> &loopbackAddr = std::nullopt
     );
     ~TCPEndpoint();
+
+    void connectToAddrs(const std::vector<Address> &addrs);
+
     // Sends message in buffer
     virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr) override;
-
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
 };
 

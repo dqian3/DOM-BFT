@@ -85,14 +85,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
-        if (config.transport == "tcp") {
-            endpoint_ = std::make_unique<TCPEndpoint>(bindAddress, replicaPort, true);
-        } else if (config.transport == "udp") {
-            endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
-        } else {
-            LOG(ERROR) << "Invalid transport " << config.transport;
-            exit(1);
-        }
 
         /** Store all replica addrs */
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
@@ -104,6 +96,19 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         /** Store all client addrs */
         for (uint32_t i = 0; i < config.clientIps.size(); i++) {
             clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
+        }
+
+        if (config.transport == "tcp") {
+            auto ep = std::make_unique<TCPEndpoint>(bindAddress, replicaPort, true);
+            ep->connectToAddrs(replicaAddrs_);
+            ep->connectToAddrs({receiverAddr_});
+            ep->connectToAddrs(clientAddrs_);
+            endpoint_ = std::move(ep);
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
         }
     }
 

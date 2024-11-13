@@ -62,9 +62,6 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
-        for (size_t i = 0; i < addrPairs.size(); i++) {
-        }
-
         size_t nReplicas = config.replicaIps.size();
         for (size_t i = 0; i < nReplicas; i++)
             replicaAddrs_.push_back(addrPairs[i].second);
@@ -72,15 +69,6 @@ Client::Client(const ProcessConfig &config, size_t id)
         for (size_t i = nReplicas; i < addrPairs.size(); i++)
             proxyAddrs_.push_back(addrPairs[i].second);
     } else {
-        if (config.transport == "tcp") {
-            endpoint_ = std::make_unique<TCPEndpoint>(clientIp, clientPort, true);
-        } else if (config.transport == "udp") {
-            endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
-        } else {
-            LOG(ERROR) << "Invalid transport " << config.transport;
-            exit(1);
-        }
-
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
             LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
@@ -90,6 +78,19 @@ Client::Client(const ProcessConfig &config, size_t id)
         /** Store all replica addrs */
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        if (config.transport == "tcp") {
+            auto ep = std::make_unique<TCPEndpoint>(clientIp, clientPort, true);
+            ep->connectToAddrs(replicaAddrs_);
+            ep->connectToAddrs(proxyAddrs_);
+            endpoint_ = std::move(ep);
+
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
         }
     }
 

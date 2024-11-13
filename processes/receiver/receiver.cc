@@ -49,17 +49,20 @@ Receiver::Receiver(
         replicaAddr_ = addrPairs.back().second;
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
     } else {
+        replicaAddr_ =
+            (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
+
         if (config.transport == "tcp") {
-            endpoint_ = std::make_unique<TCPEndpoint>(receiverIp, receiverPort, true);
+            auto ep = std::make_unique<TCPEndpoint>(receiverIp, receiverPort, true);
+            ep->connectToAddrs({replicaAddr_});
+            endpoint_ = std::move(ep);
+
         } else if (config.transport == "udp") {
             endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
         } else {
             LOG(ERROR) << "Invalid transport " << config.transport;
             exit(1);
         }
-
-        replicaAddr_ =
-            (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
     }
 
     fwdTimer_ =
