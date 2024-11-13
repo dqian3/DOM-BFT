@@ -1,6 +1,7 @@
 #include "receiver.h"
 
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -48,9 +49,17 @@ Receiver::Receiver(
         replicaAddr_ = addrPairs.back().second;
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
     } else {
+        if (config.transport == "tcp") {
+            endpoint_ = std::make_unique<TCPEndpoint>(receiverIp, receiverPort, true);
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
+        }
+
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
-        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
     }
 
     fwdTimer_ =

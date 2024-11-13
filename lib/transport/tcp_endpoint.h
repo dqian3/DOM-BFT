@@ -1,12 +1,13 @@
-#ifndef UDP_ENDPOINT_H
-#define UDP_ENDPOINT_H
+#ifndef TCP_ENDPOINT_H
+#define TCP_ENDPOINT_H
 
 #include "lib/transport/endpoint.h"
 
 struct TCPMessageHandler {
     byte recvBuffer_[TCP_BUFFER_SIZE];
-    MessageHandlerFunc handlerFunc_;
+
     int fd_;
+    MessageHandlerFunc handlerFunc_;
     Address other_;
     struct ev_io *evWatcher_;
 

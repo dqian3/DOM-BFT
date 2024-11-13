@@ -1,6 +1,9 @@
 #include "proxy.h"
 
+#include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
 
 namespace dombft {
 using namespace dombft::proto;
@@ -49,13 +52,29 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         }
 
     } else {
-        for (int i = 0; i < numShards_; i++) {
-            forwardEps_.push_back(
-                std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
-            );
+        if (config.transport != "tcp" || config.transport == "udp") {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
         }
 
-        measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+        for (int i = 0; i < numShards_; i++) {
+            std::unique_ptr<Endpoint> ep;
+            if (config.transport == "tcp") {
+                forwardEps_.push_back(
+                    std::make_unique<TCPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
+                );
+            } else {
+                forwardEps_.push_back(
+                    std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
+                );
+            }
+        }
+
+        if (config.transport == "tcp") {
+            measurementEp_ = std::make_unique<TCPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+        } else {
+            measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+        }
 
         for (int i = 0; i < numReceivers_; i++) {
             std::string receiverIp = config.receiverIps[i];

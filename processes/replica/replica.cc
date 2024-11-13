@@ -4,6 +4,7 @@
 #include "lib/apps/counter.h"
 #include "lib/common.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -84,7 +85,14 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
-        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+        if (config.transport == "tcp") {
+            endpoint_ = std::make_unique<TCPEndpoint>(bindAddress, replicaPort, true);
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
+        }
 
         /** Store all replica addrs */
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {

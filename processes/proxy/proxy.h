@@ -12,8 +12,6 @@
 #include "lib/common.h"
 #include "lib/signature_provider.h"
 #include "lib/transport/endpoint.h"
-#include "lib/transport/nng_endpoint.h"
-#include "lib/transport/udp_endpoint.h"
 #include "lib/utils.h"
 #include "processes/config_util.h"
 

@@ -2,6 +2,7 @@
 
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -71,7 +72,14 @@ Client::Client(const ProcessConfig &config, size_t id)
         for (size_t i = nReplicas; i < addrPairs.size(); i++)
             proxyAddrs_.push_back(addrPairs[i].second);
     } else {
-        endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
+        if (config.transport == "tcp") {
+            endpoint_ = std::make_unique<TCPEndpoint>(clientIp, clientPort, true);
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
+        }
 
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
