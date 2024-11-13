@@ -594,7 +594,9 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
     if (msg.has_proof()) {
         // Proof is verified by verify thread
         LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
-        broadcastToReplicas(msg, FALLBACK_TRIGGER);
+
+        // TODO we need to broadcast this with the original signature
+        // broadcastToReplicas(msg, FALLBACK_TRIGGER);
         startFallback();
     } else {
         endpoint_->RegisterTimer(fallbackStartTimer_.get());
