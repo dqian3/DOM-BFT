@@ -1,16 +1,20 @@
 #include "lib/transport/tcp_endpoint.h"
 #include <list>
 
-TCPMessageHandler::TCPMessageHandler(int fd, const Address &other, MessageHandlerFunc msghdl, byte *buffer)
-    : fd_(fd)
+TCPMessageHandler::TCPMessageHandler(
+    struct ev_loop *evLoop, int fd, const Address &other, MessageHandlerFunc msghdl, byte *buffer
+)
+    : evLoop_(evLoop)
+    , fd_(fd)
     , handlerFunc_(msghdl)
     , other_(other)
     , recvBuffer_(buffer)
-{
-    evWatcher_ = new ev_io();
-    evWatcher_->data = (void *) this;
+    , evWatcher_()
 
-    ev_init(evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents) {
+{
+    evWatcher_.data = (void *) this;
+
+    ev_init(&evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents) {
         TCPMessageHandler *m = (TCPMessageHandler *) (w->data);
 
         LOG(INFO) << "MessageHandler called for message from " << m->other_;
@@ -21,35 +25,38 @@ TCPMessageHandler::TCPMessageHandler(int fd, const Address &other, MessageHandle
                 MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
                 m->offset_ = ret;
                 m->remaining_ = msgHeader->msgLen + msgHeader->sigLen;
-            } else {
+            } else if (ret == 0) {
+                // Disconnet
+            } else
                 LOG(WARNING) << "recv error";
-                return;
-            }
-        } else {
-            int ret = recv(m->fd_, m->recvBuffer_ + m->offset_, m->remaining_, 0);
-
-            if (ret < 0) {
-                LOG(WARNING) << "recv error";
-                return;
-            }
-
-            m->offset_ += ret;
-            m->remaining_ -= ret;
-
-            // Complete message received
-            if (m->remaining_ == 0) {
-                MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
-
-                assert(m->offset_ == sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen);
-                m->handlerFunc_(msgHeader, m->other_);
-
-                // Ready to receive next message
-                m->offset_ = 0;
-            }
+            return;
         }
-    });
+        } else {
+        int ret = recv(m->fd_, m->recvBuffer_ + m->offset_, m->remaining_, 0);
 
-    ev_io_set(evWatcher_, fd_, EV_READ);
+        if (ret < 0) {
+            LOG(WARNING) << "recv error";
+            return;
+        }
+
+        m->offset_ += ret;
+        m->remaining_ -= ret;
+
+        // Complete message received
+        if (m->remaining_ == 0) {
+            MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
+
+            assert(m->offset_ == sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen);
+            m->handlerFunc_(msgHeader, m->other_);
+
+            // Ready to receive next message
+            m->offset_ = 0;
+        }
+        }
+});
+
+ev_io_set(&evWatcher_, fd_, EV_READ);
+ev_io_start(evLoop_, &evWatcher_);
 }
 
 TCPMessageHandler::~TCPMessageHandler() {}
@@ -130,7 +137,7 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
             }
         }
 
-        // ev_timer_stop(loop, w);
+        ev_timer_stop(loop, w);
 
         ev_io_set(&helper->connectWatcher_, fd, EV_WRITE);
         ev_io_start(loop, &helper->connectWatcher_);
@@ -197,8 +204,9 @@ TCPEndpoint::TCPEndpoint(
         LOG(INFO) << "Accept connection from " << otherAddr;
 
         endpoint->msgHandlers_.emplace(
-            clientFd,
-            std::make_unique<TCPMessageHandler>(clientFd, otherAddr, endpoint->handlerFunc_, endpoint->recvBuffer_)
+            clientFd, std::make_unique<TCPMessageHandler>(
+                          endpoint->evLoop_, clientFd, otherAddr, endpoint->handlerFunc_, endpoint->recvBuffer_
+                      )
         );
     });
 

@@ -4,18 +4,18 @@
 #include "lib/transport/endpoint.h"
 
 struct TCPMessageHandler {
-
+    struct ev_loop *evLoop_;
     int fd_;
     MessageHandlerFunc handlerFunc_;
     Address other_;
     byte *recvBuffer_;
-    struct ev_io *evWatcher_;
+    struct ev_io evWatcher_;
 
     // Offset in reading current message
     uint32_t offset_ = 0;
     uint32_t remaining_ = 0;
 
-    TCPMessageHandler(int fd, const Address &other, MessageHandlerFunc msghdl, byte *buffer);
+    TCPMessageHandler(struct ev_loop *evLoop, int fd, const Address &other, MessageHandlerFunc msghdl, byte *buffer);
 
     ~TCPMessageHandler();
 };
