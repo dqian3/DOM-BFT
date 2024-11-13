@@ -56,7 +56,7 @@ TCPMessageHandler::~TCPMessageHandler() {}
 
 int non_blocking_socket()
 {
-    int ret = socket(PF_INET, SOCK_STREAM, 0);
+    int ret = socket(AF_INET, SOCK_STREAM, 0);
     if (ret < 0) {
         LOG(ERROR) << "socket() failed ";
         exit(1);
@@ -94,9 +94,6 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
             // Other side is not up yet, retry upon timeout
             close(w->fd);
             ev_timer_again(loop, &helper->retryWatcher_);
-
-            LOG(ERROR) << "Retrying connection for " << helper->connectAddr_ << "\n";
-
             return;
         } else if (so_error != 0) {
             LOG(ERROR) << "Connection failed: " << strerror(so_error) << "\n";
@@ -123,6 +120,7 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
         int fd = non_blocking_socket();
         TCPConnectHelper *helper = reinterpret_cast<TCPConnectHelper *>(w->data);
 
+        LOG(INFO) << "Attempting to connect to " << helper->connectAddr_;
         if (connect(fd, (struct sockaddr *) &helper->connectAddr_.addr_, sizeof(sockaddr_in)) < 0) {
             // expect EINProgress because our sockets are non blocking
             if (errno != EINPROGRESS) {
@@ -132,7 +130,8 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
             }
         }
 
-        ev_timer_stop(loop, w);
+        // ev_timer_stop(loop, w);
+
         ev_io_set(&helper->connectWatcher_, fd, EV_WRITE);
         ev_io_start(loop, &helper->connectWatcher_);
     });
@@ -175,6 +174,7 @@ TCPEndpoint::TCPEndpoint(
     ev_init(&acceptWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents) {
         TCPEndpoint *endpoint = (TCPEndpoint *) w->data;
         struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
         socklen_t addrLen = sizeof(addr);
 
         LOG(INFO) << "Accept handler called";
@@ -192,12 +192,13 @@ TCPEndpoint::TCPEndpoint(
         }
 
         // Setup handler and state
-        Address otherAddr(addr);
+        Address otherAddr(&addr);
 
         LOG(INFO) << "Accept connection from " << otherAddr;
 
         endpoint->msgHandlers_.emplace(
-            clientFd, TCPMessageHandler(clientFd, otherAddr, endpoint->handlerFunc_, endpoint->recvBuffer_)
+            clientFd,
+            std::make_unique<TCPMessageHandler>(clientFd, otherAddr, endpoint->handlerFunc_, endpoint->recvBuffer_)
         );
     });
 
@@ -250,9 +251,9 @@ void TCPEndpoint::connectToAddrs(const std::vector<Address> &addrs)
     LOG(INFO) << "Done connection loop";
 
     // Register addresses to their sockets
-    for (auto &h : connectHelpers) {
+    for (const auto &h : connectHelpers) {
         addressToSendSock_[h->connectAddr_] = h->fd;
-        // LOG(INFO) << h.fd << " -> " << h.connectAddr_;
+        LOG(INFO) << h->fd << " -> " << h->connectAddr_;
     }
 
     // Continue to accept connections in main loop
@@ -287,7 +288,7 @@ bool TCPEndpoint::RegisterMsgHandler(MessageHandlerFunc hdl)
         LOG(WARNING) << "Note, registering Message Handler after some connections have been made!";
 
         for (auto &hdlr : msgHandlers_) {
-            hdlr.second.handlerFunc_ = hdl;
+            hdlr.second->handlerFunc_ = hdl;
         }
     }
     handlerFunc_ = hdl;

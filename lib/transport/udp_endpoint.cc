@@ -16,7 +16,7 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl)
         if (msgLen > 0 && (uint32_t) msgLen > sizeof(MessageHeader)) {
             MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
             if ((uint32_t) msgLen >= sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen) {
-                m->msgHandler_(msgHeader, Address(sockAddr));
+                m->msgHandler_(msgHeader, Address(&sockAddr));
             }
         }
     });

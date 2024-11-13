@@ -17,10 +17,14 @@ Address::Address(const std::string &ip, const int port)
     addr_.sin_addr.s_addr = inet_addr(ip.c_str());
 }
 
-Address::Address(struct sockaddr_in addr)
+Address::Address(struct sockaddr_in *addr)
 {
-    ip_ = inet_ntoa(addr_.sin_addr);
-    port_ = htons(addr_.sin_port);
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr->sin_addr, client_ip, sizeof(client_ip));
+
+    ip_ = std::string(client_ip);
+    port_ = ntohs(addr->sin_port);
+
     memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
 }
 

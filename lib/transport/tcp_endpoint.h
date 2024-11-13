@@ -45,7 +45,7 @@ protected:
 
     byte recvBuffer_[TCP_BUFFER_SIZE];
     MessageHandlerFunc handlerFunc_;
-    std::unordered_map<int, TCPMessageHandler> msgHandlers_;
+    std::unordered_map<int, std::unique_ptr<TCPMessageHandler>> msgHandlers_;
     std::unordered_map<Address, int> addressToSendSock_;
 
 public:

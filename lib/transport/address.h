@@ -35,7 +35,7 @@ public:
     {
         memcpy(&addr_, &(other.addr_), sizeof(struct sockaddr_in));
     }
-    Address(struct sockaddr_in addr);
+    Address(struct sockaddr_in *addr);
     Address(const std::string &ip, const int port);
     ~Address();
 
