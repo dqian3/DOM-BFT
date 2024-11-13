@@ -8,9 +8,10 @@
 
 /**
  * MessageHeader* describes the type and length of the received message
- * byte* is the payload of the message
- * Address* is the address of the sender TODO this should probably not be a ptr
+ *      It is followed immediately by the payload/body of the message
+ *      TODO is enforce this with some sort of slice instead of a raw ptr
+ * Address* is the address of the sender
  */
-typedef std::function<void(MessageHeader *, byte *, Address *)> MessageHandlerFunc;
+typedef std::function<void(MessageHeader *, const Address &)> MessageHandlerFunc;
 
 #endif

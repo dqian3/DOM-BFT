@@ -51,7 +51,7 @@ private:
     std::vector<std::thread> verifyThds_;
 
     /** The actual message / timeout handlers */
-    void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void receiveRequest(MessageHeader *hdr, const Address &sender);
 
     void checkDeadlines();
     void forwardRequest(const dombft::proto::DOMRequest &request);

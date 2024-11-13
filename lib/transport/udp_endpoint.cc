@@ -13,12 +13,10 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl)
 
         int msgLen = recvfrom(w->fd, m->recvBuffer_, UDP_BUFFER_SIZE, 0, (struct sockaddr *) &sockAddr, &sockAddrLen);
 
-        m->sender_ = Address(sockAddr);
-
         if (msgLen > 0 && (uint32_t) msgLen > sizeof(MessageHeader)) {
             MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
             if ((uint32_t) msgLen >= sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen) {
-                m->msgHandler_(msgHeader, m->recvBuffer_ + sizeof(MessageHeader), &m->sender_);
+                m->msgHandler_(msgHeader, Address(sockAddr));
             }
         }
     });

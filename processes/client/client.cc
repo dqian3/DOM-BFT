@@ -132,14 +132,14 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     MessageHandlerFunc replyHandler =
-        [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+        [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, const Address &sender) {
             if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
                 LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
                 // TODO print some stats
                 exit(0);
             }
 
-            this->handleMessage(msgHdr, msgBuffer, sender);
+            this->handleMessage(msgHdr, sender);
 
             if (sendMode_ == dombft::RateBased) {
                 submitRequestsOpenLoop();
@@ -395,8 +395,9 @@ bool Client::updateInstance()
     return false;
 }
 
-void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
+void Client::handleMessage(MessageHeader *hdr, const Address &sender)
 {
+    byte *body = (byte *) (hdr + 1);
     if (hdr->msgLen < 0) {
         return;
     }
@@ -427,7 +428,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         CertReply certReply;
 
         if (!certReply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CERT_REPLY message from " << *sender;
+            LOG(ERROR) << "Unable to parse CERT_REPLY message from " << sender;
             return;
         }
 

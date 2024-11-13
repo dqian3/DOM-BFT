@@ -58,8 +58,8 @@ Receiver::Receiver(
 
     ev_set_priority(fwdTimer_->evTimer_, EV_MAXPRI);
     endpoint_->RegisterTimer(fwdTimer_.get());
-    endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->receiveRequest(msgHdr, msgBuffer, sender);
+    endpoint_->RegisterMsgHandler([this](MessageHeader *hdr, const Address &sender) {
+        this->receiveRequest(hdr, sender);
         checkDeadlines();
     });
     endpoint_->RegisterSignalHandler([&]() {
@@ -99,7 +99,7 @@ Receiver::~Receiver()
     LOG(INFO) << "Receiver exited cleanly";
 }
 
-void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
+void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
 {
     if (hdr->msgLen < 0) {
         return;
@@ -119,6 +119,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     }
 
     DOMRequest request;
+    byte *body = (byte *) (hdr + 1);
     if (!request.ParseFromArray(body, hdr->msgLen)) {
         LOG(ERROR) << "Unable to parse DOM_REQUEST message";
         return;
@@ -171,7 +172,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
+        endpoint_->SendPreparedMsgTo(Address(sender.ip(), proxyMeasurementPort_));
     }
 }
 

@@ -213,7 +213,7 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
             if (len > sizeof(MessageHeader)) {
                 MessageHeader *hdr = (MessageHeader *) msg.data();
                 if (len >= sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen) {
-                    ep->hdlrFunc_(hdr, msg.data() + sizeof(MessageHeader), &addr);
+                    ep->hdlrFunc_(hdr, addr);
                 }
             }
         }

@@ -99,8 +99,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         }
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->handleMessage(msgHdr, msgBuffer, sender);
+    MessageHandlerFunc handler = [this](MessageHeader *hdr, const Address &sender) {
+        this->handleMessage(hdr, sender);
     };
 
     endpoint_->RegisterMsgHandler(handler);
@@ -155,16 +155,16 @@ void Replica::run()
     processThread_.join();
 }
 
-void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+void Replica::handleMessage(MessageHeader *hdr, const Address &sender)
 {
     // First make sure message is well formed
 
     // We skip verification of our own messages, and any message from the receiver
     // process (which does its own verification)
-    byte *rawMsg = (byte *) msgHdr;
-    std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
+    byte *rawMsg = (byte *) hdr;
+    std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+    if (sender == receiverAddr_ || sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);

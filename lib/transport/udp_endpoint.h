@@ -6,7 +6,6 @@
 struct UDPMessageHandler {
     byte recvBuffer_[UDP_BUFFER_SIZE];
     MessageHandlerFunc msgHandler_;
-    Address sender_;
     struct ev_io *evWatcher_;
     UDPMessageHandler(MessageHandlerFunc msghdl);
 

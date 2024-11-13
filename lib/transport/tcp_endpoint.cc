@@ -37,7 +37,7 @@ TCPMessageHandler::TCPMessageHandler(int fd, const Address &other, MessageHandle
                 MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
 
                 assert(m->offset_ == sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen);
-                m->handlerFunc_(msgHeader, m->recvBuffer_ + sizeof(MessageHeader), &m->other_);
+                m->handlerFunc_(msgHeader, m->other_);
 
                 // Ready to receive next message
                 m->offset_ = 0;

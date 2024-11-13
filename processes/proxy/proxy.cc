@@ -118,8 +118,9 @@ void Proxy::RecvMeasurementsTd()
     OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 10, 90, maxOWD_);
     // OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
 
-    MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
+    MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, const Address &sender) {
         MeasurementReply reply;
+        byte *body = (byte *) (hdr + 1);
 
         if (!reply.ParseFromArray(body, hdr->msgLen)) {
             LOG(ERROR) << "Unable to parse Measurement_Reply message";
@@ -161,12 +162,11 @@ void Proxy::RecvMeasurementsTd()
 
 void Proxy::ForwardRequestsTd(const int thread_id)
 {
-    MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender) {
+    MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, const Address &sender) {
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
 
-        VLOG(2) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
-
+        byte *body = (byte *) (hdr + 1);
         if (hdr->msgType == MessageType::CLIENT_REQUEST) {
             // TODO verify and handle signed header better
             if (!inReq.ParseFromArray(body, hdr->msgLen)) {
