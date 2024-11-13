@@ -533,7 +533,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig, dombf
 
     // Just collected cert
     if (!hasCertBefore && reqState.collector.hasCert()) {
-        VLOG(1) << "Created cert for request number " << clientSeq;
+        VLOG(1) << "Created cert for request number " << clientSeq << " with a maxmatch size of " << maxMatchSize;
         reqState.certTime = now;
     }
 
@@ -553,8 +553,12 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig, dombf
 
     // `replies_.size() == maxMatchSize` iff all replies are yet matching, no need to check for normal/slow path
     // return when normal/slow path is already triggered
-    if (reqState.collector.certEntries_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent)
+    if (reqState.collector.certEntries_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent) {
+        LOG(INFO) << "LOG SEQ: " << reply.seq() << " instance: " << reply.instance() << " client_seq: " << clientSeq << " maxMatchSize: " << maxMatchSize << " certEntries size: " << reqState.collector.certEntries_.size();
         return;
+    } else {
+        LOG(INFO) << "LOG SEQ: " << reply.seq() << " instance: " << reply.instance() << " client_seq: " << clientSeq << " maxMatchSize: " << maxMatchSize << " certEntries size: " << reqState.collector.certEntries_.size();
+    }
 
     // `hasCert()==true` iff maxMatchSize >= 2 * f_ + 1
     if (reqState.collector.hasCert()) {

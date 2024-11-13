@@ -100,6 +100,8 @@ size_t CertCollector::insertBatchedReply(uint32_t replicaId, BatchedReply &batch
             maxMatchSize_ = std::max(maxMatchSize_, matchSize);
 
             if (matchSize >= 2 * f_ + 1) {
+
+
                 cert_ = Cert();
                 cert_->set_seq(reply.seq());
                 cert_->set_instance(reply.instance());
@@ -108,12 +110,13 @@ size_t CertCollector::insertBatchedReply(uint32_t replicaId, BatchedReply &batch
                 // cert_->set_batch_start_seq(br.batch_start_seq());
                 // cert_->set_batch_end_seq(br.batch_end_seq());
 
+                // the batched signature itself is contained in a cert entry
                 for (uint32_t matchedReplicaId : matchingReplies[key]) {
                     *cert_->add_cert_entries() = certEntries_[matchedReplicaId];
                 }
 
-                // Once we've found a cert, we can stop processing further
-                return maxMatchSize_;
+                LOG(INFO) << "CERT formed for client_seq=" << reply.client_seq() << " seq=" << reply.seq()
+                          << " instance=" << reply.instance() << " client id " << reply.client_id();
             }
         }
     }

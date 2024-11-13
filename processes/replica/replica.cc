@@ -654,11 +654,13 @@ void Replica::handleCert(const Cert &cert)
 
             reply.set_replica_id(replicaId_);
             reply.set_instance(instance_);
+
+            LOG(INFO) << "Received cert for seq=" << seq << " instance=" << instance_;
         }
 
         // Extract client_id and client_seq from the batched replies
-        uint32_t clientId = 0;
-        uint32_t clientSeq = 0;
+        int clientId = -1;
+        int clientSeq = -1;
         for (const CertEntry &entry : cert.cert_entries()) {
             const BatchedReply &batchedReply = entry.batched_reply();
             for (const Reply &r : batchedReply.replies()) {
@@ -668,12 +670,12 @@ void Replica::handleCert(const Cert &cert)
                     break;
                 }
             }
-            if (clientId != 0) {
+            if (clientId != -1) {
                 break;
             }
         }
 
-        if (clientId == 0) {
+        if (clientId == -1) {
             LOG(ERROR) << "Client ID not found in cert's batched replies";
             return;
         }
@@ -886,6 +888,8 @@ bool Replica::verifyCert(const Cert &cert)
     if (cert.cert_entries().size() < 2 * f_ + 1) {
         LOG(INFO) << "Received cert of size " << cert.cert_entries().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
+    } else {
+        LOG(INFO) << "Received cert of size " << cert.cert_entries().size();
     }
 
     // if (cert.replies().size() != cert.signatures().size()) {
@@ -899,6 +903,8 @@ bool Replica::verifyCert(const Cert &cert)
     uint32_t seq = cert.seq();
     uint32_t batchEndSeq = ((seq - 1) / REPLY_BATCH_SIZE + 1) * REPLY_BATCH_SIZE;  // Calculate the end sequence number of the batch
     uint32_t batchStartSeq = batchEndSeq - REPLY_BATCH_SIZE + 1;
+
+    LOG(INFO) << "Verifying cert for seq " << seq << " with batch start " << batchStartSeq << " and end " << batchEndSeq;
 
     // Retrieve the log entry corresponding to batchEndSeq
     std::shared_ptr<::LogEntry> batchEndEntry = log_->getEntry(batchEndSeq);
@@ -922,6 +928,7 @@ bool Replica::verifyCert(const Cert &cert)
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
             auto it = batchEndEntry->batchSignatures.find(replicaId);
             if (it != batchEndEntry->batchSignatures.end() && it->second == sig) {
+                LOG(INFO) << "[cert] Already verified signature for replica " << replicaId;
                 continue; // Signature already verified for this batch
             } else {
                 LOG(INFO) << "[cert] Did not verify already. Verifying signature for replica " << replicaId;
@@ -943,6 +950,7 @@ bool Replica::verifyCert(const Cert &cert)
         {
             std::lock_guard<std::mutex> guard(replicaStateMutex_);
             batchEndEntry->batchSignatures[replicaId] = sig;
+            LOG(INFO) << "Sotring Verified signature for replica " << replicaId << " in log entry" << batchEndSeq << " for request seq " << seq;
         }
     }
 
@@ -991,6 +999,8 @@ bool Replica::verifyCert(const Cert &cert)
             return false;
         }
     }
+
+    LOG(INFO) << "Cert verification successful";
 
     return true;
 }
