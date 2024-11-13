@@ -89,19 +89,6 @@ Client::Client(const ProcessConfig &config, size_t id)
     nextSeq_ = 1;
     startTime_ = GetMicrosecondTimestamp();
 
-    MessageHandlerFunc replyHandler =
-        [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-            if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
-                LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
-                // TODO print some stats
-                exit(0);
-            }
-
-            this->handleMessage(msgHdr, msgBuffer, sender);
-        };
-
-    endpoint_->RegisterMsgHandler(replyHandler);
-
     timeoutTimer_ =
         std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Client *) ctx)->checkTimeouts(); }, 5000, this);
 
@@ -130,39 +117,11 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     if (sendMode_ == dombft::RateBased) {
-
+        // Kick off sending with a small burst every 5 ms
         lastSendTime_ = GetMicrosecondTimestamp();
-
-        sendTimer_ = std::make_unique<Timer>(
-            [&](void *ctx, void *endpoint) {
-                // If we are in the slow path, don't submit anymore
-                if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
-                    VLOG(6) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
-                            << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
-                            << " numInFlight=" << numInFlight_;
-
-                    return;
-                }
-
-                uint64_t startSendTime = GetMicrosecondTimestamp();
-                uint64_t actualSendRate =
-                    lastFastPath_ < lastNormalPath_ ? sendRate_ / replicaAddrs_.size() : sendRate_;
-
-                uint64_t numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
-
-                VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
-                        << " us since last burst";
-
-                submitRequestBurst(numToSend);
-                lastSendTime_ = startSendTime;
-
-                // If we are in the normal path, make the send rate slower by a factor of n as a way to slow down
-                endpoint_->ResetTimer(sendTimer_.get(), replicaAddrs_.size() * 1000000 / actualSendRate);
-            },
-            1000000 / sendRate_, this
-        );
-
+        sendTimer_ = std::make_unique<Timer>([&](void *ctx, void *endpoint) { submitRequestsOpenLoop(); }, 5000, this);
         endpoint_->RegisterTimer(sendTimer_.get());
+
     } else if (sendMode_ == dombft::MaxInFlightBased) {
         for (uint32_t i = 0; i < maxInFlight_; i++) {
             submitRequest();
@@ -171,6 +130,23 @@ Client::Client(const ProcessConfig &config, size_t id)
         LOG(ERROR) << "Unknown send mode type for client!";
         exit(1);
     }
+
+    MessageHandlerFunc replyHandler =
+        [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+            if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
+                LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
+                // TODO print some stats
+                exit(0);
+            }
+
+            this->handleMessage(msgHdr, msgBuffer, sender);
+
+            if (sendMode_ == dombft::RateBased) {
+                submitRequestsOpenLoop();
+            }
+        };
+
+    endpoint_->RegisterMsgHandler(replyHandler);
 
     // Handle interrupt signals properly on main loop
     endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
@@ -216,12 +192,36 @@ void Client::submitRequest()
     numInFlight_++;
 }
 
-void Client::submitRequestBurst(uint32_t numToSend)
+void Client::submitRequestsOpenLoop()
 {
+    // If we are in the slow path, don't submit anymore
+    if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
+        VLOG(6) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+                << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
+                << " numInFlight=" << numInFlight_;
+
+        return;
+    }
+
+    uint64_t startSendTime = GetMicrosecondTimestamp();
+    uint64_t actualSendRate = lastFastPath_ < lastNormalPath_ ? sendRate_ / replicaAddrs_.size() : sendRate_;
+    double sendIntervalUs = 1000000.0 / actualSendRate;
+
+    uint64_t numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
+
+    if (numToSend == 0) {
+        return;
+    }
+
+    VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
+            << " us since last burst with send interval " << sendIntervalUs << "us";
+
+    // Rather than just setting lastSendTime here, add the number of requests sent * sendInterval, so
+    // that we account for rounding errors.
+    lastSendTime_ += numToSend * sendIntervalUs;
+
     std::vector<ClientRequest> requests;
-
     uint64_t now;
-
     for (uint32_t i = 0; i < numToSend; i++) {
         now = GetMicrosecondTimestamp();
 
