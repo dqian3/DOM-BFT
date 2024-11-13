@@ -1,5 +1,7 @@
 #include "client.h"
 
+#include <algorithm>
+
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/tcp_endpoint.h"
@@ -82,8 +84,11 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         if (config.transport == "tcp") {
             auto ep = std::make_unique<TCPEndpoint>(clientIp, clientPort, true);
-            ep->connectToAddrs(replicaAddrs_);
-            ep->connectToAddrs(proxyAddrs_);
+
+            std::vector<Address> addrs;
+            std::copy(replicaAddrs_.begin(), replicaAddrs_.end(), std::back_inserter(addrs));
+            std::copy(proxyAddrs_.begin(), proxyAddrs_.end(), std::back_inserter(addrs));
+            ep->connectToAddrs(addrs);
             endpoint_ = std::move(ep);
 
         } else if (config.transport == "udp") {

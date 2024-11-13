@@ -100,9 +100,13 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
         if (config.transport == "tcp") {
             auto ep = std::make_unique<TCPEndpoint>(bindAddress, replicaPort, true);
-            ep->connectToAddrs(replicaAddrs_);
-            ep->connectToAddrs({receiverAddr_});
-            ep->connectToAddrs(clientAddrs_);
+
+            std::vector<Address> addrs;
+            std::copy(replicaAddrs_.begin(), replicaAddrs_.end(), std::back_inserter(addrs));
+            std::copy(clientAddrs_.begin(), clientAddrs_.end(), std::back_inserter(addrs));
+            addrs.push_back(receiverAddr_);
+            ep->connectToAddrs(addrs);
+
             endpoint_ = std::move(ep);
         } else if (config.transport == "udp") {
             endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);

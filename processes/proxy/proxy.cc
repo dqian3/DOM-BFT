@@ -74,7 +74,9 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         }
 
         if (config.transport == "tcp") {
-            measurementEp_ = std::make_unique<TCPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+            auto ep = std::make_unique<TCPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+            ep->connectToAddrs({});   // No need to connect, only receive
+            measurementEp_ = std::move(ep);
             // No need to connect, we only receive on this endpoint
         } else {
             measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
