@@ -181,6 +181,9 @@ void Replica::handleMessage(MessageHeader *hdr, const Address &sender)
     byte *rawMsg = (byte *) hdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
+    VLOG(5) << receiverAddr_ << " " << sender;
+
+    // TODO for tcp endpoint this won't match..
     if (sender == receiverAddr_ || sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
@@ -279,7 +282,7 @@ void Replica::verifyMessagesThd()
         } else {
             // DOM_Requests from the receiver skip this step. We should drop
             // request types from other processes.
-            LOG(ERROR) << "Verify thread does not handle message with unknown type " << hdr->msgType;
+            LOG(ERROR) << "Verify thread does not handle message with unknown type " << (int) hdr->msgType;
         }
     }
 }
