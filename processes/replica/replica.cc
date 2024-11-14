@@ -262,7 +262,7 @@ void Replica::verifyMessagesThd()
         } else {
             // DOM_Requests from the receiver skip this step. We should drop
             // request types from other processes.
-            LOG(ERROR) << "Verify thread does not handle message with unknown type " << hdr->msgType;
+            LOG(ERROR) << "Verify thread does not handle message with unknown type " << (int) hdr->msgType;
         }
     }
 }

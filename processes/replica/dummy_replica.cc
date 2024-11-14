@@ -225,57 +225,59 @@ void DummyReplica::processMessagesThd()
             }
 
         } else if (hdr->msgType == DUMMY_PROTO) {
-            DummyProtocolMessage msg;
+            DummyProtocolMessage protoMsg;
 
-            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+            if (!protoMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse DUMMY_PROTO message";
                 continue;
             }
 
             // Preprepare
-            if (msg.phase() == 0) {
+            if (protoMsg.phase() == 0) {
                 if (prot_ == DummyProtocol::PBFT) {
 
-                    msg.set_phase(1);
-                    msg.set_replica_id(replicaId_);
+                    protoMsg.set_phase(1);
+                    protoMsg.set_replica_id(replicaId_);
 
-                    broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
+                    broadcastToReplicas(protoMsg, MessageType::DUMMY_PROTO);
 
                 } else if (prot_ == DummyProtocol::ZYZ) {
                     Reply reply;
                     reply.set_replica_id(replicaId_);
-                    reply.set_client_id(msg.client_id());
-                    reply.set_client_seq(msg.client_seq());
+                    reply.set_client_id(protoMsg.client_id());
+                    reply.set_client_seq(protoMsg.client_seq());
                     reply.set_instance(0);
-                    reply.set_seq(msg.seq());
+                    reply.set_seq(protoMsg.seq());
                     reply.set_replica_id(replicaId_);
                     reply.set_digest(std::string(32, '\0'));
 
-                    sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[msg.client_id()]);
+                    sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[protoMsg.client_id()]);
                 }
             }
 
-            if (msg.phase() == 1) {
+            if (protoMsg.phase() == 1) {
                 if (prot_ == DummyProtocol::PBFT) {
-                    uint32_t seq = msg.seq();
+                    uint32_t seq = protoMsg.seq();
                     if (seq <= committedSeq_)
                         continue;
 
                     prepareCounts[seq]++;
 
                     if (prepareCounts[seq] == 2 * f_ + 1) {
-                        msg.set_phase(2);
-                        msg.set_replica_id(replicaId_);
+                        protoMsg.set_phase(2);
+                        protoMsg.set_replica_id(replicaId_);
 
-                        broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
+                        LOG(ERROR) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
+
+                        broadcastToReplicas(protoMsg, MessageType::DUMMY_PROTO);
                     }
                 }
             }
 
-            if (msg.phase() == 2) {
+            if (protoMsg.phase() == 2) {
                 if (prot_ == DummyProtocol::PBFT) {
 
-                    uint32_t seq = msg.seq();
+                    uint32_t seq = protoMsg.seq();
                     if (seq <= committedSeq_)
                         continue;
 
@@ -291,17 +293,19 @@ void DummyReplica::processMessagesThd()
                         summary.set_replica_id(replicaId_);
 
                         FallbackReply reply;
-                        reply.set_client_id(msg.client_id());
-                        reply.set_client_seq(msg.client_seq());
-                        reply.set_seq(msg.seq());
+                        reply.set_client_id(protoMsg.client_id());
+                        reply.set_client_seq(protoMsg.client_seq());
+                        reply.set_seq(protoMsg.seq());
 
                         *(summary.add_replies()) = reply;
 
-                        sendMsgToDst(summary, MessageType::FALLBACK_SUMMARY, clientAddrs_[msg.client_id()]);
+                        sendMsgToDst(summary, MessageType::FALLBACK_SUMMARY, clientAddrs_[protoMsg.client_id()]);
+                        LOG(ERROR) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         // Update committed and clean up state.
+                        while (commitCounts[committedSeq_ + 1] >= 2 * f_ + 1) {
 
-                        while (commitCounts[committedSeq_] >= 2 * f_ + 1) {
+                            LOG(ERROR) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
                             commitCounts.erase(committedSeq_);
                             committedSeq_++;
                         }

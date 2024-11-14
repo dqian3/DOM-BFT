@@ -285,12 +285,14 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
 
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
     // TODO check errors for all of these lol
     // TODO do this while waiting, not in the critical path
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
 #if SEND_TO_LEADER
+    VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
+
     endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
 #else
     for (const Address &addr : replicaAddrs_) {
