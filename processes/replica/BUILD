@@ -18,11 +18,30 @@ cc_library(
     ],
 )
 
+
+cc_library(
+    name = "dummy_replica_class",
+    srcs = ["dummy_replica.cc"],
+    hdrs = ["dummy_replica.h"],
+    deps = [
+        "//proto:dombft_proto_cc",
+        "//lib:utils",
+        "//lib:address",
+        "//lib:endpoint",
+        "//lib:common",
+        "//lib:threadpool",
+        "//processes:process_config",
+        "//processes:config_util"
+    ],
+)
+
+
 cc_binary(
     name = "dombft_replica",
     srcs = ["replica_run.cc"],
     deps = [
         ":replica_class",
+        ":dummy_replica_class"
     ],
 )
 

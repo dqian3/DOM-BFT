@@ -28,9 +28,12 @@
 #define NNG_BUFFER_SIZE  (20000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY 1
-
+#define USE_PROXY     1
 #define FABRIC_CRYPTO 0
+#define SKIP_CRYPTO   0
+
+// For working with dummy protocols
+#define SEND_TO_LEADER 0
 
 #define MAX_SPEC_HIST       50000
 #define CHECKPOINT_INTERVAL 500
@@ -68,9 +71,10 @@ enum MessageType {
     FALLBACK_SUMMARY = 12,
 
     DUMMY_PROTO = 13,
-    DUMMY_PREPREPARE = 14,
-    DUMMY_PREPARE = 15,
-    DUMMY_COMMIT = 16
+
+    FALLBACK_PREPREPARE = 14,
+    FALLBACK_PREPARE = 15,
+    FALLBACK_COMMIT = 16
 };
 
 /**

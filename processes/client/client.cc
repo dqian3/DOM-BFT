@@ -290,9 +290,14 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
     // TODO do this while waiting, not in the critical path
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
+#if SEND_TO_LEADER
+    endpoint_->SendPreparedMsgTo(replicaAddrs_[0]);
+
+#else
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
     }
+#endif
 #endif
 }
 
@@ -600,7 +605,7 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
         auto &reqState = requestStates_.at(cseq);
 
         reqState.fallbackReplies.insert(summary.replica_id());
-        if (reqState.fallbackReplies.size() >= 2 * f_ + 1) {
+        if (reqState.fallbackReplies.size() >= f_ + 1) {
             // Request is committed, so we can clean up state!
             // TODO check we have a consistent set of application replies!
 
