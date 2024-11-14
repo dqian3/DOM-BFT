@@ -8,7 +8,7 @@ from invoke import task
 
 # TODO we can process output of these here instead of in the terminal
 @task
-def local(c, config_file="../configs/local.yaml", v=5):
+def local(c, config_file="../configs/local.yaml", v=5, prot="dombft"):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 
@@ -30,7 +30,7 @@ def local(c, config_file="../configs/local.yaml", v=5):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {v} -config {config_file} -replicaId {id} &>logs/replica{id}.log;"
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} &>logs/replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
@@ -466,6 +466,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                dom_logs=False,
                slow_path_freq=0,
                normal_path_freq=0,
+               prot="dombft",
                profile=False
 ):
     config_file = os.path.abspath(config_file)
@@ -512,7 +513,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
             swap_arg = f'-swapFreq {slow_path_freq}'
             
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=profile)
-        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
+        hdl = arun(f"{replica_path} -prot {prot} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")

@@ -28,12 +28,12 @@
 #define NNG_BUFFER_SIZE  (20000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY     1
+#define USE_PROXY     0
 #define FABRIC_CRYPTO 0
 #define SKIP_CRYPTO   0
 
 // For working with dummy protocols
-#define SEND_TO_LEADER 0
+#define SEND_TO_LEADER 1
 
 #define MAX_SPEC_HIST       50000
 #define CHECKPOINT_INTERVAL 500
@@ -88,10 +88,10 @@ enum MessageType {
  * anohter field reporting its len. sigLen = 0 corresponds to no signature
  */
 struct MessageHeader {
-    byte msgType;
+    uint8_t msgType;
     uint32_t msgLen;
     uint32_t sigLen;
-    MessageHeader(const byte t, const uint32_t l, const uint32_t sl)
+    MessageHeader(const uint8_t t, const uint32_t l, const uint32_t sl)
         : msgType(t)
         , msgLen(l)
         , sigLen(sl) {};

@@ -291,8 +291,7 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
 #if SEND_TO_LEADER
-    endpoint_->SendPreparedMsgTo(replicaAddrs_[0]);
-
+    endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
 #else
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);

@@ -201,8 +201,6 @@ message DummyProtocolMessage
 
     uint32 client_id = 4;
     uint32 client_seq = 5;
-
-    optional ClientRequest req = 6;
 }
 
 

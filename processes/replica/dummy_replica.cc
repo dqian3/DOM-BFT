@@ -44,7 +44,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     }
 
     if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
-        LOG(ERROR) << "Unable to load receiver public keys!";
+        LOG(ERROR) << "Unable to load replica public keys!";
         exit(1);
     }
 
@@ -151,15 +151,15 @@ void DummyReplica::verifyMessagesThd()
         byte *body = (byte *) (hdr + 1);
 
         if (hdr->msgType == CLIENT_REQUEST) {
-            ClientRequest fallbackTriggerMsg;
+            ClientRequest clientRequestMessage;
 
-            if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
+            if (!clientRequestMessage.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", fallbackTriggerMsg.client_id())) {
-                LOG(INFO) << "Failed to verify client signature from " << fallbackTriggerMsg.client_id();
+            if (!sigProvider_.verify(hdr, "client", clientRequestMessage.client_id())) {
+                LOG(INFO) << "Failed to verify client signature from " << clientRequestMessage.client_id();
                 continue;
             }
 
@@ -173,14 +173,13 @@ void DummyReplica::verifyMessagesThd()
             }
 
             if (!sigProvider_.verify(hdr, "replica", dummyProtoMsg.replica_id())) {
-                LOG(INFO) << "Failed to verify replica signature from " << dummyProtoMsg.client_id();
+                LOG(INFO) << "Failed to verify replica signature from " << dummyProtoMsg.replica_id();
                 continue;
             }
             processQueue_.enqueue(msg);
         } else {
-            // DOM_Requests from the receiver skip this step. We should drop
-            // request types from other processes.
-            LOG(ERROR) << "Verify thread does not handle message with unknown type " << hdr->msgType;
+            LOG(ERROR) << "Verify thread does not handle message with unknown type " << (int) hdr->msgType;
+            continue;
         }
     }
 }
@@ -211,12 +210,18 @@ void DummyReplica::processMessagesThd()
 
                 preprepare.set_phase(0);
                 preprepare.set_replica_id(replicaId_);
-                preprepare.set_seq(0);
+                preprepare.set_seq(nextSeq_);
 
                 preprepare.set_client_id(clientRequestMsg.client_id());
                 preprepare.set_client_seq(clientRequestMsg.client_seq());
 
                 broadcastToReplicas(preprepare, MessageType::DUMMY_PROTO);
+
+                LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
+                           << " client_id=" << clientRequestMsg.client_id()
+                           << " client_seq=" << clientRequestMsg.client_seq();
+
+                nextSeq_++;
             }
 
         } else if (hdr->msgType == DUMMY_PROTO) {
@@ -232,7 +237,7 @@ void DummyReplica::processMessagesThd()
                 if (prot_ == DummyProtocol::PBFT) {
 
                     msg.set_phase(1);
-                    msg.clear_req();
+                    msg.set_replica_id(replicaId_);
 
                     broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
 
@@ -244,6 +249,7 @@ void DummyReplica::processMessagesThd()
                     reply.set_instance(0);
                     reply.set_seq(msg.seq());
                     reply.set_replica_id(replicaId_);
+                    reply.set_digest(std::string(32, '\0'));
 
                     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[msg.client_id()]);
                 }
@@ -259,6 +265,8 @@ void DummyReplica::processMessagesThd()
 
                     if (prepareCounts[seq] == 2 * f_ + 1) {
                         msg.set_phase(2);
+                        msg.set_replica_id(replicaId_);
+
                         broadcastToReplicas(msg, MessageType::DUMMY_PROTO);
                     }
                 }
@@ -319,6 +327,7 @@ template <typename T> void DummyReplica::broadcastToReplicas(const T &msg, Messa
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
