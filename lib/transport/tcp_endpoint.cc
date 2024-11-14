@@ -17,46 +17,56 @@ TCPMessageHandler::TCPMessageHandler(
     ev_init(&evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents) {
         TCPMessageHandler *m = (TCPMessageHandler *) (w->data);
 
-        LOG(INFO) << "MessageHandler called for message from " << m->other_;
-
         if (m->offset_ == 0) {
             int ret = recv(m->fd_, m->recvBuffer_, sizeof(MessageHeader), 0);
-            if (ret > 0 && (uint32_t) ret > sizeof(MessageHeader)) {
+            if (ret > 0 && (uint32_t) ret == sizeof(MessageHeader)) {
                 MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
                 m->offset_ = ret;
                 m->remaining_ = msgHeader->msgLen + msgHeader->sigLen;
+
+                // TODO call recv again here instead of going back to the loop.
+
             } else if (ret == 0) {
-                // Disconnet
-            } else
+                // Disconnect
+
+                close(m->fd_);
+                ev_io_stop(loop, w);
+
+            } else {
                 LOG(WARNING) << "recv error";
-            return;
-        }
+                return;
+            }
         } else {
-        int ret = recv(m->fd_, m->recvBuffer_ + m->offset_, m->remaining_, 0);
+            int ret = recv(m->fd_, m->recvBuffer_ + m->offset_, m->remaining_, 0);
 
-        if (ret < 0) {
-            LOG(WARNING) << "recv error";
-            return;
+            if (ret == 0) {
+                // Disconnect
+                close(m->fd_);
+                ev_io_stop(loop, w);
+            }
+            if (ret < 0) {
+                LOG(WARNING) << "recv error";
+                return;
+            }
+
+            m->offset_ += ret;
+            m->remaining_ -= ret;
+
+            // Complete message received
+            if (m->remaining_ == 0) {
+                MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
+
+                assert(m->offset_ == sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen);
+                m->handlerFunc_(msgHeader, m->other_);
+
+                // Ready to receive next message
+                m->offset_ = 0;
+            }
         }
+    });
 
-        m->offset_ += ret;
-        m->remaining_ -= ret;
-
-        // Complete message received
-        if (m->remaining_ == 0) {
-            MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
-
-            assert(m->offset_ == sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen);
-            m->handlerFunc_(msgHeader, m->other_);
-
-            // Ready to receive next message
-            m->offset_ = 0;
-        }
-        }
-});
-
-ev_io_set(&evWatcher_, fd_, EV_READ);
-ev_io_start(evLoop_, &evWatcher_);
+    ev_io_set(&evWatcher_, fd_, EV_READ);
+    ev_io_start(evLoop_, &evWatcher_);
 }
 
 TCPMessageHandler::~TCPMessageHandler() {}
@@ -100,6 +110,7 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
         if (so_error == ECONNREFUSED) {
             // Other side is not up yet, retry upon timeout
             close(w->fd);
+            ev_io_stop(loop, w);
             ev_timer_again(loop, &helper->retryWatcher_);
             return;
         } else if (so_error != 0) {
@@ -127,7 +138,7 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
         int fd = non_blocking_socket();
         TCPConnectHelper *helper = reinterpret_cast<TCPConnectHelper *>(w->data);
 
-        LOG(INFO) << "Attempting to connect to " << helper->connectAddr_;
+        LOG(INFO) << "Attempting to connect to " << helper->connectAddr_ << " with fd=" << fd;
         if (connect(fd, (struct sockaddr *) &helper->connectAddr_.addr_, sizeof(sockaddr_in)) < 0) {
             // expect EINProgress because our sockets are non blocking
             if (errno != EINPROGRESS) {
@@ -143,8 +154,8 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
         ev_io_start(loop, &helper->connectWatcher_);
     });
 
-    // Try connecting after 1 second
-    retryWatcher_.repeat = 1;
+    // Try connecting every 5 seconds
+    retryWatcher_.repeat = 2;
     ev_timer_again(loop, &retryWatcher_);
 }
 
@@ -156,6 +167,8 @@ TCPEndpoint::TCPEndpoint(
     , acceptWatcher_()
 {
     listenFd_ = non_blocking_socket();
+
+    bzero(&recvBuffer_, sizeof(recvBuffer_));
 
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr));

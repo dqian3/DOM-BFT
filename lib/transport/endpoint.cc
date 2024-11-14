@@ -3,6 +3,7 @@
 Endpoint::Endpoint(const bool isMasterReceiver, const std::optional<Address> &loopbackAddr)
     : loopbackAddr_(loopbackAddr)
 {
+    bzero(sendBuffer_, sizeof(sendBuffer_));
     evLoop_ = isMasterReceiver ? ev_default_loop() : ev_loop_new();
     if (!evLoop_) {
         LOG(ERROR) << "Event Loop error";

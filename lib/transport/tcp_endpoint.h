@@ -44,7 +44,7 @@ protected:
     struct ev_loop *evConnectLoop_;
 
     byte recvBuffer_[TCP_BUFFER_SIZE];
-    MessageHandlerFunc handlerFunc_;
+    MessageHandlerFunc handlerFunc_ = nullptr;
     std::unordered_map<int, std::unique_ptr<TCPMessageHandler>> msgHandlers_;
     std::unordered_map<Address, int> addressToSendSock_;
 
