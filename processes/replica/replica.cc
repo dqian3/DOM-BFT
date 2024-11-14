@@ -978,7 +978,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 
         entry->updateDigest(prevDigest);
 
-        VLOG(5) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
+        VLOG(1) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
                 << " c_id=" << clientId << " c_seq=" << clientSeq
                 << " prevDigest=" << digest_to_hex(prevDigest).substr(56);
         curSeq++;
