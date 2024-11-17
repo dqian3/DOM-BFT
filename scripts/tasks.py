@@ -466,7 +466,8 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                dom_logs=False,
                slow_path_freq=0,
                normal_path_freq=0,
-               profile=False
+               profile=False,
+               v=5,
 ):
     config_file = os.path.abspath(config_file)
 
@@ -512,19 +513,19 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
             swap_arg = f'-swapFreq {slow_path_freq}'
             
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=profile)
-        hdl = arun(f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} {swap_arg}")
+        hdl = arun(f"{replica_path} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", local_log=local_log, profile=profile)
-        hdl = arun(f"{receiver_path} -v {5} -config {remote_config_file} -receiverId {id}")
+        hdl = arun(f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
         arun = arun_on(ip, f"proxy{id}.log", local_log=local_log, profile=profile )
-        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id}")
+        hdl = arun(f"{proxy_path} -v {v} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
     time.sleep(5)
@@ -532,7 +533,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
     print("Starting clients")
     for id, ip in enumerate(clients):
         arun = arun_on(ip, f"client{id}.log", local_log=local_log, profile=profile)
-        hdl = arun(f"{client_path} -v {5} -config {remote_config_file} -clientId {id}")
+        hdl = arun(f"{client_path} -v {v} -config {remote_config_file} -clientId {id}")
         client_handles.append(hdl)
 
     try:
