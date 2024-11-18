@@ -296,7 +296,7 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
     endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
 #else
     for (const Address &addr : replicaAddrs_) {
-        endpoint_->SendPreparedMsgTo(addr);
+        endpoint_->SendPreparedMsgTo(addr, hdr);
     }
 #endif
 #endif

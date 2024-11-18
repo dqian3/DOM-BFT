@@ -27,6 +27,9 @@ int main(int argc, char *argv[])
     } else if (FLAGS_prot == "ZYZ") {
         dombft::DummyReplica replica(config, FLAGS_replicaId, DummyProtocol::ZYZ);
         replica.run();
+    } else if (FLAGS_prot == "DUMMY_DOMBFT") {
+        dombft::DummyReplica replica(config, FLAGS_replicaId, DummyProtocol::DUMMY_DOM_BFT);
+        replica.run();
     } else {
         dombft::Replica replica(config, FLAGS_replicaId, FLAGS_swapFreq);
         replica.run();

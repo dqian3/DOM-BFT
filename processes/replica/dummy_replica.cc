@@ -196,6 +196,8 @@ void DummyReplica::processMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
+        LOG(ERROR) << " parse CLIENT_REQUEST message";
+
         if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest clientRequestMsg;
 
@@ -204,7 +206,29 @@ void DummyReplica::processMessagesThd()
                 continue;
             }
 
-            // Only leader handles client requests
+            if (prot_ == DUMMY_DOM_BFT) {
+                Reply reply;
+
+                reply.set_replica_id(replicaId_);
+                reply.set_client_id(clientRequestMsg.client_id());
+                reply.set_client_seq(clientRequestMsg.client_seq());
+                reply.set_instance(0);
+                reply.set_seq(0);   // Set seq to 0 here so clients see consistent messages ...
+                reply.set_replica_id(replicaId_);
+                reply.set_digest(std::string(32, '\0'));
+
+                //... but here increment nextSeq_ for bookkeeping
+                LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
+                           << " client_id=" << clientRequestMsg.client_id()
+                           << " client_seq=" << clientRequestMsg.client_seq();
+                nextSeq_++;
+
+                sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientRequestMsg.client_id()]);
+
+                continue;
+            }
+
+            // For Zyz/PBFT, only leader handles client requests
             if (replicaId_ == 0) {
                 DummyProtocolMessage preprepare;
 
@@ -220,8 +244,6 @@ void DummyReplica::processMessagesThd()
                 LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
                            << " client_id=" << clientRequestMsg.client_id()
                            << " client_seq=" << clientRequestMsg.client_seq();
-
-                nextSeq_++;
             }
 
         } else if (hdr->msgType == DUMMY_PROTO) {

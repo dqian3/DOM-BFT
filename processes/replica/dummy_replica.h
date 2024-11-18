@@ -16,7 +16,7 @@
 
 #include <yaml-cpp/yaml.h>
 
-enum DummyProtocol { PBFT = 0, ZYZ = 1, DOM_BFT = 2 };
+enum DummyProtocol { PBFT = 0, ZYZ = 1, DUMMY_DOM_BFT = 2, DOM_BFT = 3 };
 
 namespace dombft {
 class DummyReplica {
