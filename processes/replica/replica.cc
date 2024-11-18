@@ -253,16 +253,16 @@ void Replica::verifyMessagesThd()
         // TODO do verification of the rest of the cases
         else if (hdr->msgType == FALLBACK_START) {
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == DUMMY_PREPREPARE) {
+        } else if (hdr->msgType == FALLBACK_PREPREPARE) {
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == DUMMY_PREPARE) {
+        } else if (hdr->msgType == FALLBACK_PREPARE) {
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == DUMMY_COMMIT) {
+        } else if (hdr->msgType == FALLBACK_COMMIT) {
             processQueue_.enqueue(msg);
         } else {
             // DOM_Requests from the receiver skip this step. We should drop
             // request types from other processes.
-            LOG(ERROR) << "Verify thread does not handle message with unknown type " << hdr->msgType;
+            LOG(ERROR) << "Verify thread does not handle message with unknown type " << (int) hdr->msgType;
         }
     }
 }
@@ -352,7 +352,7 @@ void Replica::processMessagesThd()
             processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == DUMMY_PREPREPARE) {
+        if (hdr->msgType == FALLBACK_PREPREPARE) {
             FallbackPrePrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -363,7 +363,7 @@ void Replica::processMessagesThd()
             processPrePrepare(msg);
         }
 
-        if (hdr->msgType == DUMMY_PREPARE) {
+        if (hdr->msgType == FALLBACK_PREPARE) {
             FallbackPrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -374,7 +374,7 @@ void Replica::processMessagesThd()
             processPrepare(msg);
         }
 
-        if (hdr->msgType == DUMMY_COMMIT) {
+        if (hdr->msgType == FALLBACK_COMMIT) {
             FallbackPBFTCommit msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -819,7 +819,7 @@ void Replica::doPrePreparePhase()
 
         *(proposal->add_logs()) = startMsg.second;
     }
-    broadcastToReplicas(prePrepare, DUMMY_PREPREPARE);
+    broadcastToReplicas(prePrepare, FALLBACK_PREPREPARE);
 }
 
 void Replica::doPreparePhase()
@@ -828,7 +828,7 @@ void Replica::doPreparePhase()
     FallbackPrepare prepare;
     prepare.set_replica_id(replicaId_);
     prepare.set_instance(instance_);
-    broadcastToReplicas(prepare, DUMMY_PREPARE);
+    broadcastToReplicas(prepare, FALLBACK_PREPARE);
 }
 
 void Replica::doCommitPhase()
@@ -837,7 +837,7 @@ void Replica::doCommitPhase()
     FallbackPBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
     cmt.set_instance(instance_);
-    broadcastToReplicas(cmt, DUMMY_COMMIT);
+    broadcastToReplicas(cmt, FALLBACK_COMMIT);
 }
 void Replica::processPrePrepare(const FallbackPrePrepare &msg)
 {
@@ -978,7 +978,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 
         entry->updateDigest(prevDigest);
 
-        VLOG(5) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
+        VLOG(1) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
                 << " c_id=" << clientId << " c_seq=" << clientSeq
                 << " prevDigest=" << digest_to_hex(prevDigest).substr(56);
         curSeq++;

@@ -192,3 +192,18 @@ message FallbackPBFTCommit
 
 
 
+
+message DummyProtocolMessage
+{
+    uint32 phase = 1;
+    uint32 replica_id = 2;
+    uint32 seq = 3;
+
+    uint32 client_id = 4;
+    uint32 client_seq = 5;
+}
+
+
+
+
+

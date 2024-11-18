@@ -66,6 +66,10 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
 
 int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 {
+#if SKIP_CRYPTO
+    return true;
+#endif
+
     if (privKey_ == nullptr) {
         LOG(ERROR) << "Private key not initialized";
         return -1;
@@ -151,6 +155,10 @@ bool SignatureProvider::verify(
     byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId
 )
 {
+#if SKIP_CRYPTO
+    return true;
+#endif
+
     if (!pubKeys_.count(pubKeyType) || !pubKeys_.at(pubKeyType).count(pubKeyId)) {
         LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";
         return false;
