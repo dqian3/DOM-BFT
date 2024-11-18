@@ -111,7 +111,7 @@ MessageHeader *Endpoint::PrepareMsg(const byte *msg, u_int32_t msgLen, byte msgT
         bufSize = SEND_BUFFER_SIZE;
     }
 
-    MessageHeader *hdr = (MessageHeader *) sendBuffer_;
+    MessageHeader *hdr = (MessageHeader *) buf;
     hdr->msgType = msgType;
     hdr->msgLen = msgLen;
     hdr->sigLen = 0;
