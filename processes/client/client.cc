@@ -295,6 +295,7 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
 
     endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
 #else
+    VLOG(1) << "Sending request to all replicas " << replicaAddrs_[0];
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr, hdr);
     }

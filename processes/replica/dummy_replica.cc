@@ -127,7 +127,12 @@ void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address
     // process (which does its own verification)
     byte *rawMsg = (byte *) msgHdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
-    verifyQueue_.enqueue(msg);
+
+    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+        processQueue_.enqueue(msg);
+    } else {
+        verifyQueue_.enqueue(msg);
+    }
 }
 
 void DummyReplica::verifyMessagesThd()
@@ -143,21 +148,6 @@ void DummyReplica::verifyMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        if (hdr->msgType == DOM_REQUEST) {
-            ClientRequest clientRequestMessage;
-
-            if (!clientRequestMessage.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-                continue;
-            }
-
-            if (!sigProvider_.verify(hdr, "client", clientRequestMessage.client_id())) {
-                LOG(INFO) << "Failed to verify client signature from " << clientRequestMessage.client_id();
-                continue;
-            }
-
-            processQueue_.enqueue(msg);
-        }
         if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest clientRequestMessage;
 
@@ -203,8 +193,6 @@ void DummyReplica::processMessagesThd()
         }
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
-
-        LOG(ERROR) << " parse CLIENT_REQUEST message";
 
         if (hdr->msgType == MessageType::DOM_REQUEST) {
             DOMRequest domHeader;
