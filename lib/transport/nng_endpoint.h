@@ -25,7 +25,7 @@ struct NngMessageHandler {
 };
 
 class NngEndpoint : public Endpoint {
-protected:
+public:
     // Note these are pointers because if vector get's resized the pointers that libev relies
     // on get messed up (this was a really annoying bug to find)
     std::vector<std::unique_ptr<NngMessageHandler>> handlers_;

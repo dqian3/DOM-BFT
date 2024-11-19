@@ -179,11 +179,11 @@ void Receiver::forwardRequest(const DOMRequest &request)
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    LOG(INFO) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
-              << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+    VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
+            << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
     if (lastFwdDeadline > request.deadline()) {
-        LOG(WARNING) << "Forwarded request out of order!";
+        VLOG(2) << "Forwarded request out of order!";
     }
 
     lastFwdDeadline = request.deadline();

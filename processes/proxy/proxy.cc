@@ -126,7 +126,7 @@ void Proxy::RecvMeasurementsTd()
             return;
         }
         uint64_t now = GetMicrosecondTimestamp();
-        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+        VLOG(2) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
                 << " rtt=" << now - reply.send_time() << " now=" << now;
 
         if (reply.owd() > 0) {
@@ -139,7 +139,7 @@ void Proxy::RecvMeasurementsTd()
         }
 
         latencyBound_.store(context.getCappedMaxOWD() * 1.5);
-        VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
+        VLOG(1) << "Latency bound is set to be " << latencyBound_.load();
     };
 
     /* Checks every 10ms to see if we are done*/

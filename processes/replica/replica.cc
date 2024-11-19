@@ -419,9 +419,13 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     std::string digest(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
 
-    LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-               << " client_seq=" << clientSeq << " instance=" << instance_
-               << " digest=" << digest_to_hex(digest).substr(56);
+    if (VLOG_IS_ON(2)) {
+        VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+                << " client_seq=" << clientSeq << " instance=" << instance_
+                << " digest=" << digest_to_hex(digest).substr(56);
+    } else {
+        // TODO do some logging here?
+    }
 
     Reply reply;
 
@@ -438,7 +442,7 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
-        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+        VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
 
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
         // TODO remove execution result here
