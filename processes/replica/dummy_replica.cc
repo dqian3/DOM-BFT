@@ -67,23 +67,16 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
+        receiverAddr_ = addrPairs[nClients].second;
+
         for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
-        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
-
-        /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
-        }
-
-        /** Store all client addrs */
-        for (uint32_t i = 0; i < config.clientIps.size(); i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
-        }
+        LOG(ERROR) << "Dummy Replica only supports NNG!";
+        exit(1);
     }
 
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
@@ -150,6 +143,21 @@ void DummyReplica::verifyMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
+        if (hdr->msgType == DOM_REQUEST) {
+            ClientRequest clientRequestMessage;
+
+            if (!clientRequestMessage.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                continue;
+            }
+
+            if (!sigProvider_.verify(hdr, "client", clientRequestMessage.client_id())) {
+                LOG(INFO) << "Failed to verify client signature from " << clientRequestMessage.client_id();
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
         if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest clientRequestMessage;
 
@@ -198,6 +206,25 @@ void DummyReplica::processMessagesThd()
 
         LOG(ERROR) << " parse CLIENT_REQUEST message";
 
+        if (hdr->msgType == MessageType::DOM_REQUEST) {
+            DOMRequest domHeader;
+            ClientRequest clientHeader;
+
+            if (!domHeader.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+                return;
+            }
+
+            // Separate this out into another function probably.
+            MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();
+            byte *clientBody = (byte *) (clientMsgHdr + 1);
+            if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                return;
+            }
+
+            processClientRequest(clientHeader);
+        }
         if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest clientRequestMsg;
 
@@ -206,45 +233,7 @@ void DummyReplica::processMessagesThd()
                 continue;
             }
 
-            if (prot_ == DUMMY_DOM_BFT) {
-                Reply reply;
-
-                reply.set_replica_id(replicaId_);
-                reply.set_client_id(clientRequestMsg.client_id());
-                reply.set_client_seq(clientRequestMsg.client_seq());
-                reply.set_instance(0);
-                reply.set_seq(0);   // Set seq to 0 here so clients see consistent messages ...
-                reply.set_replica_id(replicaId_);
-                reply.set_digest(std::string(32, '\0'));
-
-                //... but here increment nextSeq_ for bookkeeping
-                LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
-                           << " client_id=" << clientRequestMsg.client_id()
-                           << " client_seq=" << clientRequestMsg.client_seq();
-                nextSeq_++;
-
-                sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientRequestMsg.client_id()]);
-
-                continue;
-            }
-
-            // For Zyz/PBFT, only leader handles client requests
-            if (replicaId_ == 0) {
-                DummyProtocolMessage preprepare;
-
-                preprepare.set_phase(0);
-                preprepare.set_replica_id(replicaId_);
-                preprepare.set_seq(nextSeq_);
-
-                preprepare.set_client_id(clientRequestMsg.client_id());
-                preprepare.set_client_seq(clientRequestMsg.client_seq());
-
-                broadcastToReplicas(preprepare, MessageType::DUMMY_PROTO);
-
-                LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
-                           << " client_id=" << clientRequestMsg.client_id()
-                           << " client_seq=" << clientRequestMsg.client_seq();
-            }
+            processClientRequest(clientRequestMsg);
 
         } else if (hdr->msgType == DUMMY_PROTO) {
             DummyProtocolMessage protoMsg;
@@ -335,6 +324,47 @@ void DummyReplica::processMessagesThd()
                 }
             }
         }
+    }
+}
+
+void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &request)
+{
+    if (prot_ == DUMMY_DOM_BFT) {
+        Reply reply;
+
+        reply.set_replica_id(replicaId_);
+        reply.set_client_id(request.client_id());
+        reply.set_client_seq(request.client_seq());
+        reply.set_instance(0);
+        reply.set_seq(0);   // Set seq to 0 here so clients see consistent messages ...
+        reply.set_replica_id(replicaId_);
+        reply.set_digest(std::string(32, '\0'));
+
+        //... but here increment nextSeq_ for bookkeeping
+        LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
+                   << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
+        nextSeq_++;
+
+        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[request.client_id()]);
+
+        return;
+    }
+
+    // For Zyz/PBFT, only leader handles client requests
+    if (replicaId_ == 0) {
+        DummyProtocolMessage preprepare;
+
+        preprepare.set_phase(0);
+        preprepare.set_replica_id(replicaId_);
+        preprepare.set_seq(nextSeq_);
+
+        preprepare.set_client_id(request.client_id());
+        preprepare.set_client_seq(request.client_seq());
+
+        broadcastToReplicas(preprepare, MessageType::DUMMY_PROTO);
+
+        LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
+                   << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
     }
 }
 

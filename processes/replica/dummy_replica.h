@@ -24,6 +24,7 @@ private:
     // Replica static config
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
+    Address receiverAddr_;
     std::vector<Address> clientAddrs_;
     uint32_t f_;
     uint32_t numVerifyThreads_;
@@ -58,6 +59,7 @@ private:
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void verifyMessagesThd();
     void processMessagesThd();
+    void processClientRequest(const dombft::proto::ClientRequest &request);
 
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
