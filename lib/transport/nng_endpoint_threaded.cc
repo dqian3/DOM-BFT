@@ -87,7 +87,7 @@ NngRecvThread::NngRecvThread(
         nng_socket sock = socks_[i];
         const Address &connAddr = sockToAddr.at(i);
 
-        LOG(INFO) << "Registering handle for " << connAddr.ip() << ":" << connAddr.port();
+        LOG(INFO) << "Registering handle for " << connAddr;
 
         if ((ret = nng_socket_get_int(sock, NNG_OPT_RECVFD, &fd)) != 0) {
             nng_close(sock);

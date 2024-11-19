@@ -425,7 +425,6 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_instance(instance_);
     reply.set_digest(digest);
 
-    LOG(INFO) << "Sending reply back to client " << clientId;
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
     // Try and commit every CHECKPOINT_INTERVAL replies

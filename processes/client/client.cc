@@ -494,7 +494,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // Just collected cert
     if (!hasCertBefore && reqState.collector.hasCert()) {
-        VLOG(1) << "Created cert for request number " << clientSeq;
+        VLOG(2) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
     }
 
