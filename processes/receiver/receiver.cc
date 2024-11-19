@@ -161,8 +161,10 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         verifyCondVar_.notify_one();
     }
 
-    // Send measurements replies back to the proxy, but only sometimes
-    if (request.client_id() / 4 == 0 && request.client_seq() % 10 == 0) {
+    // Send measurements replies back to the proxy, but only every 500ms
+    if (recv_time - lastMeasurementTimes[request.proxy_id()] > 500000) {
+        lastMeasurementTimes[request.proxy_id()] = recv_time;
+
         MeasurementReply mReply;
         mReply.set_receiver_id(receiverId_);
         mReply.set_owd(recv_time - request.send_time());
@@ -171,7 +173,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_));
+        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_), hdr);
     }
 }
 
@@ -201,7 +203,7 @@ void Receiver::forwardRequest(const DOMRequest &request)
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(replicaAddr_);
+        endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
     }
 }
 
