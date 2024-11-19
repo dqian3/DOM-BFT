@@ -16,6 +16,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
 
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
     LOG(INFO) << "Loading key from " << proxyKey;
+
     if (!sigProvider_.loadPrivateKey(proxyKey)) {
         LOG(ERROR) << "Unable to load private key!";
         exit(1);
