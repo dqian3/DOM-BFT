@@ -1,4 +1,4 @@
-transport: tcp 
+transport: nng 
 
 app: "counter"
 
