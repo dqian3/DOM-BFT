@@ -308,7 +308,6 @@ void Proxy::GenerateRequestsTd()
                 uint32_t interval_us = interval * 1000000;
                 interval_us = std::max(1u, interval_us);
 
-                VLOG(1) << "Waiting for " << interval_us << " usec";
                 ep->ResetTimer(&timer, interval_us);
             },
             1000, this

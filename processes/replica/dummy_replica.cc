@@ -266,7 +266,7 @@ void DummyReplica::processMessagesThd()
                         protoMsg.set_phase(2);
                         protoMsg.set_replica_id(replicaId_);
 
-                        LOG(ERROR) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
+                        VLOG(2) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         broadcastToReplicas(protoMsg, MessageType::DUMMY_PROTO);
                     }
@@ -299,12 +299,11 @@ void DummyReplica::processMessagesThd()
                         *(summary.add_replies()) = reply;
 
                         sendMsgToDst(summary, MessageType::FALLBACK_SUMMARY, clientAddrs_[protoMsg.client_id()]);
-                        LOG(ERROR) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
+                        VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         // Update committed and clean up state.
                         while (commitCounts[committedSeq_ + 1] >= 2 * f_ + 1) {
-
-                            LOG(ERROR) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
+                            VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
                             commitCounts.erase(committedSeq_);
                             committedSeq_++;
                         }
@@ -328,9 +327,17 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
         reply.set_replica_id(replicaId_);
         reply.set_digest(std::string(32, '\0'));
 
-        //... but here increment nextSeq_ for bookkeeping
-        LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
-                   << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
+        if (VLOG_IS_ON(2)) {
+            VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
+                    << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
+        } else if (VLOG_IS_ON(1)) {
+            if (nextSeq_ % 1000 == 0) {
+                VLOG(1) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
+                        << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
+            }
+        }
+
+        //... but here increment nextSeq_ to keep track of requests received
         nextSeq_++;
 
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[request.client_id()]);
@@ -351,8 +358,8 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
 
         broadcastToReplicas(preprepare, MessageType::DUMMY_PROTO);
 
-        LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
-                   << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
+        VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
+                << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
     }
 }
 
