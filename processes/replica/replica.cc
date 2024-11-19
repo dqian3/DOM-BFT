@@ -84,19 +84,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
-        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
-
-        /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
-        }
-
-        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
-
-        /** Store all client addrs */
-        for (uint32_t i = 0; i < config.clientIps.size(); i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
-        }
+        LOG(ERROR) << "Unsupported transport " << config.transport;
     }
 
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
