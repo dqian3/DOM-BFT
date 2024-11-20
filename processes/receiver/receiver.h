@@ -56,6 +56,7 @@ private:
     // Map from proxy_id to last measurement sent time
     std::map<uint32_t, uint64_t> lastMeasurementTimes_;
     uint32_t numForwarded_ = 0;
+    uint32_t lastStatTime_ = 0;
 
     // Turn off various receiver behaviors, for running micro-experiments between proxy and receiver
     bool skipForwarding_;
