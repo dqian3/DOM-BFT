@@ -163,10 +163,10 @@ void Receiver::forwardRequest(const DOMRequest &request)
             VLOG(2) << "Forwarded request out of order!";
         }
     } else if (VLOG_IS_ON(1)) {
-        if (numForwarded_ % 40000 == 0) {
+        if (numForwarded_ % 10000 == 0) {
             if (numForwarded_ > 0) {
                 VLOG(1) << "Forwarded request number " << numForwarded_
-                        << " txput=" << 40 * 1e+5 / (now - lastStatTime_) << " req/s took " << now - lastStatTime_
+                        << " txput=" << 1e+4 * 1e+6 / (now - lastStatTime_) << " req/s took " << now - lastStatTime_
                         << " usec queue_size=" << deadlineQueue_.size();
             }
             lastStatTime_ = now;
