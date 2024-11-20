@@ -77,7 +77,7 @@ public:
     inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override
     {
         recvrMeasures_[rcvrIndex][windowIndex_[rcvrIndex]] = measure;
-        windowIndex_[rcvrIndex] = windowIndex_[rcvrIndex] + 1 % windowSize_;
+        windowIndex_[rcvrIndex] = (windowIndex_[rcvrIndex] + 1) % windowSize_;
     }
 
 private:
@@ -120,7 +120,7 @@ public:
     inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override
     {
         recvrMeasures_[rcvrIndex][windowIndex_[rcvrIndex]] = measure;
-        windowIndex_[rcvrIndex] = windowIndex_[rcvrIndex] + 1 % windowSize_;
+        windowIndex_[rcvrIndex] = (windowIndex_[rcvrIndex] + 1) % windowSize_;
     }
 
 private:
