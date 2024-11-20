@@ -199,6 +199,7 @@ void Proxy::ForwardRequestsTd(const int thread_id)
             if (numForwarded_ % 10000 == 0) {
                 VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now;
             }
+            numForwarded_++;
 
             MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO

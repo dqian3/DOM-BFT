@@ -9,14 +9,11 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(
-    const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines, bool skipVerify
-)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
-    , skipVerify_(skipVerify)
     , running_(true)
 {
     std::string receiverIp = config.receiverIps[receiverId_];
@@ -65,8 +62,6 @@ Receiver::Receiver(
     endpoint_->RegisterSignalHandler([&]() {
         running_ = false;
         endpoint_->LoopBreak();
-
-        verifyCondVar_.notify_all();
     });
 
     // Start verify threads
@@ -74,7 +69,7 @@ Receiver::Receiver(
     uint32_t numVerifyThreads = config.numVerifyThreads;
 
     for (int i = 0; i < numVerifyThreads; i++) {
-        verifyThds_.emplace_back(&Receiver::verifyWorker, this);
+        verifyThds_.emplace_back(&Receiver::verifyThd, this, i);
     }
 
     endpoint_->LoopRun();
@@ -138,15 +133,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         deadlineQueue_[{deadline, request.client_id()}] = r;
     }
 
-    if (skipVerify_) {
-        r->verified = true;
-    } else {
-        {
-            std::lock_guard<std::mutex> lock(verifyQueueMtx_);
-            verifyQueue_.push(r);
-        }
-        verifyCondVar_.notify_one();
-    }
+    verifyQueue_.enqueue(r);
 
     // Send measurements replies back to the proxy, but only every 500ms
     if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 500000) {
@@ -224,57 +211,49 @@ void Receiver::checkDeadlines()
     endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 
-void Receiver::verifyWorker()
+void Receiver::verifyThd(int workerId)
 {
     LOG(INFO) << "Starting verify thd";
 
+    u_int32_t numVerified = 0;
     std::shared_ptr<Request> request;
     while (running_) {
-        std::unique_lock<std::mutex> lock(verifyQueueMtx_);
-        verifyCondVar_.wait(lock, [this] { return !verifyQueue_.empty() || !running_; });
 
-        if (!running_ && verifyQueue_.empty()) {
-            LOG(ERROR) << "Verify thread exiting...";
-            lock.unlock();
-            break;
+        if (!verifyQueue_.wait_dequeue_timed(request, 10000)) {
+            continue;
         }
 
-        if (!verifyQueue_.empty()) {
-            request = verifyQueue_.front();
-            verifyQueue_.pop();
-            lock.unlock();
+        ClientRequest clientHeader;
 
-            ClientRequest clientHeader;
+        // Separate this out into another function probably.
 
-            // Separate this out into another function probably.
-
-            // TODO is there a race condition reading the request here?
-            MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
-            byte *clientBody = (byte *) (clientMsgHdr + 1);
-            if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-                return;
-            }
-
-            bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
-
-            {
-                std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-                if (verified) {
-                    VLOG(4) << "Verified client signature for c_id=" << request->clientId
-                            << " c_seq=" << request->request.client_seq() << " time until deadline: "
-                            << ((int64_t) request->request.deadline()) - GetMicrosecondTimestamp() << " us";
-                    request->verified = true;
-                } else {
-                    LOG(INFO) << "Failed to verify client signature!";
-                    deadlineQueue_.erase({request->deadline, request->clientId});
-                }
-            }
-
-        } else {
-            lock.unlock();
+        // TODO is there a race condition reading the request here?
+        MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
+        byte *clientBody = (byte *) (clientMsgHdr + 1);
+        if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+            return;
         }
+
+        bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
+
+        {
+            std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+            if (verified) {
+                VLOG(4) << "Verified client signature for c_id=" << request->clientId
+                        << " c_seq=" << request->request.client_seq() << " time until deadline: "
+                        << ((int64_t) request->request.deadline()) - GetMicrosecondTimestamp() << " us";
+                request->verified = true;
+            } else {
+                VLOG(1) << "Failed to verify client signature!";
+                deadlineQueue_.erase({request->deadline, request->clientId});
+            }
+        }
+
+        numVerified++;
     }
+
+    LOG(INFO) << "Worker " << workerId << " verified " << numVerified << " client requests";
 }
 
 }   // namespace dombft
