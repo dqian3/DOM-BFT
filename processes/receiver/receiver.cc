@@ -149,8 +149,8 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     }
 
     // Send measurements replies back to the proxy, but only every 500ms
-    if (recv_time - lastMeasurementTimes[request.proxy_id()] > 500000) {
-        lastMeasurementTimes[request.proxy_id()] = recv_time;
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 500000) {
+        lastMeasurementTimes_[request.proxy_id()] = recv_time;
 
         MeasurementReply mReply;
         mReply.set_receiver_id(receiverId_);
@@ -168,14 +168,21 @@ void Receiver::forwardRequest(const DOMRequest &request)
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
-            << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+    if (VLOG_IS_ON(2)) {
+        VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
+                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
-    if (lastFwdDeadline > request.deadline()) {
-        VLOG(2) << "Forwarded request out of order!";
+        if (lastFwdDeadline_ > request.deadline()) {
+            VLOG(2) << "Forwarded request out of order!";
+        }
+    } else if (VLOG_IS_ON(1)) {
+        if (numForwarded_ % 10000 == 0) {
+            VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now;
+        }
     }
 
-    lastFwdDeadline = request.deadline();
+    numForwarded_ += 1;
+    lastFwdDeadline_ = request.deadline();
 
     if (skipForwarding_) {
         return;
