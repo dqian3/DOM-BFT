@@ -41,9 +41,12 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     /** Store replica addrs */
     numReceivers_ = config.receiverIps.size();
     if (config.transport == "nng") {
-        auto addrPairs = getReceiverAddrs(config, receiverId);
-        replicaAddr_ = addrPairs.back().second;
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
+        // auto addrPairs = getReceiverAddrs(config, receiverId);
+        // replicaAddr_ = addrPairs.back().second;
+        // endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
+
+        std::vector<std::pair<Address, Address>> pairs;
+        endpoint_ = std::make_unique<NngEndpointThreaded>(pairs, true, Address("127.0.0.1", 3000));
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
@@ -72,11 +75,58 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         verifyThds_.emplace_back(&Receiver::verifyThd, this, i);
     }
 
+    std::vector<std::thread> benchThreads;
+
+    for (int i = 0; i < 20; i++) {
+        // TEMP start a thread to feed a bunch of tasks into the receive queue
+        // Takes advantage of the loopback address
+        benchThreads.emplace_back([&, threadId = i]() {
+            ClientRequest clientReq;
+            DOMRequest domReq;
+            byte buf[2000];
+            SignatureProvider clientSig;
+            uint64_t now = GetMicrosecondTimestamp();
+
+            clientSig.loadPrivateKey(config.clientKeysDir + "/client" + std::to_string(threadId) + ".pem");
+
+            // Push 10k messages with sequential deadlines into system
+            for (int i = 0; i < 10000; i++) {
+                uint64_t now = GetMicrosecondTimestamp();
+
+                // Create a dummy client message
+                clientReq.set_client_id(threadId);
+                clientReq.set_client_seq(i);
+                clientReq.set_req_data("Test test test test");
+                MessageHeader *hdr = endpoint_->PrepareProtoMsg(clientReq, CLIENT_REQUEST, buf, 2000);
+                clientSig.appendSignature(hdr, 2000);
+
+                byte *rawCReq = (byte *) hdr;
+                std::string clientMsg(rawCReq, rawCReq + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
+
+                domReq.set_proxy_id(0);
+                domReq.set_client_id(threadId);
+                domReq.set_client_seq(i);
+                domReq.set_send_time(now);
+                domReq.set_deadline(now + 5000);
+                domReq.set_client_req(clientMsg);
+
+                hdr = endpoint_->PrepareProtoMsg(domReq, DOM_REQUEST, buf, 2000);
+                endpoint_->SendPreparedMsgTo(Address("127.0.0.1", 3000), hdr);
+            }
+
+            LOG(INFO) << "Pusing 10k requests took " << GetMicrosecondTimestamp() - now << " us";
+        });
+    }
+
     endpoint_->LoopRun();
     for (std::thread &thd : verifyThds_) {
         thd.join();
     }
     LOG(INFO) << "Receiver exited cleanly";
+
+    for (std::thread &thd : benchThreads) {
+        thd.join();
+    }
 }
 
 Receiver::~Receiver() {}
@@ -136,19 +186,19 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     verifyQueue_.enqueue(r);
 
     // Send measurements replies back to the proxy, but only every 500ms
-    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 500000) {
-        lastMeasurementTimes_[request.proxy_id()] = recv_time;
+    //     if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 500000) {
+    //         lastMeasurementTimes_[request.proxy_id()] = recv_time;
 
-        MeasurementReply mReply;
-        mReply.set_receiver_id(receiverId_);
-        mReply.set_owd(recv_time - request.send_time());
-        mReply.set_send_time(request.send_time());
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-#if FABRIC_CRYPTO
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
-        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_), hdr);
-    }
+    //         MeasurementReply mReply;
+    //         mReply.set_receiver_id(receiverId_);
+    //         mReply.set_owd(recv_time - request.send_time());
+    //         mReply.set_send_time(request.send_time());
+    //         MessageHeader *hdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
+    // #if FABRIC_CRYPTO
+    //         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    // #endif
+    //         endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_), hdr);
+    //     }
 }
 
 void Receiver::forwardRequest(const DOMRequest &request)
@@ -164,8 +214,12 @@ void Receiver::forwardRequest(const DOMRequest &request)
         }
     } else if (VLOG_IS_ON(1)) {
         if (numForwarded_ % 10000 == 0) {
-            VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now
-                    << " queue_size=" << deadlineQueue_.size();
+            if (numForwarded_ > 0) {
+                VLOG(1) << "Forwarded request number " << numForwarded_
+                        << " txput=" << 10000000000.0 / (now - lastStatTime_) << " req/s took " << now - lastStatTime_
+                        << " usec queue_size=" << deadlineQueue_.size();
+            }
+            lastStatTime_ = now;
         }
     }
 
@@ -216,7 +270,9 @@ void Receiver::verifyThd(int workerId)
     LOG(INFO) << "Starting verify thd";
 
     u_int32_t numVerified = 0;
+    u_int64_t verifyTime = 0;
     std::shared_ptr<Request> request;
+
     while (running_) {
 
         if (!verifyQueue_.wait_dequeue_timed(request, 10000)) {
@@ -227,15 +283,16 @@ void Receiver::verifyThd(int workerId)
 
         // Separate this out into another function probably.
 
-        // TODO is there a race condition reading the request here?
         MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
         byte *clientBody = (byte *) (clientMsgHdr + 1);
         if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
             LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
             return;
         }
-
+        uint64_t now = GetMicrosecondTimestamp();
         bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
+        verifyTime += GetMicrosecondTimestamp() - now;
+        VLOG(5) << "Verification took " << GetMicrosecondTimestamp() - now << " usec";
 
         {
             std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
@@ -253,7 +310,8 @@ void Receiver::verifyThd(int workerId)
         numVerified++;
     }
 
-    LOG(INFO) << "Worker " << workerId << " verified " << numVerified << " client requests";
+    LOG(INFO) << "Worker " << workerId << " verified " << numVerified << " client requests, averge verification time "
+              << verifyTime / numVerified << " ms";
 }
 
 }   // namespace dombft
