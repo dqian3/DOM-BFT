@@ -114,7 +114,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
                 endpoint_->SendPreparedMsgTo(Address("127.0.0.1", 3000), hdr);
             }
 
-            LOG(INFO) << "Pusing 10k requests took " << GetMicrosecondTimestamp() - now << " us";
+            LOG(INFO) << "Pushing 10k requests took " << GetMicrosecondTimestamp() - now << " us";
         });
     }
 
@@ -213,10 +213,10 @@ void Receiver::forwardRequest(const DOMRequest &request)
             VLOG(2) << "Forwarded request out of order!";
         }
     } else if (VLOG_IS_ON(1)) {
-        if (numForwarded_ % 10000 == 0) {
+        if (numForwarded_ % 40000 == 0) {
             if (numForwarded_ > 0) {
                 VLOG(1) << "Forwarded request number " << numForwarded_
-                        << " txput=" << 10000000000.0 / (now - lastStatTime_) << " req/s took " << now - lastStatTime_
+                        << " txput=" << 40 * 1e+5 / (now - lastStatTime_) << " req/s took " << now - lastStatTime_
                         << " usec queue_size=" << deadlineQueue_.size();
             }
             lastStatTime_ = now;
@@ -310,7 +310,7 @@ void Receiver::verifyThd(int workerId)
         numVerified++;
     }
 
-    LOG(INFO) << "Worker " << workerId << " verified " << numVerified << " client requests, averge verification time "
+    LOG(INFO) << "Worker " << workerId << " verified " << numVerified << " client requests, average verification time "
               << verifyTime / numVerified << " ms";
 }
 
