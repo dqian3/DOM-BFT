@@ -177,28 +177,23 @@ void Receiver::forwardRequest(const DOMRequest &request)
         }
     } else if (VLOG_IS_ON(1)) {
         if (numForwarded_ % 10000 == 0) {
-            VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now;
+            VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now
+                    << " queue_size=" << deadlineQueue_.size();
         }
     }
 
     numForwarded_ += 1;
     lastFwdDeadline_ = request.deadline();
 
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+#if FABRIC_CRYPTO
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+#endif
     if (skipForwarding_) {
         return;
     }
 
-    if (false)   // receiverConfig_.ipcReplica)
-    {
-        // TODO
-        throw "IPC communciation not implemented";
-    } else {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
-#if FABRIC_CRYPTO
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
-        endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
-    }
+    endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
 }
 
 void Receiver::checkDeadlines()

@@ -193,15 +193,20 @@ void Proxy::ForwardRequestsTd(const int thread_id)
             outReq.set_client_seq(inReq.client_seq());
             outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
-            for (int i = 0; i < numReceivers_; i++) {
-                VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
-                        << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
-                        << " now=" << GetMicrosecondTimestamp();
+            VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") deadline=" << deadline
+                    << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
 
-                MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+            if (numForwarded_ % 10000 == 0) {
+                VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now;
+            }
+
+            MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
-                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
+
+            for (int i = 0; i < numReceivers_; i++) {
+
                 forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
             }
         } else {
