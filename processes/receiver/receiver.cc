@@ -84,20 +84,7 @@ Receiver::Receiver(
     LOG(INFO) << "Receiver exited cleanly";
 }
 
-Receiver::~Receiver()
-{
-    running_ = false;
-    verifyCondVar_.notify_all();
-
-    // Join the verification threads
-    for (std::thread &thd : verifyThds_) {
-        if (thd.joinable()) {
-            thd.join();
-        }
-    }
-
-    LOG(INFO) << "Receiver exited cleanly";
-}
+Receiver::~Receiver() {}
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 {

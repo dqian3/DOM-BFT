@@ -149,15 +149,15 @@ void DummyReplica::verifyMessagesThd()
         byte *body = (byte *) (hdr + 1);
 
         if (hdr->msgType == CLIENT_REQUEST) {
-            ClientRequest clientRequestMessage;
+            ClientRequest request;
 
-            if (!clientRequestMessage.ParseFromArray(body, hdr->msgLen)) {
+            if (!request.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", clientRequestMessage.client_id())) {
-                LOG(INFO) << "Failed to verify client signature from " << clientRequestMessage.client_id();
+            if (!sigProvider_.verify(hdr, "client", request.client_id())) {
+                LOG(INFO) << "Failed to verify client signature from " << request.client_id();
                 continue;
             }
 
