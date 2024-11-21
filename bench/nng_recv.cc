@@ -33,9 +33,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    NngEndpointThreaded *endpoint = new NngEndpointThreaded(pairs);
-
-    std::shared_ptr<Log> log_ = std::make_shared<Log>(std::make_shared<Counter>());
+    NngEndpoint *endpoint = new NngEndpoint(pairs);
 
     int i = 0;
     bool started = false;
