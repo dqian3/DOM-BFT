@@ -84,19 +84,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
-        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
-
-        /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
-        }
-
-        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
-
-        /** Store all client addrs */
-        for (uint32_t i = 0; i < config.clientIps.size(); i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
-        }
+        LOG(ERROR) << "Unsupported transport " << config.transport;
     }
 
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
@@ -419,9 +407,13 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     std::string digest(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
 
-    LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-               << " client_seq=" << clientSeq << " instance=" << instance_
-               << " digest=" << digest_to_hex(digest).substr(56);
+    if (VLOG_IS_ON(2)) {
+        VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+                << " client_seq=" << clientSeq << " instance=" << instance_
+                << " digest=" << digest_to_hex(digest).substr(56);
+    } else {
+        // TODO do some logging here?
+    }
 
     Reply reply;
 
@@ -433,12 +425,11 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_instance(instance_);
     reply.set_digest(digest);
 
-    LOG(INFO) << "Sending reply back to client " << clientId;
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
-        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+        VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
 
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
         // TODO remove execution result here

@@ -12,7 +12,7 @@ public:
         : numReceivers_(numReceivers)
         , cap_(cap)
         , windowSize_(windowSize)
-        , windowIndex_(0)
+        , windowIndex_(numReceivers, 0)
     {
         recvrMeasures_.resize(numReceivers_);
         for (auto &measures : recvrMeasures_) {
@@ -28,6 +28,19 @@ public:
         for (auto &measures : recvrMeasures_) {
             maxOWD = std::min(cap_, std::max(maxOWD, getRcvrOWD(measures)));
         }
+
+        if (VLOG_IS_ON(6)) {
+            std::ostringstream out;
+            for (size_t i = 0; i < recvrMeasures_.size(); i++) {
+                out << i << " | ";
+                for (uint32_t measure : recvrMeasures_[i]) {
+                    out << measure << " ";
+                }
+                out << "\n";
+            }
+            VLOG(6) << out.str();
+        }
+
         return maxOWD;
     }
     uint32_t getPercentileOWD(uint32_t percentile) const
@@ -49,7 +62,8 @@ protected:
     uint32_t numReceivers_;
     uint32_t cap_;
     uint32_t windowSize_;
-    uint32_t windowIndex_;
+
+    std::vector<uint32_t> windowIndex_;
     std::vector<std::vector<uint32_t>> recvrMeasures_;
 };
 
@@ -62,8 +76,8 @@ public:
 
     inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override
     {
-        recvrMeasures_[rcvrIndex][windowIndex_] = measure;
-        windowIndex_ = windowSize_ ? (windowIndex_ + 1) % windowSize_ : windowIndex_ + 1;
+        recvrMeasures_[rcvrIndex][windowIndex_[rcvrIndex]] = measure;
+        windowIndex_[rcvrIndex] = (windowIndex_[rcvrIndex] + 1) % windowSize_;
     }
 
 private:
@@ -105,8 +119,8 @@ public:
 
     inline void addMeasure(uint32_t rcvrIndex, uint32_t measure) override
     {
-        recvrMeasures_[rcvrIndex][windowIndex_] = measure;
-        windowIndex_ = windowSize_ ? (windowIndex_ + 1) % windowSize_ : windowIndex_ + 1;
+        recvrMeasures_[rcvrIndex][windowIndex_[rcvrIndex]] = measure;
+        windowIndex_[rcvrIndex] = (windowIndex_[rcvrIndex] + 1) % windowSize_;
     }
 
 private:

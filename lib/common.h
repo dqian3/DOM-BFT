@@ -21,16 +21,17 @@
 
 // In general, these are for changing major changes to the behavior of the protocols
 // rather than for tunable parameters such as timeouts or changeable information such
-// as IPs and ports. Generally these will be used for experiments
+// as IPs and ports. Generally these will be used for ablation experiments or benchmarks
+// of specific components of the system.
 
 #define SEND_BUFFER_SIZE (20000000)
 #define UDP_BUFFER_SIZE  (1024)
 #define NNG_BUFFER_SIZE  (20000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY     1
+#define USE_PROXY     0
 #define FABRIC_CRYPTO 0
-#define SKIP_CRYPTO   0
+#define SKIP_CRYPTO   1
 
 // For working with dummy protocols
 #define SEND_TO_LEADER 0

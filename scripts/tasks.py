@@ -621,6 +621,7 @@ def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml",
         proxy_handles.append(hdl)
 
     try:
+
         # join on the client processes, which should end
         for hdl in proxy_handles:
             hdl.join()
@@ -630,11 +631,12 @@ def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml",
 
     finally:
         # kill these processes and then join
-        for hdl in other_handles:
-            hdl.runner.send_interrupt(KeyboardInterrupt())
-            hdl.join()
 
-        if not local_log:
+        try:
+            for hdl in other_handles:
+                hdl.runner.send_interrupt(KeyboardInterrupt())
+                hdl.join()
+        finally:
             get_logs(c, receivers, "receiver")
             get_logs(c, proxies, "proxy")
 
