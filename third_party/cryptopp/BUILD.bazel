@@ -1,0 +1,8 @@
+load("@rules_foreign_cc//foreign_cc:make.bzl", "make")
+
+make(
+    name = "cryptopp",
+    lib_source = ".",       # Directory containing the source files
+    visibility = ["//visibility:public"],
+    out_static_libs = ["libcryptopp.a"],  # Built library output
+)
