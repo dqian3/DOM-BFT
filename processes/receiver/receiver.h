@@ -52,7 +52,7 @@ private:
     Address replicaAddr_;
 
     // Bookeeping
-    uint64_t lastFwdDeadline_;
+    uint64_t lastFwdDeadline_ = 0;
     // Map from proxy_id to last measurement sent time
     std::map<uint32_t, uint64_t> lastMeasurementTimes_;
     uint32_t numForwarded_ = 0;

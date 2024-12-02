@@ -35,8 +35,8 @@ private:
     SignatureProvider sigProvider_;
 
     // Control flow/endpoint objects
-    ConcurrentQueue<std::vector<byte>> verifyQueue_;
-    ConcurrentQueue<std::vector<byte>> processQueue_;
+    BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;
+    BlockingConcurrentQueue<std::vector<byte>> processQueue_;
     ThreadPool sendThreadpool_;
 
     bool running_;

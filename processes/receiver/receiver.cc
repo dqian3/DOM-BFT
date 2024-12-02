@@ -16,7 +16,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     , ignoreDeadlines_(ignoreDeadlines)
     , running_(true)
 {
-    std::string receiverIp = config.receiverIps[receiverId_];
+    std::string receiverIp = config.receiverIps.at(receiverId_);
     LOG(INFO) << "receiverIP=" << receiverIp;
     int receiverPort = config.receiverPort;
     LOG(INFO) << "receiverPort=" << receiverPort;
@@ -45,8 +45,9 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         replicaAddr_ = addrPairs.back().second;
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
     } else {
-        replicaAddr_ =
-            (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
+        replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
+        LOG(INFO) << "Replica Address: " << replicaAddr_;
+
         endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
     }
 
@@ -184,6 +185,7 @@ void Receiver::forwardRequest(const DOMRequest &request)
         return;
     }
 
+    LOG(INFO) << replicaAddr_;
     endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
 }
 

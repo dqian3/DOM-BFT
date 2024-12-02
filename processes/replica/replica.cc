@@ -165,7 +165,7 @@ void Replica::verifyMessagesThd()
     std::vector<byte> msg;
 
     while (running_) {
-        if (!verifyQueue_.try_dequeue(msg)) {
+        if (!verifyQueue_.wait_dequeue_timed(msg, 50000)) {
             continue;
         }
 
@@ -261,7 +261,7 @@ void Replica::processMessagesThd()
     std::vector<byte> msg;
 
     while (running_) {
-        if (!processQueue_.try_dequeue(msg)) {
+        if (!processQueue_.wait_dequeue_timed(msg, 50000)) {
             continue;
         }
         MessageHeader *hdr = (MessageHeader *) msg.data();

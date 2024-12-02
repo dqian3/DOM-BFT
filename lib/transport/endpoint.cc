@@ -8,6 +8,7 @@ Endpoint::Endpoint(const bool isMasterReceiver, const std::optional<Address> &lo
         LOG(ERROR) << "Event Loop error";
         return;
     }
+    memset(sendBuffer_, 0, SEND_BUFFER_SIZE);
 }
 
 Endpoint::~Endpoint()

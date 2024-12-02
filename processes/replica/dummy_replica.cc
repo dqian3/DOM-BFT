@@ -74,9 +74,21 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         }
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
+    } else if (config.transport == "udp") {
+        size_t nClients = config.clientIps.size();
+        for (size_t i = 0; i < nClients; i++) {
+            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
+        }
+
+        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
+
+        for (size_t i = nClients + 1; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort);
     } else {
-        LOG(ERROR) << "Dummy Replica only supports NNG!";
-        exit(1);
+        LOG(ERROR) << "Unsupported transport " << config.transport;
     }
 
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
@@ -128,6 +140,8 @@ void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address
     byte *rawMsg = (byte *) msgHdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
 
+    VLOG(5) << "Receive message from " << *sender;
+
     if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
@@ -141,7 +155,7 @@ void DummyReplica::verifyMessagesThd()
     std::vector<byte> msg;
 
     while (running_) {
-        if (!verifyQueue_.try_dequeue(msg)) {
+        if (!verifyQueue_.wait_dequeue_timed(msg, 50000)) {
             continue;
         }
 
@@ -188,7 +202,7 @@ void DummyReplica::processMessagesThd()
     std::vector<byte> msg;
 
     while (running_) {
-        if (!processQueue_.try_dequeue(msg)) {
+        if (!processQueue_.wait_dequeue_timed(msg, 50000)) {
             continue;
         }
         MessageHeader *hdr = (MessageHeader *) msg.data();
