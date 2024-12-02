@@ -1,8 +1,15 @@
 load("@rules_foreign_cc//foreign_cc:make.bzl", "make")
 
+filegroup(
+    name = "all_srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+
+
 make(
     name = "cryptopp",
-    lib_source = ".",       # Directory containing the source files
+    lib_source = ":all_srcs",       # Directory containing the source files
     visibility = ["//visibility:public"],
     out_static_libs = ["libcryptopp.a"],  # Built library output
 )
