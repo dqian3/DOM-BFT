@@ -29,7 +29,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     int replicaPort = config.replicaPort;
     LOG(INFO) << "replicaPort=" << replicaPort;
 
-    std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".pem";
+    std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".der";
     LOG(INFO) << "Loading key from " << replicaKey;
     if (!sigProvider_.loadPrivateKey(replicaKey)) {
         LOG(ERROR) << "Unable to load private key!";

@@ -119,3 +119,13 @@ http_archive(
   strip_prefix = "nng-1.8.0",
   build_file = "//third_party/nng:BUILD.bazel",
 )
+
+
+http_archive(
+    name = "cryptopp",
+    build_file = "//third_party/cryptopp:BUILD.bazel",
+    strip_prefix = "cryptopp-CRYPTOPP_8_9_0",
+    sha256 = "ab5174b9b5c6236588e15a1aa1aaecb6658cdbe09501c7981ac8db276a24d9ab",
+    urls = ["https://github.com/weidai11/cryptopp/archive/refs/tags/CRYPTOPP_8_9_0.tar.gz"],
+)
+

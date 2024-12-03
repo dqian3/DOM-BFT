@@ -3,16 +3,17 @@
 
 #include "lib/common.h"
 #include <map>
-#include <openssl/evp.h>
+
+#include <cryptopp/xed25519.h>
 
 // TODO make this also tied to addresses?
 
 class SignatureProvider {
 protected:
-    EVP_PKEY *privKey_;
+    CryptoPP::ed25519PrivateKey privKey_;
 
     // Stores public keys for different types of processes by id
-    std::map<std::string, std::map<uint32_t, EVP_PKEY *>> pubKeys_;
+    std::map<std::string, std::map<uint32_t, CryptoPP::ed25519PublicKey>> pubKeys_;
 
 public:
     SignatureProvider();
@@ -20,7 +21,7 @@ public:
 
     // Assumes hdr is the start of a message in a buffer.
     // TODO is this bad practice?
-    int appendSignature(MessageHeader *hdr, uint32_t bufLen);
+    bool appendSignature(MessageHeader *hdr, uint32_t bufLen);
 
     bool verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId);
     bool verify(MessageHeader *hdr, const std::string &pubKeyType, int pubKeyId);

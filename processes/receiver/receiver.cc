@@ -21,7 +21,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     int receiverPort = config.receiverPort;
     LOG(INFO) << "receiverPort=" << receiverPort;
 
-    std::string receiverKey = config.receiverKeysDir + "/receiver" + std::to_string(receiverId_) + ".pem";
+    std::string receiverKey = config.receiverKeysDir + "/receiver" + std::to_string(receiverId_) + ".der";
     LOG(INFO) << "Loading key from " << receiverKey;
     if (!sigProvider_.loadPrivateKey(receiverKey)) {
         LOG(ERROR) << "Unable to load private key!";
