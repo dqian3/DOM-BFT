@@ -19,7 +19,8 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , sendThreadpool_(config.replicaNumSendThreads)
 {
-    // TODO check for config errors
+    LOG(INFO) << "f=" << f_;
+
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
@@ -264,15 +265,18 @@ void DummyReplica::processMessagesThd()
 
                     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[protoMsg.client_id()]);
                 }
+
             }
 
-            if (protoMsg.phase() == 1) {
+            else if (protoMsg.phase() == 1) {
                 if (prot_ == DummyProtocol::PBFT) {
                     uint32_t seq = protoMsg.seq();
                     if (seq <= committedSeq_)
                         continue;
 
                     prepareCounts[seq]++;
+
+                    VLOG(5) << "PREPARE " << seq << " " << prepareCounts[seq] << " " << protoMsg.replica_id();
 
                     if (prepareCounts[seq] == 2 * f_ + 1) {
                         protoMsg.set_phase(2);
@@ -285,7 +289,7 @@ void DummyReplica::processMessagesThd()
                 }
             }
 
-            if (protoMsg.phase() == 2) {
+            else if (protoMsg.phase() == 2) {
                 if (prot_ == DummyProtocol::PBFT) {
 
                     uint32_t seq = protoMsg.seq();
@@ -293,6 +297,8 @@ void DummyReplica::processMessagesThd()
                         continue;
 
                     commitCounts[seq]++;
+
+                    VLOG(5) << "COMMIT " << seq << " " << commitCounts[seq] << " " << protoMsg.replica_id();
 
                     if (commitCounts[seq] == 2 * f_ + 1) {
 
