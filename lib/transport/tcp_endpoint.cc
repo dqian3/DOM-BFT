@@ -24,8 +24,8 @@ TCPMessageHandler::TCPMessageHandler(struct ev_loop *evLoop, int fd, const Addre
                 m->remaining_ = msgHeader->msgLen + msgHeader->sigLen;
 
                 // TODO call recv again here instead of going back to the loop.
-                LOG(INFO) << "Read Header: " << m->fd_ << " " << m->offset_ << " " << m->remaining_ << " "
-                          << msgHeader->msgLen + msgHeader->sigLen + sizeof(MessageHeader);
+                // LOG(INFO) << "Read Header: " << m->fd_ << " " << m->offset_ << " " << m->remaining_ << " "
+                //           << msgHeader->msgLen + msgHeader->sigLen + sizeof(MessageHeader);
 
             } else if (ret == 0) {
                 // Disconnect
@@ -57,8 +57,8 @@ TCPMessageHandler::TCPMessageHandler(struct ev_loop *evLoop, int fd, const Addre
             if (m->remaining_ == 0) {
                 MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
 
-                LOG(INFO) << "Continue Read: " << m->fd_ << " " << m->offset_ << " " << m->remaining_ << " "
-                          << msgHeader->msgLen + msgHeader->sigLen + sizeof(MessageHeader);
+                // LOG(INFO) << "Continue Read: " << m->fd_ << " " << m->offset_ << " " << m->remaining_ << " "
+                //           << msgHeader->msgLen + msgHeader->sigLen + sizeof(MessageHeader);
 
                 assert(m->offset_ == sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen);
                 m->handlerFunc_(msgHeader, m->other_);
