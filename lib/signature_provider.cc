@@ -29,8 +29,9 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
     // Ohh some C++17 stuff, hopefully this is reasonable
     const std::filesystem::path keysPath(keyDir);
 
-    try {
-        for (auto const &dirEntry : std::filesystem::directory_iterator(keysPath)) {
+    for (auto const &dirEntry : std::filesystem::directory_iterator(keysPath)) {
+
+        try {
             if (!dirEntry.is_regular_file())
                 continue;
             if (dirEntry.path().extension() != ".pub")
@@ -47,13 +48,14 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
             // Assumes id is end of name.
             int id = std::stoi(stem.substr(stem.find_first_of("0123456789")));
             pubKeys_[keyType][id] = pubKey;
+
+        } catch (const CryptoPP::Exception &e) {
+            LOG(ERROR) << "While loading " << dirEntry << ", encountered crypto++ exception: " << e.what();
+            return false;
+        } catch (const std::exception &e) {
+            LOG(ERROR) << e.what();
+            return false;
         }
-    } catch (const CryptoPP::Exception &e) {
-        LOG(ERROR) << "Crypto++ Exception: " << e.what();
-        return false;
-    } catch (const std::exception &e) {
-        LOG(ERROR) << e.what();
-        return false;
     }
 
     LOG(INFO) << "Loaded " << pubKeys_[keyType].size() << " keys for " << keyType << " from '" << keyDir << "'";
