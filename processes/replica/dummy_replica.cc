@@ -140,8 +140,6 @@ void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address
     byte *rawMsg = (byte *) msgHdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
 
-    VLOG(5) << "Receive message from " << *sender;
-
     if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
@@ -374,6 +372,9 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
 
         VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << nextSeq_
                 << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
+
+        //... but here increment nextSeq_ to keep track of requests received
+        nextSeq_++;
     }
 }
 

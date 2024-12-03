@@ -69,7 +69,7 @@ thread_local AutoSeededRandomPool rng_;
 bool SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 {
 #if SKIP_CRYPTO
-    return 0;
+    return true;
 #endif
 
     size_t sigLen;
@@ -93,7 +93,7 @@ bool SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 
     hdr->sigLen = signer.SignMessage(rng_, data, hdr->msgLen, sig);
 
-    return 0;
+    return true;
 }
 
 std::vector<byte> SignatureProvider::getSignature(MessageHeader *hdr)

@@ -278,6 +278,8 @@ def gcloud_copy_keys(c, config_file="../configs/remote-prod.yaml"):
     group = ThreadingGroup(*get_all_ext_ips(config, ext_ips))
     group.put(config_file)
 
+    group.run("rm -rf keys/*")
+
     print("Copying keys over...")
     for process in ["client", "replica", "receiver", "proxy"]:
         group.run(f"mkdir -p keys/{process}")
@@ -560,6 +562,8 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
 
         for hdl in other_handles:
             hdl.join()
+
+        c.run("rm -f ../logs/*.log")
 
         if not local_log:
             get_logs(c, clients, "client")
