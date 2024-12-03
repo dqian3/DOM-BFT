@@ -19,6 +19,8 @@ bool SignatureProvider::loadPrivateKey(const std::string &privateKeyPath)
     // Load private key from DER file
     FileSource fs(privateKeyPath.c_str(), true);
     privKey_.Load(fs);
+
+    return true;
 }
 
 // Assumes keys are in directory keyDir with names ending in an _n.pub, where n is the id number
@@ -62,10 +64,10 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
 // TODO don't know if this actually needs to be thread local
 thread_local AutoSeededRandomPool rng_;
 
-int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
+bool SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 {
 #if SKIP_CRYPTO
-    return true;
+    return 0;
 #endif
 
     size_t sigLen;
@@ -74,14 +76,20 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
         LOG(ERROR) << "Error signing message, inital message size " << hdr->msgLen + sizeof(MessageHeader)
                    << " exceeds given buffer capacity " << bufLen;
 
-        return -1;
+        return false;
     }
 
     byte *data = (byte *) (hdr + 1);
     byte *sig = data + hdr->msgLen;
 
     ed25519Signer signer(privKey_);
-    size_t signatureActualSize = signer.SignMessage(rng_, data, hdr->msgLen, sig);
+
+    if (sizeof(MessageHeader) + hdr->msgLen + signer.MaxSignatureLength() > bufLen) {
+        LOG(ERROR) << "Error signing message, signing would exceed given buffer capacity " << bufLen;
+        return false;
+    }
+
+    hdr->sigLen = signer.SignMessage(rng_, data, hdr->msgLen, sig);
 
     return 0;
 }
