@@ -2,27 +2,24 @@
 #include <filesystem>
 #include <glog/logging.h>
 
-#include <openssl/pem.h>
+#include <cryptopp/cryptlib.h>
+#include <cryptopp/files.h>
+#include <cryptopp/osrng.h>
 
 #define MAX_SIG_LEN 256
 
-SignatureProvider::SignatureProvider()
-    : privKey_(nullptr)
-{
-}
+using namespace CryptoPP;
+
+SignatureProvider::SignatureProvider() {}
 
 SignatureProvider::~SignatureProvider() {}
 
 bool SignatureProvider::loadPrivateKey(const std::string &privateKeyPath)
 {
-    BIO *bo = BIO_new_file(privateKeyPath.c_str(), "r");
-    PEM_read_bio_PrivateKey(bo, &privKey_, 0, 0);
-    BIO_free(bo);
+    // Load private key from DER file
+    FileSource fs(privateKeyPath.c_str(), true);
+    privKey_.Load(fs);
 
-    if (privKey_ == NULL) {
-        LOG(ERROR) << "Unable to load private key!";
-        return false;
-    }
     return true;
 }
 
@@ -32,20 +29,18 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
     // Ohh some C++17 stuff, hopefully this is reasonable
     const std::filesystem::path keysPath(keyDir);
 
-    try {
-        for (auto const &dirEntry : std::filesystem::directory_iterator(keysPath)) {
+    for (auto const &dirEntry : std::filesystem::directory_iterator(keysPath)) {
+
+        try {
             if (!dirEntry.is_regular_file())
                 continue;
             if (dirEntry.path().extension() != ".pub")
                 continue;
 
-            EVP_PKEY *pubKey = nullptr;
-            BIO *bo = BIO_new_file(dirEntry.path().c_str(), "r");
-            PEM_read_bio_PUBKEY(bo, &pubKey, 0, 0);
-            BIO_free(bo);
-
-            if (pubKey == nullptr) {
-                LOG(ERROR) << "Unable to load public key from " << dirEntry.path() << " continuing...";
+            ed25519PublicKey pubKey;
+            {
+                FileSource fs(dirEntry.path().c_str(), true);
+                pubKey.Load(fs);
             }
 
             // Find id by just looking for the prefix_<n>.pub
@@ -53,10 +48,14 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
             // Assumes id is end of name.
             int id = std::stoi(stem.substr(stem.find_first_of("0123456789")));
             pubKeys_[keyType][id] = pubKey;
+
+        } catch (const CryptoPP::Exception &e) {
+            LOG(ERROR) << "While loading " << dirEntry << ", encountered crypto++ exception: " << e.what();
+            return false;
+        } catch (const std::exception &e) {
+            LOG(ERROR) << e.what();
+            return false;
         }
-    } catch (const std::exception &e) {
-        LOG(ERROR) << e.what();
-        return false;
     }
 
     LOG(INFO) << "Loaded " << pubKeys_[keyType].size() << " keys for " << keyType << " from '" << keyDir << "'";
@@ -64,12 +63,14 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
     return true;
 }
 
-int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
+// TODO don't know if this actually needs to be thread local
+thread_local AutoSeededRandomPool rng_;
+
+bool SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 {
-    if (privKey_ == nullptr) {
-        LOG(ERROR) << "Private key not initialized";
-        return -1;
-    }
+#if SKIP_CRYPTO
+    return true;
+#endif
 
     size_t sigLen;
 
@@ -77,68 +78,22 @@ int SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
         LOG(ERROR) << "Error signing message, inital message size " << hdr->msgLen + sizeof(MessageHeader)
                    << " exceeds given buffer capacity " << bufLen;
 
-        return -1;
+        return false;
     }
 
     byte *data = (byte *) (hdr + 1);
     byte *sig = data + hdr->msgLen;
 
-    // Write signature after msg
-    EVP_MD_CTX *mdctx = NULL;
-    if (!(mdctx = EVP_MD_CTX_create())) {
-        LOG(ERROR) << "Error EVP_MD_CTX_create!";
-        return -1;
+    ed25519Signer signer(privKey_);
+
+    if (sizeof(MessageHeader) + hdr->msgLen + signer.MaxSignatureLength() > bufLen) {
+        LOG(ERROR) << "Error signing message, signing would exceed given buffer capacity " << bufLen;
+        return false;
     }
 
-    // These are ust taken from examples here:
-    // https://www.openssl.org/docs/man3.0/man7/Ed25519.html
-    // https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
-    if (EVP_PKEY_id(privKey_) == EVP_PKEY_ED25519) {
-        if (1 != EVP_DigestSignInit(mdctx, NULL, NULL, NULL, privKey_)) {
-            LOG(ERROR) << "Error EVP_DigestSignInit!";
-            return -1;
-        }
+    hdr->sigLen = signer.SignMessage(rng_, data, hdr->msgLen, sig);
 
-        if (1 != EVP_DigestSign(mdctx, NULL, &sigLen, data, hdr->msgLen)) {
-            LOG(ERROR) << "Error EVP_DigestSign!";
-            return -1;
-        }
-
-        if (hdr->msgLen + hdr->sigLen + sizeof(MessageHeader) > bufLen) {
-            LOG(ERROR) << "Error signing message, not enough room in buffer for signature!";
-            return -1;
-        }
-
-        hdr->sigLen = sigLen;
-
-        if (1 != EVP_DigestSign(mdctx, sig, &sigLen, data, hdr->msgLen)) {
-            LOG(ERROR) << "Error EVP_DigestSign!";
-            return -1;
-        }
-    } else {
-        if (1 != EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, privKey_))
-            return -1;
-        if (1 != EVP_DigestSignUpdate(mdctx, data, hdr->msgLen))
-            return -1;
-
-        if (1 != EVP_DigestSignFinal(mdctx, NULL, &sigLen)) {
-            LOG(ERROR) << "Failed to calculate signature length!\n";
-            return -1;
-        }
-        hdr->sigLen = sigLen;
-
-        if (hdr->msgLen + hdr->sigLen + sizeof(MessageHeader) > bufLen) {
-            LOG(ERROR) << "Error signing message, not enough room in buffer for signature!";
-            return -1;
-        }
-
-        if (1 != EVP_DigestSignFinal(mdctx, sig, &sigLen)) {
-            LOG(ERROR) << "Failed to sign message!\n";
-            return -1;
-        }
-    }
-
-    return 0;
+    return true;
 }
 
 std::vector<byte> SignatureProvider::getSignature(MessageHeader *hdr)
@@ -151,51 +106,17 @@ bool SignatureProvider::verify(
     byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId
 )
 {
+#if SKIP_CRYPTO
+    return true;
+#endif
+
     if (!pubKeys_.count(pubKeyType) || !pubKeys_.at(pubKeyType).count(pubKeyId)) {
         LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";
         return false;
     }
 
-    EVP_PKEY *key = pubKeys_.at(pubKeyType).at(pubKeyId);
-    EVP_MD_CTX *mdctx = NULL;
-
-    /* Create the Message Digest Context */
-    if (!(mdctx = EVP_MD_CTX_create())) {
-        LOG(ERROR) << "Error creating OpenSSL Context";
-        return false;
-    }
-
-    if (EVP_PKEY_id(privKey_) == EVP_PKEY_ED25519) {
-        if (1 != EVP_DigestVerifyInit(mdctx, NULL, NULL, NULL, key)) {
-            LOG(ERROR) << "Error initializing digest context";
-            return false;
-        }
-
-        if (1 == EVP_DigestVerify(mdctx, sig, sigLen, data, dataLen)) {
-            return true;
-        } else {
-            LOG(ERROR) << "signature did not verify :(";
-            return false;
-        }
-    } else {
-        if (1 != EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, key)) {
-            LOG(ERROR) << "Error initializing digest context";
-            return false;
-        }
-
-        /* Initialize `key` with a public key */
-        if (1 != EVP_DigestVerifyUpdate(mdctx, data, dataLen)) {
-            LOG(ERROR) << "Error EVP_DigestVerifyUpdate";
-            return false;
-        }
-
-        if (1 == EVP_DigestVerifyFinal(mdctx, sig, sigLen)) {
-            return true;
-        } else {
-            LOG(ERROR) << "signature did not verify :(";
-            return false;
-        }
-    }
+    ed25519Verifier verifier(pubKeys_.at(pubKeyType).at(pubKeyId));
+    return verifier.VerifyMessage(data, dataLen, sig, sigLen);
 }
 
 bool SignatureProvider::verify(MessageHeader *hdr, const std::string &pubKeyType, int pubKeyId)

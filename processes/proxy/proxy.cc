@@ -17,8 +17,9 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     proxyId_ = proxyId;
     selfGenReqs_ = false;
 
-    std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".pem";
+    std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".der";
     LOG(INFO) << "Loading key from " << proxyKey;
+
     if (!sigProvider_.loadPrivateKey(proxyKey)) {
         LOG(ERROR) << "Unable to load private key!";
         exit(1);
@@ -147,8 +148,6 @@ void Proxy::RecvMeasurementsTd()
             return;
         }
         uint64_t now = GetMicrosecondTimestamp();
-        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
-                << " rtt=" << now - reply.send_time() << " now=" << now;
 
         if (reply.owd() > 0) {
             context.addMeasure(reply.receiver_id(), reply.owd());
@@ -160,7 +159,9 @@ void Proxy::RecvMeasurementsTd()
         }
 
         latencyBound_.store(context.getCappedMaxOWD() * 1.5);
-        VLOG(4) << "Latency bound is set to be " << latencyBound_.load();
+        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+                << " rtt=" << now - reply.send_time() << " now=" << now << "\nLatency bound is set to be "
+                << latencyBound_.load();
     };
 
     /* Checks every 10ms to see if we are done*/
@@ -212,15 +213,21 @@ void Proxy::ForwardRequestsTd(const int thread_id)
             outReq.set_client_seq(inReq.client_seq());
             outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
-            for (int i = 0; i < numReceivers_; i++) {
-                VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
-                        << receiverAddrs_[i].ip_ << " deadline=" << deadline << " latencyBound=" << latencyBound_
-                        << " now=" << GetMicrosecondTimestamp();
+            VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") deadline=" << deadline
+                    << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
 
-                MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+            if (numForwarded_ % 10000 == 0) {
+                VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now;
+            }
+            numForwarded_++;
+
+            MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
-                sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
+
+            for (int i = 0; i < numReceivers_; i++) {
+
                 forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
             }
         } else {
@@ -328,7 +335,6 @@ void Proxy::GenerateRequestsTd()
                 uint32_t interval_us = interval * 1000000;
                 interval_us = std::max(1u, interval_us);
 
-                VLOG(1) << "Waiting for " << interval_us << " usec";
                 ep->ResetTimer(&timer, interval_us);
             },
             1000, this

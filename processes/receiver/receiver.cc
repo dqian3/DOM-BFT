@@ -10,22 +10,19 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(
-    const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines, bool skipVerify
-)
+Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
-    , skipVerify_(skipVerify)
     , running_(true)
 {
-    std::string receiverIp = config.receiverIps[receiverId_];
+    std::string receiverIp = config.receiverIps.at(receiverId_);
     LOG(INFO) << "receiverIP=" << receiverIp;
     int receiverPort = config.receiverPort;
     LOG(INFO) << "receiverPort=" << receiverPort;
 
-    std::string receiverKey = config.receiverKeysDir + "/receiver" + std::to_string(receiverId_) + ".pem";
+    std::string receiverKey = config.receiverKeysDir + "/receiver" + std::to_string(receiverId_) + ".der";
     LOG(INFO) << "Loading key from " << receiverKey;
     if (!sigProvider_.loadPrivateKey(receiverKey)) {
         LOG(ERROR) << "Unable to load private key!";
@@ -77,8 +74,6 @@ Receiver::Receiver(
     endpoint_->RegisterSignalHandler([&]() {
         running_ = false;
         endpoint_->LoopBreak();
-
-        verifyCondVar_.notify_all();
     });
 
     // Start verify threads
@@ -86,7 +81,7 @@ Receiver::Receiver(
     uint32_t numVerifyThreads = config.numVerifyThreads;
 
     for (int i = 0; i < numVerifyThreads; i++) {
-        verifyThds_.emplace_back(&Receiver::verifyWorker, this);
+        verifyThds_.emplace_back(&Receiver::verifyThd, this, i);
     }
 
     endpoint_->LoopRun();
@@ -96,20 +91,7 @@ Receiver::Receiver(
     LOG(INFO) << "Receiver exited cleanly";
 }
 
-Receiver::~Receiver()
-{
-    running_ = false;
-    verifyCondVar_.notify_all();
-
-    // Join the verification threads
-    for (std::thread &thd : verifyThds_) {
-        if (thd.joinable()) {
-            thd.join();
-        }
-    }
-
-    LOG(INFO) << "Receiver exited cleanly";
-}
+Receiver::~Receiver() {}
 
 void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
 {
@@ -164,18 +146,12 @@ void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
         deadlineQueue_[{deadline, request.client_id()}] = r;
     }
 
-    if (skipVerify_) {
-        r->verified = true;
-    } else {
-        {
-            std::lock_guard<std::mutex> lock(verifyQueueMtx_);
-            verifyQueue_.push(r);
-        }
-        verifyCondVar_.notify_one();
-    }
+    verifyQueue_.enqueue(r);
 
-    // Send measurements replies back to the proxy, but only sometimes
-    if (request.client_id() / 4 == 0 && request.client_seq() % 10 == 0) {
+    // Send measurements replies back to the proxy, but only every 500ms
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 500000) {
+        lastMeasurementTimes_[request.proxy_id()] = recv_time;
+
         MeasurementReply mReply;
         mReply.set_receiver_id(receiverId_);
         mReply.set_owd(recv_time - request.send_time());
@@ -184,7 +160,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(Address(sender.ip(), proxyMeasurementPort_));
+        endpoint_->SendPreparedMsgTo(Address(sender.ip(), proxyMeasurementPort_), hdr);
     }
 }
 
@@ -192,30 +168,36 @@ void Receiver::forwardRequest(const DOMRequest &request)
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    LOG(INFO) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
-              << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+    if (VLOG_IS_ON(2)) {
+        VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
+                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
-    if (lastFwdDeadline > request.deadline()) {
-        LOG(WARNING) << "Forwarded request out of order!";
+        if (lastFwdDeadline_ > request.deadline()) {
+            VLOG(2) << "Forwarded request out of order!";
+        }
+    } else if (VLOG_IS_ON(1)) {
+        if (numForwarded_ % 10000 == 0) {
+            if (numForwarded_ > 0) {
+                VLOG(1) << "Forwarded request number " << numForwarded_
+                        << " txput=" << 1e+4 * 1e+6 / (now - lastStatTime_) << " req/s took " << now - lastStatTime_
+                        << " usec queue_size=" << deadlineQueue_.size();
+            }
+            lastStatTime_ = now;
+        }
     }
 
-    lastFwdDeadline = request.deadline();
+    numForwarded_ += 1;
+    lastFwdDeadline_ = request.deadline();
 
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+#if FABRIC_CRYPTO
+    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+#endif
     if (skipForwarding_) {
         return;
     }
 
-    if (false)   // receiverConfig_.ipcReplica)
-    {
-        // TODO
-        throw "IPC communciation not implemented";
-    } else {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
-#if FABRIC_CRYPTO
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
-        endpoint_->SendPreparedMsgTo(replicaAddr_);
-    }
+    endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
 }
 
 void Receiver::checkDeadlines()
@@ -246,57 +228,49 @@ void Receiver::checkDeadlines()
     endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
 }
 
-void Receiver::verifyWorker()
+void Receiver::verifyThd(int workerId)
 {
     LOG(INFO) << "Starting verify thd";
 
+    u_int32_t numVerified = 0;
     std::shared_ptr<Request> request;
     while (running_) {
-        std::unique_lock<std::mutex> lock(verifyQueueMtx_);
-        verifyCondVar_.wait(lock, [this] { return !verifyQueue_.empty() || !running_; });
 
-        if (!running_ && verifyQueue_.empty()) {
-            LOG(ERROR) << "Verify thread exiting...";
-            lock.unlock();
-            break;
+        if (!verifyQueue_.wait_dequeue_timed(request, 10000)) {
+            continue;
         }
 
-        if (!verifyQueue_.empty()) {
-            request = verifyQueue_.front();
-            verifyQueue_.pop();
-            lock.unlock();
+        ClientRequest clientHeader;
 
-            ClientRequest clientHeader;
+        // Separate this out into another function probably.
 
-            // Separate this out into another function probably.
-
-            // TODO is there a race condition reading the request here?
-            MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
-            byte *clientBody = (byte *) (clientMsgHdr + 1);
-            if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-                return;
-            }
-
-            bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
-
-            {
-                std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-                if (verified) {
-                    VLOG(4) << "Verified client signature for c_id=" << request->clientId
-                            << " c_seq=" << request->request.client_seq() << " time until deadline: "
-                            << ((int64_t) request->request.deadline()) - GetMicrosecondTimestamp() << " us";
-                    request->verified = true;
-                } else {
-                    LOG(INFO) << "Failed to verify client signature!";
-                    deadlineQueue_.erase({request->deadline, request->clientId});
-                }
-            }
-
-        } else {
-            lock.unlock();
+        // TODO is there a race condition reading the request here?
+        MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
+        byte *clientBody = (byte *) (clientMsgHdr + 1);
+        if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+            return;
         }
+
+        bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
+
+        {
+            std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+            if (verified) {
+                VLOG(4) << "Verified client signature for c_id=" << request->clientId
+                        << " c_seq=" << request->request.client_seq() << " time until deadline: "
+                        << ((int64_t) request->request.deadline()) - GetMicrosecondTimestamp() << " us";
+                request->verified = true;
+            } else {
+                VLOG(1) << "Failed to verify client signature!";
+                deadlineQueue_.erase({request->deadline, request->clientId});
+            }
+        }
+
+        numVerified++;
     }
+
+    LOG(INFO) << "Worker " << workerId << " verified " << numVerified << " client requests";
 }
 
 }   // namespace dombft

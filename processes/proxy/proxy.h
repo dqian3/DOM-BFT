@@ -64,6 +64,8 @@ private:
     uint32_t proxyId_;
     uint32_t maxOWD_;
     uint64_t lastDeadline_;
+    uint32_t numForwarded_ = 0;
+
     int numShards_;
     int numReceivers_;
     std::vector<Address> receiverAddrs_;

@@ -38,17 +38,29 @@ private:
     // Map for requests to be forwarded in deadline order
     std::mutex deadlineQueueMtx_;
     std::map<std::pair<uint64_t, uint32_t>, std::shared_ptr<Request>> deadlineQueue_;
-    uint64_t lastFwdDeadline;
 
     // Queue for worker threads to trigger verify tasks through
-    // ConcurrentQueue<std::shared_ptr<Request>> verifyQueue_;
-
-    // Queue for worker threads to trigger verify tasks through
-    std::mutex verifyQueueMtx_;
-    std::condition_variable verifyCondVar_;
-    std::queue<std::shared_ptr<Request>> verifyQueue_;
+    BlockingConcurrentQueue<std::shared_ptr<Request>> verifyQueue_;
 
     std::vector<std::thread> verifyThds_;
+    bool running_;
+
+    // Static receiver config
+    uint32_t receiverId_;
+    uint32_t proxyMeasurementPort_;
+    uint32_t numReceivers_;
+    Address replicaAddr_;
+
+    // Bookeeping
+    uint64_t lastFwdDeadline_ = 0;
+    // Map from proxy_id to last measurement sent time
+    std::map<uint32_t, uint64_t> lastMeasurementTimes_;
+    uint32_t numForwarded_ = 0;
+    uint64_t lastStatTime_ = 0;
+
+    // Turn off various receiver behaviors, for running micro-experiments between proxy and receiver
+    bool skipForwarding_;
+    bool ignoreDeadlines_;
 
     /** The actual message / timeout handlers */
     void receiveRequest(MessageHeader *hdr, const Address &sender);
@@ -56,24 +68,11 @@ private:
     void checkDeadlines();
     void forwardRequest(const dombft::proto::DOMRequest &request);
 
-    void verifyWorker();
-
-    uint32_t receiverId_;
-    uint32_t proxyMeasurementPort_;
-    uint32_t numReceivers_;
-    Address replicaAddr_;
-
-    // Turn off various receiver behaviors, for running micro-experiments between proxy and receiver
-    bool skipForwarding_;
-    bool ignoreDeadlines_;
-    bool skipVerify_;
-
-    bool running_;
+    void verifyThd(int threadId);
 
 public:
     Receiver(
-        const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false, bool ignoreDeadlines = false,
-        bool skipVerify = false
+        const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false, bool ignoreDeadlines = false
     );
     ~Receiver();
 };

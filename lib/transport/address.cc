@@ -7,6 +7,13 @@ Address::Address()
     bzero(&addr_, sizeof(addr_));
 }
 
+Address::Address(const Address &other)
+    : ip_(other.ip_)
+    , port_(other.port_)
+{
+    memcpy(&addr_, &(other.addr_), sizeof(struct sockaddr_in));
+}
+
 Address::Address(const std::string &ip, const int port)
     : ip_(ip)
     , port_(port)
@@ -15,17 +22,6 @@ Address::Address(const std::string &ip, const int port)
     addr_.sin_family = AF_INET;
     addr_.sin_port = htons(port);
     addr_.sin_addr.s_addr = inet_addr(ip.c_str());
-}
-
-Address::Address(struct sockaddr_in *addr)
-{
-    char client_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &addr->sin_addr, client_ip, sizeof(client_ip));
-
-    ip_ = std::string(client_ip);
-    port_ = ntohs(addr->sin_port);
-
-    memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
 }
 
 Address::~Address() {}

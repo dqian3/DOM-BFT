@@ -29,13 +29,7 @@ public:
     struct sockaddr_in addr_;
 
     Address();
-    Address(const Address &other)
-        : ip_(other.ip_)
-        , port_(other.port_)
-    {
-        memcpy(&addr_, &(other.addr_), sizeof(struct sockaddr_in));
-    }
-    Address(struct sockaddr_in *addr);
+    Address(const Address &other);
     Address(const std::string &ip, const int port);
     ~Address();
 

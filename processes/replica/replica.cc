@@ -34,7 +34,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     int replicaPort = config.replicaPort;
     LOG(INFO) << "replicaPort=" << replicaPort;
 
-    std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".pem";
+    std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".der";
     LOG(INFO) << "Loading key from " << replicaKey;
     if (!sigProvider_.loadPrivateKey(replicaKey)) {
         LOG(ERROR) << "Unable to load private key!";
@@ -85,7 +85,6 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
-
         /** Store all replica addrs */
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
@@ -197,7 +196,7 @@ void Replica::verifyMessagesThd()
     std::vector<byte> msg;
 
     while (running_) {
-        if (!verifyQueue_.try_dequeue(msg)) {
+        if (!verifyQueue_.wait_dequeue_timed(msg, 50000)) {
             continue;
         }
 
@@ -273,11 +272,11 @@ void Replica::verifyMessagesThd()
         // TODO do verification of the rest of the cases
         else if (hdr->msgType == FALLBACK_START) {
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == DUMMY_PREPREPARE) {
+        } else if (hdr->msgType == FALLBACK_PREPREPARE) {
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == DUMMY_PREPARE) {
+        } else if (hdr->msgType == FALLBACK_PREPARE) {
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == DUMMY_COMMIT) {
+        } else if (hdr->msgType == FALLBACK_COMMIT) {
             processQueue_.enqueue(msg);
         } else {
             // DOM_Requests from the receiver skip this step. We should drop
@@ -293,7 +292,7 @@ void Replica::processMessagesThd()
     std::vector<byte> msg;
 
     while (running_) {
-        if (!processQueue_.try_dequeue(msg)) {
+        if (!processQueue_.wait_dequeue_timed(msg, 50000)) {
             continue;
         }
         MessageHeader *hdr = (MessageHeader *) msg.data();
@@ -372,7 +371,7 @@ void Replica::processMessagesThd()
             processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == DUMMY_PREPREPARE) {
+        if (hdr->msgType == FALLBACK_PREPREPARE) {
             FallbackPrePrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -383,7 +382,7 @@ void Replica::processMessagesThd()
             processPrePrepare(msg);
         }
 
-        if (hdr->msgType == DUMMY_PREPARE) {
+        if (hdr->msgType == FALLBACK_PREPARE) {
             FallbackPrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -394,7 +393,7 @@ void Replica::processMessagesThd()
             processPrepare(msg);
         }
 
-        if (hdr->msgType == DUMMY_COMMIT) {
+        if (hdr->msgType == FALLBACK_COMMIT) {
             FallbackPBFTCommit msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -439,9 +438,13 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     std::string digest(log_->getDigest(), log_->getDigest() + SHA256_DIGEST_LENGTH);
 
-    LOG(ERROR) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-               << " client_seq=" << clientSeq << " instance=" << instance_
-               << " digest=" << digest_to_hex(digest).substr(56);
+    if (VLOG_IS_ON(2)) {
+        VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+                << " client_seq=" << clientSeq << " instance=" << instance_
+                << " digest=" << digest_to_hex(digest).substr(56);
+    } else {
+        // TODO do some logging here?
+    }
 
     Reply reply;
 
@@ -453,12 +456,11 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_instance(instance_);
     reply.set_digest(digest);
 
-    LOG(INFO) << "Sending reply back to client " << clientId;
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
-        VLOG(1) << "PERF event=checkpoint_start seq=" << seq;
+        VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
 
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
         // TODO remove execution result here
@@ -839,7 +841,7 @@ void Replica::doPrePreparePhase()
 
         *(proposal->add_logs()) = startMsg.second;
     }
-    broadcastToReplicas(prePrepare, DUMMY_PREPREPARE);
+    broadcastToReplicas(prePrepare, FALLBACK_PREPREPARE);
 }
 
 void Replica::doPreparePhase()
@@ -848,7 +850,7 @@ void Replica::doPreparePhase()
     FallbackPrepare prepare;
     prepare.set_replica_id(replicaId_);
     prepare.set_instance(instance_);
-    broadcastToReplicas(prepare, DUMMY_PREPARE);
+    broadcastToReplicas(prepare, FALLBACK_PREPARE);
 }
 
 void Replica::doCommitPhase()
@@ -857,7 +859,7 @@ void Replica::doCommitPhase()
     FallbackPBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
     cmt.set_instance(instance_);
-    broadcastToReplicas(cmt, DUMMY_COMMIT);
+    broadcastToReplicas(cmt, FALLBACK_COMMIT);
 }
 void Replica::processPrePrepare(const FallbackPrePrepare &msg)
 {
@@ -998,7 +1000,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 
         entry->updateDigest(prevDigest);
 
-        VLOG(5) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
+        VLOG(1) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
                 << " c_id=" << clientId << " c_seq=" << clientSeq
                 << " prevDigest=" << digest_to_hex(prevDigest).substr(56);
         curSeq++;

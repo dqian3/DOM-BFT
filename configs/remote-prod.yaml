@@ -45,7 +45,7 @@ receiver:
   local: true
   port: 33000
   shards: 1
-  numVerifyThreads: 4
+  numVerifyThreads: 6
 
 replica:
   ips:
@@ -58,4 +58,4 @@ replica:
   fallbackTimeout: 5000000
   fallbackStartTimeout: 500000
   numVerifyThreads: 2
-  numSendThreads: 4
+  numSendThreads: 6

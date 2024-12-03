@@ -46,7 +46,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     /* Setup keys */
-    std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
+    std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".der";
     LOG(INFO) << "Loading key from " << clientKey;
     if (!sigProvider_.loadPrivateKey(clientKey)) {
         LOG(ERROR) << "Error loading client private key, exiting...";
@@ -299,14 +299,21 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
 
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
     // TODO check errors for all of these lol
     // TODO do this while waiting, not in the critical path
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
+#if SEND_TO_LEADER
+    VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
+
+    endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
+#else
+    VLOG(1) << "Sending request to all replicas " << replicaAddrs_[0];
     for (const Address &addr : replicaAddrs_) {
-        endpoint_->SendPreparedMsgTo(addr);
+        endpoint_->SendPreparedMsgTo(addr, hdr);
     }
+#endif
 #endif
 }
 
@@ -502,7 +509,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // Just collected cert
     if (!hasCertBefore && reqState.collector.hasCert()) {
-        VLOG(1) << "Created cert for request number " << clientSeq;
+        VLOG(2) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
     }
 
@@ -615,7 +622,7 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
         auto &reqState = requestStates_.at(cseq);
 
         reqState.fallbackReplies.insert(summary.replica_id());
-        if (reqState.fallbackReplies.size() >= 2 * f_ + 1) {
+        if (reqState.fallbackReplies.size() >= f_ + 1) {
             // Request is committed, so we can clean up state!
             // TODO check we have a consistent set of application replies!
 
