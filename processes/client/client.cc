@@ -43,7 +43,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     /* Setup keys */
-    std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".pem";
+    std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".der";
     LOG(INFO) << "Loading key from " << clientKey;
     if (!sigProvider_.loadPrivateKey(clientKey)) {
         LOG(ERROR) << "Error loading client private key, exiting...";
