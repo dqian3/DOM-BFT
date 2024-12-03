@@ -212,7 +212,7 @@ TCPEndpoint::TCPEndpoint(
         }
 
         // Setup handler and state
-        Address otherAddr(&addr);
+        Address otherAddr(inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 
         LOG(INFO) << "Accept connection from " << otherAddr;
 
