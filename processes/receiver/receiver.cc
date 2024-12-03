@@ -185,7 +185,6 @@ void Receiver::forwardRequest(const DOMRequest &request)
         return;
     }
 
-    LOG(INFO) << replicaAddr_;
     endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
 }
 
