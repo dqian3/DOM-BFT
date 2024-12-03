@@ -42,5 +42,5 @@ for process in dirs:
         if args.algorithm == "RSA":
             subprocess.run(["openssl", "genrsa", "-outform", "der", "-out", key_path + ".pem", str(args.keysize)])
         elif args.algorithm == "ED25519":
-            subprocess.run(["openssl",  "genpkey",  "-outform", "der",  "-algorithm",  "ed25519", "-out", key_path + ".priv"])
+            subprocess.run(["openssl",  "genpkey",  "-outform", "der",  "-algorithm",  "ed25519", "-out", key_path + ".der"])
         subprocess.run(["openssl", "pkey",  "-outform", "der", "-in", key_path + ".der", "-pubout", "-out", key_path + ".pub"])

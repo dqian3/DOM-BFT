@@ -43,6 +43,7 @@ cc_library(
     ]
 )
 
+
 cc_library(
     name = "cert_collector",
     srcs = ["cert_collector.cc"],
