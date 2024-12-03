@@ -180,10 +180,10 @@ void Replica::handleMessage(MessageHeader *hdr, const Address &sender)
     byte *rawMsg = (byte *) hdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
-    VLOG(5) << receiverAddr_ << " " << sender;
+    VLOG(6) << receiverAddr_ << " " << sender;
 
     // TODO for tcp endpoint this won't match..
-    if (sender == receiverAddr_ || sender == replicaAddrs_[replicaId_]) {
+    if (sender.ip() == receiverAddr_.ip() || sender.ip() == replicaAddrs_[replicaId_].ip()) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);

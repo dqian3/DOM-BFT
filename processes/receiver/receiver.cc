@@ -43,11 +43,22 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     numReceivers_ = config.receiverIps.size();
     if (config.transport == "nng") {
         auto addrPairs = getReceiverAddrs(config, receiverId);
+
         replicaAddr_ = addrPairs.back().second;
+
+        for (uint32_t i = config.proxyIps.size(); i < 2 * config.proxyIps.size(); i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
+        }
+
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
     } else {
         replicaAddr_ =
             (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
+
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyMeasurementPort));
+        }
 
         if (config.transport == "tcp") {
             auto ep = std::make_unique<TCPEndpoint>(receiverIp, receiverPort, true);
@@ -160,7 +171,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(Address(sender.ip(), proxyMeasurementPort_), hdr);
+        endpoint_->SendPreparedMsgTo(proxyAddrs_[request.proxy_id()], hdr);
     }
 }
 

@@ -1,18 +1,17 @@
 #include "lib/transport/tcp_endpoint.h"
 #include <list>
 
-TCPMessageHandler::TCPMessageHandler(
-    struct ev_loop *evLoop, int fd, const Address &other, MessageHandlerFunc msghdl, byte *buffer
-)
+TCPMessageHandler::TCPMessageHandler(struct ev_loop *evLoop, int fd, const Address &other, MessageHandlerFunc msghdl)
     : evLoop_(evLoop)
     , fd_(fd)
     , handlerFunc_(msghdl)
     , other_(other)
-    , recvBuffer_(buffer)
+    , recvBuffer_((byte *) malloc(TCP_BUFFER_SIZE))
     , evWatcher_()
 
 {
     evWatcher_.data = (void *) this;
+    bzero(recvBuffer_, TCP_BUFFER_SIZE);
 
     ev_init(&evWatcher_, [](struct ev_loop *loop, struct ev_io *w, int revents) {
         TCPMessageHandler *m = (TCPMessageHandler *) (w->data);
@@ -25,6 +24,8 @@ TCPMessageHandler::TCPMessageHandler(
                 m->remaining_ = msgHeader->msgLen + msgHeader->sigLen;
 
                 // TODO call recv again here instead of going back to the loop.
+                LOG(INFO) << "Read Header: " << m->fd_ << " " << m->offset_ << " " << m->remaining_ << " "
+                          << msgHeader->msgLen + msgHeader->sigLen + sizeof(MessageHeader);
 
             } else if (ret == 0) {
                 // Disconnect
@@ -56,6 +57,9 @@ TCPMessageHandler::TCPMessageHandler(
             if (m->remaining_ == 0) {
                 MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
 
+                LOG(INFO) << "Continue Read: " << m->fd_ << " " << m->offset_ << " " << m->remaining_ << " "
+                          << msgHeader->msgLen + msgHeader->sigLen + sizeof(MessageHeader);
+
                 assert(m->offset_ == sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen);
                 m->handlerFunc_(msgHeader, m->other_);
 
@@ -69,7 +73,7 @@ TCPMessageHandler::TCPMessageHandler(
     ev_io_start(evLoop_, &evWatcher_);
 }
 
-TCPMessageHandler::~TCPMessageHandler() {}
+TCPMessageHandler::~TCPMessageHandler() { free(recvBuffer_); }
 
 int non_blocking_socket()
 {
@@ -86,8 +90,11 @@ int non_blocking_socket()
     return ret;
 }
 
-TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t *remaining)
-    : connectAddr_(addr)
+TCPConnectHelper::TCPConnectHelper(
+    struct ev_loop *loop, const Address &srcAddr, const Address &dstAddr, uint32_t *remaining
+)
+    : srcAddr_(srcAddr)
+    , dstAddr_(dstAddr)
     , remaining_(remaining)
     , connectWatcher_()
     , retryWatcher_()
@@ -121,7 +128,7 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
         ev_io_stop(loop, w);
         helper->fd = w->fd;
 
-        LOG(INFO) << helper->fd << " -> " << helper->connectAddr_;
+        LOG(INFO) << helper->fd << " -> " << helper->dstAddr_;
 
         (*helper->remaining_)--;
 
@@ -138,8 +145,22 @@ TCPConnectHelper::TCPConnectHelper(struct ev_loop *loop, Address addr, uint32_t 
         int fd = non_blocking_socket();
         TCPConnectHelper *helper = reinterpret_cast<TCPConnectHelper *>(w->data);
 
-        LOG(INFO) << "Attempting to connect to " << helper->connectAddr_ << " with fd=" << fd;
-        if (connect(fd, (struct sockaddr *) &helper->connectAddr_.addr_, sizeof(sockaddr_in)) < 0) {
+        // Binding to own src addr and any available port
+        struct sockaddr_in src_addr;
+        memset(&src_addr, 0, sizeof(src_addr));
+        src_addr.sin_family = AF_INET;
+        src_addr.sin_port = htons(0);   // 0 means any available port
+        inet_pton(AF_INET, helper->srcAddr_.ip().c_str(), &src_addr.sin_addr);
+
+        if (bind(fd, (struct sockaddr *) &src_addr, sizeof(src_addr)) < 0) {
+            perror("Bind failed");
+            close(fd);
+            exit(EXIT_FAILURE);
+        }
+
+        // Connect!
+        LOG(INFO) << "Attempting to connect to " << helper->dstAddr_ << " with fd=" << fd;
+        if (connect(fd, (struct sockaddr *) &helper->dstAddr_.addr_, sizeof(sockaddr_in)) < 0) {
             // expect EINProgress because our sockets are non blocking
             if (errno != EINPROGRESS) {
                 LOG(ERROR) << "Connection failed " << strerror(errno);
@@ -165,10 +186,9 @@ TCPEndpoint::TCPEndpoint(
     : Endpoint(isMasterReceiver, loopbackAddr)
     , evConnectLoop_(ev_loop_new())
     , acceptWatcher_()
+    , bindAddress_(ip, port)
 {
     listenFd_ = non_blocking_socket();
-
-    bzero(&recvBuffer_, sizeof(recvBuffer_));
 
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr));
@@ -217,9 +237,8 @@ TCPEndpoint::TCPEndpoint(
         LOG(INFO) << "Accept connection from " << otherAddr;
 
         endpoint->msgHandlers_.emplace(
-            clientFd, std::make_unique<TCPMessageHandler>(
-                          endpoint->evLoop_, clientFd, otherAddr, endpoint->handlerFunc_, endpoint->recvBuffer_
-                      )
+            clientFd,
+            std::make_unique<TCPMessageHandler>(endpoint->evLoop_, clientFd, otherAddr, endpoint->handlerFunc_)
         );
     });
 
@@ -261,11 +280,12 @@ void TCPEndpoint::connectToAddrs(const std::vector<Address> &addrs)
     for (size_t i = 0; i < addrs.size(); i++) {
         const Address &addr = addrs[i];
         // Setup helper to establish for connection event
-        connectHelpers.emplace_back(std::make_unique<TCPConnectHelper>(evConnectLoop_, addr, &numConnRemaining));
+        connectHelpers.emplace_back(
+            std::make_unique<TCPConnectHelper>(evConnectLoop_, bindAddress_, addr, &numConnRemaining)
+        );
     }
     // Start a event loop to wait for all connections to be established while also accepting our own conns
     ev_io_start(evConnectLoop_, &acceptWatcher_);
-    // ev_io_stop(evLoop_, &acceptWatcher_);
 
     LOG(INFO) << "Starting connection loop";
     ev_run(evConnectLoop_, 0);
@@ -273,8 +293,8 @@ void TCPEndpoint::connectToAddrs(const std::vector<Address> &addrs)
 
     // Register addresses to their sockets
     for (const auto &h : connectHelpers) {
-        addressToSendSock_[h->connectAddr_] = h->fd;
-        LOG(INFO) << h->fd << " -> " << h->connectAddr_;
+        addressToSendSock_[h->dstAddr_] = h->fd;
+        LOG(INFO) << h->fd << " -> " << h->dstAddr_;
     }
 
     // Continue to accept connections in main loop
