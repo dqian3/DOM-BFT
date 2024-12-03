@@ -38,7 +38,7 @@ cc_library(
     deps = [
         ":address",
         ":common",
-        "@openssl//:openssl",
+        "@cryptopp//:cryptopp",
         "@com_github_google_glog//:glog",
     ]
 )

@@ -3,16 +3,17 @@
 
 #include "lib/common.h"
 #include <map>
-#include <openssl/evp.h>
+
+#include <cryptopp/xed25519.h>
 
 // TODO make this also tied to addresses?
 
 class SignatureProvider {
 protected:
-    EVP_PKEY *privKey_;
+    CryptoPP::ed25519PrivateKey privKey_;
 
     // Stores public keys for different types of processes by id
-    std::map<std::string, std::map<uint32_t, EVP_PKEY *>> pubKeys_;
+    std::map<std::string, std::map<uint32_t, CryptoPP::ed25519PublicKey>> pubKeys_;
 
 public:
     SignatureProvider();
