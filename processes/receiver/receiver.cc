@@ -1,6 +1,7 @@
 #include "receiver.h"
 
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -42,13 +43,37 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     numReceivers_ = config.receiverIps.size();
     if (config.transport == "nng") {
         auto addrPairs = getReceiverAddrs(config, receiverId);
+
         replicaAddr_ = addrPairs.back().second;
+
+        for (uint32_t i = config.proxyIps.size(); i < 2 * config.proxyIps.size(); i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
+        }
+
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
     } else {
-        replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
-        LOG(INFO) << "Replica Address: " << replicaAddr_;
+        replicaAddr_ =
+            (Address(config.receiverLocal ? "127.0.0.1" : config.replicaIps[receiverId], config.replicaPort));
 
-        endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyMeasurementPort));
+        }
+
+        if (config.transport == "tcp") {
+            auto ep = std::make_unique<TCPEndpoint>(receiverIp, receiverPort, true);
+
+            std::vector<Address> connectAddrs(proxyAddrs_);
+            connectAddrs.push_back(replicaAddr_);
+            ep->connectToAddrs(connectAddrs);
+            endpoint_ = std::move(ep);
+
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(receiverIp, receiverPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
+        }
     }
 
     fwdTimer_ =
@@ -56,8 +81,8 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 
     ev_set_priority(fwdTimer_->evTimer_, EV_MAXPRI);
     endpoint_->RegisterTimer(fwdTimer_.get());
-    endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->receiveRequest(msgHdr, msgBuffer, sender);
+    endpoint_->RegisterMsgHandler([this](MessageHeader *hdr, const Address &sender) {
+        this->receiveRequest(hdr, sender);
         checkDeadlines();
     });
     endpoint_->RegisterSignalHandler([&]() {
@@ -82,7 +107,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 
 Receiver::~Receiver() {}
 
-void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
+void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
 {
     if (hdr->msgLen < 0) {
         return;
@@ -102,6 +127,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     }
 
     DOMRequest request;
+    byte *body = (byte *) (hdr + 1);
     if (!request.ParseFromArray(body, hdr->msgLen)) {
         LOG(ERROR) << "Unable to parse DOM_REQUEST message";
         return;
@@ -148,7 +174,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_), hdr);
+        endpoint_->SendPreparedMsgTo(proxyAddrs_[request.proxy_id()], hdr);
     }
 }
 

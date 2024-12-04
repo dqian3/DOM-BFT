@@ -70,7 +70,7 @@ private:
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
-    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void handleMessage(MessageHeader *msgHdr, const Address &sender);
 
     void verifyMessagesThd();
     void processMessagesThd();

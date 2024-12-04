@@ -16,16 +16,10 @@ UDPMessageHandler::UDPMessageHandler(MessageHandlerFunc msghdl)
 
         m->sender_ = Address(inet_ntoa(sockAddr.sin_addr), ntohs(sockAddr.sin_port));
 
-        // LOG(INFO) << "sockAddr.sin_family: " << m->sender_.addr_.sin_family
-        //           << ", sockAddr.sin_addr: " << inet_ntoa(m->sender_.addr_.sin_addr)
-        //           << ", sockAddr.sin_port: " << ntohs(m->sender_.addr_.sin_port);
-
-        // LOG(INFO) << m->sender_;
-
         if (msgLen > 0 && (uint32_t) msgLen > sizeof(MessageHeader)) {
             MessageHeader *msgHeader = (MessageHeader *) (void *) (m->recvBuffer_);
             if ((uint32_t) msgLen >= sizeof(MessageHeader) + msgHeader->msgLen + msgHeader->sigLen) {
-                m->msgHandler_(msgHeader, m->recvBuffer_ + sizeof(MessageHeader), &m->sender_);
+                m->msgHandler_(msgHeader, m->sender_);
             }
         }
     });

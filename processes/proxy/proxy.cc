@@ -1,6 +1,9 @@
 #include "proxy.h"
 
+#include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
+#include "lib/transport/udp_endpoint.h"
 
 namespace dombft {
 using namespace dombft::proto;
@@ -50,17 +53,34 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         }
 
     } else {
-        for (int i = 0; i < numShards_; i++) {
-            forwardEps_.push_back(
-                std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
-            );
+        if (config.transport != "tcp" || config.transport == "udp") {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
         }
-
-        measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
-
         for (int i = 0; i < numReceivers_; i++) {
             std::string receiverIp = config.receiverIps[i];
             receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
+        }
+        for (int i = 0; i < numShards_; i++) {
+            std::unique_ptr<Endpoint> ep;
+            if (config.transport == "tcp") {
+                auto ep = std::make_unique<TCPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false);
+                ep->connectToAddrs(receiverAddrs_);
+                forwardEps_.push_back(std::move(ep));
+            } else {
+                forwardEps_.push_back(
+                    std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
+                );
+            }
+        }
+
+        if (config.transport == "tcp") {
+            auto ep = std::make_unique<TCPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+            ep->connectToAddrs({});   // No need to connect, only receive
+            measurementEp_ = std::move(ep);
+            // No need to connect, we only receive on this endpoint
+        } else {
+            measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
         }
     }
 }
@@ -119,8 +139,9 @@ void Proxy::RecvMeasurementsTd()
     OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 10, 90, maxOWD_);
     // OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
 
-    MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
+    MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, const Address &sender) {
         MeasurementReply reply;
+        byte *body = (byte *) (hdr + 1);
 
         if (!reply.ParseFromArray(body, hdr->msgLen)) {
             LOG(ERROR) << "Unable to parse Measurement_Reply message";
@@ -162,12 +183,11 @@ void Proxy::RecvMeasurementsTd()
 
 void Proxy::ForwardRequestsTd(const int thread_id)
 {
-    MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender) {
+    MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, const Address &sender) {
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
 
-        VLOG(2) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
-
+        byte *body = (byte *) (hdr + 1);
         if (hdr->msgType == MessageType::CLIENT_REQUEST) {
             // TODO verify and handle signed header better
             if (!inReq.ParseFromArray(body, hdr->msgLen)) {

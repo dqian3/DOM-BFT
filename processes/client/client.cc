@@ -1,7 +1,10 @@
 #include "client.h"
 
+#include <algorithm>
+
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -61,9 +64,6 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
-        for (size_t i = 0; i < addrPairs.size(); i++) {
-        }
-
         size_t nReplicas = config.replicaIps.size();
         for (size_t i = 0; i < nReplicas; i++)
             replicaAddrs_.push_back(addrPairs[i].second);
@@ -71,8 +71,6 @@ Client::Client(const ProcessConfig &config, size_t id)
         for (size_t i = nReplicas; i < addrPairs.size(); i++)
             proxyAddrs_.push_back(addrPairs[i].second);
     } else {
-        endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
-
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
         for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
             LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
@@ -82,6 +80,22 @@ Client::Client(const ProcessConfig &config, size_t id)
         /** Store all replica addrs */
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        if (config.transport == "tcp") {
+            auto ep = std::make_unique<TCPEndpoint>(clientIp, clientPort, true);
+
+            std::vector<Address> addrs;
+            std::copy(replicaAddrs_.begin(), replicaAddrs_.end(), std::back_inserter(addrs));
+            std::copy(proxyAddrs_.begin(), proxyAddrs_.end(), std::back_inserter(addrs));
+            ep->connectToAddrs(addrs);
+            endpoint_ = std::move(ep);
+
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
         }
     }
 
@@ -132,14 +146,14 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
 
     MessageHandlerFunc replyHandler =
-        [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+        [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, const Address &sender) {
             if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
                 LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
                 // TODO print some stats
                 exit(0);
             }
 
-            this->handleMessage(msgHdr, msgBuffer, sender);
+            this->handleMessage(msgHdr, sender);
 
             if (sendMode_ == dombft::RateBased) {
                 submitRequestsOpenLoop();
@@ -402,8 +416,9 @@ bool Client::updateInstance()
     return false;
 }
 
-void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
+void Client::handleMessage(MessageHeader *hdr, const Address &sender)
 {
+    byte *body = (byte *) (hdr + 1);
     if (hdr->msgLen < 0) {
         return;
     }
@@ -434,7 +449,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         CertReply certReply;
 
         if (!certReply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse CERT_REPLY message from " << *sender;
+            LOG(ERROR) << "Unable to parse CERT_REPLY message from " << sender;
             return;
         }
 

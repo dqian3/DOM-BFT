@@ -56,7 +56,7 @@ private:
     // std::shared_ptr<Log> log_;
     // ClientRecords clientRecords_;
 
-    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void handleMessage(MessageHeader *msgHdr, const Address &sender);
     void verifyMessagesThd();
     void processMessagesThd();
     void processClientRequest(const dombft::proto::ClientRequest &request);

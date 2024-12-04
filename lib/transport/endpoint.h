@@ -112,7 +112,7 @@ public:
     virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr = nullptr) = 0;
 
     // -------------------- Entry and exit points --------------------
-    void LoopRun();
+    virtual void LoopRun();
 
     // Register a SIGINT handler. TODO generalize this, and make sure it's ok being called multiple times
     void RegisterSignalHandler(SignalHandlerFunc signal_cb);

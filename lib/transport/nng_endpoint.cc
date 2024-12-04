@@ -26,7 +26,7 @@ NngMessageHandler::NngMessageHandler(
         if (len > sizeof(MessageHeader)) {
             MessageHeader *hdr = (MessageHeader *) (void *) (m->recvBuffer_);
             if (len >= sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen) {
-                m->handlerFunc_(hdr, m->recvBuffer_ + sizeof(MessageHeader), &(m->srcAddr_));
+                m->handlerFunc_(hdr, m->srcAddr_);
             }
         }
     });
