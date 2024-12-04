@@ -62,7 +62,10 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 
         if (config.transport == "tcp") {
             auto ep = std::make_unique<TCPEndpoint>(receiverIp, receiverPort, true);
-            ep->connectToAddrs({replicaAddr_});
+
+            std::vector<Address> connectAddrs(proxyAddrs_);
+            connectAddrs.push_back(replicaAddr_);
+            ep->connectToAddrs(connectAddrs);
             endpoint_ = std::move(ep);
 
         } else if (config.transport == "udp") {
