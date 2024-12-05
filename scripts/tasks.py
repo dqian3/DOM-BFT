@@ -240,6 +240,17 @@ def gcloud_cmd(c, cmd, config_file="../configs/remote-prod.yaml"):
     group = ThreadingGroup(*get_all_ext_ips(config, ext_ips))
     group.run(cmd)
 
+
+@task
+def gcloud_copy(c, file, config_file="../configs/remote-prod.yaml"):
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    ext_ips = get_gcloud_ext_ips(c)
+    group = ThreadingGroup(*get_all_ext_ips(config, ext_ips))
+    group.put(file)
+
+    
 @task
 def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     config_file = os.path.abspath(config_file)
