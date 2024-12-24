@@ -131,6 +131,7 @@ cc_library(
         ":common",
         "@openssl//:openssl",
         "@com_github_google_glog//:glog",
+        "@com_github_jbeder_yaml_cpp//:yaml-cpp",
     ],
     visibility = ["//visibility:public"],
 )

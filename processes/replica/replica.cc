@@ -113,6 +113,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
+        log_->app_->getAppStateToYAML();
     });
 }
 
