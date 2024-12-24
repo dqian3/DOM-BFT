@@ -12,19 +12,19 @@ class KVStore : public Application {
     std::unordered_map<std::string, std::string> data;
 
 public:
-    virtual ~KVStore();
+    ~KVStore();
 
-    virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
+    std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
 
-    virtual bool commit(uint32_t commit_idx) override { return true; }
+    bool commit(uint32_t commit_idx) override { return true; }
 
-    virtual std::string getDigest(uint32_t digest_idx) override;
+    std::string getDigest(uint32_t digest_idx) override;
 
-    virtual std::string takeSnapshot() override;
+    std::string takeSnapshot() override;
 
-    virtual void applySnapshot(const std::string &snapshot) override;
+    void applySnapshot(const std::string &snapshot) override;
 
-    virtual bool abort(const uint32_t abort_idx) override;
+    bool abort(const uint32_t abort_idx) override;
 };
 
 #endif

@@ -2,11 +2,15 @@
 #define APPLICATION_H
 
 #include <memory>
+#include <fstream>
+#include <yaml-cpp/yaml.h>
 
 #include "common.h"
 
 #include <glog/logging.h>
 #include <google/protobuf/message.h>
+
+#define APP_STATE_YAML_FILE "logs/app_state.yaml"
 
 // Originally had some custom classes here, but this is easier lol
 typedef google::protobuf::Message AppRequest;
@@ -36,6 +40,8 @@ public:
     virtual std::string takeSnapshot() = 0;
 
     virtual void applySnapshot(const std::string &snapshot) = 0;
+
+    virtual void getAppStateToYAML() = 0;
 };
 
 class AppTrafficGen {

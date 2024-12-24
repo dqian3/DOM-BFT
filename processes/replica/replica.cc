@@ -106,6 +106,7 @@ Replica::Replica(
         LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
+        log_->app_->getAppStateToYAML();
     });
 }
 
