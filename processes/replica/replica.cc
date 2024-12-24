@@ -239,11 +239,61 @@ void Replica::verifyMessagesThd()
         }
 
         // TODO do verification of the rest of the cases
+        // TODO(Hao): use polymorphism to avoid parsing twice?
         else if (hdr->msgType == FALLBACK_START) {
+            FallbackStart fallbackStartMsg;
+            if(!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)){
+                LOG(ERROR) << "Unable to parse FallbackStart message";
+                continue;
+            }
+
+            if (!sigProvider_.verify(hdr, "replica", fallbackStartMsg.replica_id())) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_PREPREPARE) {
+            FallbackPrePrepare fallbackPrePrepareMsg;
+            if(!fallbackPrePrepareMsg.ParseFromArray(body, hdr->msgLen)){
+                LOG(ERROR) << "Unable to parse FallbackPrePrepare message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, "replica", fallbackPrePrepareMsg.primary_id())) {
+                LOG(INFO) << "Failed to verify primary replica signature!";
+                continue;
+            }
+
+            // Verify logs in proposal
+            FallbackProposal proposal = fallbackPrePrepareMsg.proposal();
+            std::vector<std::tuple<byte*, uint32_t >> logSigs;
+            for (auto &sig : proposal.signatures()) {
+                logSigs.emplace_back((byte*)sig.data(), sig.length());
+            }
+            uint32_t ind = 0;
+            for (auto &log : proposal.logs()) {
+                std::string logStr = log.SerializeAsString();
+                byte *logBuffer = (byte*)logStr.data();
+                byte* logSig = std::get<0>(logSigs[ind]);
+                uint32_t logSigLen = std::get<1>(logSigs[ind]);
+                ind++;
+                if (!sigProvider_.verify(logBuffer, logStr.length(),logSig, logSigLen, "replica", log.replica_id())) {
+                    LOG(INFO) << "Failed to verify replica signature in proposal!";
+                    return;
+                }
+            }
+
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_PREPARE) {
+            FallbackPrepare fallbackPrepareMsg;
+            if(!fallbackPrepareMsg.ParseFromArray(body, hdr->msgLen)){
+                LOG(ERROR) << "Unable to parse FallbackPrepare message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, "replica", fallbackPrepareMsg.replica_id())) {
+                LOG(INFO) << "Failed to verify primary replica signature!";
+                continue;
+            }
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_COMMIT) {
             processQueue_.enqueue(msg);
@@ -809,13 +859,14 @@ void Replica::doPrePreparePhase()
             continue;
 
         *(proposal->add_logs()) = startMsg.second;
+        *(proposal->add_signatures()) = fallbackHistorySigs_[startMsg.first];
     }
     broadcastToReplicas(prePrepare, FALLBACK_PREPREPARE);
 }
 
 void Replica::doPreparePhase()
 {
-    VLOG(6) << "DUMMY Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
+    VLOG(6) << "Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPrepare prepare;
     prepare.set_replica_id(replicaId_);
     prepare.set_instance(instance_);
@@ -838,8 +889,7 @@ void Replica::processPrePrepare(const FallbackPrePrepare &msg)
         return;
     }
 
-    VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
-    // TODO Verify FallbackProposal
+    VLOG(6) << "PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     if (fallbackProposal_.has_value()) {
         LOG(ERROR) << "Attempted to doPrepare with existing fallbackProposal!";
         return;
