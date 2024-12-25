@@ -143,16 +143,13 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
 {
     LOG(INFO) << "Applying checkpoint";
 
-    // TODO this only works with our basic counter because app_digest == counter!
-
-    // Step1. Apply Checkpoint
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
     LogCheckpoint &myCheckpoint = log->checkpoint;
 
     std::string myCheckpointDigest((char *) myCheckpoint.logDigest, SHA256_DIGEST_LENGTH);
 
     if (checkpoint->log_digest() != myCheckpointDigest && checkpoint->seq() > myCheckpoint.seq) {
-        log->app_->applySnapshot(checkpoint->app_digest());
+        log->app_->applySnapshot(checkpoint->app_snapshot());
         log->nextSeq = checkpoint->seq() + 1;
 
         myCheckpoint.seq = checkpoint->seq();

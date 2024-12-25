@@ -13,7 +13,7 @@
 
 typedef struct VersionedValue {
     uint64_t version;
-    int64_t value;
+    int value;
 } VersionedValue;
 
 class Counter : public Application {
@@ -30,7 +30,10 @@ public:
 
     std::string getDigest(uint32_t digest_idx) override;
 
-    std::string takeSnapshot() override;
+    // counter just use digest as snapshot
+    inline bool takeSnapshot() override {return true;}
+
+    inline std::string getSnapshot(uint32_t seq) override;
 
     void applySnapshot(const std::string &snapshot) override;
 

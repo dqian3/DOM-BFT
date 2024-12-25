@@ -1,8 +1,9 @@
 #include "checkpoint_collector.h"
 namespace dombft {
 
-bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig)
-{
+    // Collects the reply from peers for the same seq num
+    // Returns true if it is ok to proceed with the commit stage
+bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig){
 
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
@@ -19,7 +20,7 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     }
     std::map<ReplyKeyTuple, std::set<uint32_t>> matchingReplies;
 
-    // Find a cert among a set of replies
+    // Try to generate a cert among a set of replies
     for (const auto &entry : replies_) {
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
@@ -104,8 +105,7 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
     if (myDigest != commit.log_digest()) {
         LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot";
 
-        // TODO: counter uses digest as snapshot, need to generalize this
-        log->app_->applySnapshot(commit.app_digest());
+        log->app_->applySnapshot(commit.app_snapshot());
         VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
                 << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
         return true;

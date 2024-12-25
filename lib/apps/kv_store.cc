@@ -11,7 +11,7 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
     std::unique_ptr<KVRequest> kvReq = std::make_unique<KVRequest>();
     if (!kvReq->ParseFromString(serialized_request)) {
         LOG(ERROR) << "Failed to parse KVRequest";
-        return nullptr;
+        return {};
     }
     KVResponse response;
 
@@ -26,7 +26,7 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
         }
 
     } else if (kvReq->msg_type() == KVRequestType::SET) {
-        data[key] = kvReq->value();   // TODO check value is there
+        data[key] = kvReq->value();   // TODO check value is there   <--why
         response.set_ok(true);
     } else if (kvReq->msg_type() == KVRequestType::DELETE) {
         if (data.count(key)) {
@@ -43,7 +43,6 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
     if (!response.SerializeToString(&ret)) {
         LOG(ERROR) << "Failed to serialize CounterResponse";
         throw std::runtime_error("Failed to serialize CounterResponse message.");
-        return "";
     }
 
     return ret;
@@ -55,10 +54,16 @@ std::string KVStore::getDigest(uint32_t digest_idx)
     return std::string();
 }
 
-std::string KVStore::takeSnapshot()
+bool KVStore::takeSnapshot()
 {
     throw std::logic_error("Function not yet implemented");
-    return "";
+    return false;
+}
+
+std::string KVStore::getSnapshot(uint32_t seq)
+{
+    throw std::logic_error("Function not yet implemented");
+    return {};
 }
 
 void KVStore::applySnapshot(const std::string &snapshot)
@@ -70,5 +75,9 @@ void KVStore::applySnapshot(const std::string &snapshot)
 bool KVStore::abort(const uint32_t abort_idx)
 {
     throw std::logic_error("Function not yet implemented");
+    return false;
+}
+
+bool KVStore::commit(uint32_t commit_idx) {
     return false;
 }

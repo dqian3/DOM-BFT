@@ -572,7 +572,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
 
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
-        // TODO remove execution result here
+        // TODO remove execution result here  <-- Hao: what is this?
         broadcastToReplicas(reply, MessageType::REPLY);
     }
 }
@@ -641,7 +641,9 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         const byte *logDigest = log_->getDigest(rSeq);
+        //TODO(Hao): update here for app digest/ app snapshot
         std::string appDigest = log_->app_->getDigest(rSeq);
+        std::string appSnapshot = log_->app_->getSnapshot(rSeq);
         ClientRecords tmpClientRecords = collector.clientRecords_.value();
         uint32_t instance = instance_;
         // Broadcast commit Message
@@ -651,6 +653,8 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         commit.set_instance(instance);
         commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
         commit.set_app_digest(appDigest);
+        commit.set_app_snapshot(appSnapshot);
+
 
         byte recordDigest[SHA256_DIGEST_LENGTH];
         getRecordsDigest(tmpClientRecords, recordDigest);

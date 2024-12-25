@@ -82,17 +82,18 @@ std::string Counter::getDigest(uint32_t digest_idx)
 
     LOG(INFO) << "Digest at idx " << digest_idx << " is " << digest.value;
 
-    return std::string(reinterpret_cast<const char *>(&digest), sizeof(VersionedValue));
+    return {reinterpret_cast<const char *>(&digest), sizeof(VersionedValue)};
 }
 
-std::string Counter::takeSnapshot()
+std::string Counter::getSnapshot(uint32_t seq)
 {
-    return std::string(reinterpret_cast<const char *>(&committed_state), sizeof(VersionedValue));
+    LOG(INFO) << "Get counter snapshot at seq " << seq;
+    return getDigest(seq);
 }
 
-void Counter::applySnapshot(const std::string &snapshot)
+void Counter::applySnapshot(const std::string &snap)
 {
-    committed_state = *((VersionedValue *) snapshot.c_str());
+    committed_state = *((VersionedValue *) snap.c_str());
     counter = committed_state.value;
     version_hist.clear();
 
@@ -157,3 +158,5 @@ void Counter::getAppStateToYAML(){
     fout << node;
     std::cout << "App state saved to " << APP_STATE_YAML_FILE << std::endl;
 }
+
+
