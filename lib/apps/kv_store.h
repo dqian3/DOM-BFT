@@ -3,7 +3,7 @@
 
 #include "lib/application.h"
 #include "proto/dombft_apps.pb.h"
-
+#include "lib/utils.h"
 #include <string>
 #include <unordered_map>
 
@@ -45,6 +45,14 @@ public:
 
     void storeAppStateInYAML() override;
 
+};
+
+class KVStoreTrafficGen : public AppTrafficGen {
+    uint32_t key_idx;
+public:
+    KVStoreTrafficGen() : key_idx(0) {}
+
+    void *generateAppTraffic() override;
 };
 
 #endif

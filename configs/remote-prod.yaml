@@ -1,4 +1,7 @@
-app: counter
+transport: nng 
+
+app: "counter"
+
 client:
   ips:
   - 10.138.0.6

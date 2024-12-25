@@ -7,6 +7,7 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/apps/kv_store.h"
 #include "proto/dombft_apps.pb.h"
 
 #define NUM_CLIENTS 100
@@ -112,11 +113,13 @@ Client::Client(const ProcessConfig &config, size_t id)
     if (config.app == AppType::COUNTER) {
         trafficGen_ = std::make_unique<CounterTrafficGen>();
         appType_ = AppType::COUNTER;
+    } else if (config.app == AppType::KV_STORE) {
+        trafficGen_ = std::make_unique<KVStoreTrafficGen>();
+        appType_ = AppType::KV_STORE;
     } else {
         LOG(ERROR) << "Unknown application type for client!";
         exit(1);
     }
-
     if (sendMode_ == dombft::RateBased) {
         // Kick off sending with a small burst every 5 ms
         lastSendTime_ = GetMicrosecondTimestamp();
