@@ -87,7 +87,7 @@ std::string Counter::getDigest(uint32_t digest_idx)
 
 std::string Counter::getSnapshot(uint32_t seq)
 {
-    LOG(INFO) << "Get counter snapshot at seq " << seq;
+    LOG(INFO) << "Get counter snapshot(digest) at seq " << seq;
     return getDigest(seq);
 }
 
@@ -144,7 +144,8 @@ bool Counter::abort(const uint32_t abort_idx)
     return true;
 }
 
-void Counter::getAppStateToYAML(){
+void Counter::storeAppStateInYAML()
+{
     std::map<std::string, std::string> app_state;
     app_state["counter"] = std::to_string(counter);
     app_state["committed_state"] = std::to_string(committed_state.value);

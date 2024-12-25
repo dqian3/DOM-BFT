@@ -106,7 +106,7 @@ Replica::Replica(
         LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
-        log_->app_->getAppStateToYAML();
+        log_->app_->storeAppStateInYAML();
     });
 }
 
@@ -570,7 +570,8 @@ void Replica::processClientRequest(const ClientRequest &request)
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
-
+        if (!log_->app_->takeSnapshot())
+            return;
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
         // TODO remove execution result here  <-- Hao: what is this?
         broadcastToReplicas(reply, MessageType::REPLY);
@@ -1120,6 +1121,8 @@ void Replica::finishFallback()
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();
 
+    if (!log_->app_->takeSnapshot())
+        return;
     // TODO: since the fallback is PBFT, we can simply set the checkpoint here already using the PBFT messages as proofs
     // For the sake of implementation simplicity, we just trigger the usual checkpointing process
     // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint

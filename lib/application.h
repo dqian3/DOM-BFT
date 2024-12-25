@@ -37,13 +37,16 @@ public:
 
     virtual std::string getDigest(uint32_t digest_idx) = 0;
 
+    // take a snapshot of the latest application state
     virtual bool takeSnapshot() = 0;
 
     virtual std::string getSnapshot(uint32_t seq) = 0;
 
     virtual void applySnapshot(const std::string &snapshot) = 0;
 
-    virtual void getAppStateToYAML() = 0;
+    // Store the application state in a YAML file
+    // This may include state metadata and the actual App data
+    virtual void storeAppStateInYAML() = 0;
 };
 
 class AppTrafficGen {

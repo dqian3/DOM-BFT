@@ -2,15 +2,30 @@
 #define KV_STORE_H
 
 #include "lib/application.h"
+#include "proto/dombft_apps.pb.h"
 
 #include <string>
 #include <unordered_map>
 
+using namespace dombft::apps;
+
+typedef struct {
+    uint32_t idx;
+    std::string key;
+    std::string value;
+    KVRequestType type;
+} KVStoreRequest;
+
 // TODO instead of requests and responses being raw bytes, have
 // request and response types that can be serialized/unserialized.
 class KVStore : public Application {
+    // we still need this since abort needs it. REMOVE cmt after abort is implemented!
+    std::vector<KVStoreRequest> requests;
     std::unordered_map<std::string, std::string> data;
-
+    std::unordered_map<std::string, std::string> committed_data;
+    byte committed_data_digest[SHA256_DIGEST_LENGTH];
+    // seq -> data
+    std::unordered_map<uint32_t, std::string> snapshots_data;
 public:
     ~KVStore();
 
@@ -28,7 +43,8 @@ public:
 
     bool abort(const uint32_t abort_idx) override;
 
-    void getAppStateToYAML() override;
+    void storeAppStateInYAML() override;
+
 };
 
 #endif
