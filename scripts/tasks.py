@@ -48,6 +48,7 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft"):
             print(cmd)
 
             other_handles.append(hdl)
+        time.sleep(2)
 
         for id in range(n_clients):
             cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"

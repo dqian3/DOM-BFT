@@ -19,8 +19,13 @@ typedef struct VersionedValue {
 class Counter : public Application {
 public:
     int counter;
-
     VersionedValue committed_state;
+
+    Counter()
+            : counter(0)
+            , committed_state(0, 0)
+            , version_hist()
+    {}
 
     ~Counter() override;
 
@@ -37,14 +42,7 @@ public:
 
     void applySnapshot(const std::string &snapshot) override;
 
-    void getAppStateToYAML() override;
-
-    Counter()
-        : counter(0)
-        , committed_state(0, 0)
-        , version_hist()
-    {
-    }
+    void storeAppStateInYAML() override;
 
     bool abort(const uint32_t abort_idx) override;
 

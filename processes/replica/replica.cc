@@ -113,7 +113,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
-        log_->app_->getAppStateToYAML();
+        log_->app_->storeAppStateInYAML();
     });
 }
 
@@ -431,7 +431,8 @@ void Replica::processClientRequest(const ClientRequest &request)
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
-
+        if (!log_->app_->takeSnapshot())
+            return;
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
         // TODO remove execution result here  <-- Hao: what is this?
         broadcastToReplicas(reply, MessageType::REPLY);
@@ -783,6 +784,8 @@ void Replica::finishFallback()
     fallbackProposal_.reset();
 
     // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
+    if (!log_->app_->takeSnapshot())
+        return;
     checkpointCollectors_.tryInitCheckpointCollector(
         log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
     );
