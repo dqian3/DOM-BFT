@@ -129,6 +129,7 @@ cc_library(
     deps = [
         "//proto:dombft_apps_cc",
         ":common",
+        ":utils",
         "@openssl//:openssl",
         "@com_github_google_glog//:glog",
         "@com_github_jbeder_yaml_cpp//:yaml-cpp",

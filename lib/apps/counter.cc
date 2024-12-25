@@ -100,14 +100,6 @@ void Counter::applySnapshot(const std::string &snap)
     LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
 }
 
-void *CounterTrafficGen::generateAppTraffic()
-{
-    CounterRequest *request = new CounterRequest();
-    request->set_op(CounterOperation::INCREMENT);
-
-    return request;
-}
-
 bool Counter::abort(const uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
@@ -160,4 +152,10 @@ void Counter::storeAppStateInYAML()
     std::cout << "App state saved to " << APP_STATE_YAML_FILE << std::endl;
 }
 
+void *CounterTrafficGen::generateAppTraffic()
+{
+    CounterRequest *request = new CounterRequest();
+    request->set_op(CounterOperation::INCREMENT);
 
+    return request;
+}

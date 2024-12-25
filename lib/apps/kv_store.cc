@@ -27,13 +27,10 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
         response.set_ok(true);
         VLOG(6) << "SET key: " << key << " value: " << kvReq->value();
     } else if (type == KVRequestType::DELETE) {
-        if (data.count(key)) {
-            data.erase(key);
-            response.set_ok(true);
+        bool deleted = data.erase(key);
+        response.set_ok(deleted);
+        if (deleted)
             VLOG(6) << "DELETE key: " << key;
-        } else {
-            response.set_ok(false);
-        }
     } else {
         LOG(ERROR) << "Unknown KVRequestType";
         return "";
@@ -111,7 +108,6 @@ bool KVStore::abort(const uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
     if (abort_idx < requests.front().idx || abort_idx > requests.back().idx) {
-        // or revert to committed state?
         LOG(ERROR) << "Abort index is either less than the oldest uncommitted request with index " << requests.front().idx
                       << " or greater than the newest uncommitted request with index " << requests.back().idx
                    << ". Unable to revert.";
@@ -123,6 +119,7 @@ bool KVStore::abort(const uint32_t abort_idx)
         if (ele.idx > abort_idx) {
             break;
         }
+        // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
         if (ele.type == KVRequestType::SET) {
             data[ele.key] = ele.value;
         } else if (ele.type == KVRequestType::DELETE) {
@@ -145,6 +142,7 @@ bool KVStore::commit(uint32_t commit_idx) {
         if (ele.idx > commit_idx) {
             break;
         }
+        // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
         if (ele.type == KVRequestType::SET) {
             committed_data[ele.key] = ele.value;
         } else if (ele.type == KVRequestType::DELETE) {
@@ -160,8 +158,9 @@ bool KVStore::commit(uint32_t commit_idx) {
     SHA256_Update(&ctx, all.c_str(), all.size());
     SHA256_Final(digest, &ctx);
     memcpy(committed_data_digest, digest, SHA256_DIGEST_LENGTH);
+
     LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committed_data.size()
-            << " digest: " << std::string(reinterpret_cast<char *>(committed_data_digest), SHA256_DIGEST_LENGTH);
+            << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
 
     // remove snapshots that are older than commit_idx
     auto it = snapshots_data.begin();
@@ -187,3 +186,11 @@ void KVStore::storeAppStateInYAML()
     std::cout << "App state saved to " << APP_STATE_YAML_FILE << std::endl;
 }
 
+void *KVStoreTrafficGen::generateAppTraffic() {
+    // TODO(Hao): test with set only for now.
+    KVRequest *req = new KVRequest();
+    req->set_key("key" + std::to_string(key_idx));
+    req->set_value("value" + std::to_string(key_idx));
+    req->set_msg_type(KVRequestType::SET);
+    key_idx++;
+}
