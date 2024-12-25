@@ -16,15 +16,19 @@ public:
 
     std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
 
-    bool commit(uint32_t commit_idx) override { return true; }
+    bool commit(uint32_t commit_idx) override;
 
     std::string getDigest(uint32_t digest_idx) override;
 
-    std::string takeSnapshot() override;
+    bool takeSnapshot() override;
+
+    std::string getSnapshot(uint32_t seq) override;
 
     void applySnapshot(const std::string &snapshot) override;
 
     bool abort(const uint32_t abort_idx) override;
+
+    void getAppStateToYAML() override;
 };
 
 #endif

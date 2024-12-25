@@ -43,6 +43,7 @@ struct LogCheckpoint {
     dombft::proto::Cert cert;
     byte logDigest[SHA256_DIGEST_LENGTH];
     byte appDigest[SHA256_DIGEST_LENGTH];
+    std::string appSnapshot;
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;
     std::map<uint32_t, std::string> signatures;
@@ -58,6 +59,7 @@ struct LogCheckpoint {
     LogCheckpoint(const LogCheckpoint &other)
         : seq(other.seq)
         , cert(other.cert)
+        , appSnapshot(other.appSnapshot)
         , commitMessages(other.commitMessages)
         , signatures(other.signatures)
     {

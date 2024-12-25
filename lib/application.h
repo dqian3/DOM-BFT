@@ -37,7 +37,9 @@ public:
 
     virtual std::string getDigest(uint32_t digest_idx) = 0;
 
-    virtual std::string takeSnapshot() = 0;
+    virtual bool takeSnapshot() = 0;
+
+    virtual std::string getSnapshot(uint32_t seq) = 0;
 
     virtual void applySnapshot(const std::string &snapshot) = 0;
 
