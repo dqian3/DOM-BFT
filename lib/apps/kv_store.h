@@ -43,7 +43,7 @@ public:
 
     bool abort(const uint32_t abort_idx) override;
 
-    void storeAppStateInYAML() override;
+    void storeAppStateInYAML(const std::string& filename) override;
 
 };
 

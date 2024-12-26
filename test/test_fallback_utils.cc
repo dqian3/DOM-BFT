@@ -38,7 +38,8 @@ public:
     MOCK_METHOD(bool, commit, (uint32_t commit_idx), (override));
     MOCK_METHOD(bool, abort, (const uint32_t abort_idx), (override));
     MOCK_METHOD(std::string, getDigest, (uint32_t digest_idx), (override));
-    MOCK_METHOD(std::string, takeSnapshot, (), (override));
+    MOCK_METHOD(bool, takeSnapshot, (), (override));
+    MOCK_METHOD(std::string, getSnapshot, (uint32_t seq), (override));
     MOCK_METHOD(void, applySnapshot, (const std::string &snapshot), (override));
 
     MockApplication()

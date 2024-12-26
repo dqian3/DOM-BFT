@@ -116,7 +116,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
-        log_->app_->storeAppStateInYAML();
+        const std::string filename = "replica" + std::to_string(replicaId_) + "_app_state.yaml";
+        log_->app_->storeAppStateInYAML(filename);
     });
 }
 

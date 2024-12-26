@@ -42,7 +42,7 @@ public:
 
     void applySnapshot(const std::string &snapshot) override;
 
-    void storeAppStateInYAML() override;
+    void storeAppStateInYAML(const std::string& filename) override;
 
     bool abort(const uint32_t abort_idx) override;
 

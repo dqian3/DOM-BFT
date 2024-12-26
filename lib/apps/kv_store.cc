@@ -15,7 +15,6 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
     std::string value = {};
     KVRequestType type = kvReq->msg_type();
     // print out the request
-    LOG(INFO) << "DEBUG: execute_idx: " << execute_idx << " key: " << key << " value: " << kvReq->value() << " type: " << static_cast<int>(type);
     if (type == KVRequestType::GET) {
         if (data.count(key)) {
             response.set_ok(true);
@@ -44,7 +43,6 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
         throw std::runtime_error("Failed to serialize CounterResponse message.");
     }
     requests.push_back({execute_idx,key,value,type});
-    LOG(INFO) << "DEBUG: return response: " << ret;
     return ret;
 }
 
@@ -176,16 +174,16 @@ bool KVStore::commit(uint32_t commit_idx) {
     return true;
 }
 
-void KVStore::storeAppStateInYAML()
+void KVStore::storeAppStateInYAML(const std::string& filename)
 {
     // TODO(Hao): maybe add some metadata as well
-    std::ofstream fout(APP_STATE_YAML_FILE);
+    std::ofstream fout(filename);
     YAML::Node node;
     for (auto &kv : data) {
         node[kv.first] = kv.second;
     }
     fout << node;
-    std::cout << "App state saved to " << APP_STATE_YAML_FILE << std::endl;
+    std::cout << "App state saved to " << filename << std::endl;
 }
 
 void *KVStoreTrafficGen::generateAppTraffic() {
