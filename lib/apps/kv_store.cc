@@ -14,6 +14,8 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
     std::string key = kvReq->key();
     std::string value = {};
     KVRequestType type = kvReq->msg_type();
+    // print out the request
+    LOG(INFO) << "DEBUG: execute_idx: " << execute_idx << " key: " << key << " value: " << kvReq->value() << " type: " << static_cast<int>(type);
     if (type == KVRequestType::GET) {
         if (data.count(key)) {
             response.set_ok(true);
@@ -42,7 +44,7 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
         throw std::runtime_error("Failed to serialize CounterResponse message.");
     }
     requests.push_back({execute_idx,key,value,type});
-
+    LOG(INFO) << "DEBUG: return response: " << ret;
     return ret;
 }
 
@@ -193,4 +195,5 @@ void *KVStoreTrafficGen::generateAppTraffic() {
     req->set_value("value" + std::to_string(key_idx));
     req->set_msg_type(KVRequestType::SET);
     key_idx++;
+    return req;
 }

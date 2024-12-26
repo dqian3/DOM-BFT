@@ -8,7 +8,7 @@ from invoke import task
 
 # TODO we can process output of these here instead of in the terminal
 @task
-def local(c, config_file="../configs/local.yaml", v=5, prot="dombft"):
+def local(c, config_file="../configs/local.yaml", v=6, prot="dombft"):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 

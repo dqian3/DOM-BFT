@@ -177,11 +177,14 @@ void Client::submitRequest()
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
-    auto appRequest = trafficGen_->generateAppTraffic();
+    void* appRequest = trafficGen_->generateAppTraffic();
     // TODO: this has to be hard coded in an inelegant way. May imporve this later
     if (appType_ == AppType::COUNTER) {
-        dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+        auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
         request.set_req_data(counterReq->SerializeAsString());
+    }else if (appType_ == AppType::KV_STORE) {
+        auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
+        request.set_req_data(kvStoreReq->SerializeAsString());
     }
 
     requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
@@ -245,8 +248,11 @@ void Client::submitRequestsOpenLoop()
         auto appRequest = trafficGen_->generateAppTraffic();
 
         if (appType_ == AppType::COUNTER) {
-            dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+            auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
             request.set_req_data(counterReq->SerializeAsString());
+        }else if (appType_ == AppType::KV_STORE) {
+            auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
+            request.set_req_data(kvStoreReq->SerializeAsString());
         }
 
         requestStates_.emplace(nextSeq_, RequestState(f_, request, now));

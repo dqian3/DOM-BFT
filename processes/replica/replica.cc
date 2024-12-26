@@ -2,6 +2,7 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/apps/kv_store.h"
 #include "lib/common.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
@@ -61,6 +62,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
     if (config.app == AppType::COUNTER) {
         log_ = std::make_shared<Log>(std::make_shared<Counter>());
+    } else if(config.app == AppType::KV_STORE) {
+        log_ = std::make_shared<Log>(std::make_shared<KVStore>());
     } else {
         LOG(ERROR) << "Unrecognized App Type";
         exit(1);
