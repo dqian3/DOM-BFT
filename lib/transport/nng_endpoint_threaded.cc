@@ -71,11 +71,10 @@ void NngSendThread::sendMsg(const byte *msg, size_t len)
 /*************************** NngRecvThread ***************************/
 NngRecvThread::NngRecvThread(
     const std::vector<nng_socket> &socks, const std::unordered_map<int, Address> &sockToAddr,
-    struct ev_loop *parentLoop, ev_async *recvWatcher
+    NngEndpointThreaded *parent
 )
     : socks_(socks)
-    , parentLoop_(parentLoop)
-    , parentRecvWatcher_(recvWatcher)
+    , parent_(parent)
 {
     evLoop_ = ev_loop_new();
     ioWatchers_.resize(socks.size());
@@ -110,9 +109,9 @@ NngRecvThread::NngRecvThread(
             }
             VLOG(6) << "Received message of length " << len << " from " << data->addr;
 
-            r->queue_.enqueue({std::vector<byte>(r->recvBuffer_, r->recvBuffer_ + len), data->addr});
+            r->parent_->queue_.enqueue({std::vector<byte>(r->recvBuffer_, r->recvBuffer_ + len), data->addr});
 
-            ev_async_send(r->parentLoop_, r->parentRecvWatcher_);
+            ev_async_send(r->parent_->evLoop_, &r->parent_->recvWatcher_);
         };
 
         ev_init(watcher, cb);
@@ -133,7 +132,7 @@ NngRecvThread::~NngRecvThread()
 
 void NngRecvThread::run()
 {
-    // LOG(INFO) << "NngEndpointThreaded recv thread started!";
+    LOG(INFO) << "NngEndpointThreaded recv thread started!";
 
     ev_async_init(&stopWatcher_, [](struct ev_loop *loop, ev_async *w, int revents) {
         // Signal to stop the event loop
@@ -146,13 +145,13 @@ void NngRecvThread::run()
 
     ev_run(evLoop_, 0);
 
-    // LOG(INFO) << "NngEndpointThreaded recv thread finished!";
+    LOG(INFO) << "NngEndpointThreaded recv thread finished!";
 }
 
 /*************************** NngEndpointThreaded ***************************/
 NngEndpointThreaded::NngEndpointThreaded(
     const std::vector<std::pair<Address, Address>> &addrPairs, bool isMasterReceiver,
-    const std::optional<Address> &loopbackAddr
+    const std::optional<Address> &loopbackAddr, uint32_t numRecvThreads
 )
     : NngEndpoint(addrPairs, isMasterReceiver, loopbackAddr)
 {
@@ -163,7 +162,21 @@ NngEndpointThreaded::NngEndpointThreaded(
         sendThreads_.push_back(std::make_unique<NngSendThread>(socks_[i], socketIdxToAddr_[i]));
     }
 
-    recvThread_ = std::make_unique<NngRecvThread>(socks_, socketIdxToAddr_, evLoop_, &recvWatcher_);
+    std::vector<std::vector<nng_socket>> partitionedSocks(numRecvThreads);
+    std::vector<std::unordered_map<int, Address>> partitionedAddrs(numRecvThreads);
+
+    for (size_t i = 0; i < socks_.size(); i++) {
+        // TODO Fix this ugliness
+        // We originally expect a socketIdxToAddr map, but when we partition the list of sockets
+        // We need to build a new map.
+        size_t j = i % numRecvThreads;
+        partitionedSocks[j].push_back(socks_[i]);
+        partitionedAddrs[j][partitionedSocks[j].size() - 1] = socketIdxToAddr_.at(i);
+    }
+
+    for (size_t i = 0; i < numRecvThreads; i++) {
+        recvThreads_.push_back(std::make_unique<NngRecvThread>(partitionedSocks[i], partitionedAddrs[i], this));
+    }
 }
 
 NngEndpointThreaded::~NngEndpointThreaded() {}
@@ -177,9 +190,7 @@ int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr, MessageHeader
     // check for loopback
     if (loopbackAddr_.has_value() && dstAddr == loopbackAddr_.value()) {
         byte *msg = (byte *) hdr;
-        recvThread_->queue_.enqueue(
-            {std::vector<byte>(msg, msg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen), dstAddr}
-        );
+        queue_.enqueue({std::vector<byte>(msg, msg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen), dstAddr});
         ev_async_send(evLoop_, &recvWatcher_);
         return 0;
     }
@@ -204,7 +215,7 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
         NngEndpointThreaded *ep = (NngEndpointThreaded *) w->data;
         std::pair<std::vector<byte>, Address> item;
 
-        while (ep->recvThread_->queue_.try_dequeue(item)) {
+        while (ep->queue_.try_dequeue(item)) {
             auto &[msg, addr] = item;
             size_t len = msg.size();
 
@@ -232,15 +243,19 @@ void NngEndpointThreaded::LoopBreak()
         ev_async_send(t->evLoop_, &t->stopWatcher_);
     }
 
-    ev_async_send(recvThread_->evLoop_, &recvThread_->stopWatcher_);
+    for (auto &t : recvThreads_) {
+        ev_async_send(t->evLoop_, &t->stopWatcher_);
+    }
 
     for (auto &t : sendThreads_) {
         t->thread_.join();
         LOG(INFO) << "Join send thread " << t->addr_;
     }
 
-    recvThread_->thread_.join();
-    LOG(INFO) << "Join recv thread";
+    for (auto &t : recvThreads_) {
+        t->thread_.join();
+        LOG(INFO) << "Join recv thread";
+    }
 
     Endpoint::LoopBreak();
 }

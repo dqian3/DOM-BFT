@@ -10,6 +10,8 @@
 
 #include <nng/nng.h>
 
+class NngEndpointThreaded;
+
 class NngSendThread {
 
 public:
@@ -38,12 +40,10 @@ class NngRecvThread {
 public:
     NngRecvThread(
         const std::vector<nng_socket> &socks, const std::unordered_map<int, Address> &sockToAddr,
-        struct ev_loop *parentLoop, ev_async *recvWatcher
+        NngEndpointThreaded *parent
     );
     ~NngRecvThread();
     void run();
-
-    BlockingConcurrentQueue<std::pair<std::vector<byte>, Address>> queue_;
 
 private:
     std::thread thread_;
@@ -64,25 +64,27 @@ private:
     byte recvBuffer_[NNG_BUFFER_SIZE];
 
     // Communcation with parent endpoint
-    struct ev_loop *parentLoop_;
-    ev_async *parentRecvWatcher_;
+    // TODO smart ptr?
+    NngEndpointThreaded *parent_;
 
     friend class NngEndpointThreaded;
 };
 
 class NngEndpointThreaded : public NngEndpoint {
 protected:
-    std::unique_ptr<NngRecvThread> recvThread_;
     std::vector<std::unique_ptr<NngSendThread>> sendThreads_;
+    std::vector<std::unique_ptr<NngRecvThread>> recvThreads_;
 
     ev_async recvWatcher_;
 
     MessageHandlerFunc hdlrFunc_;
 
+    ConcurrentQueue<std::pair<std::vector<byte>, Address>> queue_;
+
 public:
     NngEndpointThreaded(
         const std::vector<std::pair<Address, Address>> &pairs, bool isMasterReceiver = false,
-        const std::optional<Address> &loopbackAddr = std::nullopt
+        const std::optional<Address> &loopbackAddr = std::nullopt, uint32_t numRecvThreads = 2
     );
     virtual ~NngEndpointThreaded();
 
@@ -90,6 +92,9 @@ public:
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
 
     virtual void LoopBreak() override;
+
+    friend class NngRecvThread;
+    friend class NngSendThread;
 };
 
 #endif
