@@ -1,9 +1,10 @@
 #include "checkpoint_collector.h"
 namespace dombft {
 
-    // Collects the reply from peers for the same seq num
-    // Returns true if it is ok to proceed with the commit stage
-bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig){
+// Collects the reply from peers for the same seq num
+// Returns true if it is ok to proceed with the commit stage
+bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig)
+{
 
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());

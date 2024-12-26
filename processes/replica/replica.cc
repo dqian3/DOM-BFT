@@ -2,6 +2,7 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/apps/kv_store.h"
 #include "lib/common.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/udp_endpoint.h"
@@ -70,6 +71,8 @@ Replica::Replica(
 
     if (config.app == AppType::COUNTER) {
         log_ = std::make_shared<Log>(std::make_shared<Counter>());
+    } else if (config.app == AppType::KV_STORE) {
+        log_ = std::make_shared<Log>(std::make_shared<KVStore>());
     } else {
         LOG(ERROR) << "Unrecognized App Type";
         exit(1);
@@ -106,7 +109,8 @@ Replica::Replica(
         LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
-        log_->app_->storeAppStateInYAML();
+        const std::string filename = "replica" + std::to_string(replicaId_) + "_app_state.yaml";
+        log_->app_->storeAppStateInYAML(filename);
     });
 }
 
@@ -573,7 +577,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         if (!log_->app_->takeSnapshot())
             return;
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
-        // TODO remove execution result here  <-- Hao: what is this?
+        // TODO remove execution result from Reply
         broadcastToReplicas(reply, MessageType::REPLY);
     }
 }
@@ -642,7 +646,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         const byte *logDigest = log_->getDigest(rSeq);
-        //TODO(Hao): update here for app digest/ app snapshot
+        // TODO(Hao): update here for app digest/ app snapshot
         std::string appDigest = log_->app_->getDigest(rSeq);
         std::string appSnapshot = log_->app_->getSnapshot(rSeq);
         ClientRecords tmpClientRecords = collector.clientRecords_.value();
@@ -655,7 +659,6 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
         commit.set_app_digest(appDigest);
         commit.set_app_snapshot(appSnapshot);
-
 
         byte recordDigest[SHA256_DIGEST_LENGTH];
         getRecordsDigest(tmpClientRecords, recordDigest);

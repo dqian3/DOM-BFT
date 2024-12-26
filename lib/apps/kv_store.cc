@@ -14,6 +14,7 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
     std::string key = kvReq->key();
     std::string value = {};
     KVRequestType type = kvReq->msg_type();
+    // print out the request
     if (type == KVRequestType::GET) {
         if (data.count(key)) {
             response.set_ok(true);
@@ -41,15 +42,14 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
         LOG(ERROR) << "Failed to serialize CounterResponse";
         throw std::runtime_error("Failed to serialize CounterResponse message.");
     }
-    requests.push_back({execute_idx,key,value,type});
-
+    requests.push_back({execute_idx, key, value, type});
     return ret;
 }
 
 std::string KVStore::getDigest(uint32_t digest_idx)
 {
     if (digest_idx >= requests.back().idx) {
-        LOG(ERROR)<< "Invalid digest idx: " << digest_idx << " out of range";
+        LOG(ERROR) << "Invalid digest idx: " << digest_idx << " out of range";
         return {};
     }
     byte digest[SHA256_DIGEST_LENGTH];
@@ -80,14 +80,11 @@ bool KVStore::takeSnapshot()
     return true;
 }
 
-std::string KVStore::getSnapshot(uint32_t seq)
-{
-    return snapshots_data.count(seq) ? snapshots_data[seq] : "";
-}
+std::string KVStore::getSnapshot(uint32_t seq) { return snapshots_data.count(seq) ? snapshots_data[seq] : ""; }
 
 void KVStore::applySnapshot(const std::string &snapshot)
 {
-    try{
+    try {
         std::istringstream iss(snapshot);
         std::string kv;
         data.clear();
@@ -99,25 +96,32 @@ void KVStore::applySnapshot(const std::string &snapshot)
             data[key] = value;
         }
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
-    }catch(int e){
-        LOG(ERROR) << "Failed to apply snapshot";
+    } catch (std::exception &e) {
+        LOG(ERROR) << "Failed to apply snapshot: " << e.what();
     }
 }
 
 bool KVStore::abort(const uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-    if (abort_idx < requests.front().idx || abort_idx > requests.back().idx) {
-        LOG(ERROR) << "Abort index is either less than the oldest uncommitted request with index " << requests.front().idx
-                      << " or greater than the newest uncommitted request with index " << requests.back().idx
+    if (abort_idx < requests.front().idx) {
+        LOG(ERROR) << "Abort index is  less than the oldest uncommitted request with index " << requests.front().idx
                    << ". Unable to revert.";
         return false;
     }
+
+    if (abort_idx > requests.back().idx) {
+        LOG(ERROR) << "Abort index is greater than the newest uncommitted request with index " << requests.back().idx
+                   << ". Unable to revert.";
+        return false;
+    }
+
     // reapply committed data and ops before abort_idx
     data = committed_data;
+    uint32_t i = 0;
     for (auto &ele : requests) {
         if (ele.idx > abort_idx) {
-            break;
+            requests.erase(requests.begin() + i, requests.end());
         }
         // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
         if (ele.type == KVRequestType::SET) {
@@ -125,12 +129,14 @@ bool KVStore::abort(const uint32_t abort_idx)
         } else if (ele.type == KVRequestType::DELETE) {
             data.erase(ele.key);
         }
+        i++;
     }
     return true;
 }
 
-bool KVStore::commit(uint32_t commit_idx) {
-    LOG(INFO) << "Committing counter value at idx: " <<commit_idx;
+bool KVStore::commit(uint32_t commit_idx)
+{
+    LOG(INFO) << "Committing counter value at idx: " << commit_idx;
     // update committed_data_digest alone the way
     byte digest[SHA256_DIGEST_LENGTH];
     SHA256_CTX ctx;
@@ -160,7 +166,7 @@ bool KVStore::commit(uint32_t commit_idx) {
     memcpy(committed_data_digest, digest, SHA256_DIGEST_LENGTH);
 
     LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committed_data.size()
-            << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
+              << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
 
     // remove snapshots that are older than commit_idx
     auto it = snapshots_data.begin();
@@ -174,23 +180,26 @@ bool KVStore::commit(uint32_t commit_idx) {
     return true;
 }
 
-void KVStore::storeAppStateInYAML()
+void KVStore::storeAppStateInYAML(const std::string &filename)
 {
     // TODO(Hao): maybe add some metadata as well
-    std::ofstream fout(APP_STATE_YAML_FILE);
+    std::ofstream fout(filename);
     YAML::Node node;
     for (auto &kv : data) {
         node[kv.first] = kv.second;
     }
     fout << node;
-    std::cout << "App state saved to " << APP_STATE_YAML_FILE << std::endl;
+    std::cout << "App state saved to " << filename << std::endl;
 }
 
-void *KVStoreTrafficGen::generateAppTraffic() {
+void *KVStoreTrafficGen::generateAppTraffic()
+{
     // TODO(Hao): test with set only for now.
+    // TODO(Hao): use distribution of keys
     KVRequest *req = new KVRequest();
     req->set_key("key" + std::to_string(key_idx));
     req->set_value("value" + std::to_string(key_idx));
     req->set_msg_type(KVRequestType::SET);
     key_idx++;
+    return req;
 }

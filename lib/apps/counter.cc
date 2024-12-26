@@ -136,20 +136,20 @@ bool Counter::abort(const uint32_t abort_idx)
     return true;
 }
 
-void Counter::storeAppStateInYAML()
+void Counter::storeAppStateInYAML(const std::string &filename)
 {
     std::map<std::string, std::string> app_state;
     app_state["counter"] = std::to_string(counter);
     app_state["committed_state"] = std::to_string(committed_state.value);
     app_state["committed_version"] = std::to_string(committed_state.version);
     // store to yaml file
-    std::ofstream fout(APP_STATE_YAML_FILE);
+    std::ofstream fout(filename);
     YAML::Node node;
     for (auto &kv : app_state) {
         node[kv.first] = kv.second;
     }
     fout << node;
-    std::cout << "App state saved to " << APP_STATE_YAML_FILE << std::endl;
+    std::cout << "App state saved to " << filename << std::endl;
 }
 
 void *CounterTrafficGen::generateAppTraffic()

@@ -172,8 +172,11 @@ void Client::fillRequestData(ClientRequest &request)
     std::string reqData;
 
     if (appType_ == AppType::COUNTER) {
-        dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+        auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
         reqData = counterReq->SerializeAsString();
+    }else if (appType_ == AppType::KV_STORE) {
+        auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
+        reqData = kvStoreReq->SerializeAsString();
     }
 
     if (reqData.size() < requestSize_) {

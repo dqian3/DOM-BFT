@@ -21,11 +21,11 @@ typedef struct {
 class KVStore : public Application {
     // we still need this since abort needs it. REMOVE cmt after abort is implemented!
     std::vector<KVStoreRequest> requests;
-    std::unordered_map<std::string, std::string> data;
-    std::unordered_map<std::string, std::string> committed_data;
+    std::map<std::string, std::string> data;
+    std::map<std::string, std::string> committed_data;
     byte committed_data_digest[SHA256_DIGEST_LENGTH];
     // seq -> data
-    std::unordered_map<uint32_t, std::string> snapshots_data;
+    std::map<uint32_t, std::string> snapshots_data;
 public:
     ~KVStore();
 
@@ -43,7 +43,7 @@ public:
 
     bool abort(const uint32_t abort_idx) override;
 
-    void storeAppStateInYAML() override;
+    void storeAppStateInYAML(const std::string& filename) override;
 
 };
 
