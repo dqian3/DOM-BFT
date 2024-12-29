@@ -19,6 +19,11 @@
 
 #include <yaml-cpp/yaml.h>
 
+// TODO(Hao): make these configurable
+#define REPLY_BATCH_SIZE 5
+// TODO(Hao): implement size only first
+#define BATCH_TIMEOUT_MS 100
+
 namespace dombft {
 class Replica {
 private:
@@ -38,11 +43,13 @@ private:
     // Control flow/endpoint objects
     BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;
     BlockingConcurrentQueue<std::vector<byte>> processQueue_;
+    BlockingConcurrentQueue<proto::Reply> clientReplyQueue_;
     ThreadPool sendThreadpool_;
 
     bool running_;
     std::vector<std::thread> verifyThreads_;
     std::thread processThread_;
+    std::thread clientReplyBatchMakerThread_;
 
     std::unique_ptr<Endpoint> endpoint_;
     // Replica state
@@ -82,6 +89,9 @@ private:
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
+    // Batching replies: client id -> queue of replies in current batch
+    std::unordered_map<uint32_t, std::queue<dombft::proto::Reply>> clientReplyBatches_;
+
     // State for triggering view change
     uint32_t viewChangeFreq_;
     uint32_t viewChangeInst_;
@@ -95,6 +105,7 @@ private:
 
     void verifyMessagesThd();
     void processMessagesThd();
+    void clientReplyBatchMakerThd();
 
     void processClientRequest(const dombft::proto::ClientRequest &request);
     void processCert(const dombft::proto::Cert &cert);

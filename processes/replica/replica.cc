@@ -126,6 +126,9 @@ void Replica::run()
     LOG(INFO) << "Starting process thread";
     processThread_ = std::thread(&Replica::processMessagesThd, this);
 
+    LOG(INFO) << "Starting client reply batch maker thread";
+    clientReplyBatchMakerThread_ = std::thread(&Replica::clientReplyBatchMakerThd, this);
+
     LOG(INFO) << "Starting main event loop...";
     endpoint_->LoopRun();
     LOG(INFO) << "Finishing main event loop...";
@@ -513,6 +516,29 @@ void Replica::processMessagesThd()
     }
 }
 
+void Replica::clientReplyBatchMakerThd(){
+    Reply reply;
+    while(running_){
+        if (!clientReplyQueue_.wait_dequeue_timed(reply, 50000)) {
+            continue;
+        }
+        uint32_t  clientId = reply.client_id();
+        clientReplyBatches_[clientId].push(reply);
+        if (clientReplyBatches_[clientId].size() == REPLY_BATCH_SIZE){
+            // make a batch
+            BatchedReply batch;
+            batch.set_client_id(clientId);
+            batch.set_replica_id(replicaId_);
+            while (!clientReplyBatches_[clientId].empty()){
+                *batch.add_replies() = clientReplyBatches_[clientId].front();
+                clientReplyBatches_[clientId].pop();
+            }
+            sendMsgToDst(batch, MessageType::BATCHED_REPLY, clientAddrs_[clientId]);
+            VLOG(6) << "Sent batched reply to client " << clientId << " with size " << batch.replies_size();
+        }
+    }
+}
+
 void Replica::processClientRequest(const ClientRequest &request)
 {
     uint32_t clientId = request.client_id();
@@ -564,7 +590,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_pbft_view(pbftView_);
     reply.set_digest(digest);
 
-    sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
+    clientReplyQueue_.enqueue(reply);
 
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
@@ -714,8 +740,8 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, 
 {
     // Ignore repeated fallback triggers
     if (fallback_) {
-        // LOG(WARNING) << "Received fallback trigger during a fallback from client " << msg.client_id()
-        //              << " for cseq=" << msg.client_seq() << " and instance=" << msg.instance();
+         VLOG(6) << "Received fallback trigger during a fallback from client " << msg.client_id()
+                      << " for cseq=" << msg.client_seq() << " and instance=" << msg.instance();
         return;
     }
 
@@ -738,7 +764,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, 
 
     if (msg.has_proof()) {
         // Proof is verified by verify thread
-        LOG(WARNING) << "Fallback trigger has a proof, starting fallback!";
+        LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
 
         // TODO we need to broadcast this with the original signature
         broadcastToReplicas(msg, FALLBACK_TRIGGER);
@@ -808,7 +834,7 @@ void Replica::checkTimeouts()
     };
 }
 
-// sending helpers
+// Assign a thread to sign the message and send it
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
 {
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {

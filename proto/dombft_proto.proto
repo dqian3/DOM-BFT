@@ -77,7 +77,6 @@ message BatchedReply {
     uint32 client_id = 1;
     uint32 replica_id = 2;
     repeated Reply replies = 3;
-    repeated bytes signatures = 4;
 }
 
 message Commit {
