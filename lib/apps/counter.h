@@ -35,7 +35,7 @@ public:
 
     std::string getDigest(uint32_t digest_idx) override;
 
-    // counter just use digest as snapshot
+    // counter just uses digest as snapshot that is returned directly by getSnapshot
     inline bool takeSnapshot() override {return true;}
 
     inline std::string getSnapshot(uint32_t seq) override;

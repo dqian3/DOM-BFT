@@ -99,25 +99,32 @@ void KVStore::applySnapshot(const std::string &snapshot)
             data[key] = value;
         }
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
-    }catch(int e){
-        LOG(ERROR) << "Failed to apply snapshot";
+    }catch(std::exception &e){
+        LOG(ERROR) << "Failed to apply snapshot: " << e.what();
     }
 }
 
 bool KVStore::abort(const uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-    if (abort_idx < requests.front().idx || abort_idx > requests.back().idx) {
-        LOG(ERROR) << "Abort index is either less than the oldest uncommitted request with index " << requests.front().idx
-                      << " or greater than the newest uncommitted request with index " << requests.back().idx
+    if (abort_idx < requests.front().idx ) {
+        LOG(ERROR) << "Abort index is  less than the oldest uncommitted request with index " << requests.front().idx
                    << ". Unable to revert.";
         return false;
     }
+
+    if (abort_idx > requests.back().idx) {
+        LOG(ERROR) << "Abort index is greater than the newest uncommitted request with index " << requests.back().idx
+                   << ". Unable to revert.";
+        return false;
+    }
+
     // reapply committed data and ops before abort_idx
     data = committed_data;
+    uint32_t i = 0;
     for (auto &ele : requests) {
         if (ele.idx > abort_idx) {
-            break;
+            requests.erase(requests.begin() + i, requests.end());
         }
         // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
         if (ele.type == KVRequestType::SET) {
@@ -125,6 +132,7 @@ bool KVStore::abort(const uint32_t abort_idx)
         } else if (ele.type == KVRequestType::DELETE) {
             data.erase(ele.key);
         }
+        i++;
     }
     return true;
 }
@@ -188,6 +196,7 @@ void KVStore::storeAppStateInYAML(const std::string& filename)
 
 void *KVStoreTrafficGen::generateAppTraffic() {
     // TODO(Hao): test with set only for now.
+    //TODO(Hao): use distribution of keys
     KVRequest *req = new KVRequest();
     req->set_key("key" + std::to_string(key_idx));
     req->set_value("value" + std::to_string(key_idx));

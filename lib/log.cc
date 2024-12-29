@@ -88,8 +88,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 
     res = app_->execute(req, nextSeq);
     if (res.empty()) {
-        LOG(ERROR) << "Application failed to execute request!";
-        return false;
+        LOG(WARNING) << "Application failed to execute request!";
     }
     log[nextSeq % log.size()]->result = res;
 

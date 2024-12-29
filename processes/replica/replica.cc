@@ -438,7 +438,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         if (!log_->app_->takeSnapshot())
             return;
         checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
-        // TODO remove execution result here  <-- Hao: what is this?
+        // TODO remove execution result from Reply
         broadcastToReplicas(reply, MessageType::REPLY);
     }
 }
