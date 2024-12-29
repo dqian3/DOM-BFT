@@ -112,7 +112,8 @@ private:
 
     /** The message handler to handle messages */
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
-    void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
+    void handleReply(dombft::proto::Reply &reply, std::span<byte>& sig);
+    void handleBatchedReply(dombft::proto::BatchedReply &batchedReply, std::span<byte>& sig);
     void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 

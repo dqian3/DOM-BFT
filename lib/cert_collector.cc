@@ -9,21 +9,22 @@
 #include <map>
 #include <sstream>
 #include <tuple>
+#include <span>
 
 using namespace dombft::proto;
 
-CertCollector::CertCollector(int f)
+CertCollector::CertCollector(uint32_t f)
     : f_(f)
     , maxMatchSize_(0)
 {
 }
 
-size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
+size_t CertCollector::insertReply(Reply &reply, std::span<byte> &sig)
 {
-    int replicaId = reply.replica_id();
+    uint32_t replicaId = reply.replica_id();
 
     replies_[replicaId] = reply;
-    signatures_[replicaId] = sig;
+    signatures_[replicaId] = {sig.begin(), sig.end()};
 
     // Try and find a certificate or proof of divergent histories
     std::map<ReplyKey, std::set<int>> matchingReplies;

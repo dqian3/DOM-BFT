@@ -62,23 +62,25 @@ enum MessageType {
     // Fast/normal path messages
     FAST_REPLY = 4,
     REPLY = 5,
-    CERT = 6,
-    CERT_REPLY = 7,
+    BATCHED_REPLY = 6,
 
-    COMMIT = 8,
+    CERT = 7,
+    CERT_REPLY = 8,
 
-    FALLBACK_TRIGGER = 9,
-    FALLBACK_START = 10,
-    FALLBACK_PROPOSAL = 11,
-    FALLBACK_SUMMARY = 12,
+    COMMIT = 9,
 
-    DUMMY_PROTO = 13,
+    FALLBACK_TRIGGER = 10,
+    FALLBACK_START = 11,
+    FALLBACK_PROPOSAL = 12,
+    FALLBACK_SUMMARY = 13,
 
-    PBFT_PREPREPARE = 14,
-    PBFT_PREPARE = 15,
-    PBFT_COMMIT = 16,
-    PBFT_VIEWCHANGE = 17,
-    PBFT_NEWVIEW = 18,
+    DUMMY_PROTO = 14,
+
+    PBFT_PREPREPARE = 15,
+    PBFT_PREPARE = 16,
+    PBFT_COMMIT = 17,
+    PBFT_VIEWCHANGE = 18,
+    PBFT_NEWVIEW = 19,
 };
 
 /**

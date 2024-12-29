@@ -50,14 +50,14 @@ message Reply {
 
 message Cert {
     // A cert logically is a set of 2f + 1 replies
-    
+
     // TODO to save space, we would only store 1 copy of each common field. Instead
     // we just repeat them here since it's easier
     // seq is also just for convenience
     uint32 seq = 1;
     uint32 instance = 2;
     uint32 pbft_view = 3;
-    
+
     repeated Reply replies    = 4;
     repeated bytes signatures = 5;
 }
@@ -70,6 +70,14 @@ message CertReply {
     uint32 instance = 4;
     uint32 pbft_view = 5;
     uint32 seq = 6;
+}
+
+// BATCHED RSP STRUCTS
+message BatchedReply {
+    uint32 client_id = 1;
+    uint32 replica_id = 2;
+    repeated Reply replies = 3;
+    repeated bytes signatures = 4;
 }
 
 message Commit {
