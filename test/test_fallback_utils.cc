@@ -41,7 +41,7 @@ public:
     MOCK_METHOD(bool, takeSnapshot, (), (override));
     MOCK_METHOD(std::string, getSnapshot, (uint32_t seq), (override));
     MOCK_METHOD(void, applySnapshot, (const std::string &snapshot), (override));
-    MOCK_METHOD(void, storeAppStateInYAML, (const std::string& filename), (override));
+    MOCK_METHOD(void, storeAppStateInYAML, (const std::string &filename), (override));
 
     MockApplication()
     {

@@ -136,7 +136,7 @@ bool Counter::abort(const uint32_t abort_idx)
     return true;
 }
 
-void Counter::storeAppStateInYAML(const std::string& filename)
+void Counter::storeAppStateInYAML(const std::string &filename)
 {
     std::map<std::string, std::string> app_state;
     app_state["counter"] = std::to_string(counter);

@@ -42,14 +42,14 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
         LOG(ERROR) << "Failed to serialize CounterResponse";
         throw std::runtime_error("Failed to serialize CounterResponse message.");
     }
-    requests.push_back({execute_idx,key,value,type});
+    requests.push_back({execute_idx, key, value, type});
     return ret;
 }
 
 std::string KVStore::getDigest(uint32_t digest_idx)
 {
     if (digest_idx >= requests.back().idx) {
-        LOG(ERROR)<< "Invalid digest idx: " << digest_idx << " out of range";
+        LOG(ERROR) << "Invalid digest idx: " << digest_idx << " out of range";
         return {};
     }
     byte digest[SHA256_DIGEST_LENGTH];
@@ -80,14 +80,11 @@ bool KVStore::takeSnapshot()
     return true;
 }
 
-std::string KVStore::getSnapshot(uint32_t seq)
-{
-    return snapshots_data.count(seq) ? snapshots_data[seq] : "";
-}
+std::string KVStore::getSnapshot(uint32_t seq) { return snapshots_data.count(seq) ? snapshots_data[seq] : ""; }
 
 void KVStore::applySnapshot(const std::string &snapshot)
 {
-    try{
+    try {
         std::istringstream iss(snapshot);
         std::string kv;
         data.clear();
@@ -99,7 +96,7 @@ void KVStore::applySnapshot(const std::string &snapshot)
             data[key] = value;
         }
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
-    }catch(std::exception &e){
+    } catch (std::exception &e) {
         LOG(ERROR) << "Failed to apply snapshot: " << e.what();
     }
 }
@@ -107,7 +104,7 @@ void KVStore::applySnapshot(const std::string &snapshot)
 bool KVStore::abort(const uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-    if (abort_idx < requests.front().idx ) {
+    if (abort_idx < requests.front().idx) {
         LOG(ERROR) << "Abort index is  less than the oldest uncommitted request with index " << requests.front().idx
                    << ". Unable to revert.";
         return false;
@@ -137,8 +134,9 @@ bool KVStore::abort(const uint32_t abort_idx)
     return true;
 }
 
-bool KVStore::commit(uint32_t commit_idx) {
-    LOG(INFO) << "Committing counter value at idx: " <<commit_idx;
+bool KVStore::commit(uint32_t commit_idx)
+{
+    LOG(INFO) << "Committing counter value at idx: " << commit_idx;
     // update committed_data_digest alone the way
     byte digest[SHA256_DIGEST_LENGTH];
     SHA256_CTX ctx;
@@ -168,7 +166,7 @@ bool KVStore::commit(uint32_t commit_idx) {
     memcpy(committed_data_digest, digest, SHA256_DIGEST_LENGTH);
 
     LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committed_data.size()
-            << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
+              << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
 
     // remove snapshots that are older than commit_idx
     auto it = snapshots_data.begin();
@@ -182,7 +180,7 @@ bool KVStore::commit(uint32_t commit_idx) {
     return true;
 }
 
-void KVStore::storeAppStateInYAML(const std::string& filename)
+void KVStore::storeAppStateInYAML(const std::string &filename)
 {
     // TODO(Hao): maybe add some metadata as well
     std::ofstream fout(filename);
@@ -194,9 +192,10 @@ void KVStore::storeAppStateInYAML(const std::string& filename)
     std::cout << "App state saved to " << filename << std::endl;
 }
 
-void *KVStoreTrafficGen::generateAppTraffic() {
+void *KVStoreTrafficGen::generateAppTraffic()
+{
     // TODO(Hao): test with set only for now.
-    //TODO(Hao): use distribution of keys
+    // TODO(Hao): use distribution of keys
     KVRequest *req = new KVRequest();
     req->set_key("key" + std::to_string(key_idx));
     req->set_value("value" + std::to_string(key_idx));

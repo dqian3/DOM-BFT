@@ -177,12 +177,12 @@ void Client::submitRequest()
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
-    void* appRequest = trafficGen_->generateAppTraffic();
+    void *appRequest = trafficGen_->generateAppTraffic();
     // TODO: this has to be hard coded in an inelegant way. May imporve this later
     if (appType_ == AppType::COUNTER) {
         auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
         request.set_req_data(counterReq->SerializeAsString());
-    }else if (appType_ == AppType::KV_STORE) {
+    } else if (appType_ == AppType::KV_STORE) {
         auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
         request.set_req_data(kvStoreReq->SerializeAsString());
     }
@@ -191,8 +191,8 @@ void Client::submitRequest()
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
-    VLOG(1) << "PERF event=send"
-            << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+    VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+            << " in_flight=" << numInFlight_;
 
     nextSeq_++;
     numInFlight_++;
@@ -250,14 +250,14 @@ void Client::submitRequestsOpenLoop()
         if (appType_ == AppType::COUNTER) {
             auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
             request.set_req_data(counterReq->SerializeAsString());
-        }else if (appType_ == AppType::KV_STORE) {
+        } else if (appType_ == AppType::KV_STORE) {
             auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
             request.set_req_data(kvStoreReq->SerializeAsString());
         }
 
         requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
-        VLOG(1) << "PERF event=send"
-                << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+        VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+                << " in_flight=" << numInFlight_;
 
         nextSeq_++;
         numInFlight_++;
@@ -510,9 +510,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(1) << "PERF event=commit path=fast"
-                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << reply.seq()
-                << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+        VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
+                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
