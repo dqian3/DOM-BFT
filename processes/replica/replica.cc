@@ -232,10 +232,9 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (fallbackTriggerMsg.has_proof()) {
-                // TODO verify proof if it exsits
-            }
-            processQueue_.enqueue(msg);
+            if(!fallbackTriggerMsg.has_proof() || verifyFallbackProof(fallbackTriggerMsg.proof()))
+                processQueue_.enqueue(msg);
+
         }
 
         // TODO do verification of the rest of the cases
@@ -709,12 +708,19 @@ bool Replica::verifyCert(const Cert &cert)
         return false;
     }
 
+    // check if the replies are matching and no duplicate replies from same replica
+    std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
     // Verify each signature in the cert
     for (int i = 0; i < cert.replies().size(); i++) {
         const Reply &reply = cert.replies()[i];
         const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();
+        uint32_t replicaId = reply.replica_id();
 
+        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
+                        reply.client_seq(), reply.digest(),   reply.result()};
+        matchingReplies[key].insert(replicaId);
+
+        std::string serializedReply = reply.SerializeAsString();
         if (!sigProvider_.verify(
                 (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 reply.replica_id()
@@ -723,13 +729,67 @@ bool Replica::verifyCert(const Cert &cert)
             return false;
         }
     }
-
-    // TOOD verify that cert actually contains matching replies...
-    // And that there aren't signatures from the same replica.
+    if (matchingReplies.size()>1){
+        LOG(WARNING) << "Cert has non-matching replies!";
+        return false;
+    }
+    if (matchingReplies.begin()->second.size() < cert.replies().size()){
+        LOG(WARNING) << "Cert has replies from the same replica!";
+        return false;
+    }
 
     return true;
 }
 
+// TODO(Hao) what if due to timeout (and malicious cli)
+bool Replica::verifyFallbackProof(const Cert &proof){
+    if (proof.replies().size() < f_ + 1) {
+        LOG(INFO) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1, f=" << f_;
+        return false;
+    }
+
+    if (proof.replies().size() != proof.signatures().size()) {
+        LOG(INFO) << "Proof replies size " << proof.replies().size() << " is not equal to "
+                  << "cert signatures size" << proof.signatures().size();
+        return false;
+    }
+
+    // check if the replies are matching and no duplicate replies from same replica
+    std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
+    // Verify each signature in the proof
+    for (uint32_t i = 0; i < proof.replies_size(); i++) {
+        const Reply &reply = proof.replies()[i];
+        const std::string &sig = proof.signatures()[i];
+        uint32_t replicaId = reply.replica_id();
+
+        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
+                        reply.client_seq(), reply.digest(),   reply.result()};
+        matchingReplies[key].insert(replicaId);
+        std::string serializedReply = proof.replies(i).SerializeAsString();
+        if (!sigProvider_.verify(
+                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
+                reply.replica_id()
+        )) {
+            LOG(INFO) << "Proof failed to verify!";
+            return false;
+        }
+    }
+
+    if (matchingReplies.size()==1){
+        LOG(WARNING) << "Proof does not have non-matching replies!";
+        return false;
+    }
+    uint32_t sum = 0;
+    for(auto& [_, s]: matchingReplies){
+        sum += s.size();
+    }
+
+    if (sum < proof.replies().size()){
+        LOG(WARNING) << "Proof has replies from the same replica!";
+        return false;
+    }
+    return true;
+}
 void Replica::startFallback()
 {
     fallback_ = true;

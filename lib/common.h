@@ -40,6 +40,7 @@
 #define CHECKPOINT_INTERVAL 500
 
 typedef unsigned char byte;
+typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
 
 template <typename T1> using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
 template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcurrentQueue<T1>;
