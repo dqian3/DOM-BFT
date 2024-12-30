@@ -37,7 +37,9 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
 
             for (auto repId : matchingReplies[key]) {
                 cert_->add_signatures(replySigs_[repId]);
-                (*cert_->add_replies()) = replies_[repId];
+                ReplyAndBatch* replyAndBatch = cert_->add_replies();
+                // does not specify batch as replies between replica are signed individually
+                replyAndBatch->mutable_reply()->CopyFrom(replies_[repId]);
             }
 
             VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();

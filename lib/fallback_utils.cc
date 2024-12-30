@@ -59,8 +59,8 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     }
 
     if (cert != nullptr) {
-        VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].client_id()
-                << " c_seq=" << cert->replies()[0].client_seq();
+        VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].reply().client_id()
+                << " c_seq=" << cert->replies()[0].reply().client_seq();
     } else {
         VLOG(4) << "No certs found!";
     }

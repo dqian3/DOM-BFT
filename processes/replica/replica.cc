@@ -622,7 +622,7 @@ void Replica::holdAndSwapCliReq(const proto::ClientRequest &request)
 void Replica::processCert(const Cert &cert)
 {
     // TODO make sure this works
-    const Reply &r = cert.replies()[0];
+    const Reply &r = cert.replies()[0].reply();
     CertReply reply;
 
     if (cert.instance() < instance_) {
@@ -872,7 +872,8 @@ bool Replica::verifyCert(const Cert &cert)
     std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
     // Verify each signature in the cert
     for (int i = 0; i < cert.replies().size(); i++) {
-        const Reply &reply = cert.replies()[i];
+        const Reply &reply = cert.replies()[i].reply();
+        const BatchedReply &batchedReply = cert.replies()[i].batch();
         const std::string &sig = cert.signatures()[i];
         uint32_t replicaId = reply.replica_id();
 
@@ -880,12 +881,13 @@ bool Replica::verifyCert(const Cert &cert)
                         reply.digest(), reply.result(),   reply.retry()};
         matchingReplies[key].insert(replicaId);
 
-        std::string serializedReply = reply.SerializeAsString();
+        std::string serializedBatch = batchedReply.SerializeAsString();
+
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
+                (byte *) serializedBatch.c_str(), serializedBatch.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 reply.replica_id()
             )) {
-            LOG(INFO) << "Cert failed to verify!";
+            LOG(INFO) << "Cert failed to verify sig "<< digest_to_hex((byte *) sig.c_str()).substr(56) << " for replica " << reply.replica_id();
             return false;
         }
     }

@@ -19,17 +19,19 @@ CertCollector::CertCollector(uint32_t f)
 {
 }
 
-size_t CertCollector::insertReply(Reply &reply, std::span<byte> &sig)
+size_t CertCollector::insertReply(Reply &reply, std::span<byte> &sig,const std::shared_ptr<dombft::proto::BatchedReply>& batchedReply)
 {
     uint32_t replicaId = reply.replica_id();
 
-    replies_[replicaId] = reply;
+    replies_[replicaId] = {reply,batchedReply};
     signatures_[replicaId] = {sig.begin(), sig.end()};
 
     // Try and find a certificate or proof of divergent histories
     std::map<ReplyKey, std::set<int>> matchingReplies;
 
-    for (const auto &[replicaId, reply] : replies_) {
+    for (const auto &[replicaId, replyAndBatch] : replies_) {
+        const Reply &reply = replyAndBatch.first;
+        const std::shared_ptr<dombft::proto::BatchedReply>& batch = replyAndBatch.second;
         // We also don't check the result here, that only needs to happen in the fast path
         ReplyKey key = {reply.seq(),    reply.instance(), reply.client_id(), reply.client_seq(),
                         reply.digest(), reply.result(),   reply.retry()};
@@ -44,8 +46,10 @@ size_t CertCollector::insertReply(Reply &reply, std::span<byte> &sig)
             for (auto repId : matchingReplies[key]) {
                 std::string sigStr(signatures_[repId].begin(), signatures_[repId].end());
                 cert_->add_signatures(sigStr);
-                // THis usage is so weird, is protobuf the right tool?
-                (*cert_->add_replies()) = replies_[repId];
+
+                ReplyAndBatch *rAb = cert_->add_replies();
+                rAb->mutable_reply()->CopyFrom(reply);
+                if(batch!=nullptr) { rAb->mutable_batch()->CopyFrom(*batch); }
             }
         }
     }
@@ -54,8 +58,9 @@ size_t CertCollector::insertReply(Reply &reply, std::span<byte> &sig)
         std::ostringstream oss;
         oss << "\n";
 
-        // TODO this is just for logging,
-        for (const auto &[replicaId, reply] : replies_) {
+        // TODO this is just for logging, make it work for kv_store
+        for (const auto &[replicaId, replyAndBatch] : replies_) {
+            const Reply &reply = replyAndBatch.first;
             dombft::apps::CounterResponse response;
             response.ParseFromString(reply.result());
             oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "

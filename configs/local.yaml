@@ -1,4 +1,4 @@
-transport: nng 
+transport: nng
 
 app: "counter"
 
@@ -52,7 +52,7 @@ replica:
   port: 34000
   app: "counter"
   keysDir: "keys/replica"
-  fallbackTimeout: 4000000
+  fallbackTimeout: 200000
   fallbackStartTimeout: 50000
   numVerifyThreads: 1
   numSendThreads: 2

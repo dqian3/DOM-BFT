@@ -48,6 +48,11 @@ message Reply {
     bytes digest = 10;
 }
 
+// This is a wrapper for replies in Cert with corresponding batch for sig verification on replica side
+message ReplyAndBatch {
+    Reply reply = 1;
+    BatchedReply batch = 2;
+}
 message Cert {
     // A cert logically is a set of 2f + 1 replies
 
@@ -237,6 +242,8 @@ message DummyProtocolMessage
     uint32 client_id = 4;
     uint32 client_seq = 5;
 }
+
+
 
 
 
