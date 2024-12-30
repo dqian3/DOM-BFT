@@ -16,7 +16,8 @@ public:
 
     // Inserts reply/signature with move semantics
     // Assumes that reply has already been verified
-    size_t insertReply(dombft::proto::Reply &reply, std::span<byte> &sig);
+    size_t insertReply(dombft::proto::Reply &reply, std::span<byte> &sig,
+                       const std::shared_ptr<dombft::proto::BatchedReply>& batchedReply);
 
     bool hasCert();
     const dombft::proto::Cert &getCert();
@@ -25,7 +26,7 @@ public:
     size_t maxMatchSize_;
 
     // maps from replica
-    std::map<uint32_t, dombft::proto::Reply> replies_;
+    std::map<uint32_t, std::pair<dombft::proto::Reply, std::shared_ptr<dombft::proto::BatchedReply>>> replies_;
     std::map<uint32_t, std::vector<byte>> signatures_;
 
     std::optional<dombft::proto::Cert> cert_;
