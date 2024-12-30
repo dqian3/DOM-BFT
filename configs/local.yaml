@@ -13,7 +13,7 @@ client:
 
   sendMode: "sendRate"
   maxInFlight: 10
-  sendRate: 10 
+  sendRate: 50
   runtimeSeconds: 8
 
 

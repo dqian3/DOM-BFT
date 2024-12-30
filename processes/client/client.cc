@@ -7,7 +7,9 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/common.h"
 #include "proto/dombft_apps.pb.h"
+
 
 #define NUM_CLIENTS 100
 
@@ -426,10 +428,32 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
             return;
         }
-
-        handleReply(reply, std::span{body + hdr->msgLen, hdr->sigLen});
+        auto sig = std::span{body + hdr->msgLen, hdr->sigLen};
+        handleReply(reply, sig);
     }
 
+    else if(hdr->msgType == MessageType::BATCHED_REPLY) {
+        BatchedReply batchedReply;
+
+        if (!batchedReply.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse BATCHED_REPLY message";
+            return;
+        }
+
+        if (batchedReply.client_id() != clientId_) {
+            LOG(WARNING) << "Received batched Reply for client " << batchedReply.client_id() << " != " << clientId_;
+            return;
+        }
+
+        if (!sigProvider_.verify(hdr, "replica", batchedReply.replica_id())) {
+            LOG(INFO) << "Failed to verify replica signature for BATCHED_REPLY!";
+            return;
+        }
+        auto sig = std::span{body + hdr->msgLen, hdr->sigLen};
+        LOG(INFO) << "Received batched reply of size " << batchedReply.replies_size()
+                << " from replicaId=" << batchedReply.replica_id() <<" sig:" << digest_to_hex((byte *) std::string(sig.begin(), sig.end()).c_str()).substr(56);
+        handleBatchedReply(batchedReply, sig);
+    }
     else if (hdr->msgType == MessageType::CERT_REPLY) {
         CertReply certReply;
 
@@ -469,7 +493,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
     }
 }
 
-void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
+void Client::handleReply(dombft::proto::Reply &reply, std::span<byte>& sig, const std::shared_ptr<dombft::proto::BatchedReply> &batchedReply)
 {
     uint32_t clientSeq = reply.client_seq();
     uint64_t now = GetMicrosecondTimestamp();
@@ -490,7 +514,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
             << clientSeq << " at log pos " << reply.seq() << " after " << now - reqState.sendTime << " usec";
 
     bool hasCertBefore = reqState.collector.hasCert();
-    uint32_t maxMatchSize = reqState.collector.insertReply(reply, std::vector<byte>(sig.begin(), sig.end()));
+    uint32_t maxMatchSize = reqState.collector.insertReply(reply, sig, batchedReply);
 
     // Just collected cert
     if (!hasCertBefore && reqState.collector.hasCert()) {
@@ -512,7 +536,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         return;
     }
 
-    // `replies_.size() == maxMatchSize` iff all replies are yet matching, no need to check for normal/slow path
+    // `replies_.size() == maxMatchSize` iff all replies currently received are matching,
+    //      no need to check for normal/slow path yet;
     // return when normal/slow path is already triggered
     if (reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent)
         return;
@@ -547,10 +572,15 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         fallbackTriggerMsg.set_instance(myInstance_);
         fallbackTriggerMsg.set_client_seq(clientSeq);
 
-        for (auto &[replicaId, reply] : reqState.collector.replies_) {
+        for (auto &[replicaId, replyAndBatch] : reqState.collector.replies_) {
+            const auto &[reply, batchedReply] = replyAndBatch;
             auto &sig = reqState.collector.signatures_[replicaId];
             reqState.fallbackProof->add_signatures(std::string(sig.begin(), sig.end()));
-            (*reqState.fallbackProof->add_replies()) = reply;
+            ReplyAndBatch *rAb = reqState.fallbackProof->add_replies();
+            rAb->mutable_reply()->CopyFrom(reply);
+            if (batchedReply!=nullptr) {
+                rAb->mutable_batch()->CopyFrom(*batchedReply);
+            }
         }
 
         // I think this is right, or we could do set_allocated_foo if fallbackProof was dynamically allcoated.
@@ -564,6 +594,17 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         }
     }
 }
+
+void Client::handleBatchedReply(dombft::proto::BatchedReply &batchedReply, std::span<byte>& sig)
+{
+    LOG(INFO) << "Received batched reply of size " << batchedReply.replies_size()
+            << " from replicaId=" << batchedReply.replica_id();
+    std::shared_ptr<BatchedReply> batchedReplyPtr = std::make_shared<BatchedReply>(batchedReply);
+    for (Reply &reply : *batchedReply.mutable_replies()) {
+        handleReply(reply, sig, batchedReplyPtr);
+    }
+}
+
 
 void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 {
@@ -584,7 +625,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " instance=" << certReply.instance()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime
-                << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest()).substr(56);
+                << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].reply().digest()).substr(56);
         lastNormalPath_ = cseq;
         commitRequest(cseq);
     }
