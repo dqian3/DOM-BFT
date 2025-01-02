@@ -1,6 +1,6 @@
 transport: "nng"
 
-app: "counter"
+app: "kv_store"
 
 client:
   ips:

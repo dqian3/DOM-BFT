@@ -7,6 +7,7 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/apps/kv_store.h"
 #include "proto/dombft_apps.pb.h"
 
 #define NUM_CLIENTS 100
@@ -111,11 +112,13 @@ Client::Client(const ProcessConfig &config, size_t id)
     if (config.app == AppType::COUNTER) {
         trafficGen_ = std::make_unique<CounterTrafficGen>();
         appType_ = AppType::COUNTER;
+    } else if (config.app == AppType::KV_STORE) {
+        trafficGen_ = std::make_unique<KVStoreTrafficGen>();
+        appType_ = AppType::KV_STORE;
     } else {
         LOG(ERROR) << "Unknown application type for client!";
         exit(1);
     }
-
     if (sendMode_ == dombft::RateBased) {
         // Kick off sending with a small burst every 5 ms
         lastSendTime_ = GetMicrosecondTimestamp();
@@ -174,19 +177,22 @@ void Client::submitRequest()
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
-    auto appRequest = trafficGen_->generateAppTraffic();
+    void *appRequest = trafficGen_->generateAppTraffic();
     // TODO: this has to be hard coded in an inelegant way. May imporve this later
     if (appType_ == AppType::COUNTER) {
-        dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+        auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
         request.set_req_data(counterReq->SerializeAsString());
+    } else if (appType_ == AppType::KV_STORE) {
+        auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
+        request.set_req_data(kvStoreReq->SerializeAsString());
     }
 
     requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
-    VLOG(1) << "PERF event=send"
-            << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+    VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+            << " in_flight=" << numInFlight_;
 
     nextSeq_++;
     numInFlight_++;
@@ -242,13 +248,16 @@ void Client::submitRequestsOpenLoop()
         auto appRequest = trafficGen_->generateAppTraffic();
 
         if (appType_ == AppType::COUNTER) {
-            dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+            auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
             request.set_req_data(counterReq->SerializeAsString());
+        } else if (appType_ == AppType::KV_STORE) {
+            auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
+            request.set_req_data(kvStoreReq->SerializeAsString());
         }
 
         requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
-        VLOG(1) << "PERF event=send"
-                << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+        VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+                << " in_flight=" << numInFlight_;
 
         nextSeq_++;
         numInFlight_++;
@@ -501,9 +510,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(1) << "PERF event=commit path=fast"
-                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << reply.seq()
-                << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+        VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
+                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
