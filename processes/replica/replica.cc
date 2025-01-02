@@ -232,18 +232,67 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (fallbackTriggerMsg.has_proof()) {
-                // TODO verify proof if it exsits
-            }
-            processQueue_.enqueue(msg);
+            if(!fallbackTriggerMsg.has_proof() || verifyFallbackProof(fallbackTriggerMsg.proof()))
+                processQueue_.enqueue(msg);
+
         }
 
         // TODO do verification of the rest of the cases
+        // TODO(Hao): use polymorphism to avoid parsing twice?
         else if (hdr->msgType == FALLBACK_START) {
+            FallbackStart fallbackStartMsg;
+            if(!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)){
+                LOG(ERROR) << "Unable to parse FallbackStart message";
+                continue;
+            }
+
+            if (!sigProvider_.verify(hdr, "replica", fallbackStartMsg.replica_id())) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_PREPREPARE) {
+            FallbackPrePrepare fallbackPrePrepareMsg;
+            if(!fallbackPrePrepareMsg.ParseFromArray(body, hdr->msgLen)){
+                LOG(ERROR) << "Unable to parse FallbackPrePrepare message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, "replica", fallbackPrePrepareMsg.primary_id())) {
+                LOG(INFO) << "Failed to verify primary replica signature!";
+                continue;
+            }
+
+            // Verify logs in proposal
+            FallbackProposal proposal = fallbackPrePrepareMsg.proposal();
+            std::vector<std::tuple<byte*, uint32_t >> logSigs;
+            for (auto &sig : proposal.signatures()) {
+                logSigs.emplace_back((byte*)sig.data(), sig.length());
+            }
+            uint32_t ind = 0;
+            for (auto &log : proposal.logs()) {
+                std::string logStr = log.SerializeAsString();
+                byte *logBuffer = (byte*)logStr.data();
+                byte* logSig = std::get<0>(logSigs[ind]);
+                uint32_t logSigLen = std::get<1>(logSigs[ind]);
+                ind++;
+                if (!sigProvider_.verify(logBuffer, logStr.length(),logSig, logSigLen, "replica", log.replica_id())) {
+                    LOG(INFO) << "Failed to verify replica signature in proposal!";
+                    return;
+                }
+            }
+
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_PREPARE) {
+            FallbackPrepare fallbackPrepareMsg;
+            if(!fallbackPrepareMsg.ParseFromArray(body, hdr->msgLen)){
+                LOG(ERROR) << "Unable to parse FallbackPrepare message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, "replica", fallbackPrepareMsg.replica_id())) {
+                LOG(INFO) << "Failed to verify primary replica signature!";
+                continue;
+            }
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_COMMIT) {
             processQueue_.enqueue(msg);
@@ -659,12 +708,19 @@ bool Replica::verifyCert(const Cert &cert)
         return false;
     }
 
+    // check if the replies are matching and no duplicate replies from same replica
+    std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
     // Verify each signature in the cert
     for (int i = 0; i < cert.replies().size(); i++) {
         const Reply &reply = cert.replies()[i];
         const std::string &sig = cert.signatures()[i];
-        std::string serializedReply = reply.SerializeAsString();
+        uint32_t replicaId = reply.replica_id();
 
+        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
+                        reply.client_seq(), reply.digest(),   reply.result()};
+        matchingReplies[key].insert(replicaId);
+
+        std::string serializedReply = reply.SerializeAsString();
         if (!sigProvider_.verify(
                 (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 reply.replica_id()
@@ -673,13 +729,67 @@ bool Replica::verifyCert(const Cert &cert)
             return false;
         }
     }
-
-    // TOOD verify that cert actually contains matching replies...
-    // And that there aren't signatures from the same replica.
+    if (matchingReplies.size()>1){
+        LOG(WARNING) << "Cert has non-matching replies!";
+        return false;
+    }
+    if (matchingReplies.begin()->second.size() < cert.replies().size()){
+        LOG(WARNING) << "Cert has replies from the same replica!";
+        return false;
+    }
 
     return true;
 }
 
+// TODO(Hao) what if due to timeout (and malicious cli)
+bool Replica::verifyFallbackProof(const Cert &proof){
+    if (proof.replies().size() < f_ + 1) {
+        LOG(INFO) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1, f=" << f_;
+        return false;
+    }
+
+    if (proof.replies().size() != proof.signatures().size()) {
+        LOG(INFO) << "Proof replies size " << proof.replies().size() << " is not equal to "
+                  << "cert signatures size" << proof.signatures().size();
+        return false;
+    }
+
+    // check if the replies are matching and no duplicate replies from same replica
+    std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
+    // Verify each signature in the proof
+    for (uint32_t i = 0; i < proof.replies_size(); i++) {
+        const Reply &reply = proof.replies()[i];
+        const std::string &sig = proof.signatures()[i];
+        uint32_t replicaId = reply.replica_id();
+
+        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
+                        reply.client_seq(), reply.digest(),   reply.result()};
+        matchingReplies[key].insert(replicaId);
+        std::string serializedReply = proof.replies(i).SerializeAsString();
+        if (!sigProvider_.verify(
+                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
+                reply.replica_id()
+        )) {
+            LOG(INFO) << "Proof failed to verify!";
+            return false;
+        }
+    }
+
+    if (matchingReplies.size()==1){
+        LOG(WARNING) << "Proof does not have non-matching replies!";
+        return false;
+    }
+    uint32_t sum = 0;
+    for(auto& [_, s]: matchingReplies){
+        sum += s.size();
+    }
+
+    if (sum < proof.replies().size()){
+        LOG(WARNING) << "Proof has replies from the same replica!";
+        return false;
+    }
+    return true;
+}
 void Replica::startFallback()
 {
     fallback_ = true;
@@ -809,13 +919,14 @@ void Replica::doPrePreparePhase()
             continue;
 
         *(proposal->add_logs()) = startMsg.second;
+        *(proposal->add_signatures()) = fallbackHistorySigs_[startMsg.first];
     }
     broadcastToReplicas(prePrepare, FALLBACK_PREPREPARE);
 }
 
 void Replica::doPreparePhase()
 {
-    VLOG(6) << "DUMMY Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
+    VLOG(6) << "Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPrepare prepare;
     prepare.set_replica_id(replicaId_);
     prepare.set_instance(instance_);
@@ -838,8 +949,7 @@ void Replica::processPrePrepare(const FallbackPrePrepare &msg)
         return;
     }
 
-    VLOG(6) << "DUMMY PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
-    // TODO Verify FallbackProposal
+    VLOG(6) << "PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     if (fallbackProposal_.has_value()) {
         LOG(ERROR) << "Attempted to doPrepare with existing fallbackProposal!";
         return;

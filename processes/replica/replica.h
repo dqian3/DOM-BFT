@@ -84,6 +84,7 @@ private:
     void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
 
     bool verifyCert(const dombft::proto::Cert &cert);
+    bool verifyFallbackProof(const Cert &proof);
 
     // Fallback Helpers
     void startFallback();

@@ -25,8 +25,6 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
     replies_[replicaId] = reply;
     signatures_[replicaId] = sig;
 
-    typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
-
     // Try and find a certificate or proof of divergent histories
     std::map<ReplyKey, std::set<int>> matchingReplies;
 
