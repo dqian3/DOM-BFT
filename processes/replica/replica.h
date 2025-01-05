@@ -33,6 +33,7 @@ private:
     Address receiverAddr_;
     std::vector<Address> clientAddrs_;
     uint32_t f_;
+    uint32_t batchSize_;
     uint32_t numVerifyThreads_;
     uint64_t fallbackTimeout_;
     uint64_t viewChangeTimeout_;
@@ -163,7 +164,7 @@ private:
 
 public:
     Replica(
-        const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,
+        const ProcessConfig &config, uint32_t replicaId, uint32_t batchSize = 5, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,
         bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0
     );
     ~Replica();

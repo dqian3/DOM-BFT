@@ -500,8 +500,6 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
         auto sig = std::span{body + hdr->msgLen, hdr->sigLen};
-        LOG(INFO) << "Received batched reply of size " << batchedReply.replies_size()
-                << " from replicaId=" << batchedReply.replica_id() <<" sig:" << digest_to_hex((byte *) std::string(sig.begin(), sig.end()).c_str()).substr(56);
         handleBatchedReply(batchedReply, sig);
     }
     else if (hdr->msgType == MessageType::CERT_REPLY) {

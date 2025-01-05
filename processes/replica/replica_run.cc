@@ -16,6 +16,7 @@ DEFINE_bool(
     "work with viewChangeFreq"
 );
 DEFINE_string(prot, "dombft", "Protocol for the replica");
+DEFINE_int32(batchSize, 5, "Reply batch size");
 
 dombft::Replica *replica_ptr = nullptr;
 
@@ -40,7 +41,7 @@ int main(int argc, char *argv[])
         replica.run();
     } else {
         dombft::Replica replica(
-            config, FLAGS_replicaId, FLAGS_swapFreq, FLAGS_viewChangeFreq, FLAGS_commitLocalInViewChange,
+            config, FLAGS_replicaId, FLAGS_batchSize, FLAGS_swapFreq, FLAGS_viewChangeFreq, FLAGS_commitLocalInViewChange,
             FLAGS_viewChangeNum
         );
         replica.run();

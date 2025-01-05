@@ -14,11 +14,12 @@ namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(
-    const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq, uint32_t viewChangeFreq,
+    const ProcessConfig &config, uint32_t replicaId, uint32_t batchSize, uint32_t swapFreq, uint32_t viewChangeFreq,
     bool commitLocalInViewChange, uint32_t viewChangeNum
 )
     : replicaId_(replicaId)
     , f_(config.replicaIps.size() / 3)
+    , batchSize_(batchSize)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
@@ -524,7 +525,7 @@ void Replica::clientReplyBatchMakerThd(){
         }
         uint32_t  clientId = reply.client_id();
         clientReplyBatches_[clientId].push(reply);
-        if (clientReplyBatches_[clientId].size() == REPLY_BATCH_SIZE){
+        if (clientReplyBatches_[clientId].size() == batchSize_){
             // make a batch
             BatchedReply batch;
             batch.set_client_id(clientId);

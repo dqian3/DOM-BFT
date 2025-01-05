@@ -23,6 +23,7 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft",
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
+    batch_size = int(config["replica"]["batchSize"])
     # number of replicas
     n_replicas = len(config["replica"]["ips"])
     n_clients = len(config["client"]["ips"])
@@ -47,7 +48,7 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft",
                     view_change_arg = f'-viewChangeFreq {view_change_freq}'
                 if commit_local_in_view_change and view_change_freq == 0:
                     view_change_arg += ' -commitLocalInViewChange'
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} -batchSize {batch_size} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
@@ -65,7 +66,7 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft",
             print(cmd)
 
             other_handles.append(hdl)
-        # make sure clients would not fallback before any requests are commited, corner case not reolved. 
+        # make sure clients would not fallback before any requests are commited, corner case not reolved.
         time.sleep(2)
 
         for id in range(n_clients):
@@ -513,7 +514,7 @@ def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
     with open(config_file, "r") as cfg_file:
         original_contents = cfg_file.read()
         cfg = yaml.load(original_contents, Loader=yaml.Loader)
-        
+
 
     cfg["client"]["sendMode"] = "maxInFlight"
 
@@ -593,7 +594,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                 view_change_arg += ' -commitLocalInViewChange'
             if max_view_change != 0:
                 view_change_arg += f' -viewChangeNum {max_view_change}'
-            
+
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=profile)
         hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg} {view_change_arg}")
         other_handles.append(hdl)

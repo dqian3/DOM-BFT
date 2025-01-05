@@ -61,6 +61,7 @@ replica:
   - "10.128.0.9"
   port: 34000
   keysDir: "keys/replica"
+  batchSize: 50
   fallbackTimeout: 2000000
   fallbackStartTimeout: 500000
   numVerifyThreads: 2
