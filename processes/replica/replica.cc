@@ -922,16 +922,17 @@ bool Replica::verifyFallbackProof(const Cert &proof)
     std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
     // Verify each signature in the proof
     for (int i = 0; i < proof.replies_size(); i++) {
-        const Reply &reply = proof.replies()[i];
+        const Reply &reply = proof.replies()[i].reply();
+        const BatchedReply &batchedReply = proof.replies()[i].batch();
         const std::string &sig = proof.signatures()[i];
         uint32_t replicaId = reply.replica_id();
 
         ReplyKey key = {reply.seq(),    reply.instance(), reply.client_id(), reply.client_seq(),
                         reply.digest(), reply.result(),   reply.retry()};
         matchingReplies[key].insert(replicaId);
-        std::string serializedReply = proof.replies(i).SerializeAsString();
+        std::string serializedBatch = batchedReply.SerializeAsString();
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
+                (byte *) serializedBatch.c_str(), serializedBatch.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 reply.replica_id()
             )) {
             LOG(INFO) << "Proof failed to verify!";

@@ -10,11 +10,11 @@ namespace dombft {
 using namespace dombft::proto;
 
 Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
-    : receiverId_(receiverId)
+    : running_(true)
+    , receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
-    , running_(true)
 {
     std::string receiverIp = config.receiverIps.at(receiverId_);
     LOG(INFO) << "receiverIP=" << receiverIp;
@@ -69,7 +69,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     // TODO parameterize verifyThreads
     uint32_t numVerifyThreads = config.numVerifyThreads;
 
-    for (int i = 0; i < numVerifyThreads; i++) {
+    for (uint32_t i = 0; i < numVerifyThreads; i++) {
         verifyThds_.emplace_back(&Receiver::verifyThd, this, i);
     }
 
@@ -111,7 +111,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     // TODO: verify sending from proxy.
 #endif
 
-    int64_t recv_time = GetMicrosecondTimestamp();
+    uint64_t recv_time = GetMicrosecondTimestamp();
     VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
             << recv_time << " - " << request.send_time() << " = " << recv_time - request.send_time() << " usec";
 

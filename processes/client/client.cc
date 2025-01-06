@@ -401,7 +401,7 @@ void Client::checkTimeouts()
 bool Client::updateInstance()
 {
     uint32_t newInstance = myInstance_ - 1;
-    int count = 0;
+    uint32_t count = 0;
     do {
         newInstance++;
         count = 0;

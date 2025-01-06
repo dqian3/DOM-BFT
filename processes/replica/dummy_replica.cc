@@ -14,9 +14,9 @@ using namespace dombft::proto;
 DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot)
     : replicaId_(replicaId)
     , f_(config.replicaIps.size() / 3)
-    , prot_(prot)
     , sigProvider_()
     , numVerifyThreads_(config.replicaNumVerifyThreads)
+    , prot_(prot)
     , sendThreadpool_(config.replicaNumSendThreads)
 {
     LOG(INFO) << "f=" << f_;
@@ -115,7 +115,7 @@ void DummyReplica::run()
     // Submit first request
     LOG(INFO) << "Starting " << numVerifyThreads_ << " verify threads";
     running_ = true;
-    for (int i = 0; i < numVerifyThreads_; i++) {
+    for (uint32_t i = 0; i < numVerifyThreads_; i++) {
         verifyThreads_.emplace_back(&DummyReplica::verifyMessagesThd, this);
     }
 
