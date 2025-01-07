@@ -96,6 +96,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     fallbackStartTimer_ = std::make_unique<Timer>(
         [this](void *ctx, void *endpoint) {
             endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
+            LOG(WARNING) << "fallbackStartTimer for instance=" << instance_ << " timed out! Starting fallback";
             this->startFallback();
         },
         config.replicaFallbackStartTimeout, this
@@ -103,7 +104,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
 
     fallbackTimer_ = std::make_unique<Timer>(
         [this](void *ctx, void *endpoint) {
-            LOG(INFO) << "Fallback for instance=" << instance_ << " failed!";
+            LOG(INFO) << "Fallback for instance=" << instance_ << " failed (timed out)!";
             this->startFallback();
         },
         config.replicaFallbackTimeout, this
@@ -618,11 +619,11 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
 {
     if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
-        LOG(INFO) << "Received fallback trigger again!";
+        LOG(WARNING) << "Received fallback trigger again!";
         return;
     }
 
-    LOG(INFO) << "Received fallback trigger from " << msg.client_id() << " for cseq=" << msg.client_seq()
+    LOG(INFO) << "Received fallback trigger from client " << msg.client_id() << " for cseq=" << msg.client_seq()
               << " and instance=" << msg.instance();
 
     // TODO if attached request has been executed in previous instance
@@ -631,14 +632,9 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
         return;
     }
 
-    if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
-        LOG(INFO) << "Received fallback trigger again!";
-        return;
-    }
-
     if (msg.has_proof()) {
         // Proof is verified by verify thread
-        LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+        LOG(WARNING) << "Fallback trigger has a proof, starting fallback!";
 
         // TODO we need to broadcast this with the original signature
         // broadcastToReplicas(msg, FALLBACK_TRIGGER);
@@ -658,7 +654,7 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
     fallbackHistory_[msg.replica_id()] = msg;
     fallbackHistorySigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
 
-    LOG(INFO) << "Received fallback message from " << msg.replica_id();
+    LOG(INFO) << "Received fallback message from replica " << msg.replica_id();
 
     if (!isPrimary()) {
         return;
@@ -744,12 +740,12 @@ bool Replica::verifyCert(const Cert &cert)
 // TODO(Hao) what if due to timeout (and malicious cli)
 bool Replica::verifyFallbackProof(const Cert &proof){
     if (proof.replies().size() < f_ + 1) {
-        LOG(INFO) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1, f=" << f_;
+        LOG(WARNING) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1, f=" << f_;
         return false;
     }
 
     if (proof.replies().size() != proof.signatures().size()) {
-        LOG(INFO) << "Proof replies size " << proof.replies().size() << " is not equal to "
+        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to "
                   << "cert signatures size" << proof.signatures().size();
         return false;
     }
@@ -770,7 +766,7 @@ bool Replica::verifyFallbackProof(const Cert &proof){
                 (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 reply.replica_id()
         )) {
-            LOG(INFO) << "Proof failed to verify!";
+            LOG(WARNING) << "Proof failed to verify!";
             return false;
         }
     }
@@ -793,7 +789,7 @@ bool Replica::verifyFallbackProof(const Cert &proof){
 void Replica::startFallback()
 {
     fallback_ = true;
-    instance_++;
+    instance_++; 
     LOG(INFO) << "Starting fallback for instance " << instance_;
     if (endpoint_->isTimerRegistered(fallbackTimer_.get())) {
         endpoint_->ResetTimer(fallbackTimer_.get());
@@ -904,7 +900,7 @@ void Replica::doPrePreparePhase()
         LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
         return;
     }
-    VLOG(6) << "DUMMY PrePrepare for instance=" << instance_ << " in primary replicaId=" << replicaId_;
+    LOG(INFO) << "DUMMY PrePrepare for instance=" << instance_ << " in primary replicaId=" << replicaId_;
 
     FallbackPrePrepare prePrepare;
     prePrepare.set_primary_id(replicaId_);
@@ -926,7 +922,7 @@ void Replica::doPrePreparePhase()
 
 void Replica::doPreparePhase()
 {
-    VLOG(6) << "Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
+    LOG(INFO) << "Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPrepare prepare;
     prepare.set_replica_id(replicaId_);
     prepare.set_instance(instance_);
@@ -935,7 +931,7 @@ void Replica::doPreparePhase()
 
 void Replica::doCommitPhase()
 {
-    VLOG(6) << "DUMMY Commit for instance=" << instance_ << " replicaId=" << replicaId_;
+    LOG(INFO) << "DUMMY Commit for instance=" << instance_ << " replicaId=" << replicaId_;
     FallbackPBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
     cmt.set_instance(instance_);
@@ -949,7 +945,7 @@ void Replica::processPrePrepare(const FallbackPrePrepare &msg)
         return;
     }
 
-    VLOG(6) << "PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
+    LOG(INFO) << "PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     if (fallbackProposal_.has_value()) {
         LOG(ERROR) << "Attempted to doPrepare with existing fallbackProposal!";
         return;
@@ -966,13 +962,13 @@ void Replica::processPrepare(const FallbackPrepare &msg)
         return;
     }
 
-    VLOG(6) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "DUMMY Prepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPrepares_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(), [this](auto &curMsg) {
         return curMsg.second.instance() == instance_;
     });
     if (numMsgs == 2 * f_ + 1) {
-        VLOG(6) << "DUMMY Prepare received from 2f + 1 replicas, Prepared!";
+        LOG(INFO) << "DUMMY Prepare received from 2f + 1 replicas, Prepared!";
         doCommitPhase();
     }
 }
@@ -985,13 +981,13 @@ void Replica::processPBFTCommit(const FallbackPBFTCommit &msg)
         return;
     }
 
-    VLOG(6) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "DUMMY Commit RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.replica_id();
     fallbackPBFTCommits_[msg.replica_id()] = msg;
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
         return curMsg.second.instance() == instance_;
     });
     if (numMsgs == 2 * f_ + 1) {
-        VLOG(6) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
+        LOG(INFO) << "DUMMY Commit received from 2f + 1 replicas, Committed!";
         finishFallback();
     }
 }

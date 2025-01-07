@@ -64,6 +64,7 @@ private:
 
     // State for PBFT
     std::map<uint32_t, dombft::proto::FallbackPrepare> fallbackPrepares_;
+    // instance->FallbackPBFTCommit
     std::map<uint32_t, dombft::proto::FallbackPBFTCommit> fallbackPBFTCommits_;
 
     // State for actively triggering fallback
