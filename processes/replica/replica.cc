@@ -631,6 +631,11 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     // try commit
     bool digest_changed = collector.commitToLog(log_, commit);
 
+    // Unregister fallbackStart timer set by request timeout in slow path
+    if(endpoint_->isTimerRegistered(fallbackStartTimer_.get())){
+        endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
+    }
+
     if (digest_changed) {
         checkpointClientRecords_.clear();
         getClientRecordsFromProto(commit.client_records_set(), checkpointClientRecords_);
