@@ -156,7 +156,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
         checkpointProto->set_log_digest("");
     }
 
-    for (int i = checkpoint.seq + 1; i < nextSeq; i++) {
+    for (uint32_t i = checkpoint.seq + 1; i < nextSeq; i++) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
         LogEntry &entry = *log[i % log.size()];
 
