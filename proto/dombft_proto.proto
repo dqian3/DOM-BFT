@@ -137,12 +137,13 @@ message LogCheckpoint
 
 message FallbackStart
 {
-    uint32 instance = 1;
-    uint32 replica_id = 2;
+    uint32 pbft_attempts = 1;
+    uint32 instance = 2;
+    uint32 replica_id = 3;
 
-    repeated LogEntry log_entries = 3;
-    LogCheckpoint checkpoint = 4;
-    CheckpointClientRecordsSet client_records_set = 5;
+    repeated LogEntry log_entries = 4;
+    LogCheckpoint checkpoint = 5;
+    CheckpointClientRecordsSet client_records_set = 6;
 }
 
 message FallbackProposal
