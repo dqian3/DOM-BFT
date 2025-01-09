@@ -373,6 +373,17 @@ void Client::checkTimeouts()
                 endpoint_->SendPreparedMsgTo(addr);
             }
         }
+
+        if (reqState.triggerSent && now - reqState.triggerSendTime > slowPathTimeout_) {
+            // This is expected to happen when the replicas are making progress
+            LOG(INFO) << "Client fallback on request " << clientSeq << "timed out again, retrying request in fast path";
+            ClientRequest& req = reqState.request;
+            req.set_instance(myInstance_);
+            req.set_send_time(now);
+
+            reqState = RequestState(f_, req, now);
+            threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
+        }
     }
 }
 
