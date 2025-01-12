@@ -18,6 +18,12 @@ struct LogSuffix {
     dombft::ClientRecords clientRecords;
 };
 
+struct PBFTArchive {
+    dombft::proto::FallbackProposal proposal;
+    std::map<uint32_t, dombft::proto::PBFTPrepare> prepares;
+    std::map<uint32_t, std::string> prepareSigs;
+};
+
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
 bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log);
 
