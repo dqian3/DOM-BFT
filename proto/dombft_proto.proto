@@ -136,7 +136,7 @@ message LogCheckpoint
 
 message FallbackStart
 {
-    uint32 pbft_attempts = 1;
+    uint32 pbft_view = 1;
     uint32 instance = 2;
     uint32 replica_id = 3;
 
@@ -171,28 +171,48 @@ message FallbackSummary
     repeated FallbackReply replies = 3;
 }
 
-message FallbackPrePrepare
+message PBFTPrePrepare
 {
     uint32 instance = 1;
     uint32 primary_id = 2;
+    uint32 pbft_view= 3;
 
-    FallbackProposal proposal = 3;
+    FallbackProposal proposal = 4;
 }
 
-message FallbackPrepare
+message  PBFTPrepare
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
+    uint32 pbft_view= 3;
 }
 
-message FallbackPBFTCommit
+message PBFTCommit
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
+    uint32 pbft_view= 3;
 }
 
+message PBFTViewChange
+{
+    uint32 instance = 1;
+    uint32 replica_id = 2;
+    uint32 pbft_view= 3;
+    repeated  PBFTPrepare prepares = 4;
+    repeated  string prepare_sigs = 5;
+    // we add the "request" for simplicity though PBFT use fetching when the request is missing
+    FallbackProposal proposal = 6;
+}
 
-
+message PBFTNewView
+{
+    uint32 primary_id = 1;
+    uint32 pbft_view= 2;
+    uint32 instance = 3;
+    repeated PBFTViewChange view_changes = 4;
+    repeated string view_change_sigs = 5;
+}
 
 message DummyProtocolMessage
 {

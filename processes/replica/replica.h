@@ -56,15 +56,23 @@ private:
     CheckpointCollectors checkpointCollectors_;
     // State for fallback
     bool fallback_ = false;
+    // fallback proposal is essentially a PBFT request
     std::optional<dombft::proto::FallbackProposal> fallbackProposal_;
     std::map<uint32_t, dombft::proto::FallbackStart> fallbackHistory_;
     std::map<uint32_t, std::string> fallbackHistorySigs_;
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
     // State for PBFT
-    uint32_t pbftAttempts_ = 0; // Just used for primary selection in PBFT
-    std::map<uint32_t, dombft::proto::FallbackPrepare> fallbackPrepares_;
-    std::map<uint32_t, dombft::proto::FallbackPBFTCommit> fallbackPBFTCommits_;
+    bool viewChange_ = false;
+    uint32_t pbftView_ = 0; // view num
+    uint32_t preparedInstance_ = UINT32_MAX; // Set to UINT32_MAX to indicate no prepared instance
+    PBFTArchive pbftArchive_;
+    std::map<uint32_t, dombft::proto::PBFTPrepare> fallbackPrepares_;
+    std::map<uint32_t, std::string> fallbackPrepareSigs_;
+    std::map<uint32_t, dombft::proto::PBFTCommit> fallbackPBFTCommits_;
+    std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
+    std::map<uint32_t, std::string> pbftViewChangeSigs_;
+
 
     // State for actively triggering fallback
     uint32_t swapFreq_;
@@ -84,6 +92,7 @@ private:
 
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyFallbackProof(const Cert &proof);
+    bool verifyFallbackProposal(const dombft::proto::FallbackProposal &proposal);
 
     // Fallback Helpers
     void startFallback();
@@ -91,15 +100,18 @@ private:
     void finishFallback();
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
-    // dummy fallback PBFT
-    inline bool isPrimary() { return (pbftAttempts_ + instance_) % replicaAddrs_.size() == replicaId_; }
-    uint32_t getPrimary(){ return (pbftAttempts_ + instance_) % replicaAddrs_.size();}
+    // fallback PBFT
+    inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
+    uint32_t getPrimary(){ return pbftView_ % replicaAddrs_.size();}
+    void startViewChange();
     void doPrePreparePhase(uint32_t instance);
     void doPreparePhase();
     void doCommitPhase();
-    void processPrePrepare(const dombft::proto::FallbackPrePrepare &msg);
-    void processPrepare(const dombft::proto::FallbackPrepare &msg);
-    void processPBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
+    void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
+    void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
+    void processPBFTCommit(const dombft::proto::PBFTCommit &msg);
+    void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
+    void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
 
     // helpers for client records
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
