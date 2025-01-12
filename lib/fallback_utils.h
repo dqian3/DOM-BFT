@@ -18,8 +18,9 @@ struct LogSuffix {
     dombft::ClientRecords clientRecords;
 };
 
-struct PBFTArchive {
+struct PBFTState {
     dombft::proto::FallbackProposal proposal;
+    byte proposal_digest[SHA256_DIGEST_LENGTH];
     std::map<uint32_t, dombft::proto::PBFTPrepare> prepares;
     std::map<uint32_t, std::string> prepareSigs;
 };
