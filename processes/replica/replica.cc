@@ -13,7 +13,7 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq)
+Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq, uint32_t viewChangeFreq, bool commitLocalInViewChange)
     : replicaId_(replicaId)
     , f_(config.replicaIps.size() / 3)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
@@ -22,6 +22,8 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , instance_(0)
     , checkpointCollectors_(replicaId_, f_)
     , swapFreq_(swapFreq)
+    , viewChangeFreq_(viewChangeFreq)
+    , commitLocalInViewChange_(commitLocalInViewChange)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -106,6 +108,9 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
         [this](void *ctx, void *endpoint) {
             LOG(WARNING) << "Fallback for instance=" << instance_ << " pbft_view="<<pbftView_<<" failed (timed out)!";
             endpoint_->UnRegisterTimer(fallbackTimer_.get());
+            if(endpoint_->isTimerRegistered(fallbackStartTimer_.get())){
+                endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
+            }
             pbftViewChanges_.clear();
             pbftViewChangeSigs_.clear();
             this->startViewChange();
@@ -272,6 +277,12 @@ void Replica::verifyMessagesThd()
                 LOG(INFO) << "Failed to verify fallback proposal!";
                 continue;
             }
+            byte tmpDigest[SHA256_DIGEST_LENGTH];
+            getProposalDigest(tmpDigest, proposal);
+            if (memcmp(tmpDigest, PBFTPrePrepareMsg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH) != 0) {
+                LOG(INFO) << "Proposal digest does not match!";
+                continue;
+            }
 
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == PBFT_PREPARE) {
@@ -306,27 +317,9 @@ void Replica::verifyMessagesThd()
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
-
-            // verify prepares
-            const auto& prepares = viewChangeMsg.prepares();
-            const auto& sigs = viewChangeMsg.prepare_sigs();
-            bool success = true;
-            for (int i = 0; i < prepares.size(); i++) {
-                if (!sigProvider_.verify((byte*)prepares[i].SerializeAsString().c_str(), prepares[i].ByteSizeLong(),
-                                         (byte*)sigs[i].c_str(), sigs[i].size(), "replica", prepares[i].replica_id())) {
-                    LOG(INFO) << "Failed to verify replica signature in view change!";
-                    success = false;
-                    break;
-                }
-            }
-            if (!success) continue;
-
-            FallbackProposal proposal = viewChangeMsg.proposal();
-            if (!verifyFallbackProposal(proposal)) {
-                LOG(INFO) << "Failed to verify fallback proposal!";
-                continue;
-            }
+            if(!verifyViewChange(viewChangeMsg)) continue;
             processQueue_.enqueue(msg);
+
         }else if (hdr->msgType == PBFT_NEWVIEW){
             PBFTNewView newViewMsg;
             if(!newViewMsg.ParseFromArray(body, hdr->msgLen)){
@@ -334,7 +327,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
             if (!sigProvider_.verify(hdr, "replica", newViewMsg.primary_id())) {
-                LOG(INFO) << "Failed to verify primary replica signature!";
+                LOG(INFO) << "Failed to verify primary replica signature for PBFTNewView!";
                 continue;
             }
             const auto& viewChanges = newViewMsg.view_changes();
@@ -511,10 +504,6 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     if (fallback_) {
         VLOG(6) << "Dropping request due to fallback";
-        return;
-    }
-    if(viewChange_){
-        VLOG(6) << "Dropping request due to view change";
         return;
     }
 
@@ -708,11 +697,6 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
                      << msg.client_seq() << " and instance=" << msg.instance();
         return;
     }
-    if(viewChange_){
-        LOG(WARNING) << "Received fallback trigger during a view change from client " << msg.client_id() << " for cseq="
-                     << msg.client_seq() << " and instance=" << msg.instance();
-        return;
-    }
 
     // TODO if attached request has been executed in previous instance
     // Ignore any messages not for your current instance
@@ -743,7 +727,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
 
 void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig)
 {
-    if (((msg.pbft_view() + msg.instance()) % replicaAddrs_.size()) != replicaId_) {
+    if ((msg.pbft_view() % replicaAddrs_.size()) != replicaId_) {
         LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " pbft_view "<< msg.pbft_view()<< " where I am not proposer";
         return;
     }
@@ -764,7 +748,7 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
     fallbackHistory_[repId] = msg;
     fallbackHistorySigs_[repId] = std::string(sig.begin(), sig.end());
 
-    LOG(INFO) << "Received fallback message from replica " << repId;
+    LOG(INFO) << "Received fallbackStart message from replica " << repId;
 
     if (!isPrimary()) {
         return;
@@ -916,6 +900,42 @@ bool Replica::verifyFallbackProposal(const FallbackProposal& proposal){
     return true;
 }
 
+bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg){
+    // verify prepares
+    const auto& prepares = viewChangeMsg.prepares();
+    const auto& sigs = viewChangeMsg.prepare_sigs();
+
+    if(prepares.empty() && viewChangeMsg.instance()== UINT32_MAX){
+        LOG(INFO) << "View Change with no previous agreed prepares";
+        return true;
+    }
+    std::unordered_set<uint32_t> insts;
+    std::unordered_set<std::string> proposal_digests;
+    for (int i = 0; i < prepares.size(); i++) {
+        if (!sigProvider_.verify((byte*)prepares[i].SerializeAsString().c_str(), prepares[i].ByteSizeLong(),
+                                    (byte*)sigs[i].c_str(), sigs[i].size(), "replica", prepares[i].replica_id())) {
+            LOG(INFO) << "Failed to verify replica signature in view change!";
+            return false;
+        }
+        insts.emplace(prepares[i].instance());
+        proposal_digests.emplace(prepares[i].proposal_digest());
+    }
+    if(insts.size() != 1 || proposal_digests.size() != 1){
+        LOG(INFO) << "View Change with inconsistent prepares and proposals from replica " << viewChangeMsg.replica_id() << " instance=" << viewChangeMsg.instance() <<" pbf_view=" << viewChangeMsg.pbft_view();
+        return false;
+    }
+    if(insts.find(viewChangeMsg.instance()) == insts.end()){
+        LOG(INFO) << "View Change with different instance";
+        return false;
+    }
+    const FallbackProposal& proposal = viewChangeMsg.proposal();
+    if (!verifyFallbackProposal(proposal)) {
+        LOG(INFO) << "Failed to verify fallback proposal!";
+        return false;
+    }
+    return true;
+}
+
 void Replica::startFallback()
 {
     assert(!fallback_);
@@ -984,13 +1004,12 @@ void Replica::finishFallback()
     applySuffixToLog(logSuffix, log_);
     clientRecords_ = logSuffix.clientRecords;
 
-    // TODO(Hao) Maybe stat on pbft_view in analysis as well
     VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->nextSeq
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
     instance_++;
-    pbftView_ = 0;
-    LOG(INFO) << "Instance updated to " << instance_;
+
+    LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
 
     FallbackSummary summary;
     std::set<int> clients;
@@ -1022,7 +1041,6 @@ void Replica::finishFallback()
     }
 
     fallback_ = false;
-    viewChange_ = false; // we use it to indicate view change in message processing
     fallbackProposal_.reset();
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();
@@ -1054,7 +1072,6 @@ void Replica::doPrePreparePhase(uint32_t instance)
     FallbackProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_instance(instance);
-
     for (auto &startMsg : fallbackHistory_) {
         if (startMsg.second.instance() != instance )
             continue;
@@ -1062,20 +1079,24 @@ void Replica::doPrePreparePhase(uint32_t instance)
         *(proposal->add_logs()) = startMsg.second;
         *(proposal->add_signatures()) = fallbackHistorySigs_[startMsg.first];
     }
+    getProposalDigest(proposalDigest_, *proposal);
+    prePrepare.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
     broadcastToReplicas(prePrepare, PBFT_PREPREPARE);
 }
 
-void Replica::doPreparePhase()
+void Replica::doPreparePhase(bool viewChange)
 {
     LOG(INFO) << "Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
     PBFTPrepare prepare;
     prepare.set_replica_id(replicaId_);
-    prepare.set_instance(instance_);
+    prepare.set_instance(fallbackProposal_->instance());
     prepare.set_pbft_view(pbftView_);
+    prepare.set_view_change(viewChange);
+    prepare.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
     broadcastToReplicas(prepare, PBFT_PREPARE);
 }
 
-void Replica::doCommitPhase()
+void Replica::doCommitPhase(bool viewChange)
 {
     uint32_t proposalInst = fallbackProposal_.value().instance();
     LOG(INFO) << "PBFTCommit for instance=" << proposalInst << " replicaId=" << replicaId_;
@@ -1083,6 +1104,12 @@ void Replica::doCommitPhase()
     cmt.set_replica_id(replicaId_);
     cmt.set_instance(proposalInst);
     cmt.set_pbft_view(pbftView_);
+    cmt.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
+    cmt.set_view_change(viewChange);
+    if(viewChangeByCommit() && commitLocalInViewChange_){
+        sendMsgToDst(cmt, PBFT_COMMIT, replicaAddrs_[replicaId_]);
+        return;
+    }
     broadcastToReplicas(cmt, PBFT_COMMIT);
 }
 
@@ -1105,13 +1132,22 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
     LOG(INFO) << "PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     // accepts the proposal as long as it's from the primary
     fallbackProposal_ = msg.proposal();
+    memcpy(proposalDigest_, msg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
+
+    if(viewChangeByPrepare()){
+        LOG(INFO) << "Prepare message held to cause timeout in prepare phase for view change";
+        return;
+    }
     doPreparePhase();
 }
 
 void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
 {
     uint32_t inInst = msg.instance();
-    if ( inInst < instance_) {
+    bool viewChange = msg.view_change();
+    // Note: instance check in prepare and commit is for better liveness, not required
+    //  as it is essentially a PBFT seq num
+    if ( inInst < instance_ && !viewChange) {
         LOG(INFO) << "Received old fallback prepare from instance=" <<  inInst << " own instance is "
                   << instance_;
         return;
@@ -1121,43 +1157,57 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return;
     }
 
-    if(fallbackPrepares_.count(msg.replica_id()) && fallbackPrepares_[msg.replica_id()].instance() >  inInst){
+    if(!viewChange && fallbackPrepares_.count(msg.replica_id()) && fallbackPrepares_[msg.replica_id()].instance() >  inInst){
         LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for instance=" <<  inInst;
         return;
     }
     fallbackPrepares_[msg.replica_id()] = msg;
     fallbackPrepareSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
     LOG(INFO) << "Prepare RECEIVED for instance=" <<  inInst << " from replicaId=" << msg.replica_id();
-
+    // skip if already prepared for it
+    if (!viewChange && preparedInstance_ == inInst) {
+        return;
+    }
     if(!fallbackProposal_.has_value() || fallbackProposal_.value().instance() <  inInst){
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process prepare";
         return;
     }
     // Make sure the Prepare msgs are for the corresponding PrePrepare msg
     auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(), [this](auto &curMsg) {
-        return curMsg.second.instance() == fallbackProposal_.value().instance();
+        return curMsg.second.instance() == fallbackProposal_.value().instance() && memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0;
     });
-    // skip if already prepared for it
-    if (numMsgs < 2 * f_ + 1 || preparedInstance_ == inInst) {
+    if (numMsgs < 2 * f_ + 1) {
         return;
     }
     // Store PBFT states for potential view change
     preparedInstance_ = fallbackProposal_.value().instance();
-    pbftArchive_.proposal = fallbackProposal_.value();
+    pbftState_.proposal = fallbackProposal_.value();
+    memcpy(pbftState_.proposal_digest, proposalDigest_, SHA256_DIGEST_LENGTH);
     for(const auto& [repId, prepare]:fallbackPrepares_){
         if (prepare.instance() == preparedInstance_) {
-            pbftArchive_.prepares[repId] = prepare;
-            pbftArchive_.prepareSigs[repId] = fallbackPrepareSigs_[repId];
+            pbftState_.prepares[repId] = prepare;
+            pbftState_.prepareSigs[repId] = fallbackPrepareSigs_[repId];
         }
     }
     LOG(INFO) << "Prepare received from 2f + 1 replicas, agreement reached for instance=" << preparedInstance_;
-    doCommitPhase();
+
+    if(viewChangeByCommit()){
+        if(commitLocalInViewChange_){
+            LOG(INFO) << "Commit message only send to itself to commit locally to advance to next instance";
+            doCommitPhase();
+        }else{
+            LOG(INFO) << "Commit message held to cause timeout in commit phase for view change";
+        }
+        return;
+    }
+    doCommitPhase(viewChange);
 }
 
 void Replica::processPBFTCommit(const PBFTCommit &msg)
 {
     uint32_t inInst = msg.instance();
-    if ( inInst < instance_) {
+    bool viewChange = msg.view_change();
+    if ( inInst < instance_ && !viewChange) {
         LOG(INFO) << "Received old fallback commit from instance=" <<  inInst << " own instance is "
                   << instance_;
         return;
@@ -1166,7 +1216,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for instance=" <<  inInst << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if(fallbackPBFTCommits_.count(msg.replica_id()) && fallbackPBFTCommits_[msg.replica_id()].instance() >  inInst){
+    if(!viewChange && fallbackPBFTCommits_.count(msg.replica_id()) && fallbackPBFTCommits_[msg.replica_id()].instance() >  inInst){
         LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for instance=" <<  inInst;
         return;
     }
@@ -1183,7 +1233,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         return;
     }
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
-        return curMsg.second.instance() == preparedInstance_;
+        return curMsg.second.instance() == preparedInstance_ && memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0;
     });
     if (numMsgs >= 2 * f_ + 1) {
         LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
@@ -1195,7 +1245,8 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
 void Replica::startViewChange(){
     pbftView_++;
     fallback_ = true;
-    viewChange_ = true;
+    VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+            << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "Starting ViewChange on instance " << instance_ << " pbft_view " << pbftView_;
 
     PBFTViewChange viewChange;
@@ -1205,10 +1256,12 @@ void Replica::startViewChange(){
 
     // Add the latest quorum of prepares and sigs
     if(preparedInstance_!=UINT32_MAX){
-        for (const auto& [repId, prepare]:pbftArchive_.prepares){
+        for (const auto& [repId, prepare]:pbftState_.prepares){
             *(viewChange.add_prepares()) = prepare;
-            *(viewChange.add_prepare_sigs()) = pbftArchive_.prepareSigs[repId];
+            *(viewChange.add_prepare_sigs()) = pbftState_.prepareSigs[repId];
         }
+        viewChange.set_proposal_digest(pbftState_.proposal_digest, SHA256_DIGEST_LENGTH);
+        viewChange.mutable_proposal()->CopyFrom(pbftState_.proposal);
     }
 
     broadcastToReplicas(viewChange, PBFT_VIEWCHANGE);
@@ -1236,7 +1289,7 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
         return curMsg.second.pbft_view() == inViewNum;
     });
 
-    if (numMsgs < 2 * f_ + 1) {
+    if (numMsgs != 2 * f_ + 1) {
         return;
     }
     LOG(INFO) << "ViewChange for view " << inViewNum<<" received from 2f + 1 replicas!";
@@ -1255,13 +1308,22 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
         startViewChange();
     }
 
-    if(!isPrimary()) return;
+    if(!isPrimary()) {
+        pbftViewChanges_.clear();
+        pbftViewChangeSigs_.clear();
+        return;
+    }
 
     // primary search for the latest prepared instance
-    uint32_t maxInstance = 0;
-    // the check could be more strict (for prepares inside) but for simplicity......
+    uint32_t maxInstance = UINT32_MAX;
+    // vc.instance can be UINT32_MAX if no prepares, which is fine
     for (const auto& [_, vc] : pbftViewChanges_){
-        if(vc.instance() > maxInstance){
+        if(vc.pbft_view()!=inViewNum){
+            continue;
+        }
+        if(maxInstance==UINT32_MAX && vc.instance() < maxInstance){
+            maxInstance = vc.instance();
+        }else if(maxInstance!=UINT32_MAX && vc.instance() > maxInstance){
             maxInstance = vc.instance();
         }
     }
@@ -1287,17 +1349,51 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
                   << pbftView_;
         return;
     }
-    instance_ = msg.instance();
-    pbftView_ = msg.pbft_view();
 
-    LOG(INFO) << "Received NewView for pbft_view=" << pbftView_ << " with prepared instance=" << instance_;
-    for(const auto& [repId, vc]: pbftViewChanges_){
-        if(vc.instance() == instance_){
-            fallbackProposal_ = vc.proposal();
-            break;
+    const auto& viewChanges = msg.view_changes();
+    std::unordered_map<uint32_t, uint32_t> views;
+    PBFTViewChange maxVC;
+    for(const auto& vc: viewChanges){
+        views[vc.pbft_view()] ++;
+        if(vc.instance() > maxVC.instance()){
+            maxVC = vc;
         }
     }
-    doPreparePhase();
+    if(maxVC.pbft_view()!=msg.pbft_view() || maxVC.instance()!=msg.instance()){
+        LOG(INFO) << "Replica obtains a different choice of instance=" << maxVC.instance() << " and pbft_view=" << maxVC.pbft_view();
+    }
+    if(views[maxVC.pbft_view()] < 2 * f_ + 1){
+        LOG(INFO) << "The view number " << maxVC.pbft_view() << " does not have a 2f + 1 quorum";
+        return;
+    }
+    LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared instance=" << msg.instance();
+    pbftView_ = msg.pbft_view();
+    // TODO(Hao): test this corner case later
+    if( msg.instance() == UINT32_MAX){
+        assert(msg.instance() != UINT32_MAX);
+        LOG(INFO) << "No previously prepared instance in new vew, go back to normal state";
+        fallback_ = false;
+        fallbackProposal_.reset();
+        fallbackPrepares_.clear();
+        fallbackPBFTCommits_.clear();
+        return;
+    }
+    fallbackProposal_ = maxVC.proposal();
+    memcpy(proposalDigest_, maxVC.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
+    // set view change param to true to bypass instance check.
+    doPreparePhase(true);
+}
+
+void Replica::getProposalDigest(byte* digest, const FallbackProposal &proposal){
+    // use signatures as digest
+    std::string digestStr;
+    for (const auto& sig : proposal.signatures()){
+        digestStr += sig;
+    }
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, digestStr.c_str(), digestStr.size());
+    SHA256_Final(digest, &ctx);
 }
 
 bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)

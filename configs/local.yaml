@@ -14,7 +14,7 @@ client:
   sendMode: "sendRate"
   maxInFlight: 10
   sendRate: 10 
-  runtimeSeconds: 8
+  runtimeSeconds: 15
 
 
 # Proxy Info
@@ -51,7 +51,7 @@ replica:
   port: 34000
   app: "counter"
   keysDir: "keys/replica"
-  fallbackTimeout: 200000
+  fallbackTimeout: 4000000
   fallbackStartTimeout: 50000
   numVerifyThreads: 1
   numSendThreads: 2
