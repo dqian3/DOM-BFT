@@ -81,6 +81,7 @@ private:
 
     // State for triggering view change
     uint32_t viewChangeFreq_;
+    uint32_t viewChangeInst_;
     bool commitLocalInViewChange_ = false; // when prepared, if send to itself a commit to try to go to next instance
     // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
     bool holdPrepareOrCommit = false;
