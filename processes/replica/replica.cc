@@ -1077,6 +1077,9 @@ void Replica::finishFallback()
     }
 
     fallback_ = false;
+    if(viewChange_){
+        viewChangeInst_ = instance_ + viewChangeFreq_;
+    }
     fallbackProposal_.reset();
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();
