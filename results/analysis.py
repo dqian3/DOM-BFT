@@ -49,9 +49,10 @@ end_time = events[-1]['time'] - datetime.timedelta(seconds=10)
 
 commits = list(filter(lambda x: x["event"] == "commit", events))
 
+n_clients = max(events, key=lambda x: x["client_id"] if "client_id" in x else 0)["client_id"] + 1
+
 
 # In[5]:
-
 
 # Look at each client commit, make sure there are no two clients ops on the same seq
 from collections import Counter
@@ -70,7 +71,6 @@ for seq in counts:
 
 
 # Ensure all client operations are committed
-n_clients = 8
 
 for c_id in range(n_clients):
     c_commits = filter(lambda x: x["client_id"] == c_id, commits)
@@ -93,6 +93,7 @@ commits = list(filter(lambda x: x['time'] > start_time and x['time'] < end_time,
 
 runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
 print(f"Runtime: {runtime:.3f} s")
+print("number of clients: ", n_clients)
 print(f"Total Throughput: {len(commits) / runtime:.2f} req/s")
 
 print(f"Num commits: {len(commits)}")

@@ -500,7 +500,7 @@ def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
 
     cfg["client"]["sendMode"] = "maxInFlight"
 
-    for inFlight in [1, 10, 20, 50, 100]:
+    for inFlight in [1, 10, 25, 50, 75, 100, 150, 200]:
         cfg["client"]["maxInFlight"] = inFlight
         yaml.dump(cfg, open(config_file, "w"))
         gcloud_run(c, config_file=config_file, v=v, prot=prot)
