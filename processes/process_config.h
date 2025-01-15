@@ -35,6 +35,7 @@ struct ProcessConfig {
     int clientMaxInFlight;
     int clientSendRate;
     std::string clientSendMode;
+    int clientRequestSize;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -114,6 +115,7 @@ struct ProcessConfig {
             clientMaxInFlight = parseField<int>(clientNode, "maxInFlight");
             clientSendRate = parseField<int>(clientNode, "sendRate");
             clientSendMode = parseField<std::string>(clientNode, "sendMode");
+            clientRequestSize = parseField<int>(clientNode, "requestSize");
         }
 
         catch (const ConfigParseException &e) {

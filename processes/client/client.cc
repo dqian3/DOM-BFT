@@ -34,6 +34,7 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     maxInFlight_ = config.clientMaxInFlight;
     sendRate_ = config.clientSendRate;
+    requestSize_ = config.clientRequestSize;
 
     if (config.clientSendMode == "sendRate") {
         sendMode_ = dombft::RateBased;
@@ -161,6 +162,22 @@ Client::~Client()
     // TODO cleanup... though we don't really reuse this
 }
 
+void Client::fillRequestData(ClientRequest &request)
+{
+    auto appRequest = trafficGen_->generateAppTraffic();
+    // TODO: this has to be hard coded in an inelegant way. May imporve this later
+    std::string reqData;
+
+    if (appType_ == AppType::COUNTER) {
+        dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
+        reqData = counterReq->SerializeAsString();
+    }
+
+    if (reqData.size() < requestSize_) {
+        reqData.append(requestSize_ - reqData.size(), '\0');
+    }
+}
+
 void Client::submitRequest()
 {
     ClientRequest request;
@@ -174,12 +191,7 @@ void Client::submitRequest()
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
-    auto appRequest = trafficGen_->generateAppTraffic();
-    // TODO: this has to be hard coded in an inelegant way. May imporve this later
-    if (appType_ == AppType::COUNTER) {
-        dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
-        request.set_req_data(counterReq->SerializeAsString());
-    }
+    fillRequestData(request);
 
     requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
 
@@ -239,12 +251,7 @@ void Client::submitRequestsOpenLoop()
         request.set_send_time(now);
         request.set_is_write(true);   // TODO modify this based on some random chance
 
-        auto appRequest = trafficGen_->generateAppTraffic();
-
-        if (appType_ == AppType::COUNTER) {
-            dombft::apps::CounterRequest *counterReq = (dombft::apps::CounterRequest *) appRequest;
-            request.set_req_data(counterReq->SerializeAsString());
-        }
+        fillRequestData(request);
 
         requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
         VLOG(1) << "PERF event=send"

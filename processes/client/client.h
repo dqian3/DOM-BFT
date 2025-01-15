@@ -61,6 +61,7 @@ private:
     dombft::ClientSendMode sendMode_;
     uint32_t sendRate_;
     uint32_t maxInFlight_ = 0;
+    uint32_t requestSize_ = 0;
 
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
@@ -113,6 +114,7 @@ private:
     void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 
+    void fillRequestData(dombft::proto::ClientRequest &request);
     void submitRequest();
     void submitRequestsOpenLoop();   // For sending in open loop.
 

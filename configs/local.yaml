@@ -1,4 +1,4 @@
-transport: nng
+transport: nng 
 
 app: "counter"
 
@@ -11,10 +11,11 @@ client:
   normalPathTimeout: 15000    # 15ms
   slowPathTimeout:   1000000  # 1 s
 
-  sendMode: "sendRate"
-  maxInFlight: 10
+  sendMode: "maxInFlight"
+  maxInFlight: 100
   sendRate: 10 
   runtimeSeconds: 8
+  requestSize: 512
 
 
 # Proxy Info
