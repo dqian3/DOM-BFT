@@ -5,6 +5,8 @@ import invoke
 import yaml
 from fabric import Connection, SerialGroup, ThreadingGroup
 from invoke import task
+import copy
+
 
 # TODO we can process output of these here instead of in the terminal
 @task
@@ -480,6 +482,29 @@ def gcloud_logs(c, config_file="../configs/remote-prod.yaml"):
     get_logs(c, receivers, "receiver")
     get_logs(c, proxies, "proxy")
     get_logs(c, clients, "client")
+
+
+
+@task
+def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
+               v=5,
+               prot="dombft",
+):
+    # gcloud_vm(c, config_file=config_file)
+    # time.sleep(5)
+
+    with open(config_file, "r") as cfg_file:
+        original_cfg = yaml.load(cfg_file, Loader=yaml.Loader)
+        
+    cfg = copy.deepcopy(original_cfg)
+
+    cfg["client"]["sendMode"] = "maxInFlight"
+
+    for inFlight in [1, 10, 20, 50, 100]:
+        cfg["client"]["maxInFlight"] = inFlight
+        yaml.dump(cfg, open(config_file, "w"))
+        gcloud_run(c, config_file=config_file, v=v, prot=prot)
+        c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >../logs/{prot}_if{inFlight}.log")
 
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
