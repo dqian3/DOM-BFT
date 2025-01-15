@@ -79,15 +79,12 @@ message Commit {
 
 message FallbackTrigger
 {
-    uint32 client_id = 2;
-    uint32 client_seq = 3;
-
-    uint32 instance = 4;
-
-    bytes req_data = 6;
-
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+    uint32 instance = 3;
+    bytes req_data = 4;
     // Reuse Cert message here, since it is just a set of replies.
-    optional Cert proof = 7;
+    optional Cert proof =5;
 }
 
 message CheckpointClientRecord
@@ -157,11 +154,10 @@ message FallbackProposal
 
 message FallbackReply
 {
-    uint32 client_id = 5;
-    uint32 client_seq = 6;
-    uint32 seq = 4;
-
-    bytes result = 9;
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+    uint32 seq = 3;
+    bytes result = 4;
 }
 
 message FallbackSummary
