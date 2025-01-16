@@ -67,6 +67,7 @@ private:
     bool viewChange_ = false;
     uint32_t pbftView_ = 0; // view num
     uint32_t preparedInstance_ = UINT32_MAX; // Set to UINT32_MAX to indicate no prepared instance
+    bool viewPrepared_ = false;
     PBFTState pbftState_;
     std::map<uint32_t, dombft::proto::PBFTPrepare> fallbackPrepares_;
     std::map<uint32_t, std::string> fallbackPrepareSigs_;
@@ -119,7 +120,7 @@ private:
     uint32_t getPrimary(){ return pbftView_ % replicaAddrs_.size();}
     void startViewChange();
     void doPrePreparePhase(uint32_t instance);
-    void doPreparePhase(bool viewChange = false);
+    void doPreparePhase();
     void doCommitPhase(bool viewChange = false);
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
     void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
