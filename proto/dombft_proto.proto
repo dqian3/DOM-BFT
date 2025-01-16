@@ -10,6 +10,7 @@ message ClientRequest {
     bool is_write = 5;
 
     bytes req_data = 6;
+    bytes padding = 7;
 }
 
 message DOMRequest {

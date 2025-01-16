@@ -494,17 +494,21 @@ def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
     # time.sleep(5)
 
     with open(config_file, "r") as cfg_file:
-        original_cfg = yaml.load(cfg_file, Loader=yaml.Loader)
+        original_contents = cfg_file.read()
+        cfg = yaml.load(original_contents, Loader=yaml.Loader)
         
-    cfg = copy.deepcopy(original_cfg)
 
     cfg["client"]["sendMode"] = "maxInFlight"
 
-    for inFlight in [1, 10, 25, 50, 75, 100, 150, 200]:
+    for inFlight in [25, 50, 75, 100, 150, 200]:
         cfg["client"]["maxInFlight"] = inFlight
         yaml.dump(cfg, open(config_file, "w"))
         gcloud_run(c, config_file=config_file, v=v, prot=prot)
-        c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >../logs/{prot}_if{inFlight}.log")
+        c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{inFlight}.out")
+
+    with open(config_file, "w") as cfg_file:
+        cfg_file.write(original_contents)
+
 
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs

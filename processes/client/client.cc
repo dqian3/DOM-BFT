@@ -174,7 +174,7 @@ void Client::fillRequestData(ClientRequest &request)
     }
 
     if (reqData.size() < requestSize_) {
-        reqData.append(requestSize_ - reqData.size(), '\0');
+        request.set_padding(std::string(requestSize_ - reqData.size(), '\0'));
     }
 
     request.set_req_data(reqData);
