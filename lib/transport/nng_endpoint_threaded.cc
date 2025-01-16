@@ -39,15 +39,52 @@ void NngSendThread::run()
     sendWatcher_.data = this;
     auto send_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
         NngSendThread *t = (NngSendThread *) w->data;
-        std::vector<byte> msg;
 
-        while (t->queue_.wait_dequeue_timed(msg, 50000)) {
-            int ret = nng_send(t->sock_, msg.data(), msg.size(), 0);
-            if (ret != 0) {
-                VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
-                return;
+        const uint32_t BATCH_SIZE = 5;
+        std::vector<std::vector<byte>> msgs(BATCH_SIZE);
+        size_t numMsgs;
+        while (numMsgs = t->queue_.wait_dequeue_bulk_timed(msgs.begin(), 5, 50000)) {
+            if (numMsgs > 1) {
+
+                VLOG(6) << "Batching  " << numMsgs << " nng messages to " << t->addr_;
+
+                // Send up to 5 messages. However, if the messages get too big, we may need to split them up..
+                std::vector<byte> &curMsg = msgs[0];
+                curMsg.reserve(curMsg.size() * 5);
+
+                for (int i = 1; i < numMsgs; i++) {
+                    // Next message is too big... Send current batch and start new one
+                    if (curMsg.size() + msgs[i].size() > NNG_BUFFER_SIZE) {
+                        int ret = nng_send(t->sock_, curMsg.data(), curMsg.size(), 0);
+                        if (ret != 0) {
+                            VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret
+                                    << ")";
+                            return;
+                        }
+
+                        curMsg = msgs[i];
+                        continue;
+                    }
+
+                    // Move next message into curMsg vector
+                    curMsg.insert(curMsg.end(), msgs[i].begin(), msgs[i].end());
+                }
+
+                // Send last batch
+                int ret = nng_send(t->sock_, curMsg.data(), curMsg.size(), 0);
+                if (ret != 0) {
+                    VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
+                    return;
+                }
+
+            } else {
+                int ret = nng_send(t->sock_, msgs[0].data(), msgs[0].size(), 0);
+                if (ret != 0) {
+                    VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret << ")";
+                    return;
+                }
+                VLOG(6) << "Sent to " << t->addr_;
             }
-            VLOG(6) << "Sent to " << t->addr_;
         }
     };
 
@@ -206,15 +243,21 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
 
         while (ep->recvThread_->queue_.try_dequeue(item)) {
             auto &[msg, addr] = item;
-            size_t len = msg.size();
+            size_t totalLen = msg.size();
+            size_t offset = 0;
 
-            VLOG(6) << "Dequeued message of length " << len << " from " << addr;
+            while (totalLen - offset > sizeof(MessageHeader)) {
+                byte *msgStart = msg.data() + offset;
+                MessageHeader *hdr = (MessageHeader *) (msgStart);
+                size_t msgLen = sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen;
 
-            if (len > sizeof(MessageHeader)) {
-                MessageHeader *hdr = (MessageHeader *) msg.data();
-                if (len >= sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen) {
-                    ep->hdlrFunc_(hdr, msg.data() + sizeof(MessageHeader), &addr);
+                if (offset + msgLen <= totalLen) {
+                    ep->hdlrFunc_(hdr, msgStart + sizeof(MessageHeader), &addr);
+                } else {
+                    LOG(WARNING) << "Malformed message " << totalLen << " " << offset << " " << msgLen;
                 }
+
+                offset += msgLen;
             }
         }
     };
