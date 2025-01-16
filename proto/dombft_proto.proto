@@ -183,7 +183,6 @@ message  PBFTPrepare
     uint32 replica_id = 2;
     uint32 pbft_view= 3;
     bytes proposal_digest = 4;
-    bool view_change = 5;
 }
 
 message PBFTCommit
@@ -192,7 +191,6 @@ message PBFTCommit
     uint32 replica_id = 2;
     uint32 pbft_view= 3;
     bytes proposal_digest = 4;
-    bool view_change = 5;
 }
 
 message PBFTViewChange
