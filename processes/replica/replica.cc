@@ -219,6 +219,26 @@ void Replica::verifyMessagesThd()
             processQueue_.enqueue(msg);
         }
 
+#if !USE_PROXY
+
+        else if (hdr->msgType == CLIENT_REQUEST) {
+            ClientRequest requestMsg;
+
+            if (!requestMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse COMMIT message";
+                continue;
+            }
+
+            if (!sigProvider_.verify(hdr, "client", requestMsg.client_id())) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+#endif
+
         else if (hdr->msgType == FALLBACK_TRIGGER) {
             FallbackTrigger fallbackTriggerMsg;
 
@@ -232,7 +252,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if(!fallbackTriggerMsg.has_proof() || verifyFallbackProof(fallbackTriggerMsg.proof()))
+            if (!fallbackTriggerMsg.has_proof() || verifyFallbackProof(fallbackTriggerMsg.proof()))
                 processQueue_.enqueue(msg);
 
         }
@@ -241,7 +261,7 @@ void Replica::verifyMessagesThd()
         // TODO(Hao): use polymorphism to avoid parsing twice?
         else if (hdr->msgType == FALLBACK_START) {
             FallbackStart fallbackStartMsg;
-            if(!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)){
+            if (!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse FallbackStart message";
                 continue;
             }
@@ -254,7 +274,7 @@ void Replica::verifyMessagesThd()
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_PREPREPARE) {
             FallbackPrePrepare fallbackPrePrepareMsg;
-            if(!fallbackPrePrepareMsg.ParseFromArray(body, hdr->msgLen)){
+            if (!fallbackPrePrepareMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse FallbackPrePrepare message";
                 continue;
             }
@@ -265,18 +285,18 @@ void Replica::verifyMessagesThd()
 
             // Verify logs in proposal
             FallbackProposal proposal = fallbackPrePrepareMsg.proposal();
-            std::vector<std::tuple<byte*, uint32_t >> logSigs;
+            std::vector<std::tuple<byte *, uint32_t>> logSigs;
             for (auto &sig : proposal.signatures()) {
-                logSigs.emplace_back((byte*)sig.data(), sig.length());
+                logSigs.emplace_back((byte *) sig.data(), sig.length());
             }
             uint32_t ind = 0;
             for (auto &log : proposal.logs()) {
                 std::string logStr = log.SerializeAsString();
-                byte *logBuffer = (byte*)logStr.data();
-                byte* logSig = std::get<0>(logSigs[ind]);
+                byte *logBuffer = (byte *) logStr.data();
+                byte *logSig = std::get<0>(logSigs[ind]);
                 uint32_t logSigLen = std::get<1>(logSigs[ind]);
                 ind++;
-                if (!sigProvider_.verify(logBuffer, logStr.length(),logSig, logSigLen, "replica", log.replica_id())) {
+                if (!sigProvider_.verify(logBuffer, logStr.length(), logSig, logSigLen, "replica", log.replica_id())) {
                     LOG(INFO) << "Failed to verify replica signature in proposal!";
                     return;
                 }
@@ -285,7 +305,7 @@ void Replica::verifyMessagesThd()
             processQueue_.enqueue(msg);
         } else if (hdr->msgType == FALLBACK_PREPARE) {
             FallbackPrepare fallbackPrepareMsg;
-            if(!fallbackPrepareMsg.ParseFromArray(body, hdr->msgLen)){
+            if (!fallbackPrepareMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse FallbackPrepare message";
                 continue;
             }
@@ -338,6 +358,21 @@ void Replica::processMessagesThd()
             else
                 processClientRequest(clientHeader);
         }
+
+#if !USE_PROXY
+
+        else if (hdr->msgType == CLIENT_REQUEST) {
+            ClientRequest clientHeader;
+
+            if (!clientHeader.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse COMMIT message";
+                continue;
+            }
+
+            processClientRequest(clientHeader);
+        }
+
+#endif
 
         if (hdr->msgType == CERT) {
             Cert cert;
@@ -729,11 +764,11 @@ bool Replica::verifyCert(const Cert &cert)
             return false;
         }
     }
-    if (matchingReplies.size()>1){
+    if (matchingReplies.size() > 1) {
         LOG(WARNING) << "Cert has non-matching replies!";
         return false;
     }
-    if (matchingReplies.begin()->second.size() < cert.replies().size()){
+    if (matchingReplies.begin()->second.size() < cert.replies().size()) {
         LOG(WARNING) << "Cert has replies from the same replica!";
         return false;
     }
@@ -742,9 +777,11 @@ bool Replica::verifyCert(const Cert &cert)
 }
 
 // TODO(Hao) what if due to timeout (and malicious cli)
-bool Replica::verifyFallbackProof(const Cert &proof){
+bool Replica::verifyFallbackProof(const Cert &proof)
+{
     if (proof.replies().size() < f_ + 1) {
-        LOG(INFO) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1, f=" << f_;
+        LOG(INFO) << "Received fallback proof of size " << proof.replies().size()
+                  << ", which is smaller than f + 1, f=" << f_;
         return false;
     }
 
@@ -769,22 +806,22 @@ bool Replica::verifyFallbackProof(const Cert &proof){
         if (!sigProvider_.verify(
                 (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 reply.replica_id()
-        )) {
+            )) {
             LOG(INFO) << "Proof failed to verify!";
             return false;
         }
     }
 
-    if (matchingReplies.size()==1){
+    if (matchingReplies.size() == 1) {
         LOG(WARNING) << "Proof does not have non-matching replies!";
         return false;
     }
     uint32_t sum = 0;
-    for(auto& [_, s]: matchingReplies){
+    for (auto &[_, s] : matchingReplies) {
         sum += s.size();
     }
 
-    if (sum < proof.replies().size()){
+    if (sum < proof.replies().size()) {
         LOG(WARNING) << "Proof has replies from the same replica!";
         return false;
     }
