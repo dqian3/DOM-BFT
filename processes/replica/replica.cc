@@ -1387,7 +1387,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
     fallbackProposal_ = maxVC.proposal();
     memcpy(proposalDigest_, maxVC.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
     // set view change param to true to bypass instance check.
-    doPreparePhase(true);
+    doPreparePhase();
 }
 
 void Replica::getProposalDigest(byte* digest, const FallbackProposal &proposal){
