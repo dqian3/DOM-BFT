@@ -1099,7 +1099,7 @@ void Replica::doPreparePhase()
     broadcastToReplicas(prepare, PBFT_PREPARE);
 }
 
-void Replica::doCommitPhase(bool viewChange)
+void Replica::doCommitPhase()
 {
     uint32_t proposalInst = fallbackProposal_.value().instance();
     LOG(INFO) << "PBFTCommit for instance=" << proposalInst << " replicaId=" << replicaId_;
@@ -1108,7 +1108,6 @@ void Replica::doCommitPhase(bool viewChange)
     cmt.set_instance(proposalInst);
     cmt.set_pbft_view(pbftView_);
     cmt.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
-    cmt.set_view_change(viewChange);
     if(viewChangeByCommit() && commitLocalInViewChange_){
         sendMsgToDst(cmt, PBFT_COMMIT, replicaAddrs_[replicaId_]);
         return;
@@ -1202,23 +1201,22 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         }
         return;
     }
-    doCommitPhase(viewChange_);
+    doCommitPhase();
 }
 
 void Replica::processPBFTCommit(const PBFTCommit &msg)
 {
     uint32_t inInst = msg.instance();
-    bool viewChange = msg.view_change();
-    if ( inInst < instance_ && !viewChange) {
-        LOG(INFO) << "Received old fallback commit from instance=" <<  inInst << " own instance is "
-                  << instance_;
-        return;
-    }
     if(msg.pbft_view()!=pbftView_){
         LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for instance=" <<  inInst << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if(!viewChange && fallbackPBFTCommits_.count(msg.replica_id()) && fallbackPBFTCommits_[msg.replica_id()].instance() >  inInst){
+    if ( inInst < instance_) {
+        LOG(INFO) << "Received old fallback commit from instance=" <<  inInst << " own instance is "
+                  << instance_;
+        return;
+    }
+    if(fallbackPBFTCommits_.count(msg.replica_id()) && fallbackPBFTCommits_[msg.replica_id()].instance() > inInst && fallbackPBFTCommits_[msg.replica_id()].pbft_view() == msg.pbft_view()){
         LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for instance=" <<  inInst;
         return;
     }
@@ -1230,17 +1228,19 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         return;
     }
 
-    if (preparedInstance_==UINT32_MAX || preparedInstance_ != inInst){
+    if (preparedInstance_==UINT32_MAX || preparedInstance_ != inInst || !viewPrepared_){
         LOG(INFO) << "Not prepared for it, skipping commit!";
         return;
     }
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
         return curMsg.second.instance() == preparedInstance_ && memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0;
     });
-    if (numMsgs >= 2 * f_ + 1) {
-        LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
-        finishFallback();
+    if (numMsgs < 2 * f_ + 1) {
+        return;
     }
+    LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
+    finishFallback();
+
 }
 
 

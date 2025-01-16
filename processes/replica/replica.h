@@ -121,7 +121,7 @@ private:
     void startViewChange();
     void doPrePreparePhase(uint32_t instance);
     void doPreparePhase();
-    void doCommitPhase(bool viewChange = false);
+    void doCommitPhase();
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
     void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg);
