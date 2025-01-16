@@ -288,7 +288,7 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT &&  git checkout more_pbft_fix  &&  bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull origin more_pbft_fix --rebase && git checkout more_pbft_fix  &&  bazel build //processes/...")
 
     group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
