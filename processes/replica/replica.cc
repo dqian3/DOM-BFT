@@ -990,14 +990,36 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
 }
 
+void Replica::fallbackEpilogue(){
+    // a wrapper of some operations after fallback
+    fallback_ = false;
+    if(viewChange_){
+        viewChangeInst_ = instance_ + viewChangeFreq_;
+        viewChange_ = false;
+    }
+    fallbackProposal_.reset();
+    fallbackPrepares_.clear();
+    fallbackPBFTCommits_.clear();
+
+    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
+    checkpointCollectors_.tryInitCheckpointCollector(
+        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
+    );
+    Reply reply;
+    replyFromLogEntry(reply, log_->nextSeq - 1);
+    broadcastToReplicas(reply, MessageType::REPLY);
+}
+
 void Replica::finishFallback()
 {
     assert(fallbackProposal_.has_value());
     if(fallbackProposal_.value().instance() == instance_ -1){
         assert(viewChange_);
         LOG(INFO) << "Fallback on instance " << instance_ -1<< " already committed on current replica, skipping";
-        goto wrapup;
+        fallbackEpilogue();
+        return;
     }
+    
     FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance() << " from own instance=" << instance_;
     instance_ = history.instance();
@@ -1048,23 +1070,8 @@ void Replica::finishFallback()
     for (auto &addr : clientAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
     }
-wrapup: 
-    fallback_ = false;
-    if(viewChange_){
-        viewChangeInst_ = instance_ + viewChangeFreq_;
-        viewChange_ = false;
-    }
-    fallbackProposal_.reset();
-    fallbackPrepares_.clear();
-    fallbackPBFTCommits_.clear();
 
-    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
-    checkpointCollectors_.tryInitCheckpointCollector(
-        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
-    );
-    Reply reply;
-    replyFromLogEntry(reply, log_->nextSeq - 1);
-    broadcastToReplicas(reply, MessageType::REPLY);
+    fallbackEpilogue();
 }
 
 // dummy fallback PBFT
