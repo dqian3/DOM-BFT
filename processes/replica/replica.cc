@@ -1483,7 +1483,7 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         reply.set_instance(instance);
         reply.set_pbft_view(pbftView_);
 
-        LOG(INFO) << "Sending retry reply back to client " << clientId;
+        LOG(INFO) << "Sending retry(duplicated) reply back to client " << clientId;
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
         return false;
     }
