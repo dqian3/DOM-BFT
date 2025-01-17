@@ -543,7 +543,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast"
-                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << reply.seq()
+                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << reply.retry() ? "UNKNOWN":reply.seq()
                 << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
