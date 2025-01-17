@@ -60,7 +60,7 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 
         for (const auto &[replicaId, reply] : replies_) {
             oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
-                << reply.instance() << " " << response.value() << " "<<reply.result()<< "\n";
+                << reply.instance() << " " << response.value() << " "<<reply.result().c_str()<< "\n";
         }
 
         std::string logOutput = oss.str();
