@@ -1020,6 +1020,7 @@ void Replica::finishFallback()
 
     summary.set_instance(instance_);
     summary.set_replica_id(replicaId_);
+    summary.set_pbft_view(pbftView_);
 
     uint32_t seq = log_->checkpoint.seq;
     for (; seq < log_->nextSeq; seq++) {
@@ -1414,7 +1415,7 @@ void Replica::getProposalDigest(byte* digest, const FallbackProposal &proposal){
     SHA256_Final(digest, &ctx);
 }
 
-bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
+bool Replica::checkAndUpdateClientRecord(const Clien∂tRequest &clientHeader)
 {
     uint32_t clientId = clientHeader.client_id();
     uint32_t clientSeq = clientHeader.client_seq();
