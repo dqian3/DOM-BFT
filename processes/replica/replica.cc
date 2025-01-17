@@ -738,7 +738,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
     // TODO if attached request has been executed in previous instance
     // Ignore any messages not for your current instance
     if (msg.instance() < instance_ || msg.pbft_view()!=pbftView_) {
-        LOG(INFO) << "Received outdated fallback trigger for instance " << msg.instance() << " view "<< msg.pbft_view();
+        LOG(INFO) << "Received outdated fallback trigger from client "<<msg.client_id()<<" c_seq "<<msg.client_seq()<<" for instance " << msg.instance() << " view "<< msg.pbft_view();
         return;
     }
 
@@ -1026,9 +1026,35 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
 }
 
+void Replica::fallbackEpilogue(){
+    // a wrapper of some operations after fallback
+    fallback_ = false;
+    if(viewChange_){
+        viewChangeInst_ += viewChangeFreq_;
+        viewChange_ = false;
+    }
+    fallbackProposal_.reset();
+    fallbackPrepares_.clear();
+    fallbackPBFTCommits_.clear();
+
+    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
+    checkpointCollectors_.tryInitCheckpointCollector(
+        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
+    );
+    Reply reply;
+    replyFromLogEntry(reply, log_->nextSeq - 1);
+    broadcastToReplicas(reply, MessageType::REPLY);
+}
+
 void Replica::finishFallback()
 {
     assert(fallbackProposal_.has_value());
+    if(fallbackProposal_.value().instance() == instance_ -1){
+        assert(viewChange_);
+        LOG(INFO) << "Fallback on instance " << instance_ -1<< " already committed on current replica, skipping";
+        fallbackEpilogue();
+        return;
+    }
 
     FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance() << " from own instance=" << instance_;
@@ -1081,22 +1107,7 @@ void Replica::finishFallback()
         endpoint_->SendPreparedMsgTo(addr);
     }
 
-    fallback_ = false;
-    if(viewChange_){
-        viewChangeInst_ = instance_ + viewChangeFreq_;
-        viewChange_ = false;
-    }
-    fallbackProposal_.reset();
-    fallbackPrepares_.clear();
-    fallbackPBFTCommits_.clear();
-
-    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
-    checkpointCollectors_.tryInitCheckpointCollector(
-        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
-    );
-    Reply reply;
-    replyFromLogEntry(reply, log_->nextSeq - 1);
-    broadcastToReplicas(reply, MessageType::REPLY);
+    fallbackEpilogue();
 }
 
 // dummy fallback PBFT
@@ -1149,8 +1160,10 @@ void Replica::doCommitPhase()
     cmt.set_instance(proposalInst);
     cmt.set_pbft_view(pbftView_);
     cmt.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
-    if(viewChangeByCommit() && commitLocalInViewChange_){
-        sendMsgToDst(cmt, PBFT_COMMIT, replicaAddrs_[replicaId_]);
+    if(viewChangeByCommit()){
+        if(commitLocalInViewChange_)
+            sendMsgToDst(cmt, PBFT_COMMIT, replicaAddrs_[replicaId_]);
+        holdPrepareOrCommit_ =!holdPrepareOrCommit_;
         return;
     }
     broadcastToReplicas(cmt, PBFT_COMMIT);
@@ -1178,6 +1191,7 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
     memcpy(proposalDigest_, msg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
 
     if(viewChangeByPrepare()){
+        holdPrepareOrCommit_ =!holdPrepareOrCommit_;
         LOG(INFO) << "Prepare message held to cause timeout in prepare phase for view change";
         return;
     }
