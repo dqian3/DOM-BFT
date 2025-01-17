@@ -31,5 +31,5 @@ message CounterRequest {
 }
 
 message CounterResponse {
-    int64 value = 1;
+    fixed64 value = 1;
 }

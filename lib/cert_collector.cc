@@ -35,7 +35,10 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 
         matchingReplies[key].insert(replicaId);
         maxMatchSize_ = std::max(maxMatchSize_, matchingReplies[key].size());
-
+        LOG(INFO) << "Inserting reply for instance " << reply.instance() << " seq " << reply.seq() << " client_id "
+                  << reply.client_id() << " client_seq " << reply.client_seq() << " digest "
+                  << digest_to_hex(reply.digest()).substr(56) << " result "
+                  << digest_to_hex(reply.result())<< " maxMatchSize " << maxMatchSize_;
         if (matchingReplies[key].size() >= 2 * f_ + 1) {
             cert_ = Cert();
             cert_->set_seq(std::get<0>(key));
@@ -55,12 +58,11 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         oss << "\n";
 
         // TODO this is just for logging,
-        dombft::apps::CounterResponse response;
-        response.ParseFromString(reply.result());
-
         for (const auto &[replicaId, reply] : replies_) {
+            dombft::apps::CounterResponse response;
+            response.ParseFromString(reply.result());
             oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
-                << reply.instance() << " " << response.value() << "\n";
+                << reply.instance() << " " << response.value() << " " << digest_to_hex(reply.result()) << "\n";
         }
 
         std::string logOutput = oss.str();

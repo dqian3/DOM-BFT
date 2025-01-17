@@ -611,7 +611,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
     if (rSeq <= log_->checkpoint.seq) {
-        VLOG(4) << "Seq " << rSeq << " is already committed, skipping";
+        VLOG(4) << "Seq " << rSeq << " is already committed, skipping" << ". Current checkpoint seq is " << log_->checkpoint.seq;
         return;
     }
 
