@@ -1375,9 +1375,9 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
     LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared instance=" << msg.instance();
     pbftView_ = msg.pbft_view();
     // in case it is not in view change already. Not quite sure this is correct way tho
+    if(!viewChange_){viewPrepared_=false;}
     viewChange_ = true;
     fallback_ = true;
-    viewPrepared_=false;
     fallbackProposal_.reset();
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();
