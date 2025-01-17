@@ -21,7 +21,7 @@ client:
   sendMode: "maxInFlight"
   maxInFlight: 100
   sendRate: 300
-  runtimeSeconds: 15
+  runtimeSeconds: 35
 
 proxy:
   forwardPort: 31000

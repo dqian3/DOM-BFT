@@ -85,7 +85,7 @@ private:
     uint32_t viewChangeInst_;
     bool commitLocalInViewChange_ = false; // when prepared, if send to itself a commit to try to go to next instance
     // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
-    bool holdPrepareOrCommit = false;
+    bool holdPrepareOrCommit_ = false;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
@@ -107,13 +107,14 @@ private:
     // Fallback Helpers
     void startFallback();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
+    void fallbackEpilogue();
     void finishFallback();
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // TODO(Hao): test instance_== 0, seems problematic but a corner case
     inline bool ifTriggerViewChange() const {return !viewChange_ && instance_!=0 && instance_ == viewChangeInst_;}
-    inline bool viewChangeByPrepare() const{ return ifTriggerViewChange() && !holdPrepareOrCommit;}
-    inline bool viewChangeByCommit() const{return ifTriggerViewChange() && holdPrepareOrCommit;}
+    inline bool viewChangeByPrepare() const{ return ifTriggerViewChange() && !holdPrepareOrCommit_;}
+    inline bool viewChangeByCommit() const{return ifTriggerViewChange() && holdPrepareOrCommit_;}
 
     // fallback PBFT
     inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
