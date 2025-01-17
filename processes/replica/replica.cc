@@ -994,7 +994,7 @@ void Replica::fallbackEpilogue(){
     // a wrapper of some operations after fallback
     fallback_ = false;
     if(viewChange_){
-        viewChangeInst_ = instance_ + viewChangeFreq_;
+        viewChangeInst_ += viewChangeFreq_;
         viewChange_ = false;
     }
     fallbackProposal_.reset();
@@ -1019,7 +1019,7 @@ void Replica::finishFallback()
         fallbackEpilogue();
         return;
     }
-    
+
     FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance() << " from own instance=" << instance_;
     instance_ = history.instance();
