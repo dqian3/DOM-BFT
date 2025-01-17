@@ -58,10 +58,9 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         oss << "\n";
 
         // TODO this is just for logging,
-        dombft::apps::CounterResponse response;
-        response.ParseFromString(reply.result());
-
         for (const auto &[replicaId, reply] : replies_) {
+            dombft::apps::CounterResponse response;
+            response.ParseFromString(reply.result());
             oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
                 << reply.instance() << " " << response.value() << " " << digest_to_hex(reply.result()) << "\n";
         }
