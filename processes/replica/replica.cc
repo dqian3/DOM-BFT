@@ -23,6 +23,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , checkpointCollectors_(replicaId_, f_)
     , swapFreq_(swapFreq)
     , viewChangeFreq_(viewChangeFreq)
+    , viewChangeInst_(viewChangeFreq_)
     , commitLocalInViewChange_(commitLocalInViewChange)
 {
     // TODO check for config errors
