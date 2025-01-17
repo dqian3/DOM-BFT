@@ -375,10 +375,9 @@ void Client::checkTimeouts()
             req.set_instance(myInstance_);
             req.set_pbft_view(myView_);
             req.set_send_time(now);
-            reqState.triggerSent = false;
-            reqState.certSent = false;
 
             reqState = RequestState(f_, req, now);
+            LOG(INFO) << "Req State replies length: " << reqState.collector.replies_.size();
             threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
         }
     }
