@@ -1375,6 +1375,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
                   << pbftView_;
         return;
     }
+    
 
     const auto& viewChanges = msg.view_changes();
     std::unordered_map<uint32_t, uint32_t> views;
@@ -1393,6 +1394,10 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
         return;
     }
     LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared instance=" << msg.instance();
+    if(pbftView_ == msg.pbft_view() && viewPrepared_){
+        LOG(INFO) << "Already in the same view and prepared for it, skip the new view message";
+        return;
+    }
     pbftView_ = msg.pbft_view();
     // in case it is not in view change already. Not quite sure this is correct way tho
     if(!viewChange_){
