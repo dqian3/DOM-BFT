@@ -1167,6 +1167,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     // skip if already prepared for it
     // note: if viewPrepared_==false, then viewChange_==true
     if (viewPrepared_ && preparedInstance_ == inInst) {
+        LOG(INFO) << "Already prepared for instance=" << inInst << " pbft_view=" << pbftView_;
         return;
     }
     if(!fallbackProposal_.has_value() || fallbackProposal_.value().instance() <  inInst){
@@ -1178,6 +1179,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return curMsg.second.instance() == fallbackProposal_.value().instance() && memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0;
     });
     if (numMsgs < 2 * f_ + 1) {
+        LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for 2f + 1 to proceed";
         return;
     }
     // Store PBFT states for potential view change
@@ -1375,12 +1377,15 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
     LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared instance=" << msg.instance();
     pbftView_ = msg.pbft_view();
     // in case it is not in view change already. Not quite sure this is correct way tho
-    if(!viewChange_){viewPrepared_=false;}
-    viewChange_ = true;
-    fallback_ = true;
-    fallbackProposal_.reset();
-    fallbackPrepares_.clear();
-    fallbackPBFTCommits_.clear();
+    if(!viewChange_){
+        viewChange_ = true;
+        fallback_ = true;
+        viewPrepared_=false;
+        fallbackProposal_.reset();
+        fallbackPrepares_.clear();
+        fallbackPBFTCommits_.clear();
+    }
+
 
     // TODO(Hao): test this corner case later
     if( msg.instance() == UINT32_MAX){
