@@ -111,7 +111,7 @@ private:
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // TODO(Hao): test instance_== 0, seems problematic but a corner case
-    inline bool ifTriggerViewChange() const {return !viewChange_ && instance_!=0 && viewChangeInst_!=0 && instance_ == viewChangeInst_;}
+    inline bool ifTriggerViewChange() const {return !viewChange_ && instance_!=0 && instance_ == viewChangeInst_;}
     inline bool viewChangeByPrepare() const{ return ifTriggerViewChange() && !holdPrepareOrCommit;}
     inline bool viewChangeByCommit() const{return ifTriggerViewChange() && holdPrepareOrCommit;}
 
