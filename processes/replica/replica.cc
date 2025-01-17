@@ -1250,6 +1250,7 @@ void Replica::startViewChange(){
     pbftView_++;
     fallback_ = true;
     viewChange_=true;
+    viewPrepared_=false;
     VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "Starting ViewChange on instance " << instance_ << " pbft_view " << pbftView_;
@@ -1376,6 +1377,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
     // in case it is not in view change already. Not quite sure this is correct way tho
     viewChange_ = true;
     fallback_ = true;
+    viewPrepared_=false;
     fallbackProposal_.reset();
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();

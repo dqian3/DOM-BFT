@@ -67,7 +67,7 @@ private:
     bool viewChange_ = false;
     uint32_t pbftView_ = 0; // view num
     uint32_t preparedInstance_ = UINT32_MAX; // Set to UINT32_MAX to indicate no prepared instance
-    bool viewPrepared_ = false;
+    bool viewPrepared_ = true;
     PBFTState pbftState_;
     std::map<uint32_t, dombft::proto::PBFTPrepare> fallbackPrepares_;
     std::map<uint32_t, std::string> fallbackPrepareSigs_;
