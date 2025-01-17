@@ -511,6 +511,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                profile=False,
                v=5,
                prot="dombft",
+               max_view_change = 0,
 ):
     config_file = os.path.abspath(config_file)
 
@@ -561,7 +562,9 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                 view_change_arg = f'-viewChangeFreq {view_change_freq}'
             if commit_local_in_view_change and view_change_freq == 0:
                 view_change_arg += ' -commitLocalInViewChange'
-        
+        view_change_arg = ''
+        if max_view_change != 0:
+            view_change_arg = f' -viewChangeNum {max_view_change}'
             
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=profile)
         hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg} {view_change_arg}")
