@@ -13,7 +13,7 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq, uint32_t viewChangeFreq, bool commitLocalInViewChange)
+Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq, uint32_t viewChangeFreq, bool commitLocalInViewChange, uint32_t viewChangeNum)
     : replicaId_(replicaId)
     , f_(config.replicaIps.size() / 3)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
@@ -25,6 +25,7 @@ Replica::Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t swapF
     , viewChangeFreq_(viewChangeFreq)
     , viewChangeInst_(viewChangeFreq_)
     , commitLocalInViewChange_(commitLocalInViewChange)
+    , viewChangeNum_(viewChangeNum)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -996,6 +997,7 @@ void Replica::fallbackEpilogue(){
     if(viewChange_){
         viewChangeInst_ += viewChangeFreq_;
         viewChange_ = false;
+        viewChangeCounter_+=1;
     }
     fallbackProposal_.reset();
     fallbackPrepares_.clear();

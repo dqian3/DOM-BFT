@@ -84,6 +84,8 @@ private:
     uint32_t viewChangeFreq_;
     uint32_t viewChangeInst_;
     bool commitLocalInViewChange_ = false; // when prepared, if send to itself a commit to try to go to next instance
+    uint32_t viewChangeNum_;
+    uint32_t viewChangeCounter_ = 0;
     // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
     bool holdPrepareOrCommit_ = false;
 
@@ -112,7 +114,7 @@ private:
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // TODO(Hao): test instance_== 0, seems problematic but a corner case
-    inline bool ifTriggerViewChange() const {return !viewChange_ && instance_!=0 && instance_ == viewChangeInst_;}
+    inline bool ifTriggerViewChange() const {return !viewChange_ && instance_!=0 && instance_ == viewChangeInst_ && viewChangeCounter_<viewChangeNum_;}
     inline bool viewChangeByPrepare() const{ return ifTriggerViewChange() && !holdPrepareOrCommit_;}
     inline bool viewChangeByCommit() const{return ifTriggerViewChange() && holdPrepareOrCommit_;}
 
@@ -142,7 +144,7 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0, bool commitLocalInViewChange = false);
+    Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0, bool commitLocalInViewChange = false, uint32_t viewChangeNum);
     ~Replica();
 
     void run();
