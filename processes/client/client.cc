@@ -266,10 +266,14 @@ void Client::submitRequestsOpenLoop()
 void Client::retryRequests()
 {
     for (auto &[cseq, reqState] : requestStates_) {
-        reqState.request.set_instance(myInstance_);
-        reqState.request.set_pbft_view(myView_);
-        sendRequest(reqState.request);
-        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after instance update";
+        uint64_t now = GetMicrosecondTimestamp();
+        ClientRequest& req = reqState.request;
+        req.set_instance(myInstance_);
+        req.set_pbft_view(myView_);
+        req.set_send_time(now);
+        reqState = RequestState(f_, req, now);
+        threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
+        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after instance/view update";
     }
 }
 
