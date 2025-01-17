@@ -996,7 +996,7 @@ void Replica::finishFallback()
     if(fallbackProposal_.value().instance() == instance_ -1){
         assert(viewChange_);
         LOG(INFO) << "Fallback on instance " << instance_ -1<< " already committed on current replica, skipping";
-        return;
+        goto wrapup;
     }
     FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance() << " from own instance=" << instance_;
@@ -1048,7 +1048,7 @@ void Replica::finishFallback()
     for (auto &addr : clientAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
     }
-
+wrapup: 
     fallback_ = false;
     if(viewChange_){
         viewChangeInst_ = instance_ + viewChangeFreq_;
