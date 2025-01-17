@@ -588,6 +588,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         fallbackTriggerMsg.set_client_id(clientId_);
         fallbackTriggerMsg.set_instance(myInstance_);
         fallbackTriggerMsg.set_client_seq(clientSeq);
+        fallbackTriggerMsg.set_pbft_view(myView_);
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             auto &sig = reqState.collector.signatures_[replicaId];
