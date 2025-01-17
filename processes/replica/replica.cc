@@ -1124,8 +1124,10 @@ void Replica::doCommitPhase()
     cmt.set_instance(proposalInst);
     cmt.set_pbft_view(pbftView_);
     cmt.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
-    if(viewChangeByCommit() && commitLocalInViewChange_){
-        sendMsgToDst(cmt, PBFT_COMMIT, replicaAddrs_[replicaId_]);
+    if(viewChangeByCommit()){
+        if(commitLocalInViewChange_)
+            sendMsgToDst(cmt, PBFT_COMMIT, replicaAddrs_[replicaId_]);
+        holdPrepareOrCommit_ =!holdPrepareOrCommit_;
         return;
     }
     broadcastToReplicas(cmt, PBFT_COMMIT);
@@ -1153,6 +1155,7 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
     memcpy(proposalDigest_, msg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
 
     if(viewChangeByPrepare()){
+        holdPrepareOrCommit_ =!holdPrepareOrCommit_;
         LOG(INFO) << "Prepare message held to cause timeout in prepare phase for view change";
         return;
     }
