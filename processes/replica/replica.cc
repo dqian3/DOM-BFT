@@ -703,7 +703,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
     // TODO if attached request has been executed in previous instance
     // Ignore any messages not for your current instance
     if (msg.instance() < instance_ || msg.pbft_view()!=pbftView_) {
-        LOG(INFO) << "Received outdated fallback trigger from client "<<msg.client_id<<" c_seq "<<msg.client_seq<<" for instance " << msg.instance() << " view "<< msg.pbft_view();
+        LOG(INFO) << "Received outdated fallback trigger from client "<<msg.client_id()<<" c_seq "<<msg.client_seq()<<" for instance " << msg.instance() << " view "<< msg.pbft_view();
         return;
     }
 
