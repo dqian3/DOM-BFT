@@ -1213,7 +1213,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for instance=" <<  inInst << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if ( inInst < instance_ || viewChange_) {
+    if ( inInst < instance_ || !viewChange_) {
         LOG(INFO) << "Received old fallback commit from instance=" <<  inInst << " own instance is "
                   << instance_;
         return;
