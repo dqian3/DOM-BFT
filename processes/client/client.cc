@@ -539,12 +539,12 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         VLOG(2) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
     }
-    LOG(INFO)<< "maxMatchSize: " << maxMatchSize;
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
+        std::string seq = reply.retry() ? "UNKNOWN" : std::to_string(reply.seq());
         VLOG(1) << "PERF event=commit path=fast"
-                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << reply.seq()
+                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << seq
                 << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
