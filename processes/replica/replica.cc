@@ -993,7 +993,11 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
 void Replica::finishFallback()
 {
     assert(fallbackProposal_.has_value());
-
+    if(fallbackProposal_.value().instance() == instance_ -1){
+        assert(viewChange_);
+        LOG(INFO) << "Fallback on instance " << instance_ -1<< " already committed on current replica, skipping";
+        return;
+    }
     FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance() << " from own instance=" << instance_;
     instance_ = history.instance();
