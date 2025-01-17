@@ -1044,8 +1044,8 @@ void Replica::finishFallback()
     fallback_ = false;
     if(viewChange_){
         viewChangeInst_ = instance_ + viewChangeFreq_;
+        viewChange_ = false;
     }
-    viewChange_ = false;
     fallbackProposal_.reset();
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();
@@ -1151,7 +1151,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for instance=" <<  inInst << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if ( inInst < instance_) {
+    if ( inInst < instance_ && viewPrepared_) {
         LOG(INFO) << "Received old fallback prepare from instance=" <<  inInst << " own instance is "
                   << instance_;
         return;
@@ -1185,6 +1185,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     viewPrepared_ = true;
     pbftState_.proposal = fallbackProposal_.value();
     memcpy(pbftState_.proposal_digest, proposalDigest_, SHA256_DIGEST_LENGTH);
+    pbftState_.prepares.clear();
     for(const auto& [repId, prepare]:fallbackPrepares_){
         if (prepare.instance() == preparedInstance_) {
             pbftState_.prepares[repId] = prepare;
@@ -1212,7 +1213,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for instance=" <<  inInst << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if ( inInst < instance_) {
+    if ( inInst < instance_ || viewChange_) {
         LOG(INFO) << "Received old fallback commit from instance=" <<  inInst << " own instance is "
                   << instance_;
         return;
