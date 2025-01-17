@@ -38,7 +38,7 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         LOG(INFO) << "Inserting reply for instance " << reply.instance() << " seq " << reply.seq() << " client_id "
                   << reply.client_id() << " client_seq " << reply.client_seq() << " digest "
                   << digest_to_hex(reply.digest()).substr(56) << " result "
-                  << digest_to_hex(reply.result()).substr(56) << " maxMatchSize " << maxMatchSize_;
+                  << digest_to_hex(reply.result())<< " maxMatchSize " << maxMatchSize_;
         if (matchingReplies[key].size() >= 2 * f_ + 1) {
             cert_ = Cert();
             cert_->set_seq(std::get<0>(key));
