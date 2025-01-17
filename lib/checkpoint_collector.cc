@@ -135,7 +135,8 @@ void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSe
         }
     }
     for (uint32_t seq: seqsToRemove) {
-        VLOG(1) << "PERF event=checkpoint_skipped seq=" << seq;
+        if(seq!=committedSeq)
+            VLOG(1) << "PERF event=checkpoint_skipped seq=" << seq;
         collectors_.erase(seq);
     }
 }

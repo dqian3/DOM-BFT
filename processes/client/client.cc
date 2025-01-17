@@ -544,7 +544,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         VLOG(2) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
     }
-
+    LOG(INFO)<< "maxMatchSize: " << maxMatchSize;
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
