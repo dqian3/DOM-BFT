@@ -1415,7 +1415,7 @@ void Replica::getProposalDigest(byte* digest, const FallbackProposal &proposal){
     SHA256_Final(digest, &ctx);
 }
 
-bool Replica::checkAndUpdateClientRecord(const Clien∂tRequest &clientHeader)
+bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
 {
     uint32_t clientId = clientHeader.client_id();
     uint32_t clientSeq = clientHeader.client_seq();
