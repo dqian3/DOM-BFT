@@ -190,6 +190,7 @@ void Client::submitRequest()
     request.set_client_id(clientId_);
     request.set_client_seq(nextSeq_);
     request.set_instance(myInstance_);
+    request.set_pbft_view(myView_);
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
@@ -250,6 +251,7 @@ void Client::submitRequestsOpenLoop()
         request.set_client_id(clientId_);
         request.set_client_seq(nextSeq_);
         request.set_instance(myInstance_);
+        request.set_pbft_view(myView_);
         request.set_send_time(now);
         request.set_is_write(true);   // TODO modify this based on some random chance
 
@@ -274,7 +276,7 @@ void Client::retryRequests()
 {
     for (auto &[cseq, reqState] : requestStates_) {
         reqState.request.set_instance(myInstance_);
-
+        reqState.request.set_pbft_view(myView_);
         sendRequest(reqState.request);
         VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after instance update";
     }
@@ -364,6 +366,7 @@ void Client::checkTimeouts()
 
             fallbackTriggerMsg.set_client_id(clientId_);
             fallbackTriggerMsg.set_instance(myInstance_);
+            fallbackTriggerMsg.set_pbft_view(myView_);
             fallbackTriggerMsg.set_client_seq(clientSeq);
 
             // TODO set request data
@@ -379,6 +382,7 @@ void Client::checkTimeouts()
             LOG(INFO) << "Client fallback on request " << clientSeq << " timed out again, retrying request in fast path";
             ClientRequest& req = reqState.request;
             req.set_instance(myInstance_);
+            req.set_pbft_view(myView_);
             req.set_send_time(now);
 
             reqState = RequestState(f_, req, now);
@@ -419,6 +423,27 @@ bool Client::updateInstance()
         return true;
     }
 
+    return false;
+}
+bool Client::updateView()
+{
+    uint32_t newView = myView_ - 1;
+    int count = 0;
+    do {
+        newView++;
+        count = 0;
+        for (const auto &[rid, rinst] : replicaViews_) {
+            if (rinst > newView)
+                count++;
+        }
+    } while (count >= 2 * f_ + 1);
+    if (newView != myView_) {
+        VLOG(1) << "Updating view=" << newView << " from " << myView_;
+
+        myView_ = newView;
+        retryRequests();
+        return true;
+    }
     return false;
 }
 
@@ -496,7 +521,9 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // Update client instance
     replicaInstances_[reply.replica_id()] = std::max(reply.instance(), replicaInstances_[reply.replica_id()]);
+    replicaViews_[reply.replica_id()] = std::max(reply.pbft_view(), replicaViews_[reply.replica_id()]);
     updateInstance();
+    updateView();
 
     // Check validity
     if (requestStates_.count(clientSeq) == 0) {
@@ -641,7 +668,9 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
     }
 
     replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
+    replicaViews_[summary.replica_id()] = std::max(summary.pbft_view(), replicaViews_[summary.replica_id()]);
     updateInstance();
+    updateView();
 }
 
 }   // namespace dombft
