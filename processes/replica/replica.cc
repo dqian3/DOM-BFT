@@ -541,6 +541,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_result(result);
     reply.set_seq(seq);
     reply.set_instance(instance_);
+    reply.set_pbft_view(pbftView_);
     reply.set_digest(digest);
 
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
@@ -701,7 +702,8 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
 
     // TODO if attached request has been executed in previous instance
     // Ignore any messages not for your current instance
-    if (msg.instance() < instance_) {
+    if (msg.instance() < instance_ || msg.pbft_view()!=pbftView_) {
+        LOG(INFO) << "Received outdated fallback trigger for instance " << msg.instance() << " view "<< msg.pbft_view();
         return;
     }
 
@@ -834,7 +836,7 @@ bool Replica::verifyCert(const Cert &cert)
 
 bool Replica::verifyFallbackProof(const Cert &proof){
     if (proof.replies().size() < f_ + 1) {
-        LOG(WARNING) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1, f=" << f_;
+        LOG(WARNING) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1" << f_;
         return false;
     }
 
@@ -982,6 +984,7 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_client_seq(entry->client_seq);
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
+    reply.set_pbft_view(pbftView_);
     reply.set_result(entry->result);
     reply.set_seq(entry->seq);
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
@@ -1017,6 +1020,7 @@ void Replica::finishFallback()
 
     summary.set_instance(instance_);
     summary.set_replica_id(replicaId_);
+    summary.set_pbft_view(pbftView_);
 
     uint32_t seq = log_->checkpoint.seq;
     for (; seq < log_->nextSeq; seq++) {
@@ -1044,8 +1048,8 @@ void Replica::finishFallback()
     fallback_ = false;
     if(viewChange_){
         viewChangeInst_ = instance_ + viewChangeFreq_;
+        viewChange_ = false;
     }
-    viewChange_ = false;
     fallbackProposal_.reset();
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();
@@ -1151,7 +1155,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for instance=" <<  inInst << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if ( inInst < instance_) {
+    if ( inInst < instance_ && viewPrepared_) {
         LOG(INFO) << "Received old fallback prepare from instance=" <<  inInst << " own instance is "
                   << instance_;
         return;
@@ -1167,6 +1171,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     // skip if already prepared for it
     // note: if viewPrepared_==false, then viewChange_==true
     if (viewPrepared_ && preparedInstance_ == inInst) {
+        LOG(INFO) << "Already prepared for instance=" << inInst << " pbft_view=" << pbftView_;
         return;
     }
     if(!fallbackProposal_.has_value() || fallbackProposal_.value().instance() <  inInst){
@@ -1178,6 +1183,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return curMsg.second.instance() == fallbackProposal_.value().instance() && memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0;
     });
     if (numMsgs < 2 * f_ + 1) {
+        LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for 2f + 1 to proceed";
         return;
     }
     // Store PBFT states for potential view change
@@ -1185,6 +1191,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     viewPrepared_ = true;
     pbftState_.proposal = fallbackProposal_.value();
     memcpy(pbftState_.proposal_digest, proposalDigest_, SHA256_DIGEST_LENGTH);
+    pbftState_.prepares.clear();
     for(const auto& [repId, prepare]:fallbackPrepares_){
         if (prepare.instance() == preparedInstance_) {
             pbftState_.prepares[repId] = prepare;
@@ -1212,7 +1219,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for instance=" <<  inInst << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if ( inInst < instance_) {
+    if ( inInst < instance_ && !viewChange_) {
         LOG(INFO) << "Received old fallback commit from instance=" <<  inInst << " own instance is "
                   << instance_;
         return;
@@ -1249,6 +1256,7 @@ void Replica::startViewChange(){
     pbftView_++;
     fallback_ = true;
     viewChange_=true;
+    viewPrepared_=false;
     VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "Starting ViewChange on instance " << instance_ << " pbft_view " << pbftView_;
@@ -1373,11 +1381,15 @@ void Replica::processPBFTNewView(const PBFTNewView &msg){
     LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared instance=" << msg.instance();
     pbftView_ = msg.pbft_view();
     // in case it is not in view change already. Not quite sure this is correct way tho
-    viewChange_ = true;
-    fallback_ = true;
-    fallbackProposal_.reset();
-    fallbackPrepares_.clear();
-    fallbackPBFTCommits_.clear();
+    if(!viewChange_){
+        viewChange_ = true;
+        fallback_ = true;
+        viewPrepared_=false;
+        fallbackProposal_.reset();
+        fallbackPrepares_.clear();
+        fallbackPBFTCommits_.clear();
+    }
+
 
     // TODO(Hao): test this corner case later
     if( msg.instance() == UINT32_MAX){
@@ -1408,18 +1420,20 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
     uint32_t clientId = clientHeader.client_id();
     uint32_t clientSeq = clientHeader.client_seq();
     uint32_t clientInstance = clientHeader.instance();
+    uint32_t clientView = clientHeader.pbft_view();
 
     ClientRecord &cliRecord = clientRecords_[clientId];
     cliRecord.instance_ = std::max(clientInstance, cliRecord.instance_);
 
-    if (clientInstance < instance_) {
+    if (clientInstance < instance_ || clientView < pbftView_) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
-                  << " due to stale instance! Sending blank reply to catch client up";
+                  << " due to stale instance=" <<clientInstance<<" view="<<clientView<<"! Sending blank reply to catch client up";
         // Send blank request to catch up the client
         Reply reply;
         reply.set_replica_id(replicaId_);
         reply.set_client_id(clientId);
         reply.set_instance(instance_);
+        reply.set_pbft_view(pbftView_);
 
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
         return false;
@@ -1446,6 +1460,7 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         reply.set_retry(true);
         reply.set_digest(logDigest, SHA256_DIGEST_LENGTH);
         reply.set_instance(instance);
+        reply.set_pbft_view(pbftView_);
 
         LOG(INFO) << "Sending retry reply back to client " << clientId;
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
