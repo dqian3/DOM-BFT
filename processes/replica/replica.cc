@@ -541,6 +541,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_result(result);
     reply.set_seq(seq);
     reply.set_instance(instance_);
+    reply.set_pbft_view(pbftView_);
     reply.set_digest(digest);
 
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
@@ -701,7 +702,8 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
 
     // TODO if attached request has been executed in previous instance
     // Ignore any messages not for your current instance
-    if (msg.instance() < instance_) {
+    if (msg.instance() < instance_ || msg.pbft_view()!=pbftView_) {
+        LOG(INFO) << "Received outdated fallback trigger for instance " << msg.instance() << " view "<< msg.pbft_view();
         return;
     }
 
@@ -834,7 +836,7 @@ bool Replica::verifyCert(const Cert &cert)
 
 bool Replica::verifyFallbackProof(const Cert &proof){
     if (proof.replies().size() < f_ + 1) {
-        LOG(WARNING) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1, f=" << f_;
+        LOG(WARNING) << "Received fallback proof of size " << proof.replies().size() << ", which is smaller than f + 1" << f_;
         return false;
     }
 
@@ -982,6 +984,7 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_client_seq(entry->client_seq);
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
+    reply.set_pbft_view(pbftView_);
     reply.set_result(entry->result);
     reply.set_seq(entry->seq);
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
@@ -1416,18 +1419,20 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
     uint32_t clientId = clientHeader.client_id();
     uint32_t clientSeq = clientHeader.client_seq();
     uint32_t clientInstance = clientHeader.instance();
+    uint32_t clientView = clientHeader.pbft_view();
 
     ClientRecord &cliRecord = clientRecords_[clientId];
     cliRecord.instance_ = std::max(clientInstance, cliRecord.instance_);
 
-    if (clientInstance < instance_) {
+    if (clientInstance < instance_ || clientView < pbftView_) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
-                  << " due to stale instance! Sending blank reply to catch client up";
+                  << " due to stale instance=" <<clientInstance<<" view="<<clientView<<"! Sending blank reply to catch client up";
         // Send blank request to catch up the client
         Reply reply;
         reply.set_replica_id(replicaId_);
         reply.set_client_id(clientId);
         reply.set_instance(instance_);
+        reply.set_pbft_view(pbftView_);
 
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
         return false;
@@ -1454,6 +1459,7 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         reply.set_retry(true);
         reply.set_digest(logDigest, SHA256_DIGEST_LENGTH);
         reply.set_instance(instance);
+        reply.set_pbft_view(pbftView_);
 
         LOG(INFO) << "Sending retry reply back to client " << clientId;
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
