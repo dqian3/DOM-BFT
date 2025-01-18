@@ -43,7 +43,6 @@ struct RequestState {
     // TODO keep track of matching replies, not just number of replies, of which we need f + 1
     std::set<int> fallbackReplies;
     std::optional<dombft::proto::Cert> fallbackProof;
-
 };
 
 enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };

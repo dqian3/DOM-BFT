@@ -47,7 +47,7 @@ private:
     std::unique_ptr<Timer> fallbackTimer_;
 
     // Replica state
-    uint32_t instance_ = 0; // in context of PBFT, this variable the NEXT sequence number
+    uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
     std::shared_ptr<Log> log_;
     ClientRecords clientRecords_;
     ClientRecords checkpointClientRecords_;
@@ -65,8 +65,8 @@ private:
 
     // State for PBFT
     bool viewChange_ = false;
-    uint32_t pbftView_ = 0; // view num
-    uint32_t preparedInstance_ = UINT32_MAX; // Set to UINT32_MAX to indicate no prepared instance
+    uint32_t pbftView_ = 0;                    // view num
+    uint32_t preparedInstance_ = UINT32_MAX;   // Set to UINT32_MAX to indicate no prepared instance
     bool viewPrepared_ = true;
     PBFTState pbftState_;
     std::map<uint32_t, dombft::proto::PBFTPrepare> fallbackPrepares_;
@@ -75,7 +75,6 @@ private:
     std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
     std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
-
     // State for actively triggering fallback
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
@@ -83,7 +82,7 @@ private:
     // State for triggering view change
     uint32_t viewChangeFreq_;
     uint32_t viewChangeInst_;
-    bool commitLocalInViewChange_ = false; // when prepared, if send to itself a commit to try to go to next instance
+    bool commitLocalInViewChange_ = false;   // when prepared, if send to itself a commit to try to go to next instance
     uint32_t viewChangeNum_;
     uint32_t viewChangeCounter_ = 0;
     // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
@@ -114,13 +113,17 @@ private:
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // TODO(Hao): test instance_== 0, seems problematic but a corner case
-    inline bool ifTriggerViewChange() const {return !viewChange_ && instance_!=0 && instance_ == viewChangeInst_ && (viewChangeNum_==0 || viewChangeCounter_ < viewChangeNum_);}
-    inline bool viewChangeByPrepare() const{ return ifTriggerViewChange() && !holdPrepareOrCommit_;}
-    inline bool viewChangeByCommit() const{return ifTriggerViewChange() && holdPrepareOrCommit_;}
+    inline bool ifTriggerViewChange() const
+    {
+        return !viewChange_ && instance_ != 0 && instance_ == viewChangeInst_ &&
+               (viewChangeNum_ == 0 || viewChangeCounter_ < viewChangeNum_);
+    }
+    inline bool viewChangeByPrepare() const { return ifTriggerViewChange() && !holdPrepareOrCommit_; }
+    inline bool viewChangeByCommit() const { return ifTriggerViewChange() && holdPrepareOrCommit_; }
 
     // fallback PBFT
     inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
-    uint32_t getPrimary(){ return pbftView_ % replicaAddrs_.size();}
+    uint32_t getPrimary() { return pbftView_ % replicaAddrs_.size(); }
     void startViewChange();
     void doPrePreparePhase(uint32_t instance);
     void doPreparePhase();
@@ -131,7 +134,7 @@ private:
     void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
     void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
 
-    void getProposalDigest(byte* digest, const dombft::proto::FallbackProposal &proposal);
+    void getProposalDigest(byte *digest, const dombft::proto::FallbackProposal &proposal);
 
     // helpers for client records
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
@@ -144,7 +147,10 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0, bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0);
+    Replica(
+        const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,
+        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0
+    );
     ~Replica();
 
     void run();

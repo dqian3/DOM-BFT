@@ -20,9 +20,7 @@ public:
     bool updateRecordWithSeq(uint32_t newSeq);
 };
 
-void getClientRecordsFromProto(
-    const CheckpointClientRecordsSet &records, ClientRecords &dst
-);
+void getClientRecordsFromProto(const CheckpointClientRecordsSet &records, ClientRecords &dst);
 void getRecordsDigest(const std::unordered_map<uint32_t, ClientRecord> &records, byte *digest);
 int getRightShiftNumWithRecords(const ClientRecords &checkpointRecords, const ClientRecords &replicaRecords);
 

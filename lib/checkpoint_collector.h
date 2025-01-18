@@ -1,15 +1,15 @@
 #ifndef DOM_BFT_CHECKPOINT_H
 #define DOM_BFT_CHECKPOINT_H
 
-#include "lib/common.h"
-#include "lib/utils.h"
-#include "lib/log.h"
 #include "lib/client_record.h"
+#include "lib/common.h"
+#include "lib/log.h"
+#include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 
+#include <glog/logging.h>
 #include <optional>
 #include <span>
-#include <glog/logging.h>
 
 namespace dombft {
 using namespace dombft::proto;
@@ -35,32 +35,41 @@ public:
     std::map<uint32_t, std::string> commitSigs_;
     std::set<uint32_t> commitMatchedReplicas_;
 
-    explicit CheckpointCollector(uint32_t replicaId, uint32_t f, uint32_t seq, uint32_t instance, std::optional<ClientRecords>& records):
-    replicaId_(replicaId), f_(f), seq_(seq),instance_(instance), cert_(std::nullopt){
+    explicit CheckpointCollector(
+        uint32_t replicaId, uint32_t f, uint32_t seq, uint32_t instance, std::optional<ClientRecords> &records
+    )
+        : replicaId_(replicaId)
+        , f_(f)
+        , seq_(seq)
+        , instance_(instance)
+        , cert_(std::nullopt)
+    {
         clientRecords_ = std::move(records);
     }
 
     bool addAndCheckReplyCollection(const dombft::proto::Reply &reply, std::span<byte> sig);
-    bool addAndCheckCommitCollection(const dombft::proto::Commit &commitMsg, const std::span<byte>& sig);
-    bool commitToLog(const std::shared_ptr<Log>& log, const dombft::proto::Commit &commit);
-
+    bool addAndCheckCommitCollection(const dombft::proto::Commit &commitMsg, const std::span<byte> &sig);
+    bool commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit);
 };
 
-class CheckpointCollectors{
+class CheckpointCollectors {
     std::map<uint32_t, CheckpointCollector> collectors_;
     uint32_t replicaId_;
     uint32_t f_;
 
 public:
-    explicit CheckpointCollectors(uint32_t replicaId, uint32_t f): replicaId_(replicaId), f_(f){}
-
-    inline CheckpointCollector& at(uint32_t seq){
-        return collectors_.at(seq);
+    explicit CheckpointCollectors(uint32_t replicaId, uint32_t f)
+        : replicaId_(replicaId)
+        , f_(f)
+    {
     }
-    void tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records = std::nullopt);
+
+    inline CheckpointCollector &at(uint32_t seq) { return collectors_.at(seq); }
+    void
+    tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records = std::nullopt);
     void cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance);
 };
 
-} // dombft
+}   // namespace dombft
 
-#endif //DOM_BFT_CHECKPOINT_H
+#endif   // DOM_BFT_CHECKPOINT_H

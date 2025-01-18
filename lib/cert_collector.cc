@@ -30,8 +30,8 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 
     for (const auto &[replicaId, reply] : replies_) {
         // We also don't check the result here, that only needs to happen in the fast path
-        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
-                        reply.client_seq(), reply.digest(),   reply.result(), reply.retry()};
+        ReplyKey key = {reply.seq(),    reply.instance(), reply.client_id(), reply.client_seq(),
+                        reply.digest(), reply.result(),   reply.retry()};
 
         matchingReplies[key].insert(replicaId);
         maxMatchSize_ = std::max(maxMatchSize_, matchingReplies[key].size());

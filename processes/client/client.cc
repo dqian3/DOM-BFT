@@ -200,8 +200,8 @@ void Client::submitRequest()
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
-    VLOG(1) << "PERF event=send"
-            << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+    VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+            << " in_flight=" << numInFlight_;
 
     nextSeq_++;
     numInFlight_++;
@@ -258,8 +258,8 @@ void Client::submitRequestsOpenLoop()
         fillRequestData(request);
 
         requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
-        VLOG(1) << "PERF event=send"
-                << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+        VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+                << " in_flight=" << numInFlight_;
 
         nextSeq_++;
         numInFlight_++;
@@ -276,7 +276,7 @@ void Client::retryRequests()
 {
     for (auto &[cseq, reqState] : requestStates_) {
         uint64_t now = GetMicrosecondTimestamp();
-        ClientRequest& req = reqState.request;
+        ClientRequest &req = reqState.request;
         req.set_instance(myInstance_);
         req.set_pbft_view(myView_);
         req.set_send_time(now);
@@ -383,8 +383,9 @@ void Client::checkTimeouts()
 
         if (reqState.triggerSent && now - reqState.triggerSendTime > slowPathTimeout_) {
             // This is expected to happen when the replicas are making progress
-            LOG(INFO) << "Client fallback on request " << clientSeq << " timed out again, retrying request in fast path";
-            ClientRequest& req = reqState.request;
+            LOG(INFO) << "Client fallback on request " << clientSeq
+                      << " timed out again, retrying request in fast path";
+            ClientRequest &req = reqState.request;
             req.set_instance(myInstance_);
             req.set_pbft_view(myView_);
             req.set_send_time(now);
@@ -552,9 +553,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         std::string seq = reply.retry() ? "UNKNOWN" : std::to_string(reply.seq());
-        VLOG(1) << "PERF event=commit path=fast"
-                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << seq
-                << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+        VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
+                << " seq=" << seq << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
