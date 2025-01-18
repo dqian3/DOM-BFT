@@ -811,7 +811,7 @@ bool Replica::verifyCert(const Cert &cert)
         uint32_t replicaId = reply.replica_id();
 
         ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
-                        reply.client_seq(), reply.digest(),   reply.result()};
+                        reply.client_seq(), reply.digest(),   reply.result(), reply.retry()};
         matchingReplies[key].insert(replicaId);
 
         std::string serializedReply = reply.SerializeAsString();
