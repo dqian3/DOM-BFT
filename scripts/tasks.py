@@ -288,7 +288,7 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull origin more_pbft_fix && git checkout more_pbft_fix  &&  bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull && git checkout more_pbft && bazel build //processes/...")
 
     group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
@@ -589,7 +589,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
         if (id % 2) == 0:
             if view_change_freq != 0:
                 view_change_arg = f'-viewChangeFreq {view_change_freq}'
-            if commit_local_in_view_change and view_change_freq == 0:
+            if commit_local_in_view_change and id==0:
                 view_change_arg += ' -commitLocalInViewChange'
             if max_view_change != 0:
                 view_change_arg += f' -viewChangeNum {max_view_change}'

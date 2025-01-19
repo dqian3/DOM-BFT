@@ -1164,7 +1164,7 @@ void Replica::doPrePreparePhase(uint32_t instance)
 
 void Replica::doPreparePhase()
 {
-    LOG(INFO) << "Prepare for instance=" << instance_ << " replicaId=" << replicaId_;
+    LOG(INFO) << "Prepare for instance=" << fallbackProposal_->instance() << " replicaId=" << replicaId_;
     PBFTPrepare prepare;
     prepare.set_replica_id(replicaId_);
     prepare.set_instance(fallbackProposal_->instance());
@@ -1256,7 +1256,8 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     // Make sure the Prepare msgs are for the corresponding PrePrepare msg
     auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(), [this](auto &curMsg) {
         return curMsg.second.instance() == fallbackProposal_.value().instance() &&
-               memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0;
+               memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
+               curMsg.second.pbft_view() == pbftView_;
     });
     if (numMsgs < 2 * f_ + 1) {
         LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for 2f + 1 to proceed";
@@ -1320,7 +1321,8 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
     }
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
         return curMsg.second.instance() == preparedInstance_ &&
-               memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0;
+               memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
+               curMsg.second.pbft_view() == pbftView_;
     });
     if (numMsgs < 2 * f_ + 1) {
         return;
