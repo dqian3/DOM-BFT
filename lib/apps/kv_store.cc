@@ -1,5 +1,7 @@
 #include "kv_store.h"
 
+#include <random>
+
 KVStore::~KVStore() {}
 
 std::string KVStore::execute(const std::string &serialized_request, const uint32_t execute_idx)
@@ -192,14 +194,33 @@ void KVStore::storeAppStateInYAML(const std::string &filename)
     std::cout << "App state saved to " << filename << std::endl;
 }
 
+std::string KVStoreTrafficGen::randomStringNormDist(std::string::size_type length)
+{
+    static auto& chrs = "0123456789"
+                        "abcdefghijklmnopqrstuvwxyz"
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    thread_local static std::mt19937 rg{std::random_device{}()};
+    thread_local static std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
+
+    std::string s;
+
+    s.reserve(length);
+
+    while(length--)
+        s += chrs[pick(rg)];
+
+    return s;
+}
 void *KVStoreTrafficGen::generateAppTraffic()
 {
     // TODO(Hao): test with set only for now.
-    // TODO(Hao): use distribution of keys
     KVRequest *req = new KVRequest();
-    req->set_key("key" + std::to_string(key_idx));
-    req->set_value("value" + std::to_string(key_idx));
+    req->set_key(randomStringNormDist(keyLen));
+    req->set_value(randomStringNormDist(valLen));
     req->set_msg_type(KVRequestType::SET);
-    key_idx++;
+    // TODO(Hao): make it more random, now KV always have same length
+    keyLen = (keyLen + 1) > KEY_MAX_LENGTH ? KEY_MIN_LENGTH : (keyLen + 1);
+    valLen = (valLen + 1) > VALUE_MAX_LENGTH ? VALUE_MIN_LENGTH : (valLen + 1);
     return req;
 }

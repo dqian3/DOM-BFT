@@ -9,6 +9,11 @@
 
 using namespace dombft::apps;
 
+#define KEY_MAX_LENGTH 6
+#define KEY_MIN_LENGTH 2
+#define VALUE_MAX_LENGTH 6
+#define VALUE_MIN_LENGTH 2
+
 typedef struct {
     uint32_t idx;
     std::string key;
@@ -48,10 +53,13 @@ public:
 };
 
 class KVStoreTrafficGen : public AppTrafficGen {
-    uint32_t key_idx;
+    uint32_t keyLen;
+    uint32_t valLen;
 public:
-    KVStoreTrafficGen() : key_idx(0) {}
+    // TODO(Hao): perhaps make length configurable
+    KVStoreTrafficGen() : keyLen(KEY_MIN_LENGTH), valLen(VALUE_MIN_LENGTH) {}
 
+    std::string randomStringNormDist(std::string::size_type length);
     void *generateAppTraffic() override;
 };
 
