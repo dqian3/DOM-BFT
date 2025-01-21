@@ -40,7 +40,7 @@
 #define CHECKPOINT_INTERVAL 500
 
 typedef unsigned char byte;
-typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
+typedef std::tuple<int, int, int, int, std::string, std::string, bool> ReplyKey;
 
 template <typename T1> using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
 template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcurrentQueue<T1>;
@@ -74,9 +74,11 @@ enum MessageType {
 
     DUMMY_PROTO = 13,
 
-    FALLBACK_PREPREPARE = 14,
-    FALLBACK_PREPARE = 15,
-    FALLBACK_COMMIT = 16
+    PBFT_PREPREPARE = 14,
+    PBFT_PREPARE = 15,
+    PBFT_COMMIT = 16,
+    PBFT_VIEWCHANGE = 17,
+    PBFT_NEWVIEW = 18,
 };
 
 /**
@@ -96,7 +98,7 @@ struct MessageHeader {
     MessageHeader(const uint8_t t, const uint32_t l, const uint32_t sl)
         : msgType(t)
         , msgLen(l)
-        , sigLen(sl) {};
+        , sigLen(sl){};
 };
 
 #endif

@@ -5,12 +5,13 @@ message ClientRequest {
     uint32 client_id = 1;
     uint32 client_seq = 2;
     uint32 instance = 3;
+    uint32 pbft_view = 4;
 
-    uint64 send_time = 4;
-    bool is_write = 5;
+    uint64 send_time = 5;
+    bool is_write = 6;
 
-    bytes req_data = 6;
-    bytes padding = 7;
+    bytes req_data = 7;
+    bytes padding = 8;
 }
 
 message DOMRequest {
@@ -37,13 +38,14 @@ message Reply {
 
     // Tentative global ordering
     uint32 instance = 3;
-    uint32 seq = 4;
+    uint32 pbft_view = 4;
+    uint32 seq = 5;
 
-    uint32 replica_id = 5;
-    bool fast = 6;
-    bool retry = 7;
-    bytes result = 8;
-    bytes digest = 9;
+    uint32 replica_id = 6;
+    bool fast = 7;
+    bool retry = 8;
+    bytes result = 9;
+    bytes digest = 10;
 }
 
 message Cert {
@@ -52,11 +54,12 @@ message Cert {
     // TODO to save space, we would only store 1 copy of each common field. Instead
     // we just repeat them here since it's easier
     // seq is also just for convenience
-    uint32 seq = 4;
-    uint32 instance = 5; 
+    uint32 seq = 1;
+    uint32 instance = 2;
+    uint32 pbft_view = 3;
     
-    repeated Reply replies    = 7;
-    repeated bytes signatures = 8;
+    repeated Reply replies    = 4;
+    repeated bytes signatures = 5;
 }
 
 
@@ -65,7 +68,8 @@ message CertReply {
     uint32 client_id = 2;
     uint32 client_seq = 3;
     uint32 instance = 4;
-    uint32 seq = 5;
+    uint32 pbft_view = 5;
+    uint32 seq = 6;
 }
 
 message Commit {
@@ -80,15 +84,13 @@ message Commit {
 
 message FallbackTrigger
 {
-    uint32 client_id = 2;
-    uint32 client_seq = 3;
-
-    uint32 instance = 4;
-
-    bytes req_data = 6;
-
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+    uint32 instance = 3;
+    uint32 pbft_view = 4;
+    bytes req_data = 5;
     // Reuse Cert message here, since it is just a set of replies.
-    optional Cert proof = 7;
+    optional Cert proof =6;
 }
 
 message CheckpointClientRecord
@@ -137,18 +139,19 @@ message LogCheckpoint
 
 message FallbackStart
 {
-    uint32 instance = 1;
-    uint32 replica_id = 2;
+    uint32 pbft_view = 1;
+    uint32 instance = 2;
+    uint32 replica_id = 3;
 
-    repeated LogEntry log_entries = 3;
-    LogCheckpoint checkpoint = 4;
-    CheckpointClientRecordsSet client_records_set = 5;
+    repeated LogEntry log_entries = 4;
+    LogCheckpoint checkpoint = 5;
+    CheckpointClientRecordsSet client_records_set = 6;
 }
 
 message FallbackProposal
 {
     uint32 instance = 1;
-    uint32 replica_id = 2;
+    uint32 replica_id = 2; //primary id
 
     repeated FallbackStart logs = 3;
     repeated bytes signatures = 4;
@@ -157,11 +160,10 @@ message FallbackProposal
 
 message FallbackReply
 {
-    uint32 client_id = 5;
-    uint32 client_seq = 6;
-    uint32 seq = 4;
-
-    bytes result = 9;
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+    uint32 seq = 3;
+    bytes result = 4;
 }
 
 message FallbackSummary
@@ -169,30 +171,55 @@ message FallbackSummary
     uint32 instance = 1;
     uint32 replica_id = 2;
     repeated FallbackReply replies = 3;
+    uint32 pbft_view = 4;
 }
 
-message FallbackPrePrepare
+message PBFTPrePrepare
 {
     uint32 instance = 1;
     uint32 primary_id = 2;
+    uint32 pbft_view= 3;
 
-    FallbackProposal proposal = 3;
+    FallbackProposal proposal = 4;
+    bytes proposal_digest = 5;
 }
 
-message FallbackPrepare
+message  PBFTPrepare
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
+    uint32 pbft_view= 3;
+    bytes proposal_digest = 4;
 }
 
-message FallbackPBFTCommit
+message PBFTCommit
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
+    uint32 pbft_view= 3;
+    bytes proposal_digest = 4;
 }
 
+message PBFTViewChange
+{
+    uint32 instance = 1;
+    uint32 replica_id = 2;
+    uint32 pbft_view= 3;
+    repeated  PBFTPrepare prepares = 4;
+    repeated  bytes prepare_sigs = 5;
+    // we add the "request" for simplicity though PBFT use fetching when the request is missing
+    FallbackProposal proposal = 6;
+    bytes proposal_digest = 7;
+}
 
-
+message PBFTNewView
+{
+    uint32 primary_id = 1;
+    uint32 pbft_view= 2;
+    uint32 instance = 3;
+    repeated PBFTViewChange view_changes = 4;
+    repeated bytes view_change_sigs = 5;
+}
 
 message DummyProtocolMessage
 {

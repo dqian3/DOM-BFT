@@ -190,6 +190,7 @@ void Client::submitRequest()
     request.set_client_id(clientId_);
     request.set_client_seq(nextSeq_);
     request.set_instance(myInstance_);
+    request.set_pbft_view(myView_);
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
@@ -199,8 +200,8 @@ void Client::submitRequest()
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
-    VLOG(1) << "PERF event=send"
-            << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+    VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+            << " in_flight=" << numInFlight_;
 
     nextSeq_++;
     numInFlight_++;
@@ -250,14 +251,15 @@ void Client::submitRequestsOpenLoop()
         request.set_client_id(clientId_);
         request.set_client_seq(nextSeq_);
         request.set_instance(myInstance_);
+        request.set_pbft_view(myView_);
         request.set_send_time(now);
         request.set_is_write(true);   // TODO modify this based on some random chance
 
         fillRequestData(request);
 
         requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
-        VLOG(1) << "PERF event=send"
-                << " client_id=" << clientId_ << " client_seq=" << nextSeq_ << " in_flight=" << numInFlight_;
+        VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
+                << " in_flight=" << numInFlight_;
 
         nextSeq_++;
         numInFlight_++;
@@ -273,10 +275,14 @@ void Client::submitRequestsOpenLoop()
 void Client::retryRequests()
 {
     for (auto &[cseq, reqState] : requestStates_) {
-        reqState.request.set_instance(myInstance_);
-
-        sendRequest(reqState.request);
-        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after instance update";
+        uint64_t now = GetMicrosecondTimestamp();
+        ClientRequest &req = reqState.request;
+        req.set_instance(myInstance_);
+        req.set_pbft_view(myView_);
+        req.set_send_time(now);
+        reqState = RequestState(f_, req, now);
+        threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
+        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after instance/view update";
     }
 }
 
@@ -364,6 +370,7 @@ void Client::checkTimeouts()
 
             fallbackTriggerMsg.set_client_id(clientId_);
             fallbackTriggerMsg.set_instance(myInstance_);
+            fallbackTriggerMsg.set_pbft_view(myView_);
             fallbackTriggerMsg.set_client_seq(clientSeq);
 
             // TODO set request data
@@ -372,6 +379,19 @@ void Client::checkTimeouts()
             for (const Address &addr : replicaAddrs_) {
                 endpoint_->SendPreparedMsgTo(addr);
             }
+        }
+
+        if (reqState.triggerSent && now - reqState.triggerSendTime > slowPathTimeout_) {
+            // This is expected to happen when the replicas are making progress
+            LOG(INFO) << "Client fallback on request " << clientSeq
+                      << " timed out again, retrying request in fast path";
+            ClientRequest &req = reqState.request;
+            req.set_instance(myInstance_);
+            req.set_pbft_view(myView_);
+            req.set_send_time(now);
+
+            reqState = RequestState(f_, req, now);
+            threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
         }
     }
 }
@@ -408,6 +428,27 @@ bool Client::updateInstance()
         return true;
     }
 
+    return false;
+}
+bool Client::updateView()
+{
+    uint32_t newView = myView_ - 1;
+    int count = 0;
+    do {
+        newView++;
+        count = 0;
+        for (const auto &[rid, rinst] : replicaViews_) {
+            if (rinst > newView)
+                count++;
+        }
+    } while (count >= 2 * f_ + 1);
+    if (newView != myView_) {
+        VLOG(1) << "Updating view=" << newView << " from " << myView_;
+
+        myView_ = newView;
+        retryRequests();
+        return true;
+    }
     return false;
 }
 
@@ -485,7 +526,9 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // Update client instance
     replicaInstances_[reply.replica_id()] = std::max(reply.instance(), replicaInstances_[reply.replica_id()]);
+    replicaViews_[reply.replica_id()] = std::max(reply.pbft_view(), replicaViews_[reply.replica_id()]);
     updateInstance();
+    updateView();
 
     // Check validity
     if (requestStates_.count(clientSeq) == 0) {
@@ -506,13 +549,12 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         VLOG(2) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
     }
-
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        VLOG(1) << "PERF event=commit path=fast"
-                << " client_id=" << clientId_ << " client_seq=" << clientSeq << " seq=" << reply.seq()
-                << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+        std::string seq = reply.retry() ? "UNKNOWN" : std::to_string(reply.seq());
+        VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
+                << " seq=" << seq << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
@@ -555,6 +597,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         fallbackTriggerMsg.set_client_id(clientId_);
         fallbackTriggerMsg.set_instance(myInstance_);
         fallbackTriggerMsg.set_client_seq(clientSeq);
+        fallbackTriggerMsg.set_pbft_view(myView_);
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             auto &sig = reqState.collector.signatures_[replicaId];
@@ -630,7 +673,9 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
     }
 
     replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
+    replicaViews_[summary.replica_id()] = std::max(summary.pbft_view(), replicaViews_[summary.replica_id()]);
     updateInstance();
+    updateView();
 }
 
 }   // namespace dombft

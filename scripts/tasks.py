@@ -10,7 +10,11 @@ import copy
 
 # TODO we can process output of these here instead of in the terminal
 @task
-def local(c, config_file="../configs/local.yaml", v=5, prot="dombft"):
+def local(c, config_file="../configs/local.yaml", v=5, prot="dombft",
+            slow_path_freq=0,
+            normal_path_freq=0,
+            view_change_freq=0,
+            commit_local_in_view_change = False):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
 
@@ -32,7 +36,18 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft"):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} &>logs/replica{id}.log"
+            swap_arg = ''
+            if normal_path_freq != 0 and id < f:
+                swap_arg = f'-swapFreq {normal_path_freq}'
+            if slow_path_freq != 0 and (id % 2) == 0:
+                swap_arg = f'-swapFreq {slow_path_freq}'
+            view_change_arg = ''
+            if (id % 2) == 0:
+                if view_change_freq != 0:
+                    view_change_arg = f'-viewChangeFreq {view_change_freq}'
+                if commit_local_in_view_change and view_change_freq == 0:
+                    view_change_arg += ' -commitLocalInViewChange'
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
@@ -50,6 +65,8 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft"):
             print(cmd)
 
             other_handles.append(hdl)
+        # make sure clients would not fallback before any requests are commited, corner case not reolved. 
+        time.sleep(2)
 
         for id in range(n_clients):
             cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
@@ -271,7 +288,7 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull --rebase && git checkout checkpoint_refactor && bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull && git checkout more_pbft && bazel build //processes/...")
 
     group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
@@ -518,9 +535,12 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                dom_logs=False,
                slow_path_freq=0,
                normal_path_freq=0,
+               view_change_freq=0,
+               commit_local_in_view_change = False,
                profile=False,
                v=5,
                prot="dombft",
+               max_view_change = 0,
 ):
     config_file = os.path.abspath(config_file)
 
@@ -564,9 +584,18 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
             swap_arg = f'-swapFreq {normal_path_freq}'
         if slow_path_freq != 0 and (id % 2) == 0:
             swap_arg = f'-swapFreq {slow_path_freq}'
+
+        view_change_arg = ''
+        if (id % 2) == 0:
+            if view_change_freq != 0:
+                view_change_arg = f'-viewChangeFreq {view_change_freq}'
+            if commit_local_in_view_change and id==0:
+                view_change_arg += ' -commitLocalInViewChange'
+            if max_view_change != 0:
+                view_change_arg += f' -viewChangeNum {max_view_change}'
             
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg}")
+        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg} {view_change_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
@@ -581,7 +610,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
         hdl = arun(f"{proxy_path} -v {v} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
-    time.sleep(5)
+    time.sleep(2)
 
     print("Starting clients")
     for id, ip in enumerate(clients):

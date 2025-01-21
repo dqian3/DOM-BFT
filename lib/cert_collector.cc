@@ -30,12 +30,11 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 
     for (const auto &[replicaId, reply] : replies_) {
         // We also don't check the result here, that only needs to happen in the fast path
-        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
-                        reply.client_seq(), reply.digest(),   reply.result()};
+        ReplyKey key = {reply.seq(),    reply.instance(), reply.client_id(), reply.client_seq(),
+                        reply.digest(), reply.result(),   reply.retry()};
 
         matchingReplies[key].insert(replicaId);
         maxMatchSize_ = std::max(maxMatchSize_, matchingReplies[key].size());
-
         if (matchingReplies[key].size() >= 2 * f_ + 1) {
             cert_ = Cert();
             cert_->set_seq(std::get<0>(key));
@@ -55,10 +54,9 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         oss << "\n";
 
         // TODO this is just for logging,
-        dombft::apps::CounterResponse response;
-        response.ParseFromString(reply.result());
-
         for (const auto &[replicaId, reply] : replies_) {
+            dombft::apps::CounterResponse response;
+            response.ParseFromString(reply.result());
             oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
                 << reply.instance() << " " << response.value() << "\n";
         }

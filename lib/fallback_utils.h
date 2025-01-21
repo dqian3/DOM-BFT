@@ -18,6 +18,13 @@ struct LogSuffix {
     dombft::ClientRecords clientRecords;
 };
 
+struct PBFTState {
+    dombft::proto::FallbackProposal proposal;
+    byte proposal_digest[SHA256_DIGEST_LENGTH];
+    std::map<uint32_t, dombft::proto::PBFTPrepare> prepares;
+    std::map<uint32_t, std::string> prepareSigs;
+};
+
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
 bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log);
 

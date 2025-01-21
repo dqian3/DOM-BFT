@@ -1,7 +1,8 @@
 #include "checkpoint_collector.h"
 namespace dombft {
 
-bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig){
+bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig)
+{
 
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
@@ -22,7 +23,6 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     for (const auto &entry : replies_) {
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
-
 
         VLOG(4) << digest_to_hex(reply.digest()).substr(0, 8) << " " << reply.seq() << " " << reply.instance();
 
@@ -46,7 +46,8 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     }
     return false;
 }
-bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, const std::span<byte>& sig) {
+bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, const std::span<byte> &sig)
+{
 
     // verify the record is not tampered by a malicious replica
     if (!verifyRecordDigestFromProto(commitMsg.client_records_set())) {
@@ -65,10 +66,11 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     std::map<CommitKeyTuple, std::set<uint32_t>> matchingCommits;
     // Find a cert among a set of replies
     for (const auto &[replicaId, commit] : commits_) {
-        
+
         CommitKeyTuple key = {
             commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
-            commit.client_records_set().client_records_digest()};
+            commit.client_records_set().client_records_digest()
+        };
         matchingCommits[key].insert(replicaId);
 
         // Need 2f + 1 and own commit
@@ -80,7 +82,8 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     return false;
 }
 
-bool CheckpointCollector::commitToLog(const std::shared_ptr<Log>& log, const dombft::proto::Commit &commit){
+bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit)
+{
     uint32_t seq = commit.seq();
 
     log->checkpoint.seq = seq;
@@ -109,34 +112,40 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log>& log, const dom
     }
     return false;
 }
-void CheckpointCollectors::tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records){
+void CheckpointCollectors::tryInitCheckpointCollector(
+    uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records
+)
+{
 
-    if(collectors_.contains(seq)){
+    if (collectors_.contains(seq)) {
         CheckpointCollector &collector = collectors_.at(seq);
-        //Note: both instance and records are from current replica not others
-        // clear the collector if the instance is outdated
-        if(collector.instance_ < instance) {
+        // Note: both instance and records are from current replica not others
+        //  clear the collector if the instance is outdated
+        if (collector.instance_ < instance) {
             collectors_.erase(seq);
-            collectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
-        }else if(records.has_value()) {
+            collectors_.emplace(seq, CheckpointCollector(replicaId_, f_, seq, instance, records));
+        } else if (records.has_value()) {
             collector.clientRecords_ = std::move(records);
         }
-    }else{
-        collectors_.emplace(seq,CheckpointCollector(replicaId_,f_, seq, instance, records));
-        VLOG(3) << "Collector for seq "<<seq<<" is added. Now number of checkpoint collectors : " << collectors_.size();
+    } else {
+        collectors_.emplace(seq, CheckpointCollector(replicaId_, f_, seq, instance, records));
+        VLOG(3) << "Collector for seq " << seq
+                << " is added. Now number of checkpoint collectors : " << collectors_.size();
     }
 }
 
-void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance) {
+void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance)
+{
     std::vector<uint32_t> seqsToRemove;
-    for (auto &[seq, collector]: collectors_) {
+    for (auto &[seq, collector] : collectors_) {
         if (seq <= committedSeq || collector.instance_ < committedInstance) {
             seqsToRemove.push_back(seq);
         }
     }
-    for (uint32_t seq: seqsToRemove) {
-        VLOG(1) << "PERF event=checkpoint_skipped seq=" << seq;
+    for (uint32_t seq : seqsToRemove) {
+        if (seq != committedSeq)
+            VLOG(1) << "PERF event=checkpoint_skipped seq=" << seq;
         collectors_.erase(seq);
     }
 }
-} // dombft
+}   // namespace dombft

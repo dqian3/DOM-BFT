@@ -47,7 +47,7 @@ private:
     std::unique_ptr<Timer> fallbackTimer_;
 
     // Replica state
-    uint32_t instance_ = 0;
+    uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
     std::shared_ptr<Log> log_;
     ClientRecords clientRecords_;
     ClientRecords checkpointClientRecords_;
@@ -56,26 +56,43 @@ private:
     CheckpointCollectors checkpointCollectors_;
     // State for fallback
     bool fallback_ = false;
-    uint32_t fallbackTriggerSeq_ = 0;
+    // fallback proposal is essentially a PBFT request
     std::optional<dombft::proto::FallbackProposal> fallbackProposal_;
-    std::map<int, dombft::proto::FallbackStart> fallbackHistory_;
-    std::map<int, std::string> fallbackHistorySigs_;
+    byte proposalDigest_[SHA256_DIGEST_LENGTH];
+    std::map<uint32_t, dombft::proto::FallbackStart> fallbackHistory_;
+    std::map<uint32_t, std::string> fallbackHistorySigs_;
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
     // State for PBFT
-    std::map<uint32_t, dombft::proto::FallbackPrepare> fallbackPrepares_;
-    std::map<uint32_t, dombft::proto::FallbackPBFTCommit> fallbackPBFTCommits_;
+    bool viewChange_ = false;
+    uint32_t pbftView_ = 0;                    // view num
+    uint32_t preparedInstance_ = UINT32_MAX;   // Set to UINT32_MAX to indicate no prepared instance
+    bool viewPrepared_ = true;
+    PBFTState pbftState_;
+    std::map<uint32_t, dombft::proto::PBFTPrepare> fallbackPrepares_;
+    std::map<uint32_t, std::string> fallbackPrepareSigs_;
+    std::map<uint32_t, dombft::proto::PBFTCommit> fallbackPBFTCommits_;
+    std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
+    std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
     // State for actively triggering fallback
     uint32_t swapFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
+
+    // State for triggering view change
+    uint32_t viewChangeFreq_;
+    uint32_t viewChangeInst_;
+    bool commitLocalInViewChange_ = false;   // when prepared, if send to itself a commit to try to go to next instance
+    uint32_t viewChangeNum_;
+    uint32_t viewChangeCounter_ = 0;
+    // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
+    bool holdPrepareOrCommit_ = false;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
     void verifyMessagesThd();
     void processMessagesThd();
 
-    void processMessage(MessageHeader *msgHdr, byte *msgBuffer);
     void processClientRequest(const dombft::proto::ClientRequest &request);
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
@@ -85,21 +102,39 @@ private:
 
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyFallbackProof(const Cert &proof);
+    bool verifyFallbackProposal(const dombft::proto::FallbackProposal &proposal);
+    bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
 
     // Fallback Helpers
     void startFallback();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
+    void fallbackEpilogue();
     void finishFallback();
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
-    // dummy fallback PBFT
-    inline bool isPrimary() { return instance_ % replicaAddrs_.size() == replicaId_; }
-    void doPrePreparePhase();
+    // TODO(Hao): test instance_== 0, seems problematic but a corner case
+    inline bool ifTriggerViewChange() const
+    {
+        return !viewChange_ && instance_ != 0 && instance_ == viewChangeInst_ &&
+               (viewChangeNum_ == 0 || viewChangeCounter_ < viewChangeNum_);
+    }
+    inline bool viewChangeByPrepare() const { return ifTriggerViewChange() && !holdPrepareOrCommit_; }
+    inline bool viewChangeByCommit() const { return ifTriggerViewChange() && holdPrepareOrCommit_; }
+
+    // fallback PBFT
+    inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
+    uint32_t getPrimary() { return pbftView_ % replicaAddrs_.size(); }
+    void startViewChange();
+    void doPrePreparePhase(uint32_t instance);
     void doPreparePhase();
     void doCommitPhase();
-    void processPrePrepare(const dombft::proto::FallbackPrePrepare &msg);
-    void processPrepare(const dombft::proto::FallbackPrepare &msg);
-    void processPBFTCommit(const dombft::proto::FallbackPBFTCommit &msg);
+    void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
+    void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
+    void processPBFTCommit(const dombft::proto::PBFTCommit &msg);
+    void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
+    void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
+
+    void getProposalDigest(byte *digest, const dombft::proto::FallbackProposal &proposal);
 
     // helpers for client records
     bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
@@ -112,7 +147,10 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    Replica(const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq_ = 0);
+    Replica(
+        const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,
+        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0
+    );
     ~Replica();
 
     void run();

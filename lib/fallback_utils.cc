@@ -145,6 +145,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
 
     // TODO this only works with our basic counter because app_digest == counter!
 
+    // Step1. Apply Checkpoint
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
     LogCheckpoint &myCheckpoint = log->checkpoint;
 
@@ -170,21 +171,22 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
                   << " digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
     }
 
+    // Step2. Find the spot to start applying the suffix
+    // First sequence to apply is right after checkpoint
     uint32_t seq = checkpoint->seq() + 1;
     uint32_t idx = 0;
     dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
-    // skip the entries that are already in the log
-    // First sequence to apply is right after checkpoint
+    // 2.1 Skip the entries that are already in the log (consistent)
     for (; idx < logSuffix.entries.size() && seq < log->nextSeq; idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
         std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
         std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
-
+        // 2.2 If inconsistensy is detected, abort own entries after the last consistent entry
         if (myDigest != entry->digest()) {
             log->app_->abort(seq - 1);
             break;
         }
-
+        // 2.3 Update client records & skip the duplicated entries
         if (!clientRecords[entry->client_id()].updateRecordWithSeq(entry->client_seq())) {
             // TODO this is not ideal; we will reppeat client ops, but replicas will still be
             // consistent.
@@ -196,6 +198,8 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
                 << " since already in log at seq=" << seq;
         seq++;
     }
+
+    // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
     log->nextSeq = seq;
     for (; idx < logSuffix.entries.size(); idx++) {
         assert(seq == log->nextSeq);
