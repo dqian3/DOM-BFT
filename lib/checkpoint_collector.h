@@ -48,7 +48,7 @@ public:
     }
 
     bool addAndCheckReplyCollection(const dombft::proto::Reply &reply, std::span<byte> sig);
-    bool addAndCheckCommitCollection(const dombft::proto::Commit &commitMsg, const std::span<byte> &sig);
+    bool addAndCheckCommitCollection(const dombft::proto::Commit &commitMsg, const std::span<byte> sig);
     bool commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit);
 };
 
@@ -66,7 +66,7 @@ public:
 
     inline CheckpointCollector &at(uint32_t seq) { return collectors_.at(seq); }
     void
-    tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records = std::nullopt);
+    tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &records = std::nullopt);
     void cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance);
 };
 

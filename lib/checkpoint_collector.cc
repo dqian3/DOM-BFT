@@ -46,7 +46,7 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     }
     return false;
 }
-bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, const std::span<byte> &sig)
+bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, const std::span<byte> sig)
 {
 
     // verify the record is not tampered by a malicious replica
@@ -112,8 +112,9 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
     }
     return false;
 }
+
 void CheckpointCollectors::tryInitCheckpointCollector(
-    uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records
+    uint32_t seq, uint32_t instance, std::optional<ClientRecords> &records
 )
 {
 
