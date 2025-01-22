@@ -13,7 +13,6 @@ typedef std::unordered_map<uint32_t, ClientRecord> ClientRecords;
 
 class ClientRecord {
 public:
-    uint32_t instance_ = 0;
     uint32_t lastSeq_ = 0;
     std::unordered_set<uint32_t> missedSeqs_;
 
