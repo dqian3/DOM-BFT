@@ -108,6 +108,7 @@ private:
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
+    void handleCommittedReply(const dombft::proto::CommittedReply &reply, std::span<byte> sig);
     void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
 
     void fillRequestData(dombft::proto::ClientRequest &request);

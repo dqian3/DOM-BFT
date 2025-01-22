@@ -152,10 +152,11 @@ message FallbackProposal
 
 message CommittedReply
 {
-    uint32 client_id = 1;
-    uint32 client_seq = 2;
-    uint32 seq = 3;
-    bytes result = 4;
+    uint32 replica_id = 1;
+    uint32 client_id = 2;
+    uint32 client_seq = 3;
+    uint32 seq = 4;
+    bytes result = 5;
 }
 
 message FallbackSummary

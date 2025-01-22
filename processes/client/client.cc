@@ -435,7 +435,21 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         handleCertReply(certReply, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 
-    else if (hdr->msgType == MessageType::FALLBACK_SUMMARY) {
+    else if (hdr->msgType == MessageType::COMMITTED_REPLY) {
+        CommittedReply reply;
+
+        if (!reply.ParseFromArray(body, hdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse COMMITTED_REPLY message";
+            return;
+        }
+
+        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+            LOG(INFO) << "Failed to verify replica signature for COMMITTED_REPLY!";
+            return;
+        }
+
+        handleCommittedReply(reply, std::span{body + hdr->msgLen, hdr->sigLen});
+    } else if (hdr->msgType == MessageType::FALLBACK_SUMMARY) {
         FallbackSummary fallbackSummary;
 
         if (!fallbackSummary.ParseFromArray(body, hdr->msgLen)) {
@@ -566,34 +580,38 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     }
 }
 
+void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, std::span<byte> sig)
+{
+    if (reply.client_id() != clientId_)
+        return;
+
+    uint32_t cseq = reply.client_seq();
+
+    if (requestStates_.count(cseq) == 0)
+        return;
+
+    auto &reqState = requestStates_.at(cseq);
+
+    reqState.fallbackReplies.insert(reply.replica_id());
+    if (reqState.fallbackReplies.size() >= f_ + 1) {
+        // Request is committed, so we can clean up state!
+        // TODO check we have a consistent set of application replies!
+
+        VLOG(1) << "PERF event=commit path=slow client_id=" << clientId_ << " client_seq=" << cseq
+                << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime;
+
+        lastSlowPath_ = cseq;
+        commitRequest(cseq);
+    }
+}
+
 void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig)
 {
     VLOG(2) << "Received fallback summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();
 
     for (const CommittedReply &reply : summary.replies()) {
-        if (reply.client_id() != clientId_)
-            continue;
-
-        uint32_t cseq = reply.client_seq();
-
-        if (requestStates_.count(cseq) == 0)
-            continue;
-
-        auto &reqState = requestStates_.at(cseq);
-
-        reqState.fallbackReplies.insert(summary.replica_id());
-        if (reqState.fallbackReplies.size() >= f_ + 1) {
-            // Request is committed, so we can clean up state!
-            // TODO check we have a consistent set of application replies!
-
-            VLOG(1) << "PERF event=commit path=slow client_id=" << clientId_ << " client_seq=" << cseq
-                    << " seq=" << reply.seq() << " instance=" << summary.instance()
-                    << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime;
-
-            lastSlowPath_ = cseq;
-            commitRequest(cseq);
-        }
+        handleCommittedReply(reply, sig);
     }
 }
 

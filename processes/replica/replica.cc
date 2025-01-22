@@ -1035,7 +1035,10 @@ void Replica::exitFallback()
     fallbackPrepares_.clear();
     fallbackPBFTCommits_.clear();
 
-    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
+    // TODO: since the fallback is PBFT, we can simply set the checkpoint here already using the PBFT messages as proofs
+    // For the sake of implementation simplicity, we just trigger the usual checkpointing process
+    // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
+    // finishes, the client requests will have f + 1 replicas that executed it in their logs
     checkpointCollectors_.tryInitCheckpointCollector(
         log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
     );
@@ -1097,6 +1100,7 @@ void Replica::finishFallback()
 
         clients.insert(entry->client_id);
 
+        reply.set_replica_id(replicaId_);
         reply.set_client_id(entry->client_id);
         reply.set_client_seq(entry->client_seq);
         reply.set_seq(entry->seq);
@@ -1512,6 +1516,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
 
         CommittedReply reply;
 
+        reply.set_replica_id(replicaId_);
         reply.set_client_id(clientId);
         reply.set_client_seq(clientSeq);
 
