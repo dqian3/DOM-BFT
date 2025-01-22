@@ -29,6 +29,8 @@ private:
     std::vector<Address> clientAddrs_;
     uint32_t f_;
     uint32_t numVerifyThreads_;
+    uint64_t fallbackTimeout_;
+    uint64_t viewChangeTimeout_;
 
     // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
@@ -43,9 +45,6 @@ private:
     std::thread processThread_;
 
     std::unique_ptr<Endpoint> endpoint_;
-    std::unique_ptr<Timer> fallbackStartTimer_;
-    std::unique_ptr<Timer> fallbackTimer_;
-
     // Replica state
     uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
     std::shared_ptr<Log> log_;
@@ -56,6 +55,10 @@ private:
     CheckpointCollectors checkpointCollectors_;
     // State for fallback
     bool fallback_ = false;
+
+    uint64_t fallbackStartTime_ = 0;
+    uint64_t fallbackTriggerTime_ = 0;
+
     // fallback proposal is essentially a PBFT request
     std::optional<dombft::proto::FallbackProposal> fallbackProposal_;
     byte proposalDigest_[SHA256_DIGEST_LENGTH];
@@ -97,8 +100,9 @@ private:
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
-    void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg);
+    void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig);
     void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
+    void checkTimeouts();
 
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyFallbackProof(const Cert &proof);
