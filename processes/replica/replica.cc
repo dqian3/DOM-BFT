@@ -364,8 +364,10 @@ void Replica::processMessagesThd()
         checkTimeouts();
 
         if (!processQueue_.wait_dequeue_timed(msg, 100000)) {
+            VLOG(6) << "Timeout waiting for message";
             continue;
         }
+
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
@@ -381,7 +383,7 @@ void Replica::processMessagesThd()
             if (fallback_) {
                 VLOG(6) << "Queuing request due to fallback";
                 fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
-                return;
+                continue;
             }
 
             // Separate this out into another function probably.
@@ -389,7 +391,7 @@ void Replica::processMessagesThd()
             byte *clientBody = (byte *) (clientMsgHdr + 1);
             if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
-                return;
+                continue;
             }
 
             if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
