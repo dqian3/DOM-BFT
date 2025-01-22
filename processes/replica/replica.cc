@@ -585,7 +585,6 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_result(result);
     reply.set_seq(seq);
     reply.set_instance(instance_);
-    reply.set_pbft_view(pbftView_);
     reply.set_digest(digest);
 
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
@@ -660,7 +659,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         return;
     }
 
-    checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_);
+    checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_, std::nullopt);
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         const byte *logDigest = log_->getDigest(rSeq);
@@ -699,7 +698,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         return;
     }
 
-    checkpointCollectors_.tryInitCheckpointCollector(seq, instance_);
+    checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::nullopt);
     CheckpointCollector &collector = checkpointCollectors_.at(seq);
     // add current commit msg to collector
     if (!collector.addAndCheckCommitCollection(commit, sig)) {
@@ -741,26 +740,18 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
     // Ignore repeated fallback triggers
     if (fallback_) {
         LOG(WARNING) << "Received fallback trigger during a fallback from client " << msg.client_id()
-                     << " for cseq=" << msg.client_seq() << " and instance=" << msg.instance();
-        return;
-    }
-
-    // TODO if attached request has been executed in previous instance
-    // Ignore any messages not for your current instance
-    if (msg.instance() < instance_ || msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received outdated fallback trigger from client " << msg.client_id() << " c_seq "
-                  << msg.client_seq() << " for instance " << msg.instance() << " view " << msg.pbft_view();
+                     << " for cseq=" << msg.client_seq();
         return;
     }
 
     if (!msg.has_proof() && endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
         LOG(WARNING) << "Received redundant fallback trigger due to client side timeout from" << " client "
-                     << msg.client_id() << " for cseq=" << msg.client_seq() << " and instance=" << msg.instance();
+                     << msg.client_id() << " for cseq=" << msg.client_seq();
         return;
     }
 
     LOG(INFO) << "Received fallback trigger from client " << msg.client_id() << " for cseq=" << msg.client_seq()
-              << " and instance=" << msg.instance();
+              << " and instance=";
 
     if (msg.has_proof()) {
         // Proof is verified by verify thread
@@ -1039,7 +1030,6 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_client_seq(entry->client_seq);
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
-    reply.set_pbft_view(pbftView_);
     reply.set_result(entry->result);
     reply.set_seq(entry->seq);
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
@@ -1521,7 +1511,6 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         reply.set_replica_id(replicaId_);
         reply.set_client_id(clientId);
         reply.set_instance(instance_);
-        reply.set_pbft_view(pbftView_);
 
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
         return false;
@@ -1548,7 +1537,6 @@ bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
         reply.set_retry(true);
         reply.set_digest(logDigest, SHA256_DIGEST_LENGTH);
         reply.set_instance(instance);
-        reply.set_pbft_view(pbftView_);
 
         LOG(INFO) << "Sending retry(duplicated) reply back to client " << clientId;
         sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);

@@ -114,7 +114,7 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
 }
 
 void CheckpointCollectors::tryInitCheckpointCollector(
-    uint32_t seq, uint32_t instance, std::optional<ClientRecords> &records
+    uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records
 )
 {
 

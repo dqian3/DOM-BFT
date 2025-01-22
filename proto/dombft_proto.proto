@@ -65,7 +65,8 @@ message CertReply {
     uint32 replica_id = 1;
     uint32 client_id = 2;
     uint32 client_seq = 3;
-    uint32 seq = 4;
+    uint32 instance = 4;
+    uint32 seq = 5;
 }
 
 message Commit {

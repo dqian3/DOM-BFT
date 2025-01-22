@@ -65,8 +65,7 @@ public:
     }
 
     inline CheckpointCollector &at(uint32_t seq) { return collectors_.at(seq); }
-    void
-    tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &records = std::nullopt);
+    void tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records);
     void cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance);
 };
 
