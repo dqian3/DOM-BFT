@@ -1022,7 +1022,7 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
 }
 
-void Replica::fallbackEpilogue()
+void Replica::exitFallback()
 {
     // a wrapper of some operations after fallback
     fallback_ = false;
@@ -1056,7 +1056,7 @@ void Replica::finishFallback()
     if (fallbackProposal_.value().instance() == instance_ - 1) {
         assert(viewChange_);
         LOG(INFO) << "Fallback on instance " << instance_ - 1 << " already committed on current replica, skipping";
-        fallbackEpilogue();
+        exitFallback();
         return;
     }
 
@@ -1114,7 +1114,7 @@ void Replica::finishFallback()
         endpoint_->SendPreparedMsgTo(addr);
     }
 
-    fallbackEpilogue();
+    exitFallback();
 }
 
 // dummy fallback PBFT

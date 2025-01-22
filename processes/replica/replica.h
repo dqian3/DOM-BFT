@@ -115,8 +115,9 @@ private:
     // Fallback Helpers
     void startFallback();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void exitFallback();
     void finishFallback();
+    void exitFallback();
+
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
     // TODO(Hao): test instance_== 0, seems problematic but a corner case
