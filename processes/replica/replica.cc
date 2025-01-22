@@ -1298,6 +1298,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
 
     if (preparedInstance_ == UINT32_MAX || preparedInstance_ != inInst || !viewPrepared_) {
         LOG(INFO) << "Not prepared for it, skipping commit!";
+        // TODO get the proposal from another replica...
         return;
     }
     auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
@@ -1501,7 +1502,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
     // 1. Check if client request has been executed in latest checkpoint (i.e. is committed), in which case
     // we should return a FallbackReply, and client only needs f + 1
 
-    if (checkpointRecord.containsSeq(clientSeq)) {
+    if (checkpointRecord.contains(clientSeq)) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                   << " as it has been executed in previous checkpoint!";
 
@@ -1511,7 +1512,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
 
     // 2. Otherwise, resend tentative reply as is
 
-    if (!curRecord.updateRecordWithSeq(clientSeq)) {
+    if (!curRecord.update(clientSeq)) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                   << " due to duplication! Sending reply to client";
 
@@ -1549,7 +1550,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
         std::string clientReq = entry->request;
 
         ClientRecord &cliRecord = clientRecords_[clientId];
-        if (!cliRecord.updateRecordWithSeq(clientSeq)) {
+        if (!cliRecord.update(clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                       << " due to duplication in reapplying with record!";
             continue;
