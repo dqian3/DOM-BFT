@@ -109,8 +109,6 @@ Replica::Replica(
         LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
-        const std::string filename = "replica" + std::to_string(replicaId_) + "_app_state.yaml";
-        log_->app_->storeAppStateInYAML(filename);
     });
 }
 
@@ -139,6 +137,10 @@ void Replica::run()
         thd.join();
     }
     processThread_.join();
+    // Take too long to finish, uncomment if needed..
+//    const std::string filename = "replica" + std::to_string(replicaId_) + "_app_state.yaml";
+//    log_->app_->storeAppStateInYAML(filename);
+//    LOG(INFO) << "Result written to " << filename;
 }
 
 void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
@@ -658,7 +660,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         commit.set_instance(instance);
         commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
         commit.set_app_digest(appDigest);
-        commit.set_app_snapshot(appSnapshot);
+        commit.set_app_snapshot("appSnapshot");
 
         byte recordDigest[SHA256_DIGEST_LENGTH];
         getRecordsDigest(tmpClientRecords, recordDigest);
@@ -1047,6 +1049,38 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
 
 void Replica::applyFallbackProposal()
 {
+    // a wrapper of some operations after fallback
+    fallback_ = false;
+    if (viewChange_) {
+        viewChangeInst_ += viewChangeFreq_;
+        viewChange_ = false;
+        viewChangeCounter_ += 1;
+    }
+    fallbackProposal_.reset();
+    fallbackPrepares_.clear();
+    fallbackPBFTCommits_.clear();
+
+   if (!log_->app_->takeSnapshot())
+        return;
+    // TODO(Hao): since the fallback is PBFT, we can simply set the checkpoint here already
+    checkpointCollectors_.tryInitCheckpointCollector(
+        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
+    );
+    Reply reply;
+    replyFromLogEntry(reply, log_->nextSeq - 1);
+    broadcastToReplicas(reply, MessageType::REPLY);
+}
+
+void Replica::finishFallback()
+{
+    assert(fallbackProposal_.has_value());
+    if (fallbackProposal_.value().instance() == instance_ - 1) {
+        assert(viewChange_);
+        LOG(INFO) << "Fallback on instance " << instance_ - 1 << " already committed on current replica, skipping";
+        fallbackEpilogue();
+        return;
+    }
+
     FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance()
               << " from own instance=" << instance_;

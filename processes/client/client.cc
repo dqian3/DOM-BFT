@@ -174,7 +174,7 @@ void Client::fillRequestData(ClientRequest &request)
     if (appType_ == AppType::COUNTER) {
         auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
         reqData = counterReq->SerializeAsString();
-    }else if (appType_ == AppType::KV_STORE) {
+    } else if (appType_ == AppType::KV_STORE) {
         auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
         reqData = kvStoreReq->SerializeAsString();
     }

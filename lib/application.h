@@ -1,15 +1,14 @@
 #ifndef APPLICATION_H
 #define APPLICATION_H
 
-#include <memory>
 #include <fstream>
+#include <memory>
 #include <yaml-cpp/yaml.h>
 
 #include "common.h"
 
 #include <glog/logging.h>
 #include <google/protobuf/message.h>
-
 
 // Originally had some custom classes here, but this is easier lol
 typedef google::protobuf::Message AppRequest;
@@ -45,7 +44,7 @@ public:
 
     // Store the application state in a YAML file
     // This may include state metadata and the actual App data
-    virtual void storeAppStateInYAML(const std::string& filename) = 0;
+    virtual void storeAppStateInYAML(const std::string &filename) = 0;
 };
 
 class AppTrafficGen {

@@ -22,10 +22,11 @@ public:
     VersionedValue committed_state;
 
     Counter()
-            : counter(0)
-            , committed_state(0, 0)
-            , version_hist()
-    {}
+        : counter(0)
+        , committed_state(0, 0)
+        , version_hist()
+    {
+    }
 
     ~Counter() override;
 
@@ -36,13 +37,13 @@ public:
     std::string getDigest(uint32_t digest_idx) override;
 
     // counter just uses digest as snapshot that is returned directly by getSnapshot
-    inline bool takeSnapshot() override {return true;}
+    inline bool takeSnapshot() override { return true; }
 
     inline std::string getSnapshot(uint32_t seq) override;
 
     void applySnapshot(const std::string &snapshot) override;
 
-    void storeAppStateInYAML(const std::string& filename) override;
+    void storeAppStateInYAML(const std::string &filename) override;
 
     bool abort(const uint32_t abort_idx) override;
 

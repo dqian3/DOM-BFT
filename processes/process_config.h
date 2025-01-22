@@ -195,7 +195,7 @@ struct ProcessConfig {
             app = AppType::COUNTER;
         } else if (appStr == "kv_store") {
             app = AppType::KV_STORE;
-        }else {
+        } else {
             throw ConfigParseException("Invalid app type " + appStr + ". Must be 'counter' or 'kv_store'");
         }
         LOG(INFO) << "Application type: " << appStr;

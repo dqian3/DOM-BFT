@@ -111,19 +111,18 @@ bool KVStore::abort(const uint32_t abort_idx)
                    << ". Unable to revert.";
         return false;
     }
-
     if (abort_idx > requests.back().idx) {
         LOG(ERROR) << "Abort index is greater than the newest uncommitted request with index " << requests.back().idx
                    << ". Unable to revert.";
         return false;
     }
-
     // reapply committed data and ops before abort_idx
     data = committed_data;
     uint32_t i = 0;
     for (auto &ele : requests) {
         if (ele.idx > abort_idx) {
             requests.erase(requests.begin() + i, requests.end());
+            break;
         }
         // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
         if (ele.type == KVRequestType::SET) {
@@ -196,20 +195,16 @@ void KVStore::storeAppStateInYAML(const std::string &filename)
 
 std::string KVStoreTrafficGen::randomStringNormDist(std::string::size_type length)
 {
-    static auto& chrs = "0123456789"
+    static auto &chrs = "0123456789"
                         "abcdefghijklmnopqrstuvwxyz"
                         "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     thread_local static std::mt19937 rg{std::random_device{}()};
     thread_local static std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
-
     std::string s;
-
     s.reserve(length);
-
-    while(length--)
+    while (length--)
         s += chrs[pick(rg)];
-
     return s;
 }
 void *KVStoreTrafficGen::generateAppTraffic()
@@ -222,5 +217,6 @@ void *KVStoreTrafficGen::generateAppTraffic()
     // TODO(Hao): make it more random, now KV always have same length
     keyLen = (keyLen + 1) > KEY_MAX_LENGTH ? KEY_MIN_LENGTH : (keyLen + 1);
     valLen = (valLen + 1) > VALUE_MAX_LENGTH ? VALUE_MIN_LENGTH : (valLen + 1);
+    LOG(INFO) << "Generated request: " << req->key() << " " << req->value();
     return req;
 }
