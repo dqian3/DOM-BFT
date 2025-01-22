@@ -841,8 +841,8 @@ bool Replica::verifyCert(const Cert &cert)
         const std::string &sig = cert.signatures()[i];
         uint32_t replicaId = reply.replica_id();
 
-        ReplyKey key = {reply.seq(),    reply.instance(), reply.client_id(), reply.client_seq(),
-                        reply.digest(), reply.result(),   reply.retry()};
+        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
+                        reply.client_seq(), reply.digest(),   reply.result()};
         matchingReplies[key].insert(replicaId);
 
         std::string serializedReply = reply.SerializeAsString();
@@ -888,8 +888,8 @@ bool Replica::verifyFallbackProof(const Cert &proof)
         const std::string &sig = proof.signatures()[i];
         uint32_t replicaId = reply.replica_id();
 
-        ReplyKey key = {reply.seq(),    reply.instance(), reply.client_id(), reply.client_seq(),
-                        reply.digest(), reply.result(),   reply.retry()};
+        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
+                        reply.client_seq(), reply.digest(),   reply.result()};
         matchingReplies[key].insert(replicaId);
         std::string serializedReply = proof.replies(i).SerializeAsString();
         if (!sigProvider_.verify(

@@ -36,13 +36,11 @@ message Reply {
     uint32 client_id = 1;
     uint32 client_seq = 2;
 
-    // Tentative global ordering
     uint32 instance = 3;
-    uint32 seq = 5;
 
+    // Tentative global ordering
+    uint32 seq = 5;
     uint32 replica_id = 6;
-    bool fast = 7;
-    bool retry = 8;
     bytes result = 9;
     bytes digest = 10;
 }
@@ -91,10 +89,9 @@ message FallbackTrigger
 message CheckpointClientRecord
 {
     uint32 client_id = 1;
-    uint32 instance = 2;
-    uint32 last_seq = 3;
+    uint32 last_seq = 2;
 
-    repeated uint32 missed_seqs = 4;
+    repeated uint32 missed_seqs = 3;
 }
 
 // wraps records and digest

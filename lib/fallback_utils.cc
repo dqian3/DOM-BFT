@@ -216,7 +216,6 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
                       << " due to duplication in applying suffix!";
             continue;
         }
-        clientRecords[clientId].instance_ = logSuffix.instance;
 
         std::string result;
         if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {

@@ -20,10 +20,14 @@ public:
     bool hasCert();
     const dombft::proto::Cert &getCert();
 
-    uint32_t f_;
-    size_t maxMatchSize_;
+    uint32_t numReceived() const;
 
-    // maps from replica
+    uint32_t f_;
+
+    size_t maxMatchSize_;
+    uint32_t instance_;
+
+    // maps from replica to its messages
     std::map<int, dombft::proto::Reply> replies_;
     std::map<int, std::vector<byte>> signatures_;
 

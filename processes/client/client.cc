@@ -476,12 +476,12 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         VLOG(2) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
     }
+
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        std::string seq = reply.retry() ? "UNKNOWN" : std::to_string(reply.seq());
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
-                << " seq=" << seq << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
@@ -490,13 +490,14 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         return;
     }
 
-    // `replies_.size() == maxMatchSize` iff all replies are yet matching, no need to check for normal/slow path
-    // return when normal/slow path is already triggered
-    if (reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent)
+    // `replies_.size() == maxMatchSize` iff all replies received so far are matching
+    //  and the normal or slow path wouldn't be triggered yet
+    if (reqState.collector.numReceived() == maxMatchSize)
         return;
 
-    // `hasCert()==true` iff maxMatchSize >= 2 * f_ + 1
-    if (reqState.collector.hasCert()) {
+    // `hasCert() == true` iff maxMatchSize >= 2 * f_ + 1
+    // TODO handle sending cert in new instance better
+    if (!reqState.certSent && reqState.collector.hasCert()) {
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
         reqState.certSent = true;
 
@@ -511,14 +512,14 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (reqState.collector.replies_.size() - maxMatchSize > f_) {
+    if (!reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_) {
         LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
         reqState.triggerSent = true;
         lastSlowPath_ = clientSeq;
 
-        reqState.fallbackProof = Cert();
+        reqState.triggerProof = Cert();
         FallbackTrigger fallbackTriggerMsg;
 
         fallbackTriggerMsg.set_client_id(clientId_);
@@ -526,12 +527,11 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             auto &sig = reqState.collector.signatures_[replicaId];
-            reqState.fallbackProof->add_signatures(std::string(sig.begin(), sig.end()));
-            (*reqState.fallbackProof->add_replies()) = reply;
+            reqState.triggerProof->add_signatures(std::string(sig.begin(), sig.end()));
+            (*reqState.triggerProof->add_replies()) = reply;
         }
 
-        // I think this is right, or we could do set_allocated_foo if fallbackProof was dynamically allcoated.
-        (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
+        (*fallbackTriggerMsg.mutable_proof()) = *reqState.triggerProof;
 
         reqState.sendTime = GetMicrosecondTimestamp();
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);

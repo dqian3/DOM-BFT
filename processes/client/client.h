@@ -17,7 +17,6 @@
 
 namespace dombft {
 struct RequestState {
-
     RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
         : collector(f)
         , request(req)
@@ -40,9 +39,10 @@ struct RequestState {
     // Slow Path state
     bool triggerSent = false;
     uint64_t triggerSendTime;
+    std::optional<dombft::proto::Cert> triggerProof;
+
     // TODO keep track of matching replies, not just number of replies, of which we need f + 1
     std::set<int> fallbackReplies;
-    std::optional<dombft::proto::Cert> fallbackProof;
 };
 
 enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
