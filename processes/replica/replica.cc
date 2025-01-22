@@ -744,7 +744,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, 
         broadcastToReplicas(msg, FALLBACK_TRIGGER);
         startFallback();
     } else {
-        fallbackStartTime_ = GetMicrosecondTimestamp();
+        fallbackTriggerTime_ = GetMicrosecondTimestamp();
     }
 }
 
