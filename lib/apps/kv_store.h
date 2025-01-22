@@ -46,6 +46,8 @@ public:
 
     bool abort(const uint32_t abort_idx) override;
 
+    std::map<std::string, std::string> getDeltaFromCommit();
+
     void storeAppStateInYAML(const std::string &filename) override;
 };
 

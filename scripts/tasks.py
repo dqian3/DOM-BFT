@@ -68,7 +68,7 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft",
 
             other_handles.append(hdl)
         # make sure clients would not fallback before any requests are commited, corner case not reolved. 
-        time.sleep(2)
+        time.sleep(3)
 
         for id in range(n_clients):
             cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"

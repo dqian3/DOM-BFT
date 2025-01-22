@@ -74,9 +74,19 @@ std::string KVStore::getDigest(uint32_t digest_idx)
 
 bool KVStore::takeSnapshot()
 {
+    if (requests.empty())
+        return false;
+
     std::string sp = {};
-    for (auto &kv : data) {
-        sp += kv.first + ":" + kv.second + ",";
+    if (committed_data.empty()) {
+        for (auto &kv : data) {
+            sp += kv.first + ":" + kv.second + ",";
+        }
+    } else {
+        std::map<std::string, std::string> delta = getDeltaFromCommit();
+        for (auto &kv : delta) {
+            sp += kv.first + ":" + kv.second + ",";
+        }
     }
     snapshots_data[requests.back().idx] = sp;
     return true;
@@ -89,18 +99,36 @@ void KVStore::applySnapshot(const std::string &snapshot)
     try {
         std::istringstream iss(snapshot);
         std::string kv;
-        data.clear();
+        data = committed_data;
         while (std::getline(iss, kv, ',')) {
             std::istringstream kvss(kv);
             std::string key, value;
             std::getline(kvss, key, ':');
             std::getline(kvss, value, ':');
-            data[key] = value;
+            if (value.empty()) {
+                data.erase(key);
+            } else {
+                data[key] = value;
+            }
         }
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
     } catch (std::exception &e) {
         LOG(ERROR) << "Failed to apply snapshot: " << e.what();
     }
+}
+
+std::map<std::string, std::string> KVStore::getDeltaFromCommit()
+{
+    std::map<std::string, std::string> delta;
+    for (const auto &req : requests) {
+        if (req.type == KVRequestType::SET) {
+            delta[req.key] = req.value;
+        } else if (req.type == KVRequestType::DELETE) {
+            // empty string means delete
+            delta[req.key] = "";
+        }
+    }
+    return delta;
 }
 
 bool KVStore::abort(const uint32_t abort_idx)

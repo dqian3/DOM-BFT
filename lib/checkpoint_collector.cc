@@ -97,7 +97,6 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
         log->checkpoint.commitMessages[r] = commits_[r];
         log->checkpoint.signatures[r] = commitSigs_[r];
     }
-    log->commit(log->checkpoint.seq);
 
     const byte *myDigestBytes = log->getDigest(seq);
     std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
@@ -111,6 +110,7 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
                 << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
         return true;
     }
+    log->commit(log->checkpoint.seq);
     return false;
 }
 

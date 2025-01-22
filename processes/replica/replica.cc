@@ -138,9 +138,9 @@ void Replica::run()
     }
     processThread_.join();
     // Take too long to finish, uncomment if needed..
-//    const std::string filename = "replica" + std::to_string(replicaId_) + "_app_state.yaml";
-//    log_->app_->storeAppStateInYAML(filename);
-//    LOG(INFO) << "Result written to " << filename;
+    //    const std::string filename = "replica" + std::to_string(replicaId_) + "_app_state.yaml";
+    //    log_->app_->storeAppStateInYAML(filename);
+    //    LOG(INFO) << "Result written to " << filename;
 }
 
 void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
@@ -648,7 +648,6 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         const byte *logDigest = log_->getDigest(rSeq);
-        // TODO(Hao): update here for app digest/ app snapshot
         std::string appDigest = log_->app_->getDigest(rSeq);
         std::string appSnapshot = log_->app_->getSnapshot(rSeq);
         ClientRecords tmpClientRecords = collector.clientRecords_.value();
@@ -895,8 +894,8 @@ bool Replica::verifyFallbackProof(const Cert &proof)
     }
 
     if (proof.replies().size() != proof.signatures().size()) {
-        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to "
-                     << "cert signatures size" << proof.signatures().size();
+        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to " << "cert signatures size"
+                     << proof.signatures().size();
         return false;
     }
 

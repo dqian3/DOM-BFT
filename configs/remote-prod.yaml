@@ -21,7 +21,8 @@ client:
   runtimeSeconds: 35
   sendMode: maxInFlight
   sendRate: 300
-  slowPathTimeout: 1000000
+  runtimeSeconds: 30
+
 proxy:
   forwardPort: 31000
   ips:
