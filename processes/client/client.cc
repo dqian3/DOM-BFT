@@ -535,7 +535,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
         reqState.sendTime = GetMicrosecondTimestamp();
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }
