@@ -378,6 +378,12 @@ void Replica::processMessagesThd()
                 return;
             }
 
+            if (fallback_) {
+                VLOG(6) << "Queuing request due to fallback";
+                fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
+                return;
+            }
+
             // Separate this out into another function probably.
             MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();
             byte *clientBody = (byte *) (clientMsgHdr + 1);
@@ -523,12 +529,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         return;
     }
 
-    if (fallback_) {
-        VLOG(6) << "Dropping request due to fallback";
-        return;
-    }
-
-    if (!checkAndUpdateClientRecord(request))
+    if (!checkDuplicateRequest(request))
         return;
 
     std::string result;
@@ -1039,6 +1040,11 @@ void Replica::fallbackEpilogue()
     Reply reply;
     replyFromLogEntry(reply, log_->nextSeq - 1);
     broadcastToReplicas(reply, MessageType::REPLY);
+
+    for (auto &[_, req] : fallbackQueuedReqs_) {
+        VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
+        processClientRequest(req);
+    }
 }
 
 void Replica::finishFallback()
@@ -1452,7 +1458,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
 
     // TODO(Hao): test this corner case later
     if (msg.instance() == UINT32_MAX) {
-        LOG(INFO) << "No previously prepared instance in new vew, go back to normal state. EXIT FOR NOW";
+        LOG(INFO) << "No previously prepared instance in new view, go back to normal state. EXIT FOR NOW";
         assert(msg.instance() != UINT32_MAX);
         return;
     }
@@ -1475,21 +1481,37 @@ void Replica::getProposalDigest(byte *digest, const FallbackProposal &proposal)
     SHA256_Final(digest, &ctx);
 }
 
-bool Replica::checkAndUpdateClientRecord(const ClientRequest &clientHeader)
+bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
 {
     uint32_t clientId = clientHeader.client_id();
     uint32_t clientSeq = clientHeader.client_seq();
     uint32_t clientInstance = clientHeader.instance();
     uint32_t clientView = clientHeader.pbft_view();
 
-    ClientRecord &cliRecord = clientRecords_[clientId];
+    ClientRecord &curRecord = clientRecords_[clientId];
+    ClientRecord &checkpointRecord = checkpointClientRecords_[clientId];
 
     if (!log_->canAddEntry()) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to log full!";
         return false;
     }
 
-    if (!cliRecord.updateRecordWithSeq(clientSeq)) {
+    // TODO
+
+    // 1. Check if client request has been executed in latest checkpoint (i.e. is committed), in which case
+    // we should return a FallbackReply, and client only needs f + 1
+
+    if (checkpointRecord.containsSeq(clientSeq)) {
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
+                  << " as it has been executed in previous checkpoint!";
+
+        // TODO send fallback/committed reply...
+        return false;
+    }
+
+    // 2. Otherwise, resend tentative reply as is
+
+    if (!curRecord.updateRecordWithSeq(clientSeq)) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                   << " due to duplication! Sending reply to client";
 

@@ -1,6 +1,8 @@
 #include "client_record.h"
 namespace dombft {
 
+bool ClientRecord::containsSeq(uint32_t seq) const { return seq <= lastSeq_ && !missedSeqs_.contains(seq); }
+
 bool ClientRecord::updateRecordWithSeq(uint32_t newSeq)
 {
     if (lastSeq_ < newSeq) {

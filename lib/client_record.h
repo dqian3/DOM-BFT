@@ -16,6 +16,7 @@ public:
     uint32_t lastSeq_ = 0;
     std::unordered_set<uint32_t> missedSeqs_;
 
+    bool containsSeq(uint32_t seq) const;
     bool updateRecordWithSeq(uint32_t newSeq);
 };
 
