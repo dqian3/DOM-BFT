@@ -571,7 +571,7 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
     VLOG(2) << "Received fallback summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();
 
-    for (const FallbackReply &reply : summary.replies()) {
+    for (const CommittedReply &reply : summary.replies()) {
         if (reply.client_id() != clientId_)
             continue;
 

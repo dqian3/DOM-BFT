@@ -150,7 +150,7 @@ message FallbackProposal
 }
 
 
-message FallbackReply
+message CommittedReply
 {
     uint32 client_id = 1;
     uint32 client_seq = 2;
@@ -162,7 +162,7 @@ message FallbackSummary
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
-    repeated FallbackReply replies = 3;
+    repeated CommittedReply replies = 3;
     uint32 pbft_view = 4;
 }
 

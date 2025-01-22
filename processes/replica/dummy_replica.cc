@@ -309,7 +309,7 @@ void DummyReplica::processMessagesThd()
                         summary.set_instance(0);
                         summary.set_replica_id(replicaId_);
 
-                        FallbackReply reply;
+                        CommittedReply reply;
                         reply.set_client_id(protoMsg.client_id());
                         reply.set_client_seq(protoMsg.client_seq());
                         reply.set_seq(protoMsg.seq());

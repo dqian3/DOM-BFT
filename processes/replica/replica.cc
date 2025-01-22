@@ -1093,7 +1093,7 @@ void Replica::finishFallback()
     uint32_t seq = log_->checkpoint.seq;
     for (; seq < log_->nextSeq; seq++) {
         std::shared_ptr<::LogEntry> entry = log_->getEntry(seq);   // TODO better namespace
-        FallbackReply reply;
+        CommittedReply reply;
 
         clients.insert(entry->client_id);
 
@@ -1503,7 +1503,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
     // TODO
 
     // 1. Check if client request has been executed in latest checkpoint (i.e. is committed), in which case
-    // we should return a FallbackReply, and client only needs f + 1
+    // we should return a CommittedReply, and client only needs f + 1
 
     if (checkpointRecord.contains(clientSeq)) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
