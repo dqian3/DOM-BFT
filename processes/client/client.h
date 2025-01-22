@@ -87,12 +87,6 @@ private:
 
     /* Global state */
 
-    // Map of replica id instance, once f + 1 are higher than n, update own instance
-    std::map<uint32_t, uint32_t> replicaInstances_;
-    std::map<uint32_t, uint32_t> replicaViews_;
-    uint32_t myInstance_ = 0;
-    uint32_t myView_ = 0;
-
     // Keeping track of sending rate
     uint64_t lastSendTime_ = 0;
 
@@ -123,9 +117,6 @@ private:
     void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);
     void commitRequest(uint32_t clientSeq);
-
-    bool updateInstance();
-    bool updateView();
 
     void checkTimeouts();
 
