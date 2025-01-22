@@ -380,17 +380,17 @@ void Replica::processMessagesThd()
                 return;
             }
 
-            if (fallback_) {
-                VLOG(6) << "Queuing request due to fallback";
-                fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
-                continue;
-            }
-
             // Separate this out into another function probably.
             MessageHeader *clientMsgHdr = (MessageHeader *) domHeader.client_req().c_str();
             byte *clientBody = (byte *) (clientMsgHdr + 1);
             if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                continue;
+            }
+
+            if (fallback_) {
+                VLOG(6) << "Queuing request due to fallback";
+                fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
                 continue;
             }
 
@@ -1047,6 +1047,7 @@ void Replica::fallbackEpilogue()
         VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
         processClientRequest(req);
     }
+    fallbackQueuedReqs_.clear();
 }
 
 void Replica::finishFallback()
