@@ -187,7 +187,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             break;
         }
         // 2.3 Update client records & skip the duplicated entries
-        if (!clientRecords[entry->client_id()].updateRecordWithSeq(entry->client_seq())) {
+        if (!clientRecords[entry->client_id()].update(entry->client_seq())) {
             // TODO this is not ideal; we will reppeat client ops, but replicas will still be
             // consistent.
             VLOG(4) << "Skipped entry seq=" << seq << " c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
@@ -211,12 +211,11 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
             LOG(INFO) << "nextSeq=" << log->nextSeq << " too far ahead of commitPoint.seq=" << log->checkpoint.seq;
             break;
         }
-        if (!clientRecords[entry->client_id()].updateRecordWithSeq(clientSeq)) {
+        if (!clientRecords[entry->client_id()].update(clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                       << " due to duplication in applying suffix!";
             continue;
         }
-        clientRecords[clientId].instance_ = logSuffix.instance;
 
         std::string result;
         if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {

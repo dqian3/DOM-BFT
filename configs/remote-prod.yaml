@@ -56,7 +56,7 @@ replica:
   - 10.202.0.2
   keysDir: keys/replica
   port: 34000
-  fallbackTimeout: 5000000
-  fallbackStartTimeout: 500000
+  fallbackTimeout: 10000000 # 10 sec
+  fallbackStartTimeout: 5000000 # 5 sec
   numVerifyThreads: 6
   numSendThreads: 6

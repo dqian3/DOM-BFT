@@ -189,8 +189,6 @@ void Client::submitRequest()
     // submit new request
     request.set_client_id(clientId_);
     request.set_client_seq(nextSeq_);
-    request.set_instance(myInstance_);
-    request.set_pbft_view(myView_);
     request.set_send_time(now);
     request.set_is_write(true);   // TODO modify this based on some random chance
 
@@ -250,8 +248,6 @@ void Client::submitRequestsOpenLoop()
         // submit new request
         request.set_client_id(clientId_);
         request.set_client_seq(nextSeq_);
-        request.set_instance(myInstance_);
-        request.set_pbft_view(myView_);
         request.set_send_time(now);
         request.set_is_write(true);   // TODO modify this based on some random chance
 
@@ -277,8 +273,6 @@ void Client::retryRequests()
     for (auto &[cseq, reqState] : requestStates_) {
         uint64_t now = GetMicrosecondTimestamp();
         ClientRequest &req = reqState.request;
-        req.set_instance(myInstance_);
-        req.set_pbft_view(myView_);
         req.set_send_time(now);
         reqState = RequestState(f_, req, now);
         threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
@@ -369,8 +363,6 @@ void Client::checkTimeouts()
             FallbackTrigger fallbackTriggerMsg;
 
             fallbackTriggerMsg.set_client_id(clientId_);
-            fallbackTriggerMsg.set_instance(myInstance_);
-            fallbackTriggerMsg.set_pbft_view(myView_);
             fallbackTriggerMsg.set_client_seq(clientSeq);
 
             // TODO set request data
@@ -383,73 +375,14 @@ void Client::checkTimeouts()
 
         if (reqState.triggerSent && now - reqState.triggerSendTime > slowPathTimeout_) {
             // This is expected to happen when the replicas are making progress
-            LOG(INFO) << "Client fallback on request " << clientSeq
-                      << " timed out again, retrying request in fast path";
+            LOG(INFO) << "Client fallback on request " << clientSeq << " timed out again, retrying request through DOM";
             ClientRequest &req = reqState.request;
-            req.set_instance(myInstance_);
-            req.set_pbft_view(myView_);
             req.set_send_time(now);
 
             reqState = RequestState(f_, req, now);
             threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
         }
     }
-}
-
-bool Client::updateInstance()
-{
-    uint32_t newInstance = myInstance_ - 1;
-    int count = 0;
-    do {
-        newInstance++;
-        count = 0;
-        for (const auto &[rid, rinst] : replicaInstances_) {
-            if (rinst > newInstance)
-                count++;
-        }
-    } while (count >= 2 * f_ + 1);
-    // Note, this can actually be f + 1, but it causes issues cause the client
-    // will try and retry requests before it can commit in the slow path
-
-    uint64_t now = GetMicrosecondTimestamp();
-    if (newInstance != myInstance_) {
-        VLOG(1) << "Updating instance=" << newInstance << " from " << myInstance_;
-
-        // TODO Reset any uncommitted requests by changing the send time
-        // for (auto &[cseq, reqState] : requestStates_) {
-        //     // reqState.sendTime = now;
-        //     // reqState.triggerSent = false;
-        // }
-
-        myInstance_ = newInstance;
-
-        // TODO this is really fragile doing it here for some reason, figure it out
-        retryRequests();
-        return true;
-    }
-
-    return false;
-}
-bool Client::updateView()
-{
-    uint32_t newView = myView_ - 1;
-    int count = 0;
-    do {
-        newView++;
-        count = 0;
-        for (const auto &[rid, rinst] : replicaViews_) {
-            if (rinst > newView)
-                count++;
-        }
-    } while (count >= 2 * f_ + 1);
-    if (newView != myView_) {
-        VLOG(1) << "Updating view=" << newView << " from " << myView_;
-
-        myView_ = newView;
-        retryRequests();
-        return true;
-    }
-    return false;
 }
 
 void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
@@ -524,12 +457,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     uint32_t clientSeq = reply.client_seq();
     uint64_t now = GetMicrosecondTimestamp();
 
-    // Update client instance
-    replicaInstances_[reply.replica_id()] = std::max(reply.instance(), replicaInstances_[reply.replica_id()]);
-    replicaViews_[reply.replica_id()] = std::max(reply.pbft_view(), replicaViews_[reply.replica_id()]);
-    updateInstance();
-    updateView();
-
     // Check validity
     if (requestStates_.count(clientSeq) == 0) {
         VLOG(2) << "Received reply for " << clientSeq << " not in active requests";
@@ -549,12 +476,12 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         VLOG(2) << "Created cert for request number " << clientSeq;
         reqState.certTime = now;
     }
+
     if (maxMatchSize == 3 * f_ + 1) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
-        std::string seq = reply.retry() ? "UNKNOWN" : std::to_string(reply.seq());
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
-                << " seq=" << seq << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
@@ -563,13 +490,14 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         return;
     }
 
-    // `replies_.size() == maxMatchSize` iff all replies are yet matching, no need to check for normal/slow path
-    // return when normal/slow path is already triggered
-    if (reqState.collector.replies_.size() == maxMatchSize || reqState.certSent || reqState.triggerSent)
+    // `replies_.size() == maxMatchSize` iff all replies received so far are matching
+    //  and the normal or slow path wouldn't be triggered yet
+    if (reqState.collector.numReceived() == maxMatchSize)
         return;
 
-    // `hasCert()==true` iff maxMatchSize >= 2 * f_ + 1
-    if (reqState.collector.hasCert()) {
+    // `hasCert() == true` iff maxMatchSize >= 2 * f_ + 1
+    // TODO handle sending cert in new instance better
+    if (!reqState.certSent && reqState.collector.hasCert()) {
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
         reqState.certSent = true;
 
@@ -584,29 +512,26 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (reqState.collector.replies_.size() - maxMatchSize > f_) {
+    if (!reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_) {
         LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
         reqState.triggerSent = true;
         lastSlowPath_ = clientSeq;
 
-        reqState.fallbackProof = Cert();
+        reqState.triggerProof = Cert();
         FallbackTrigger fallbackTriggerMsg;
 
         fallbackTriggerMsg.set_client_id(clientId_);
-        fallbackTriggerMsg.set_instance(myInstance_);
         fallbackTriggerMsg.set_client_seq(clientSeq);
-        fallbackTriggerMsg.set_pbft_view(myView_);
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             auto &sig = reqState.collector.signatures_[replicaId];
-            reqState.fallbackProof->add_signatures(std::string(sig.begin(), sig.end()));
-            (*reqState.fallbackProof->add_replies()) = reply;
+            reqState.triggerProof->add_signatures(std::string(sig.begin(), sig.end()));
+            (*reqState.triggerProof->add_replies()) = reply;
         }
 
-        // I think this is right, or we could do set_allocated_foo if fallbackProof was dynamically allcoated.
-        (*fallbackTriggerMsg.mutable_proof()) = *reqState.fallbackProof;
+        (*fallbackTriggerMsg.mutable_proof()) = *reqState.triggerProof;
 
         reqState.sendTime = GetMicrosecondTimestamp();
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
@@ -670,11 +595,6 @@ void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary
             commitRequest(cseq);
         }
     }
-
-    replicaInstances_[summary.replica_id()] = std::max(summary.instance(), replicaInstances_[summary.replica_id()]);
-    replicaViews_[summary.replica_id()] = std::max(summary.pbft_view(), replicaViews_[summary.replica_id()]);
-    updateInstance();
-    updateView();
 }
 
 }   // namespace dombft

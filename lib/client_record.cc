@@ -1,7 +1,9 @@
 #include "client_record.h"
 namespace dombft {
 
-bool ClientRecord::updateRecordWithSeq(uint32_t newSeq)
+bool ClientRecord::contains(uint32_t seq) const { return seq <= lastSeq_ && !missedSeqs_.contains(seq); }
+
+bool ClientRecord::update(uint32_t newSeq)
 {
     if (lastSeq_ < newSeq) {
         for (uint32_t i = lastSeq_ + 1; i < newSeq; i++)
@@ -19,7 +21,6 @@ void getClientRecordsFromProto(const CheckpointClientRecordsSet &recordsSet, Cli
 {
     for (const auto &cliRecord : recordsSet.records()) {
         uint32_t cliId = cliRecord.client_id();
-        dst[cliId].instance_ = cliRecord.instance();
         dst[cliId].lastSeq_ = cliRecord.last_seq();
         for (const auto &s : cliRecord.missed_seqs())
             dst[cliId].missedSeqs_.insert(s);
@@ -37,7 +38,6 @@ void getRecordsDigest(const ClientRecords &records, byte *digest)
     SHA256_Init(&ctx);
     for (const auto &[cliId, cliRecord] : sortedRecords) {
         SHA256_Update(&ctx, &cliId, sizeof(cliId));
-        SHA256_Update(&ctx, &cliRecord.instance_, sizeof(cliRecord.instance_));
         SHA256_Update(&ctx, &cliRecord.lastSeq_, sizeof(cliRecord.lastSeq_));
         std::vector<int> sortedSeqs(cliRecord.missedSeqs_.begin(), cliRecord.missedSeqs_.end());
         std::sort(sortedSeqs.begin(), sortedSeqs.end());
@@ -83,8 +83,7 @@ bool verifyRecordDigestFromProto(const CheckpointClientRecordsSet &recordsSet)
     ClientRecords tmpClientRecords;
     getClientRecordsFromProto(recordsSet, tmpClientRecords);
     for (const auto &record : tmpClientRecords) {
-        VLOG(6) << "client id: " << record.first << " instance: " << record.second.instance_
-                << " lastSeq: " << record.second.lastSeq_;
+        VLOG(6) << "client id: " << record.first << " lastSeq: " << record.second.lastSeq_;
         for (const auto &seq : record.second.missedSeqs_) {
             VLOG(6) << "missed seq: " << seq;
         }
@@ -103,7 +102,6 @@ void toProtoClientRecords(
     for (const auto &[cliId, cliRecord] : clientRecords) {
         proto::CheckpointClientRecord *record = recordsSet.add_records();
         record->set_client_id(cliId);
-        record->set_instance(cliRecord.instance_);
         record->set_last_seq(cliRecord.lastSeq_);
         for (const uint32_t &missedSeq : cliRecord.missedSeqs_) {
             record->add_missed_seqs(missedSeq);

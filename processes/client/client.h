@@ -17,7 +17,6 @@
 
 namespace dombft {
 struct RequestState {
-
     RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
         : collector(f)
         , request(req)
@@ -40,9 +39,10 @@ struct RequestState {
     // Slow Path state
     bool triggerSent = false;
     uint64_t triggerSendTime;
+    std::optional<dombft::proto::Cert> triggerProof;
+
     // TODO keep track of matching replies, not just number of replies, of which we need f + 1
     std::set<int> fallbackReplies;
-    std::optional<dombft::proto::Cert> fallbackProof;
 };
 
 enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
@@ -87,12 +87,6 @@ private:
 
     /* Global state */
 
-    // Map of replica id instance, once f + 1 are higher than n, update own instance
-    std::map<uint32_t, uint32_t> replicaInstances_;
-    std::map<uint32_t, uint32_t> replicaViews_;
-    uint32_t myInstance_ = 0;
-    uint32_t myView_ = 0;
-
     // Keeping track of sending rate
     uint64_t lastSendTime_ = 0;
 
@@ -123,9 +117,6 @@ private:
     void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);
     void commitRequest(uint32_t clientSeq);
-
-    bool updateInstance();
-    bool updateView();
 
     void checkTimeouts();
 

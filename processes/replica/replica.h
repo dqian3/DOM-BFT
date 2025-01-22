@@ -141,7 +141,7 @@ private:
     void getProposalDigest(byte *digest, const dombft::proto::FallbackProposal &proposal);
 
     // helpers for client records
-    bool checkAndUpdateClientRecord(const dombft::proto::ClientRequest &clientHeader);
+    bool checkDuplicateRequest(const dombft::proto::ClientRequest &clientHeader);
     void reapplyEntriesWithRecord(uint32_t rShiftNum);
 
     // sending helpers

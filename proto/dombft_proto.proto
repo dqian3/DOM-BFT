@@ -36,14 +36,11 @@ message Reply {
     uint32 client_id = 1;
     uint32 client_seq = 2;
 
-    // Tentative global ordering
     uint32 instance = 3;
-    uint32 pbft_view = 4;
-    uint32 seq = 5;
 
+    // Tentative global ordering
+    uint32 seq = 5;
     uint32 replica_id = 6;
-    bool fast = 7;
-    bool retry = 8;
     bytes result = 9;
     bytes digest = 10;
 }
@@ -56,7 +53,6 @@ message Cert {
     // seq is also just for convenience
     uint32 seq = 1;
     uint32 instance = 2;
-    uint32 pbft_view = 3;
     
     repeated Reply replies    = 4;
     repeated bytes signatures = 5;
@@ -68,8 +64,7 @@ message CertReply {
     uint32 client_id = 2;
     uint32 client_seq = 3;
     uint32 instance = 4;
-    uint32 pbft_view = 5;
-    uint32 seq = 6;
+    uint32 seq = 5;
 }
 
 message Commit {
@@ -86,20 +81,17 @@ message FallbackTrigger
 {
     uint32 client_id = 1;
     uint32 client_seq = 2;
-    uint32 instance = 3;
-    uint32 pbft_view = 4;
     bytes req_data = 5;
     // Reuse Cert message here, since it is just a set of replies.
-    optional Cert proof =6;
+    optional Cert proof = 6;
 }
 
 message CheckpointClientRecord
 {
     uint32 client_id = 1;
-    uint32 instance = 2;
-    uint32 last_seq = 3;
+    uint32 last_seq = 2;
 
-    repeated uint32 missed_seqs = 4;
+    repeated uint32 missed_seqs = 3;
 }
 
 // wraps records and digest
