@@ -45,26 +45,29 @@ private:
     std::thread processThread_;
 
     std::unique_ptr<Endpoint> endpoint_;
+
     // Replica state
     uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
     std::shared_ptr<Log> log_;
     ClientRecords clientRecords_;
     ClientRecords checkpointClientRecords_;
+    std::map<uint32_t, std::map<uint32_t, dombft::Reply>> replyCache_;
+
     // State for commit/checkpoint protocol
     // checkpoint seq -> CheckpointCollector
     CheckpointCollectors checkpointCollectors_;
+
     // State for fallback
     bool fallback_ = false;
-
     uint64_t fallbackStartTime_ = 0;
     uint64_t fallbackTriggerTime_ = 0;
+    std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
-    // fallback proposal is essentially a PBFT request
+    // fallback proposal is the current PBFT request
     std::optional<dombft::proto::FallbackProposal> fallbackProposal_;
     byte proposalDigest_[SHA256_DIGEST_LENGTH];
-    std::map<uint32_t, dombft::proto::FallbackStart> fallbackHistory_;
+    std::map<uint32_t, dombft::proto::FallbackStart> fallbackHistorys_;
     std::map<uint32_t, std::string> fallbackHistorySigs_;
-    std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
     // State for PBFT
     bool viewChange_ = false;
@@ -112,7 +115,7 @@ private:
     // Fallback Helpers
     void startFallback();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void fallbackEpilogue();
+    void exitFallback();
     void finishFallback();
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 

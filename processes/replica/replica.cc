@@ -759,12 +759,12 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
     }
 
     // A corner case where (older instance + pbft_view) targets the same primary and overwrite the newer ones
-    if (fallbackHistory_.count(repId) && fallbackHistory_[repId].instance() >= repInstance) {
+    if (fallbackHistorys_.count(repId) && fallbackHistorys_[repId].instance() >= repInstance) {
         LOG(INFO) << "Received FALLBACK_START for instance " << repInstance << " pbft_view " << msg.pbft_view()
                   << " from replica " << repId << " which is outdated";
         return;
     }
-    fallbackHistory_[repId] = msg;
+    fallbackHistorys_[repId] = msg;
     fallbackHistorySigs_[repId] = std::string(sig.begin(), sig.end());
 
     LOG(INFO) << "Received fallbackStart message from replica " << repId;
@@ -774,7 +774,7 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
     }
 
     // First check if we have 2f + 1 fallback start messages for the same instance
-    auto numStartMsgs = std::count_if(fallbackHistory_.begin(), fallbackHistory_.end(), [&](auto &startMsg) {
+    auto numStartMsgs = std::count_if(fallbackHistorys_.begin(), fallbackHistorys_.end(), [&](auto &startMsg) {
         return startMsg.second.instance() == repInstance;
     });
 
@@ -1100,6 +1100,7 @@ void Replica::finishFallback()
         reply.set_client_id(entry->client_id);
         reply.set_client_seq(entry->client_seq);
         reply.set_seq(entry->seq);
+        reply.set_result(entry->result);
 
         (*summary.add_replies()) = reply;
     }
@@ -1134,7 +1135,7 @@ void Replica::doPrePreparePhase(uint32_t instance)
     FallbackProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_instance(instance);
-    for (auto &startMsg : fallbackHistory_) {
+    for (auto &startMsg : fallbackHistorys_) {
         if (startMsg.second.instance() != instance)
             continue;
 
@@ -1496,7 +1497,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
     ClientRecord &checkpointRecord = checkpointClientRecords_[clientId];
 
     if (!log_->canAddEntry()) {
-        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to log full!";
+        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to log being full!";
         return false;
     }
 
@@ -1506,31 +1507,29 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
     // we should return a CommittedReply, and client only needs f + 1
 
     if (checkpointRecord.contains(clientSeq)) {
-        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
-                  << " as it has been executed in previous checkpoint!";
+        LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
+                     << " has been committed in previous checkpoint/fallback!, Sending committed reply";
 
-        // TODO send fallback/committed reply...
+        CommittedReply reply;
+
+        reply.set_client_id(clientId);
+        reply.set_client_seq(clientSeq);
+
+        LOG(ERROR) << "TODO Cache for client results not implemented, sending blank result!";
+
+        sendMsgToDst(reply, MessageType::COMMITTED_REPLY, clientAddrs_[clientId]);
         return false;
     }
 
-    // 2. Otherwise, resend tentative reply as is
+    // 2. Otherwise, client never got our reply. This should be very rare because we use a reliable channel.
+    // The client's request will eventually be included in the slow path or the next checkpoint.
 
+    // We could resend it's reply, but it's too much work for now.
+    // TODO queued requests from fallback occur implicitly are processed here, which is correct, but we should probably
+    // make this more explicit.
     if (!curRecord.update(clientSeq)) {
-        LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
-                  << " due to duplication! Sending reply to client";
+        LOG(WARNING) << "DUP dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to duplication!";
 
-        uint32_t instance = instance_;
-        byte logDigest[SHA256_DIGEST_LENGTH];
-        memcpy(logDigest, log_->checkpoint.logDigest, SHA256_DIGEST_LENGTH);
-        Reply reply;
-        reply.set_client_id(clientId);
-        reply.set_client_seq(clientSeq);
-        reply.set_replica_id(replicaId_);
-        reply.set_digest(logDigest, SHA256_DIGEST_LENGTH);
-        reply.set_instance(instance);
-
-        LOG(INFO) << "Sending retry(duplicated) reply back to client " << clientId;
-        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
         return false;
     }
 
