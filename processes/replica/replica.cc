@@ -29,6 +29,8 @@ Replica::Replica(
     , viewChangeInst_(viewChangeFreq_)
     , commitLocalInViewChange_(commitLocalInViewChange)
     , viewChangeNum_(viewChangeNum)
+    , fallbackTimeout_(config.replicaFallbackTimeout)
+    , viewChangeTimeout_(config.replicaFallbackStartTimeout)
 {
     // TODO check for config errors
     std::string replicaIp = config.replicaIps[replicaId];
@@ -99,30 +101,6 @@ Replica::Replica(
     };
 
     endpoint_->RegisterMsgHandler(handler);
-
-    fallbackStartTimer_ = std::make_unique<Timer>(
-        [this](void *ctx, void *endpoint) {
-            endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
-            LOG(WARNING) << "fallbackStartTimer for instance=" << instance_ << " timed out! Starting fallback";
-            this->startFallback();
-        },
-        config.replicaFallbackStartTimeout, this
-    );
-
-    fallbackTimer_ = std::make_unique<Timer>(
-        [this](void *ctx, void *endpoint) {
-            LOG(WARNING) << "Fallback for instance=" << instance_ << " pbft_view=" << pbftView_
-                         << " failed (timed out)!";
-            endpoint_->UnRegisterTimer(fallbackTimer_.get());
-            if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
-                endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
-            }
-            pbftViewChanges_.clear();
-            pbftViewChangeSigs_.clear();
-            this->startViewChange();
-        },
-        config.replicaFallbackTimeout, this
-    );
 
     endpoint_->RegisterSignalHandler([&]() {
         LOG(INFO) << "Received interrupt signal!";
@@ -262,11 +240,6 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", fallbackTriggerMsg.client_id())) {
-                LOG(INFO) << "Failed to verify client signature from " << fallbackTriggerMsg.client_id();
-                continue;
-            }
-
             if (!fallbackTriggerMsg.has_proof() || verifyFallbackProof(fallbackTriggerMsg.proof()))
                 processQueue_.enqueue(msg);
 
@@ -387,7 +360,10 @@ void Replica::processMessagesThd()
     std::vector<byte> msg;
 
     while (running_) {
-        if (!processQueue_.wait_dequeue_timed(msg, 50000)) {
+        // Check for timeouts each time before processing a message
+        checkTimeouts();
+
+        if (!processQueue_.wait_dequeue_timed(msg, 100000)) {
             continue;
         }
         MessageHeader *hdr = (MessageHeader *) msg.data();
@@ -468,7 +444,7 @@ void Replica::processMessagesThd()
                 return;
             }
 
-            processFallbackTrigger(fallbackTriggerMsg);
+            processFallbackTrigger(fallbackTriggerMsg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
         if (hdr->msgType == FALLBACK_START) {
@@ -712,9 +688,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
     // Unregister fallbackStart timer set by request timeout in slow path
     //  as checkpoint confirms progress
-    if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
-        endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
-    }
+    fallbackTriggerTime_ = 0;
 
     if (digest_changed) {
         checkpointClientRecords_.clear();
@@ -736,12 +710,12 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     checkpointCollectors_.cleanSkippedCheckpointCollectors(seq, instance_);
 }
 
-void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
+void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig)
 {
     // Ignore repeated fallback triggers
     if (fallback_) {
-        LOG(WARNING) << "Received fallback trigger during a fallback from client " << msg.client_id()
-                     << " for cseq=" << msg.client_seq() << " and instance=" << msg.instance();
+        // LOG(WARNING) << "Received fallback trigger during a fallback from client " << msg.client_id()
+        //              << " for cseq=" << msg.client_seq() << " and instance=" << msg.instance();
         return;
     }
 
@@ -753,7 +727,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
         return;
     }
 
-    if (!msg.has_proof() && endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
+    if (!msg.has_proof() && fallbackTriggerTime_ != 0) {
         LOG(WARNING) << "Received redundant fallback trigger due to client side timeout from" << " client "
                      << msg.client_id() << " for cseq=" << msg.client_seq() << " and instance=" << msg.instance();
         return;
@@ -767,10 +741,10 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg)
         LOG(WARNING) << "Fallback trigger has a proof, starting fallback!";
 
         // TODO we need to broadcast this with the original signature
-        // broadcastToReplicas(msg, FALLBACK_TRIGGER);
+        broadcastToReplicas(msg, FALLBACK_TRIGGER);
         startFallback();
     } else {
-        endpoint_->RegisterTimer(fallbackStartTimer_.get());
+        fallbackStartTime_ = GetMicrosecondTimestamp();
     }
 }
 
@@ -813,6 +787,25 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
     if (numStartMsgs == 2 * f_ + 1) {
         doPrePreparePhase(repInstance);
     }
+}
+
+void Replica::checkTimeouts()
+{
+    uint64_t now = GetMicrosecondTimestamp();
+
+    if (fallbackTriggerTime_ != 0 && now - fallbackTriggerTime_ > fallbackTimeout_) {
+        fallbackTriggerTime_ = 0;
+        LOG(WARNING) << "fallbackStartTimer for instance=" << instance_ << " timed out! Starting fallback";
+        this->startFallback();
+    };
+
+    if (fallbackStartTime_ != 0 && now - fallbackStartTime_ > viewChangeTimeout_) {
+        fallbackStartTime_ = now;
+        LOG(WARNING) << "Fallback for instance=" << instance_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
+        pbftViewChanges_.clear();
+        pbftViewChangeSigs_.clear();
+        this->startViewChange();
+    };
 }
 
 // sending helpers
@@ -891,8 +884,8 @@ bool Replica::verifyFallbackProof(const Cert &proof)
     }
 
     if (proof.replies().size() != proof.signatures().size()) {
-        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to " << "cert signatures size"
-                     << proof.signatures().size();
+        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to "
+                     << "cert signatures size" << proof.signatures().size();
         return false;
     }
 
@@ -1000,17 +993,8 @@ void Replica::startFallback()
     fallback_ = true;
     LOG(INFO) << "Starting fallback on instance " << instance_;
 
-    // It is possible that some earlier reqs are timedout on clients but not yet timedout here
-    if (endpoint_->isTimerRegistered(fallbackStartTimer_.get())) {
-        endpoint_->UnRegisterTimer(fallbackStartTimer_.get());
-    }
-
     // Start fallback timer to change primary if timeout
-    if (endpoint_->isTimerRegistered(fallbackTimer_.get())) {
-        endpoint_->ResetTimer(fallbackTimer_.get());
-    } else {
-        endpoint_->RegisterTimer(fallbackTimer_.get());
-    }
+    fallbackStartTime_ = GetMicrosecondTimestamp();
 
     VLOG(1) << "PERF event=fallback_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
@@ -1081,7 +1065,8 @@ void Replica::finishFallback()
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance()
               << " from own instance=" << instance_;
     instance_ = history.instance();
-    endpoint_->UnRegisterTimer(fallbackTimer_.get());
+    // Reset view change timer
+    fallbackStartTime_ = 0;
 
     LogSuffix logSuffix;
     getLogSuffixFromProposal(history, logSuffix);
@@ -1390,11 +1375,9 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
     // non-primary replicas collect view change msgs for
     // 1. delaying timer setting for better liveness (avoid frequent view changes)
     // 2. check if the majority has a larger view# and start view change if so (avoid starting view change too late)
-    if (endpoint_->isTimerRegistered(fallbackTimer_.get())) {
-        endpoint_->ResetTimer(fallbackTimer_.get());
-    } else {
-        endpoint_->RegisterTimer(fallbackTimer_.get());
-    }
+
+    fallbackStartTime_ = GetMicrosecondTimestamp();   // reset view change timeout (1) above
+
     if (inViewNum > pbftView_) {
         LOG(INFO) << "Majority has a larger view number, starting a new view change for the major view";
         pbftView_ = inViewNum - 1;   // will add 1 back in startViewChange
