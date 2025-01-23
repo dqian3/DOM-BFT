@@ -61,7 +61,7 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     commitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
     hasOwnCommit_ = hasOwnCommit_ || commitMsg.replica_id() == replicaId_;
 
-    if (!hasOwnCommit_) {
+    if (!hasOwnCommit_ && !commitMsg.is_catchup()) {
         VLOG(4) << "Skipping processing of commit messages until we receive our own...";
         return false;
     }
@@ -71,20 +71,21 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
 
         CommitKeyTuple key = {
             commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
-            commit.client_records_set().client_records_digest()
+            commit.client_records_set().client_records_digest(), commit.is_catchup()
         };
         matchingCommits[key].insert(replicaId);
 
         // Need 2f + 1 and own commit
         if (matchingCommits[key].size() >= 2 * f_ + 1) {
             commitMatchedReplicas_ = matchingCommits[key];
+            commitToUse_ = commit;
             return true;
         }
     }
     return false;
 }
 
-bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit)
+bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::optional<std::string> &snapshot)
 {
     uint32_t seq = commit.seq();
 
@@ -103,9 +104,16 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
 
     // Modifies log if checkpoint is inconsistent with our current log
     if (myDigest != commit.log_digest()) {
-        LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot";
 
-        log->app_->applySnapshot(commit.app_snapshot());
+        if(snapshot.has_value()){
+            LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
+            log->app_->applySnapshot(snapshot.value());
+        }
+        else{
+            LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
+            log->app_->applyDelta(commit.app_delta());
+        }
+
         VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
                 << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
         return true;

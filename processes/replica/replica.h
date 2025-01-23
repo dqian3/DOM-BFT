@@ -56,6 +56,7 @@ private:
     // State for commit/checkpoint protocol
     // checkpoint seq -> CheckpointCollector
     CheckpointCollectors checkpointCollectors_;
+    Commit prevCommit_;
 
     // State for fallback
     bool fallback_ = false;
@@ -103,6 +104,8 @@ private:
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
+    void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
+    void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig);
     void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
     void checkTimeouts();
@@ -154,6 +157,9 @@ private:
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
+    // wrappers
+    void sendCatchupCommit(uint32_t replicaId);
+    void applyCheckpointCommit(CheckpointCollector& collector, std::optional<std::string> snapshot = std::nullopt);
 public:
     Replica(
         const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,

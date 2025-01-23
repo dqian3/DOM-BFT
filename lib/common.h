@@ -80,6 +80,9 @@ enum MessageType {
     PBFT_COMMIT = 17,
     PBFT_VIEWCHANGE = 18,
     PBFT_NEWVIEW = 19,
+
+    SNAPSHOT_REQUEST=20,
+    SNAPSHOT_REPLY=21,
 };
 
 /**
@@ -99,7 +102,7 @@ struct MessageHeader {
     MessageHeader(const uint8_t t, const uint32_t l, const uint32_t sl)
         : msgType(t)
         , msgLen(l)
-        , sigLen(sl) {};
+        , sigLen(sl){};
 };
 
 #endif

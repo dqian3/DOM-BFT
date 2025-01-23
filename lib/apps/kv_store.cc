@@ -72,7 +72,7 @@ std::string KVStore::getDigest(uint32_t digest_idx)
     return {reinterpret_cast<char *>(digest), SHA256_DIGEST_LENGTH};
 }
 
-bool KVStore::takeSnapshot()
+bool KVStore::takeDelta()
 {
     if (requests.empty())
         return false;
@@ -88,16 +88,27 @@ bool KVStore::takeSnapshot()
             sp += kv.first + ":" + kv.second + ",";
         }
     }
+    delta_data[requests.back().idx] = sp;
+    return true;
+}
+
+bool KVStore::takeSnapshot()
+{
+    std::string sp = {};
+    for (auto &kv : data) {
+        sp += kv.first + ":" + kv.second + ",";
+    }
     snapshots_data[requests.back().idx] = sp;
     return true;
 }
 
 std::string KVStore::getSnapshot(uint32_t seq) { return snapshots_data.count(seq) ? snapshots_data[seq] : ""; }
+std::string KVStore::getDelta(uint32_t seq) { return delta_data.count(seq) ? delta_data[seq] : ""; }
 
-void KVStore::applySnapshot(const std::string &snapshot)
+void KVStore::applyDelta(const std::string &delta)
 {
     try {
-        std::istringstream iss(snapshot);
+        std::istringstream iss(delta);
         std::string kv;
         data = committed_data;
         while (std::getline(iss, kv, ',')) {
@@ -110,6 +121,24 @@ void KVStore::applySnapshot(const std::string &snapshot)
             } else {
                 data[key] = value;
             }
+        }
+        LOG(INFO) << "Applied delta, data size: " << data.size();
+    } catch (std::exception &e) {
+        LOG(ERROR) << "Failed to apply delta: " << e.what();
+    }
+}
+void KVStore::applySnapshot(const std::string &snapshot)
+{
+    try {
+        std::istringstream iss(snapshot);
+        std::string kv;
+        data.clear();
+        while (std::getline(iss, kv, ',')) {
+            std::istringstream kvss(kv);
+            std::string key, value;
+            std::getline(kvss, key, ':');
+            std::getline(kvss, value, ':');
+            data[key] = value;
         }
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
     } catch (std::exception &e) {
@@ -197,10 +226,11 @@ bool KVStore::commit(uint32_t commit_idx)
     LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committed_data.size()
               << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
 
-    // remove snapshots that are older than commit_idx
+    // remove snapshots and delta that are older than commit_idx
     auto it = snapshots_data.begin();
     while (it != snapshots_data.end()) {
         if (it->first < commit_idx) {
+            delta_data.erase(it->first);
             it = snapshots_data.erase(it);
         } else {
             ++it;

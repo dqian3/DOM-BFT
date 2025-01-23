@@ -91,6 +91,11 @@ std::string Counter::getSnapshot(uint32_t seq)
     return getDigest(seq);
 }
 
+void Counter::applyDelta(const std::string &snap)
+{
+    applySnapshot(snap);
+}
+
 void Counter::applySnapshot(const std::string &snap)
 {
     committed_state = *((VersionedValue *) snap.c_str());

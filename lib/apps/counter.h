@@ -37,10 +37,13 @@ public:
     std::string getDigest(uint32_t digest_idx) override;
 
     // counter just uses digest as snapshot that is returned directly by getSnapshot
+    inline bool takeDelta() override { return true; }
     inline bool takeSnapshot() override { return true; }
 
+    inline std::string getDelta(uint32_t seq) override { return getDigest(seq); };
     inline std::string getSnapshot(uint32_t seq) override;
 
+    void applyDelta(const std::string &delta) override;
     void applySnapshot(const std::string &snapshot) override;
 
     void storeAppStateInYAML(const std::string &filename) override;
