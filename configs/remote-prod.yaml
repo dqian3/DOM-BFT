@@ -1,62 +1,56 @@
-transport: nng 
-
-app: "counter"
-
+app: counter
 client:
-  ips: 
+  ips:
   - 10.138.0.6
   - 10.182.0.4
   - 10.142.0.4
-  - 10.202.0.5
+  - 10.150.0.9
+  - 10.138.0.8
+  - 10.182.0.6
+  - 10.142.0.6
+  - 10.150.0.3
 
-  # - 10.138.0.8 
-  # - 10.182.0.6
-  # - 10.142.0.6
-  # - 10.150.0.3
   keysDir: keys/client
+  maxInFlight: 25
+  normalPathTimeout: 200000
   port: 33000
-  normalPathTimeout: 200000   # 200 ms
-  slowPathTimeout:   1000000  # 1 s
-
   requestSize: 512
-  sendMode: "maxInFlight"
-  maxInFlight: 100
-  sendRate: 300
   runtimeSeconds: 35
-
+  sendMode: maxInFlight
+  sendRate: 300
+  slowPathTimeout: 1000000
 proxy:
   forwardPort: 31000
   ips:
   - 10.138.0.7
   - 10.182.0.5
   - 10.142.0.5
-  - 10.202.0.4
+  - 10.150.0.10
   keysDir: keys/proxy
-  shards: 1 
   maxOwd: 100000
   measurementPort: 32000
-
+  shards: 1
 receiver:
   ips:
   - 10.138.0.4
   - 10.182.0.2
   - 10.142.0.2
-  - 10.202.0.2
+  - 10.150.0.8
   keysDir: keys/receiver
   local: true
+  numVerifyThreads: 6
   port: 33000
   shards: 1
-  numVerifyThreads: 6
-
 replica:
+  fallbackStartTimeout: 5000000
+  fallbackTimeout: 10000000
   ips:
   - 10.138.0.4
   - 10.182.0.2
   - 10.142.0.2
-  - 10.202.0.2
+  - 10.150.0.8
   keysDir: keys/replica
-  port: 34000
-  fallbackTimeout: 10000000 # 10 sec
-  fallbackStartTimeout: 5000000 # 5 sec
-  numVerifyThreads: 6
   numSendThreads: 6
+  numVerifyThreads: 6
+  port: 34000
+transport: nng
