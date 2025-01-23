@@ -115,8 +115,8 @@ private:
     // Fallback Helpers
     void startFallback();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
+    void applyFallbackProposal();
     void finishFallback();
-    void exitFallback();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 

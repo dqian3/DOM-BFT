@@ -245,7 +245,6 @@ void Replica::verifyMessagesThd()
 
         }
 
-        // TODO(Hao): use polymorphism to avoid parsing twice?
         else if (hdr->msgType == FALLBACK_START) {
             FallbackStart fallbackStartMsg;
             if (!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)) {
@@ -722,17 +721,22 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, 
     }
 
     if (!msg.has_proof() && fallbackTriggerTime_ != 0) {
-        LOG(WARNING) << "Received redundant fallback trigger due to client side timeout from" << " client "
+        LOG(WARNING) << "Received redundant fallback trigger due to client side timeout from client_id="
                      << msg.client_id() << " for cseq=" << msg.client_seq();
         return;
     }
 
-    LOG(INFO) << "Received fallback trigger from client " << msg.client_id() << " for cseq=" << msg.client_seq()
-              << " and instance=";
+    LOG(INFO) << "Received fallback trigger from client_id=" << msg.client_id() << " for cseq=" << msg.client_seq();
 
     if (msg.has_proof()) {
         // Proof is verified by verify thread
-        LOG(WARNING) << "Fallback trigger has a proof, starting fallback!";
+        if (msg.proof().instance() < instance_) {
+            LOG(INFO) << "Received fallback trigger proof for previous instance " << msg.proof().instance() << " < "
+                      << instance_;
+            return;
+        }
+
+        LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
 
         // TODO we need to broadcast this with the original signature
         broadcastToReplicas(msg, FALLBACK_TRIGGER);
@@ -883,6 +887,8 @@ bool Replica::verifyFallbackProof(const Cert &proof)
         return false;
     }
 
+    uint32_t instance = proof.instance();
+
     // check if the replies are matching and no duplicate replies from same replica
     std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
     // Verify each signature in the proof
@@ -891,8 +897,14 @@ bool Replica::verifyFallbackProof(const Cert &proof)
         const std::string &sig = proof.signatures()[i];
         uint32_t replicaId = reply.replica_id();
 
+        if (instance != reply.instance()) {
+            LOG(INFO) << "Proof has replies from different instances!";
+            return false;
+        }
+
         ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
                         reply.client_seq(), reply.digest(),   reply.result()};
+
         matchingReplies[key].insert(replicaId);
         std::string serializedReply = proof.replies(i).SerializeAsString();
         if (!sigProvider_.verify(
@@ -1022,47 +1034,8 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_digest(entry->digest, SHA256_DIGEST_LENGTH);
 }
 
-void Replica::exitFallback()
+void Replica::applyFallbackProposal()
 {
-    // a wrapper of some operations after fallback
-    fallback_ = false;
-    if (viewChange_) {
-        viewChangeInst_ += viewChangeFreq_;
-        viewChange_ = false;
-        viewChangeCounter_ += 1;
-    }
-    fallbackProposal_.reset();
-    fallbackPrepares_.clear();
-    fallbackPBFTCommits_.clear();
-
-    // TODO: since the fallback is PBFT, we can simply set the checkpoint here already using the PBFT messages as proofs
-    // For the sake of implementation simplicity, we just trigger the usual checkpointing process
-    // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
-    // finishes, the client requests will have f + 1 replicas that executed it in their logs
-    checkpointCollectors_.tryInitCheckpointCollector(
-        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
-    );
-    Reply reply;
-    replyFromLogEntry(reply, log_->nextSeq - 1);
-    broadcastToReplicas(reply, MessageType::REPLY);
-
-    for (auto &[_, req] : fallbackQueuedReqs_) {
-        VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
-        processClientRequest(req);
-    }
-    fallbackQueuedReqs_.clear();
-}
-
-void Replica::finishFallback()
-{
-    assert(fallbackProposal_.has_value());
-    if (fallbackProposal_.value().instance() == instance_ - 1) {
-        assert(viewChange_);
-        LOG(INFO) << "Fallback on instance " << instance_ - 1 << " already committed on current replica, skipping";
-        exitFallback();
-        return;
-    }
-
     FallbackProposal &history = fallbackProposal_.value();
     LOG(INFO) << "Applying fallback with primary's instance=" << history.instance()
               << " from own instance=" << instance_;
@@ -1082,7 +1055,6 @@ void Replica::finishFallback()
     VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->nextSeq
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
-    instance_++;
 
     LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
 
@@ -1117,8 +1089,46 @@ void Replica::finishFallback()
     for (auto &addr : clientAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
     }
+}
 
-    exitFallback();
+void Replica::finishFallback()
+{
+    assert(fallbackProposal_.has_value());
+    if (fallbackProposal_.value().instance() == instance_ - 1) {
+        // This happens if the fallback instance is already committed on the current replica, but other replicas
+        // initiated a view change.
+        assert(viewChange_);
+        LOG(INFO) << "Fallback on instance " << instance_ - 1 << " already committed on current replica, skipping";
+        viewChangeInst_ += viewChangeFreq_;
+        viewChange_ = false;
+        viewChangeCounter_ += 1;
+
+    } else {
+        applyFallbackProposal();
+        instance_++;
+    }
+
+    fallback_ = false;
+    fallbackProposal_.reset();
+    fallbackPrepares_.clear();
+    fallbackPBFTCommits_.clear();
+
+    // TODO: since the fallback is PBFT, we can simply set the checkpoint here already using the PBFT messages as proofs
+    // For the sake of implementation simplicity, we just trigger the usual checkpointing process
+    // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
+    // finishes, the client requests will have f + 1 replicas that executed it in their logs
+    checkpointCollectors_.tryInitCheckpointCollector(
+        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
+    );
+    Reply reply;
+    replyFromLogEntry(reply, log_->nextSeq - 1);
+    broadcastToReplicas(reply, MessageType::REPLY);
+
+    for (auto &[_, req] : fallbackQueuedReqs_) {
+        VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
+        processClientRequest(req);
+    }
+    fallbackQueuedReqs_.clear();
 }
 
 // dummy fallback PBFT
@@ -1479,7 +1489,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
 
 void Replica::getProposalDigest(byte *digest, const FallbackProposal &proposal)
 {
-    // use signatures as digest
+    // use signatures as digest, since signatures are can function as the the digest of each proposal
     std::string digestStr;
     for (const auto &sig : proposal.signatures()) {
         digestStr += sig;
