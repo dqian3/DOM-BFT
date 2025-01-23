@@ -276,7 +276,7 @@ void Client::retryRequests()
         req.set_send_time(now);
         reqState = RequestState(f_, req, now);
         threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
-        VLOG(1) << "Retrying cseq=" << reqState.client_seq << " after instance/view update";
+        VLOG(1) << "Retrying cseq=" << reqState.clientSeq << " after instance/view update";
     }
 }
 
@@ -379,7 +379,7 @@ void Client::checkTimeouts()
             ClientRequest &req = reqState.request;
             req.set_send_time(now);
 
-            reqState = RequestState(f_, req, now);
+            reqState.sendTime = now;
             threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
         }
     }
@@ -495,7 +495,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
-                << " seq=" << reply.seq() << " instance=" << reply.instance() << " latency=" << now - reqState.sendTime
+                << " seq=" << reply.seq() << " instance=" << reply.instance()
+                << " latency=" << now - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reply.digest()).substr(56);
 
         lastFastPath_ = clientSeq;
@@ -573,7 +574,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     if (reqState.certReplies.size() >= 2 * f_ + 1) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " instance=" << certReply.instance()
-                << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime
+                << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest()).substr(56);
         lastNormalPath_ = cseq;
         commitRequest(cseq);
@@ -598,7 +599,7 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
         // TODO check we have a consistent set of application replies!
 
         VLOG(1) << "PERF event=commit path=slow client_id=" << clientId_ << " client_seq=" << cseq
-                << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.sendTime;
+                << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime;
 
         lastSlowPath_ = cseq;
         commitRequest(cseq);

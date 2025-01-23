@@ -20,14 +20,16 @@ struct RequestState {
     RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
         : collector(f)
         , request(req)
-        , client_seq(req.client_seq())
+        , clientSeq(req.client_seq())
+        , firstSendTime(sendT)
         , sendTime(sendT)
     {
     }
     CertCollector collector;
     dombft::proto::ClientRequest request;
 
-    uint32_t client_seq;
+    uint32_t clientSeq;
+    uint64_t firstSendTime;
     uint64_t sendTime;
 
     // Normal path state
