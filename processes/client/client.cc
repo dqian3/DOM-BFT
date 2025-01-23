@@ -548,7 +548,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
         (*fallbackTriggerMsg.mutable_proof()) = *reqState.triggerProof;
 
-        reqState.sendTime = GetMicrosecondTimestamp();
+        reqState.triggerSendTime = GetMicrosecondTimestamp();
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
