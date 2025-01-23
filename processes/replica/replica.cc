@@ -793,10 +793,13 @@ void Replica::checkTimeouts()
     if (fallbackTriggerTime_ != 0 && now - fallbackTriggerTime_ > fallbackTimeout_) {
         fallbackTriggerTime_ = 0;
         LOG(WARNING) << "fallbackStartTimer for instance=" << instance_ << " timed out! Starting fallback";
-        this->startFallback();
+        this->startFallback();   // Note this changes fallbackStartTime, so we need to get the time again
     };
 
+    now = GetMicrosecondTimestamp();
+
     if (fallbackStartTime_ != 0 && now - fallbackStartTime_ > viewChangeTimeout_) {
+        LOG(WARNING) << fallbackStartTime_ << " " << now << " " << now - fallbackStartTime_;
         fallbackStartTime_ = now;
         LOG(WARNING) << "Fallback for instance=" << instance_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
         pbftViewChanges_.clear();
@@ -1451,8 +1454,8 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
         }
     }
     if (maxVC.pbft_view() != msg.pbft_view() || maxVC.instance() != msg.instance()) {
-        LOG(INFO) << "Replica obtains a different choice of instance=" << maxVC.instance()
-                  << " and pbft_view=" << maxVC.pbft_view();
+        LOG(INFO) << "Replica obtains a different choice of instance=" << maxVC.instance() << "," << msg.instance()
+                  << " and pbft_view=" << maxVC.pbft_view() << ", " << msg.pbft_view();
     }
     if (views[maxVC.pbft_view()] < 2 * f_ + 1) {
         LOG(INFO) << "The view number " << maxVC.pbft_view() << " does not have a 2f + 1 quorum";

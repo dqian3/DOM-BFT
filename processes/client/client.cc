@@ -550,6 +550,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
             reqState.triggerProof->add_signatures(std::string(sig.begin(), sig.end()));
             (*reqState.triggerProof->add_replies()) = reply;
         }
+        reqState.triggerProof->set_instance(reqState.collector.instance_);
 
         (*fallbackTriggerMsg.mutable_proof()) = *reqState.triggerProof;
 
