@@ -363,7 +363,6 @@ void Replica::processMessagesThd()
         checkTimeouts();
 
         if (!processQueue_.wait_dequeue_timed(msg, 100000)) {
-            VLOG(6) << "Timeout waiting for message";
             continue;
         }
 
@@ -1056,8 +1055,6 @@ void Replica::applyFallbackProposal()
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
 
-    LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
-
     FallbackSummary summary;
     std::set<int> clients;
 
@@ -1107,6 +1104,8 @@ void Replica::finishFallback()
         applyFallbackProposal();
         instance_++;
     }
+
+    LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
 
     fallback_ = false;
     fallbackProposal_.reset();

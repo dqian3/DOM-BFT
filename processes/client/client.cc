@@ -374,12 +374,14 @@ void Client::checkTimeouts()
         }
 
         if (reqState.triggerSent && now - reqState.triggerSendTime > slowPathTimeout_) {
-            // This is expected to happen when the replicas are making progress
+            // This is expected to happen when the replicas are making progress without the client's request
             LOG(INFO) << "Client fallback on request " << clientSeq << " timed out again, retrying request through DOM";
             ClientRequest &req = reqState.request;
             req.set_send_time(now);
 
             reqState.sendTime = now;
+
+            reqState.triggerSent = false;
             threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
         }
     }
@@ -541,6 +543,9 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         fallbackTriggerMsg.set_client_seq(clientSeq);
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
+            if (reply.instance() != reqState.collector.instance_)
+                continue;
+
             auto &sig = reqState.collector.signatures_[replicaId];
             reqState.triggerProof->add_signatures(std::string(sig.begin(), sig.end()));
             (*reqState.triggerProof->add_replies()) = reply;
