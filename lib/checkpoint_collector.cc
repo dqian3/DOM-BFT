@@ -105,15 +105,15 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
     // Modifies log if checkpoint is inconsistent with our current log
     if (myDigest != commit.log_digest()) {
 
-                if(snapshot.has_value()){
-            LOG(INFO) << "Local log digest does not match committed digest, updating app data with ssnapshot;
-
-            log->app_->applySnapshot(snapshot.value());        }
-        else{{
+        if(snapshot.has_value()){
+            LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
+            log->app_->applySnapshot(snapshot.value());
+        }
+        else{
             LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
             log->app_->applyDelta(commit.app_delta());
         }
-                    VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
+        VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
                 << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
         return true;
     }
