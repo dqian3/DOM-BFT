@@ -498,15 +498,17 @@ def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
                prot="dombft",
 ):
     try:
-        gcloud_vm(c, config_file=config_file)
-        time.sleep(5)
-
         with open(config_file, "r") as cfg_file:
             original_contents = cfg_file.read()
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
+          
+        in_flight = original_cfg["client"]["maxInFlight"]
 
-                    
-        for n_replicas in [4, 7, 10, 13, 16]:
+        for n_replicas in [7, 10, 13, 16]:
+            gcloud_vm(c, config_file=config_file)
+            time.sleep(20)
+
+
             cfg = copy.deepcopy(original_cfg)
 
             cfg["replica"]["ips"] = cfg["replica"]["ips"][:n_replicas]
@@ -514,7 +516,9 @@ def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
 
             yaml.dump(cfg, open(config_file, "w"))
             gcloud_run(c, config_file=config_file, v=v, prot=prot)
-            c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n_replicas}.out")
+            c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n_replicas}_if{in_flight}.out")
+
+            gcloud_vm(c, config_file=config_file, stop=True)
 
     finally:
         with open(config_file, "w") as cfg_file:
