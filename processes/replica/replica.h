@@ -107,7 +107,6 @@ private:
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
     void processStateSnapshotReplyForCheckpoint(const dombft::proto::SnapshotReply &snapshotReply);
-    void processStateSnapshotReplyForFallback(const dombft::proto::SnapshotReply &snapshotReply);
     void processStateSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
     void processStateSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig);
@@ -125,8 +124,8 @@ private:
     void finishFallback();
     void tryFinishFallback();
     void sendFallbackSummaryToClients();
-    void continueFallbackWithSnapshot(const SnapshotReply &snapshotReply);
-    LogSuffix& getFallbackLogSuffix();
+    void continueFallbackWithSnapshotUpdated();
+    LogSuffix &getFallbackLogSuffix();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
@@ -166,9 +165,10 @@ private:
 
     // wrappers
     void sendCatchupCommit(uint32_t replicaId);
-    void sendStateSnapshotRequest(uint32_t replicaId,uint32_t targetSeq);
-    void applyCheckpointCommit(CheckpointCollector& collector, std::shared_ptr<std::string> snapshot = nullptr);
+    void sendStateSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
+    void applyCheckpointCommit(CheckpointCollector &collector, std::shared_ptr<std::string> snapshot = nullptr);
     bool ifDropCheckpoint(uint32_t seq);
+
 public:
     Replica(
         const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,

@@ -81,7 +81,7 @@ std::string Counter::getDigest(uint32_t digest_idx)
         target = committed_state;
     }
     std::string digest;
-    digest = std::to_string(target.version) + ","+std::to_string(target.value);
+    digest = std::to_string(target.version) + "," + std::to_string(target.value);
     return digest;
 }
 
@@ -91,16 +91,13 @@ std::shared_ptr<std::string> Counter::getSnapshot(uint32_t seq)
     return std::make_shared<std::string>(getDigest(seq));
 }
 
-void Counter::applyDelta(const std::string &snap)
-{
-    applySnapshot(snap);
-}
+void Counter::applyDelta(const std::string &snap) { applySnapshot(snap); }
 
 void Counter::applySnapshot(const std::string &snap)
 {
     // get the element seperated by ,
     std::string version_str = snap.substr(0, snap.find(','));
-    std::string value_str = snap.substr(snap.find(',')+1);
+    std::string value_str = snap.substr(snap.find(',') + 1);
     committed_state.version = std::stoull(version_str);
     committed_state.value = std::stoi(value_str);
     counter = committed_state.value;

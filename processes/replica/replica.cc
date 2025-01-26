@@ -220,7 +220,7 @@ void Replica::verifyMessagesThd()
             processQueue_.enqueue(msg);
         }
 
-        else if (hdr->msgType == SNAPSHOT_REQUEST){
+        else if (hdr->msgType == SNAPSHOT_REQUEST) {
             SnapshotRequest request;
             if (!request.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse SNAPSHOT_REQUEST message";
@@ -674,7 +674,6 @@ void Replica::processCert(const Cert &cert)
     sendMsgToDst(reply, MessageType::CERT_REPLY, clientAddrs_[reply.client_id()]);
 }
 
-
 void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
     uint32_t rSeq = reply.seq();
@@ -684,8 +683,8 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
     if (rSeq <= log_->checkpoint.seq) {
-        VLOG(4) << "Seq " << rSeq << " is already committed, send back commit and skip it" << ". Current checkpoint seq is "
-                << log_->checkpoint.seq;
+        VLOG(4) << "Seq " << rSeq << " is already committed, send back commit and skip it"
+                << ". Current checkpoint seq is " << log_->checkpoint.seq;
         sendCatchupCommit(reply.replica_id());
         return;
     }
@@ -719,13 +718,15 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
 }
 
-void Replica::sendCatchupCommit(uint32_t replicaId){
+void Replica::sendCatchupCommit(uint32_t replicaId)
+{
     Commit cmt = prevCommit_;
     cmt.set_is_catchup(true);
     sendMsgToDst(cmt, MessageType::COMMIT, replicaAddrs_[replicaId]);
 }
 
-void Replica::sendStateSnapshotRequest(uint32_t replicaId, uint32_t targetSeq) {
+void Replica::sendStateSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
+{
     SnapshotRequest snapshotRequest;
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_seq(targetSeq);
@@ -735,8 +736,9 @@ void Replica::sendStateSnapshotRequest(uint32_t replicaId, uint32_t targetSeq) {
 }
 
 // apply with delta by default
-void Replica::applyCheckpointCommit(CheckpointCollector& collector, std::shared_ptr<std::string> snapshot){
-    Commit& commitToUse = collector.commitToUse_;
+void Replica::applyCheckpointCommit(CheckpointCollector &collector, std::shared_ptr<std::string> snapshot)
+{
+    Commit &commitToUse = collector.commitToUse_;
     uint32_t seq = commitToUse.seq();
     LOG(INFO) << "Committing seq=" << seq;
     VLOG(1) << "PERF event=checkpoint_end seq=" << seq;
@@ -763,8 +765,9 @@ void Replica::applyCheckpointCommit(CheckpointCollector& collector, std::shared_
     checkpointCollectors_.cleanSkippedCheckpointCollectors(seq, instance_);
 }
 
-bool Replica::ifDropCheckpoint(uint32_t seq){
-    return checkpointDropFreq_ && seq/CHECKPOINT_INTERVAL % checkpointDropFreq_ == 0;
+bool Replica::ifDropCheckpoint(uint32_t seq)
+{
+    return checkpointDropFreq_ && seq / CHECKPOINT_INTERVAL % checkpointDropFreq_ == 0;
 }
 void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
@@ -786,8 +789,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     if (!collector.addAndCheckCommitCollection(commit, sig)) {
         return;
     }
-    const Commit& commitToUse = collector.commitToUse_;
-    if(ifDropCheckpoint(seq)){
+    const Commit &commitToUse = collector.commitToUse_;
+    if (ifDropCheckpoint(seq)) {
         LOG(INFO) << "Dropping checkpoint seq=" << seq;
         return;
     }
@@ -796,12 +799,12 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     const byte *myDigestBytes = log_->getDigest(seq);
     std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
     // 1. the agreed commit is a catchup commit or inconsistent with majority, request snapshot
-    if(commitToUse.is_catchup() || (commit.prev_checkpoint_seq() != log_->checkpoint.seq && myDigest != commitToUse.log_digest())) {
-        LOG(INFO) << "Checkpoint catchup for seq " << seq ;
-        sendStateSnapshotRequest(commitToUse.replica_id(),commitToUse.seq());
+    if (commitToUse.is_catchup() ||
+        (commit.prev_checkpoint_seq() != log_->checkpoint.seq && myDigest != commitToUse.log_digest())) {
+        LOG(INFO) << "Checkpoint catchup for seq " << seq;
+        sendStateSnapshotRequest(commitToUse.replica_id(), commitToUse.seq());
         return;
     }
-
 
     // 2. the current history is consistent with majority or only requires delta to resolve, commit
     applyCheckpointCommit(collector);
@@ -810,30 +813,30 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     fallbackTriggerTime_ = 0;
 }
 
-void Replica::processStateSnapshotReplyForCheckpoint(const dombft::proto::SnapshotReply &snapshotReply){
+void Replica::processStateSnapshotReplyForCheckpoint(const dombft::proto::SnapshotReply &snapshotReply)
+{
     uint32_t seq = snapshotReply.seq();
-    const LogCheckpoint& checkpoint = snapshotReply.checkpoint();
-    if(!checkpointCollectors_.has(seq)){
-        VLOG(4) << "Snapshot reply seq " << snapshotReply.seq() << " is not in active checkpointCollectors, creating a new collector for it";
+    const LogCheckpoint &checkpoint = snapshotReply.checkpoint();
+    if (!checkpointCollectors_.has(seq)) {
+        VLOG(4) << "Snapshot reply seq " << snapshotReply.seq()
+                << " is not in active checkpointCollectors, creating a new collector for it";
         // there are alternative ways, but we can reuse code in this way
         checkpointCollectors_.tryInitCheckpointCollector(snapshotReply.seq(), instance_, std::nullopt);
         CheckpointCollector &collector = checkpointCollectors_.at(seq);
-        for(int i = 0; i < checkpoint.commits_size(); i++){
-            Commit commit= checkpoint.commits(i);
+        for (int i = 0; i < checkpoint.commits_size(); i++) {
+            Commit commit = checkpoint.commits(i);
             commit.set_is_catchup(true);
-            const std::string& sig = checkpoint.signatures(i);
-            collector.addAndCheckCommitCollection(commit, std::span((byte*)sig.c_str(), sig.size()));
+            const std::string &sig = checkpoint.signatures(i);
+            collector.addAndCheckCommitCollection(commit, std::span((byte *) sig.c_str(), sig.size()));
         }
     }
     CheckpointCollector &collector = checkpointCollectors_.at(snapshotReply.seq());
     std::shared_ptr<std::string> snapshot = std::make_shared<std::string>(checkpoint.app_snapshot());
     applyCheckpointCommit(collector, snapshot);
 }
-void Replica::processStateSnapshotReplyForFallback(const dombft::proto::SnapshotReply &snapshotReply){
-    continueFallbackWithSnapshot(snapshotReply);
-    return;
-}
-void Replica::processStateSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply) {
+
+void Replica::processStateSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply)
+{
     if (snapshotReply.instance() < instance_) {
         VLOG(4) << "Snapshot reply instance outdated, skipping";
         return;
@@ -842,13 +845,13 @@ void Replica::processStateSnapshotReply(const dombft::proto::SnapshotReply &snap
         VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping";
         return;
     }
-    LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq " << snapshotReply.seq();
-    // TODO(Hao): verify digest of snapshot/commits, use the code for fallback start
-    if(fallback_)
-        processStateSnapshotReplyForFallback(snapshotReply);
-    else
-        processStateSnapshotReplyForCheckpoint(snapshotReply);
+    LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
+              << snapshotReply.seq();
+    // TODO(Hao): verify digest of snapshot/commits, use the code similar to that of fallback start
 
+    processStateSnapshotReplyForCheckpoint(snapshotReply);
+    if (fallback_)
+        continueFallbackWithSnapshotUpdated();
 }
 void Replica::processStateSnapshotRequest(const SnapshotRequest &request)
 {
@@ -863,7 +866,8 @@ void Replica::processStateSnapshotRequest(const SnapshotRequest &request)
     // the LOG is just to make it clear.
     std::shared_ptr<std::string> snapshot = log_->app_->getSnapshot(reqSeq);
     if (snapshot == nullptr) {
-        LOG(INFO)<<"Requested snapshot for seq "<<reqSeq<<" is not available, returning current snapshot"<< " for seq " << log_->checkpoint.seq << " instead";
+        LOG(INFO) << "Requested snapshot for seq " << reqSeq << " is not available, returning current snapshot"
+                  << " for seq " << log_->checkpoint.seq << " instead";
         snapshot = log_->checkpoint.appSnapshot;
     }
     SnapshotReply snapshotReply;
@@ -1246,7 +1250,7 @@ void Replica::finishFallback()
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
     LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
 
-    if(viewChange_){
+    if (viewChange_) {
         viewChangeInst_ += viewChangeFreq_;
         viewChange_ = false;
         viewChangeCounter_ += 1;
@@ -1277,7 +1281,8 @@ void Replica::finishFallback()
     fallbackQueuedReqs_.clear();
 }
 
-void Replica::tryFinishFallback(){
+void Replica::tryFinishFallback()
+{
     assert(fallbackProposal_.has_value());
     if (fallbackProposal_.value().instance() == instance_ - 1) {
         // This happens if the fallback instance is already committed on the current replica, but other replicas
@@ -1293,13 +1298,14 @@ void Replica::tryFinishFallback(){
     // Reset timer
     fallbackStartTime_ = 0;
 
-    LogSuffix& logSuffix = getFallbackLogSuffix();
+    LogSuffix &logSuffix = getFallbackLogSuffix();
 
     // Check if own checkpoint seq is behind suffix checkpoint seq
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
-    ::LogCheckpoint &myCheckpoint = log_->checkpoint; // bad namespace
-    if (checkpoint->seq() > myCheckpoint.seq){
-        LOG(INFO) << "Checkpoint seq=" << checkpoint->seq() << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq<<", snapshot will be fetched from replicaId=" << logSuffix.fetchFromReplicaId;
+    ::LogCheckpoint &myCheckpoint = log_->checkpoint;   // bad namespace
+    if (checkpoint->seq() > myCheckpoint.seq) {
+        LOG(INFO) << "Checkpoint seq=" << checkpoint->seq() << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq
+                  << ", snapshot will be fetched from replicaId=" << logSuffix.fetchFromReplicaId;
         sendStateSnapshotRequest(logSuffix.fetchFromReplicaId, checkpoint->seq());
         return;
     }
@@ -1312,20 +1318,30 @@ void Replica::tryFinishFallback(){
     instance_++;
     sendFallbackSummaryToClients();
     finishFallback();
-
 }
 
-void Replica::continueFallbackWithSnapshot(const SnapshotReply &snapshotReply){
-    LogSuffix& suffix = getFallbackLogSuffix();
-    if (suffix.checkpoint->seq() > snapshotReply.seq()) {
-        LOG(INFO) << "Snapshot reply seq=" << snapshotReply.seq() << " is behind suffix checkpoint seq=" << suffix.checkpoint->seq();
-        return;
+void Replica::continueFallbackWithSnapshotUpdated()
+{
+    // TODO(Hao): this is not tested!!
+    LogSuffix &suffix = getFallbackLogSuffix();
+    if (suffix.checkpoint->seq() < log_->checkpoint.seq) {
+        LOG(INFO) << "Checkpoint seq=" << log_->checkpoint.seq
+                  << " is greater than suffix checkpoint seq=" << suffix.checkpoint->seq()
+                  << " after fetched state snapshot, skip applying suffix";
+    } else {
+        LOG(INFO) << "Checkpoint seq=" << log_->checkpoint.seq
+                  << " is equal to suffix checkpoint seq=" << suffix.checkpoint->seq()
+                  << " after fetched state snapshot, applying suffix";
+        applySuffixToLog(suffix, log_);
+        clientRecords_ = suffix.clientRecords;
     }
-
-
+    instance_++;
+    sendFallbackSummaryToClients();
+    finishFallback();
 }
 
-LogSuffix& Replica::getFallbackLogSuffix(){
+LogSuffix &Replica::getFallbackLogSuffix()
+{
     if (!fallbackProposalLogSuffix_.has_value() || fallbackProposalLogSuffix_.value().instance != instance_) {
         fallbackProposalLogSuffix_ = LogSuffix();
         fallbackProposalLogSuffix_->replicaId = replicaId_;

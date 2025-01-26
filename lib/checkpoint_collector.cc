@@ -70,8 +70,12 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     for (const auto &[replicaId, commit] : commits_) {
 
         CommitKeyTuple key = {
-            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
-            commit.client_records_set().client_records_digest(), commit.is_catchup()
+            commit.log_digest(),
+            commit.app_digest(),
+            commit.instance(),
+            commit.seq(),
+            commit.client_records_set().client_records_digest(),
+            commit.is_catchup()
         };
         matchingCommits[key].insert(replicaId);
 
@@ -85,7 +89,9 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     return false;
 }
 
-bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::shared_ptr<std::string> snapshot)
+bool CheckpointCollector::commitToLog(
+    const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::shared_ptr<std::string> snapshot
+)
 {
     uint32_t seq = commit.seq();
 
@@ -105,11 +111,10 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
     // Modifies log if checkpoint is inconsistent with our current log
     if (myDigest != commit.log_digest()) {
 
-        if(snapshot!= nullptr){
+        if (snapshot != nullptr) {
             LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
             log->app_->applySnapshot(*snapshot);
-        }
-        else{
+        } else {
             LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
             log->app_->applyDelta(commit.app_delta());
         }

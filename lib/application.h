@@ -43,7 +43,6 @@ public:
     virtual std::shared_ptr<std::string> getSnapshot(uint32_t seq) = 0;
     virtual std::string getDelta(uint32_t seq) = 0;
 
-
     virtual void applySnapshot(const std::string &snapshot) = 0;
     virtual void applyDelta(const std::string &delta) = 0;
 

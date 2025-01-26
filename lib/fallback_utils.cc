@@ -207,4 +207,3 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
     }
     return true;
 }
-

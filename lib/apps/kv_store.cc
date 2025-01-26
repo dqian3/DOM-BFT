@@ -102,7 +102,10 @@ bool KVStore::takeSnapshot()
     return true;
 }
 
-std::shared_ptr<std::string> KVStore::getSnapshot(uint32_t seq) { return snapshots_data.count(seq) ? snapshots_data[seq] : nullptr; }
+std::shared_ptr<std::string> KVStore::getSnapshot(uint32_t seq)
+{
+    return snapshots_data.count(seq) ? snapshots_data[seq] : nullptr;
+}
 std::string KVStore::getDelta(uint32_t seq) { return delta_data.count(seq) ? delta_data[seq] : ""; }
 
 void KVStore::applyDelta(const std::string &delta)

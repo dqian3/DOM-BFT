@@ -15,10 +15,11 @@ typedef struct VersionedValue {
     uint64_t version;
     int value;
 
-    std::string serialize() const {
+    std::string serialize() const
+    {
         std::string serialized;
-        serialized.append((char *)&version, sizeof(version));
-        serialized.append((char *)&value, sizeof(value));
+        serialized.append((char *) &version, sizeof(version));
+        serialized.append((char *) &value, sizeof(value));
         return serialized;
     }
 } VersionedValue;
