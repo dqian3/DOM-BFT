@@ -85,7 +85,7 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     return false;
 }
 
-bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::optional<std::string> &snapshot)
+bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::shared_ptr<std::string> snapshot)
 {
     uint32_t seq = commit.seq();
 
@@ -105,9 +105,9 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
     // Modifies log if checkpoint is inconsistent with our current log
     if (myDigest != commit.log_digest()) {
 
-        if(snapshot.has_value()){
+        if(snapshot!= nullptr){
             LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
-            log->app_->applySnapshot(snapshot.value());
+            log->app_->applySnapshot(*snapshot);
         }
         else{
             LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
@@ -118,6 +118,7 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
         return true;
     }
     log->commit(log->checkpoint.seq);
+    log->checkpoint.appSnapshot = log->app_->getSnapshot(log->checkpoint.seq);
     return false;
 }
 
@@ -147,7 +148,8 @@ void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSe
 {
     std::vector<uint32_t> seqsToRemove;
     for (auto &[seq, collector] : collectors_) {
-        if (seq <= committedSeq || collector.instance_ < committedInstance) {
+        // keep the most recent collector for snapshot fetch reply
+        if (seq < committedSeq || collector.instance_ < committedInstance) {
             seqsToRemove.push_back(seq);
         }
     }

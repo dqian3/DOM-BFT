@@ -69,6 +69,7 @@ private:
     byte proposalDigest_[SHA256_DIGEST_LENGTH];
     std::map<uint32_t, dombft::proto::FallbackStart> fallbackHistorys_;
     std::map<uint32_t, std::string> fallbackHistorySigs_;
+    std::optional<LogSuffix> fallbackProposalLogSuffix_;
 
     // State for PBFT
     bool viewChange_ = false;
@@ -104,8 +105,10 @@ private:
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
-    void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
-    void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
+    void processStateSnapshotReplyForCheckpoint(const dombft::proto::SnapshotReply &snapshotReply);
+    void processStateSnapshotReplyForFallback(const dombft::proto::SnapshotReply &snapshotReply);
+    void processStateSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
+    void processStateSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig);
     void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
     void checkTimeouts();
@@ -118,8 +121,11 @@ private:
     // Fallback Helpers
     void startFallback();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void applyFallbackProposal();
     void finishFallback();
+    void tryFinishFallback();
+    void sendFallbackSummaryToClients();
+    void continueFallbackWithSnapshot(const SnapshotReply &snapshotReply);
+    LogSuffix& getFallbackLogSuffix();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
@@ -159,7 +165,8 @@ private:
 
     // wrappers
     void sendCatchupCommit(uint32_t replicaId);
-    void applyCheckpointCommit(CheckpointCollector& collector, std::optional<std::string> snapshot = std::nullopt);
+    void sendStateSnapshotRequest(uint32_t replicaId,uint32_t targetSeq);
+    void applyCheckpointCommit(CheckpointCollector& collector, std::shared_ptr<std::string> snapshot = nullptr);
 public:
     Replica(
         const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,

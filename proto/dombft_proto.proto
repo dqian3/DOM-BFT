@@ -85,13 +85,19 @@ message SnapshotRequest {
     uint32 instance = 1;
     uint32 seq = 2;
     uint32 replica_id = 3;
+    uint32 pbft_view = 4;
+
+    bool for_fallback = 5;
 }
 
 message SnapshotReply {
     uint32 instance = 1;
     uint32 seq = 2;
     uint32 replica_id = 3;
-    bytes snapshot = 4;
+    uint32 pbft_view = 4;
+
+    LogCheckpoint checkpoint = 5;
+    CheckpointClientRecordsSet client_records_set = 6;
 }
 
 message FallbackTrigger

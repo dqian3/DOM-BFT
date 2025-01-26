@@ -27,7 +27,7 @@ class KVStore : public Application {
     std::map<std::string, std::string> committed_data;
     byte committed_data_digest[SHA256_DIGEST_LENGTH];
     // seq -> data
-    std::map<uint32_t, std::string> snapshots_data;
+    std::map<uint32_t, std::shared_ptr<std::string>> snapshots_data;
     std::map<uint32_t, std::string> delta_data;
 
 public:
@@ -42,7 +42,7 @@ public:
     bool takeSnapshot() override;
     bool takeDelta() override;
 
-    std::string getSnapshot(uint32_t seq) override;
+    std::shared_ptr<std::string> getSnapshot(uint32_t seq) override;
     std::string getDelta(uint32_t seq) override;
 
     void applySnapshot(const std::string &snapshot) override;

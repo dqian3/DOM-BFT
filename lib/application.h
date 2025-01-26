@@ -29,6 +29,7 @@ public:
 
     virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) = 0;
 
+    // truncate history, clear outdated metadata, but keep the previous states for snapshot fetching
     virtual bool commit(uint32_t commit_idx) = 0;
     // resetting the application state to the committed state
     virtual bool abort(const uint32_t abort_idx) = 0;
@@ -39,7 +40,7 @@ public:
     virtual bool takeSnapshot() = 0;
     virtual bool takeDelta() = 0;
 
-    virtual std::string getSnapshot(uint32_t seq) = 0;
+    virtual std::shared_ptr<std::string> getSnapshot(uint32_t seq) = 0;
     virtual std::string getDelta(uint32_t seq) = 0;
 
 

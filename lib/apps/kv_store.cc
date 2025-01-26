@@ -98,11 +98,11 @@ bool KVStore::takeSnapshot()
     for (auto &kv : data) {
         sp += kv.first + ":" + kv.second + ",";
     }
-    snapshots_data[requests.back().idx] = sp;
+    snapshots_data[requests.back().idx] = std::make_shared<std::string>(sp);
     return true;
 }
 
-std::string KVStore::getSnapshot(uint32_t seq) { return snapshots_data.count(seq) ? snapshots_data[seq] : ""; }
+std::shared_ptr<std::string> KVStore::getSnapshot(uint32_t seq) { return snapshots_data.count(seq) ? snapshots_data[seq] : nullptr; }
 std::string KVStore::getDelta(uint32_t seq) { return delta_data.count(seq) ? delta_data[seq] : ""; }
 
 void KVStore::applyDelta(const std::string &delta)

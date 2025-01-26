@@ -50,7 +50,7 @@ public:
 
     bool addAndCheckReplyCollection(const dombft::proto::Reply &reply, std::span<byte> sig);
     bool addAndCheckCommitCollection(const dombft::proto::Commit &commitMsg, const std::span<byte> sig);
-    bool commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::optional<std::string> &snapshot);
+    bool commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::shared_ptr<std::string> snapshot);
 };
 
 class CheckpointCollectors {

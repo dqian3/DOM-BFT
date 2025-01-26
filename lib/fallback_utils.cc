@@ -18,6 +18,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
             logSuffix.checkpoint = &log.checkpoint();
             maxCheckpointSeq = log.checkpoint().seq();
             tmpClientRecordsSetPtr = &log.client_records_set();
+            logSuffix.fetchFromReplicaId = log.replica_id();
         }
     }
     getClientRecordsFromProto(*tmpClientRecordsSetPtr, logSuffix.clientRecords);
@@ -144,29 +145,9 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
     LOG(INFO) << "Applying checkpoint";
 
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
-    LogCheckpoint &myCheckpoint = log->checkpoint;
-
-    std::string myCheckpointDigest((char *) myCheckpoint.logDigest, SHA256_DIGEST_LENGTH);
-
-    if (checkpoint->log_digest() != myCheckpointDigest && checkpoint->seq() > myCheckpoint.seq) {
-        log->app_->applySnapshot(checkpoint->app_snapshot());
-        log->nextSeq = checkpoint->seq() + 1;
-
-        myCheckpoint.seq = checkpoint->seq();
-        memcpy(myCheckpoint.appDigest, checkpoint->app_digest().c_str(), checkpoint->app_digest().size());
-        memcpy(myCheckpoint.logDigest, checkpoint->log_digest().c_str(), checkpoint->log_digest().size());
-        myCheckpoint.cert = checkpoint->cert();
-
-        for (int i = 0; i < checkpoint->commits().size(); i++) {
-            auto &commit = checkpoint->commits()[i];
-
-            myCheckpoint.commitMessages[commit.replica_id()] = commit;
-            myCheckpoint.signatures[commit.replica_id()] = checkpoint->signatures()[i];
-        }
-
-        LOG(INFO) << "Applying checkpoint seq=" << checkpoint->seq()
-                  << " digest=" << digest_to_hex(myCheckpoint.logDigest).substr(56);
-    }
+    // Step1. Check if currently is behind suffix checkpoint
+    // *This is only called when current checkpoint is consistent
+    assert(checkpoint->seq() == log->checkpoint.seq);
 
     // Step2. Find the spot to start applying the suffix
     // First sequence to apply is right after checkpoint
@@ -178,7 +159,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
         std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
         std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
-        // 2.2 If inconsistensy is detected, abort own entries after the last consistent entry
+        // 2.2 If inconsistency is detected, abort own entries after the last consistent entry
         if (myDigest != entry->digest()) {
             log->app_->abort(seq - 1);
             break;
@@ -226,3 +207,4 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
     }
     return true;
 }
+

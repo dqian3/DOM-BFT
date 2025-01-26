@@ -14,14 +14,14 @@ client:
   # - 10.150.0.3
 
   keysDir: keys/client
-  maxInFlight: 25
+  maxInFlight: 100
   normalPathTimeout: 200000
   port: 33000
-  requestSize: 512
-  runtimeSeconds: 35
+  requestSize: 16
+  runtimeSeconds: 12
   sendMode: maxInFlight
   sendRate: 300
-  runtimeSeconds: 30
+  slowPathTimeout: 1000000
 
 proxy:
   forwardPort: 31000

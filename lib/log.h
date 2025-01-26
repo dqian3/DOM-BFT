@@ -43,7 +43,7 @@ struct LogCheckpoint {
     dombft::proto::Cert cert;
     byte logDigest[SHA256_DIGEST_LENGTH];
     byte appDigest[SHA256_DIGEST_LENGTH];
-    std::string appSnapshot;
+    std::shared_ptr<std::string> appSnapshot;
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;
     std::map<uint32_t, std::string> signatures;
@@ -99,6 +99,7 @@ struct Log {
     const byte *getDigest(uint32_t seq) const;
 
     void toProto(dombft::proto::FallbackStart &msg);
+    void toProtoLogCheckpoint(dombft::proto::LogCheckpoint *msg);
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 

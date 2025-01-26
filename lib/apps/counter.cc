@@ -48,8 +48,9 @@ bool Counter::commit(uint32_t commit_idx)
 {
     LOG(INFO) << "Committing counter value at idx: " << commit_idx;
 
+    // Keep the most recent commit
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [commit_idx](const VersionedValue &v) {
-        return v.version <= commit_idx;
+        return v.version < commit_idx;
     });
 
     if (it != version_hist.rend()) {
@@ -73,22 +74,20 @@ std::string Counter::getDigest(uint32_t digest_idx)
         return v.version <= digest_idx;
     });
 
-    VersionedValue digest;
+    VersionedValue target;
     if (it != version_hist.rend()) {
-        digest = *it;
+        target = *it;
     } else {
-        digest = committed_state;
+        target = committed_state;
     }
-
-    LOG(INFO) << "Digest at idx " << digest_idx << " is " << digest.value;
-
-    return {reinterpret_cast<const char *>(&digest), sizeof(VersionedValue)};
+    std::string digest = target.serialize();
+    return digest;
 }
 
-std::string Counter::getSnapshot(uint32_t seq)
+std::shared_ptr<std::string> Counter::getSnapshot(uint32_t seq)
 {
     LOG(INFO) << "Get counter snapshot(digest) at seq " << seq;
-    return getDigest(seq);
+    return std::make_shared<std::string>(getDigest(seq));
 }
 
 void Counter::applyDelta(const std::string &snap)

@@ -14,6 +14,13 @@
 typedef struct VersionedValue {
     uint64_t version;
     int value;
+
+    std::string serialize() const {
+        std::string serialized;
+        serialized.append((char *)&version, sizeof(version));
+        serialized.append((char *)&value, sizeof(value));
+        return serialized;
+    }
 } VersionedValue;
 
 class Counter : public Application {
@@ -41,7 +48,7 @@ public:
     inline bool takeSnapshot() override { return true; }
 
     inline std::string getDelta(uint32_t seq) override { return getDigest(seq); };
-    inline std::string getSnapshot(uint32_t seq) override;
+    inline std::shared_ptr<std::string> getSnapshot(uint32_t seq) override;
 
     void applyDelta(const std::string &delta) override;
     void applySnapshot(const std::string &snapshot) override;
