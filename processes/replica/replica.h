@@ -83,8 +83,9 @@ private:
     std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
     std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
-    // State for actively triggering fallback
+    // State for actively triggering fallback and other testings
     uint32_t swapFreq_;
+    uint32_t checkpointDropFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
     // State for triggering view change
@@ -167,10 +168,11 @@ private:
     void sendCatchupCommit(uint32_t replicaId);
     void sendStateSnapshotRequest(uint32_t replicaId,uint32_t targetSeq);
     void applyCheckpointCommit(CheckpointCollector& collector, std::shared_ptr<std::string> snapshot = nullptr);
+    bool ifDropCheckpoint(uint32_t seq);
 public:
     Replica(
         const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,
-        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0
+        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0, uint32_t checkpointDropFreq = 0
     );
     ~Replica();
 

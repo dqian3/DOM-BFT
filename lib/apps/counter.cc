@@ -80,7 +80,8 @@ std::string Counter::getDigest(uint32_t digest_idx)
     } else {
         target = committed_state;
     }
-    std::string digest = target.serialize();
+    std::string digest;
+    digest = std::to_string(target.version) + ","+std::to_string(target.value);
     return digest;
 }
 
@@ -97,7 +98,11 @@ void Counter::applyDelta(const std::string &snap)
 
 void Counter::applySnapshot(const std::string &snap)
 {
-    committed_state = *((VersionedValue *) snap.c_str());
+    // get the element seperated by ,
+    std::string version_str = snap.substr(0, snap.find(','));
+    std::string value_str = snap.substr(snap.find(',')+1);
+    committed_state.version = std::stoull(version_str);
+    committed_state.value = std::stoi(value_str);
     counter = committed_state.value;
     version_hist.clear();
 

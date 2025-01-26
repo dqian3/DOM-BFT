@@ -1,6 +1,6 @@
 transport: nng 
 
-app: "counter"
+app: "kv_store"
 
 client:
   ips:
@@ -18,7 +18,7 @@ client:
   normalPathTimeout: 200000
   port: 33000
   requestSize: 16
-  runtimeSeconds: 12
+  runtimeSeconds: 22
   sendMode: maxInFlight
   sendRate: 300
   slowPathTimeout: 1000000

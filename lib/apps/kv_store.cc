@@ -157,6 +157,7 @@ std::map<std::string, std::string> KVStore::getDeltaFromCommit()
             delta[req.key] = "";
         }
     }
+    LOG(INFO) << "Generated delta from requests, size: " << delta.size();
     return delta;
 }
 

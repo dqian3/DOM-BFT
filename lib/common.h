@@ -37,7 +37,7 @@
 #define SEND_TO_LEADER 0
 
 #define MAX_SPEC_HIST       50000
-#define CHECKPOINT_INTERVAL 500
+#define CHECKPOINT_INTERVAL 2000
 
 typedef unsigned char byte;
 typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
