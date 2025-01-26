@@ -6,7 +6,7 @@ import os
 parser = argparse.ArgumentParser(prog="genkeys.py", description="Generate keys for DOMBFT")
 
 parser.add_argument("config")
-parser.add_argument("-a", "--algorithm", default="RSA", choices=["RSA", "ED25519"])
+parser.add_argument("-a", "--algorithm", default="ED25519", choices=["RSA", "ED25519"])
 parser.add_argument("-k", "--keysize", default=2048)
 
 args = parser.parse_args()

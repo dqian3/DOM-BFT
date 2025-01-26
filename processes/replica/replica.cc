@@ -971,7 +971,6 @@ void Replica::checkTimeouts()
     now = GetMicrosecondTimestamp();
 
     if (fallbackStartTime_ != 0 && now - fallbackStartTime_ > viewChangeTimeout_) {
-        LOG(WARNING) << fallbackStartTime_ << " " << now << " " << now - fallbackStartTime_;
         fallbackStartTime_ = now;
         LOG(WARNING) << "Fallback for instance=" << instance_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
         pbftViewChanges_.clear();

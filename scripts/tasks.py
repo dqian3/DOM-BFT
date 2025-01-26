@@ -31,8 +31,6 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft",
     client_handles = []
     other_handles = []
 
-    f = n_replicas // 3
-
     # TODO verbosity
     with c.cd(".."):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
@@ -312,6 +310,7 @@ def gcloud_copy_keys(c, config_file="../configs/remote-prod.yaml"):
 
     group.run("rm -rf keys/*")
 
+    
     print("Copying keys over...")
     for process in ["client", "replica", "receiver", "proxy"]:
         group.run(f"mkdir -p keys/{process}")
@@ -334,9 +333,8 @@ def gcloud_copy_bin(c, config_file="../configs/remote-prod.yaml"):
     clients = config["client"]["ips"]
 
     # TODO try and check to see if binaries are stale
-    print("Copying binaries over to one machine")
+    print(f"Copying binaries over to one machine {ext_ips[clients[0]]} ({clients[0]})")
     start_time = time.time()
-
     conn = Connection(ext_ips[clients[0]])
 
     conn.run("chmod +w dombft_*", warn=True)
@@ -396,7 +394,7 @@ gcloud compute instances create {} \
     --create-disk=auto-delete=yes,boot=yes,device-name=prod-replica1,image=projects/debian-cloud/global/images/debian-12-bookworm-v20240709,mode=rw,size=20,type=projects/mythic-veld-419517/zones/us-west1-c/diskTypes/pd-ssd 
 """
 
-    zones = ["us-west1-c", "us-west4-c", "us-east1-c", "us-east5-c"]
+    zones = ["us-west1-c", "us-west4-c", "us-east1-c", "us-east4-c"]
 
     config_file = os.path.abspath(config_template)
 
@@ -468,15 +466,6 @@ def get_logs(c, ips, log_prefix):
         print(f"Getting {log_prefix}{id}.log")
         conn.get(f"{log_prefix}{id}.log", "../logs/")
 
-    # for id, ip in enumerate(ips):
-    #     conn = Connection(ip)
-
-    #     try:
-    #         print(f"Getting {log_prefix}{id}.prof")
-    #         conn.get(f"{log_prefix}{id}.prof", "../logs/")
-    #         print(f"Got profile in {log_prefix}{id}.prof ")
-    #     except:
-    #         c.run(f"rm ../logs/{log_prefix}{id}.prof")
 
 
 @task
@@ -503,6 +492,41 @@ def gcloud_logs(c, config_file="../configs/remote-prod.yaml"):
     get_logs(c, clients, "client")
 
 
+@task
+def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
+               v=5,
+               prot="dombft",
+):
+    try:
+        with open(config_file, "r") as cfg_file:
+            original_contents = cfg_file.read()
+            original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
+          
+        in_flight = original_cfg["client"]["maxInFlight"]
+
+        for n_replicas in [7, 10, 13, 16]:
+            gcloud_vm(c, config_file=config_file)
+            time.sleep(20)
+
+
+            cfg = copy.deepcopy(original_cfg)
+
+            cfg["replica"]["ips"] = cfg["replica"]["ips"][:n_replicas]
+            cfg["receiver"]["ips"] = cfg["receiver"]["ips"][:n_replicas]
+
+            yaml.dump(cfg, open(config_file, "w"))
+            gcloud_run(c, config_file=config_file, v=v, prot=prot)
+            c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n_replicas}_if{in_flight}.out")
+
+            gcloud_vm(c, config_file=config_file, stop=True)
+
+    finally:
+        with open(config_file, "w") as cfg_file:
+            cfg_file.write(original_contents)
+
+        gcloud_vm(c, config_file=config_file, stop=True)
+
+
 
 @task
 def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
@@ -512,23 +536,26 @@ def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
     # gcloud_vm(c, config_file=config_file)
     # time.sleep(5)
 
-    with open(config_file, "r") as cfg_file:
-        original_contents = cfg_file.read()
-        cfg = yaml.load(original_contents, Loader=yaml.Loader)
-        
+    try:
 
-    cfg["client"]["sendMode"] = "maxInFlight"
+        with open(config_file, "r") as cfg_file:
+            original_contents = cfg_file.read()
+            cfg = yaml.load(original_contents, Loader=yaml.Loader)
+            
 
-    for inFlight in [25, 50, 75, 100, 150, 200]:
-        cfg["client"]["maxInFlight"] = inFlight
-        yaml.dump(cfg, open(config_file, "w"))
-        gcloud_run(c, config_file=config_file, v=v, prot=prot)
-        c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{inFlight}.out")
+        cfg["client"]["sendMode"] = "maxInFlight"
 
-    with open(config_file, "w") as cfg_file:
-        cfg_file.write(original_contents)
+        for inFlight in [25, 50, 75, 100, 150, 200]:
+            cfg["client"]["maxInFlight"] = inFlight
+            yaml.dump(cfg, open(config_file, "w"))
+            gcloud_run(c, config_file=config_file, v=v, prot=prot)
+            c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{inFlight}.out")
 
+    finally:
+        with open(config_file, "w") as cfg_file:
+            cfg_file.write(original_contents)
 
+        gcloud_vm(c, config_file=config_file, stop=True)
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
 @task
