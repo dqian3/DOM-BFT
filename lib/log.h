@@ -45,7 +45,6 @@ public:
     Log(std::shared_ptr<Application> app);
 
     bool inRange(uint32_t seq) const;
-    bool canAddEntry() const;
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
@@ -59,7 +58,6 @@ public:
     void toProto(dombft::proto::FallbackStart &msg);
 
     const LogEntry &getEntry(uint32_t seq);
-    void rightShiftEntries(uint32_t startSeq, uint32_t num);
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };

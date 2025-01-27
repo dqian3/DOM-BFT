@@ -11,8 +11,11 @@ Log::Log(std::shared_ptr<Application> app)
 {
 }
 
-bool Log::inRange(uint32_t seq) const { return seq > checkpoint.seq && seq < nextSeq; }
-bool Log::canAddEntry() const { return nextSeq <= checkpoint.seq + MAX_SPEC_HIST; }
+bool Log::inRange(uint32_t seq) const
+{
+    // Note, log.empty() is implicitly checked by the first two conditions
+    return seq > checkpoint.seq && seq < nextSeq && !log.empty();
+}
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
@@ -23,13 +26,6 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     } else {
         uint32_t offset = log[0].seq;
         prevDigest = log[nextSeq - offset].digest;
-    }
-
-    if (!canAddEntry()) {
-        throw std::runtime_error(
-            "nextSeq = " + std::to_string(nextSeq) +
-            " too far ahead of commitPoint.seq = " + std::to_string(checkpoint.seq)
-        );
     }
 
     log.emplace_back(nextSeq, c_id, c_seq, req, prevDigest);
@@ -57,7 +53,7 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     auto entry = getEntry(seq);   // will not be nullptr because range is checked above
     const dombft::proto::Reply &r = cert.replies()[0];
 
-    if (r.client_id() != entry->client_id || r.client_seq() != entry->client_seq) {
+    if (r.client_id() != entry.client_id || r.client_seq() != entry.client_seq) {
         VLOG(5) << "Fail adding cert because mismatching request!";
         return false;
     }
@@ -99,22 +95,12 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
 const LogEntry &Log::getEntry(uint32_t seq)
 {
     if (inRange(seq)) {
-        uint32_t index = seq % MAX_SPEC_HIST;
-        return log[index];
     } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
-        return nullptr;
+        throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
-}
 
-void Log::setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry)
-{
-    if (inRange(seq)) {
-        uint32_t index = seq % MAX_SPEC_HIST;
-        log[index] = entry;
-    } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
-    }
+    uint32_t offset = log[0].seq;
+    return log[seq - offset];
 }
 
 // copies the entries at idx to idx + num, starting from startSeq
@@ -150,9 +136,8 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     // starting from the oldest;
     out << "CHECKPOINT " << l.checkpoint.seq << ": " << digest_to_hex(l.checkpoint.logDigest).substr(56) << " | ";
     uint32_t i = l.checkpoint.seq + 1;
-    for (; i < l.nextSeq; i++) {
-        int idx = i % MAX_SPEC_HIST;
-        out << *l.log[idx];
+    for (const LogEntry &entry : l.log) {
+        out << entry;
     }
     return out;
 }
