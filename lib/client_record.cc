@@ -101,6 +101,11 @@ int ClientRecord::numMissing(const ClientRecord &referenceRecord) const
 {
     int ret = 0;
     for (const auto &[id, refSequence] : referenceRecord.sequences) {
+        if (!sequences.contains(id)) {
+            ret += refSequence.size();
+            continue;
+        }
+
         const ClientSequence &mySequence = sequences.at(id);
         ret += mySequence.numMissing(refSequence);
     }

@@ -38,6 +38,9 @@ private:
     uint32_t nextSeq;
     uint32_t lastExecuted;
 
+    // The log also keeps track of client records, and will de-deduplicate requests
+    ClientRecord clientRecord_;
+
     // The log claims ownership of the application, instead of the replica
     std::shared_ptr<Application> app_;
 

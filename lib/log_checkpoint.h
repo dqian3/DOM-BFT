@@ -2,6 +2,9 @@
 #define LOG_CHECKPOINT_H
 
 #include "common.h"
+
+#include <lib/client_record.h>
+
 #include "proto/dombft_proto.pb.h"
 
 struct LogCheckpoint {
@@ -13,6 +16,8 @@ struct LogCheckpoint {
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;
     std::map<uint32_t, std::string> signatures;
+
+    ClientRecord clientRecord_;
 
     LogCheckpoint();
     LogCheckpoint(const LogCheckpoint &other);

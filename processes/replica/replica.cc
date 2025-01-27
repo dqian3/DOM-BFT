@@ -620,7 +620,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
-        checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecord>(clientRecord_));
+        checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecord>(curClientRecord_));
         // TODO remove execution result from Reply
         broadcastToReplicas(reply, MessageType::REPLY);
     }
@@ -746,11 +746,10 @@ void Replica::applyCheckpointCommit(CheckpointCollector &collector, std::shared_
     bool digest_changed = collector.commitToLog(log_, commitToUse, snapshot);
 
     if (digest_changed) {
-        checkpointClientRecord_.clear();
-        getClientRecordFromProto(commitToUse.client_records_set(), checkpointClientRecord_);
-        clientRecord_ = checkpointClientRecord_;
+        checkpointClientRecord_ = commitToUse.client_records_set();
+        curClientRecord_ = checkpointClientRecord_;
 
-        int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecord_, collector.clientRecords_.value());
+        int rShiftNum = collector.clientRecords_.value().numMissing(checkpointClientRecord_);
         // that is, there is never a left shift
         assert(rShiftNum >= 0);
         if (rShiftNum > 0) {
@@ -1268,7 +1267,7 @@ void Replica::finishFallback()
     // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
     // finishes, the client requests will have f + 1 replicas that executed it in their logs
     checkpointCollectors_.tryInitCheckpointCollector(
-        log_->nextSeq - 1, instance_, std::optional<ClientRecord>(clientRecord_)
+        log_->nextSeq - 1, instance_, std::optional<ClientRecord>(curClientRecord_)
     );
     Reply reply;
     replyFromLogEntry(reply, log_->nextSeq - 1);
@@ -1314,7 +1313,7 @@ void Replica::tryFinishFallback()
               << " from own instance=" << instance_;
 
     applySuffixToLog(logSuffix, log_);
-    clientRecord_ = logSuffix.clientRecords;
+    curClientRecord_ = logSuffix.clientRecords;
     instance_++;
     sendFallbackSummaryToClients();
     finishFallback();
@@ -1333,7 +1332,7 @@ void Replica::continueFallbackWithSnapshotUpdated()
                   << " is equal to suffix checkpoint seq=" << suffix.checkpoint->seq()
                   << " after fetched state snapshot, applying suffix";
         applySuffixToLog(suffix, log_);
-        clientRecord_ = suffix.clientRecords;
+        curClientRecord_ = suffix.clientRecords;
     }
     instance_++;
     sendFallbackSummaryToClients();
@@ -1727,9 +1726,6 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
     uint32_t clientInstance = clientHeader.instance();
     uint32_t clientView = clientHeader.pbft_view();
 
-    ClientRecord &curRecord = clientRecord_[clientId];
-    ClientRecord &checkpointRecord = checkpointClientRecord_[clientId];
-
     if (!log_->canAddEntry()) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to log being full!";
         return false;
@@ -1739,8 +1735,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
 
     // 1. Check if client request has been executed in latest checkpoint (i.e. is committed), in which case
     // we should return a CommittedReply, and client only needs f + 1
-
-    if (checkpointRecord.contains(clientSeq)) {
+    if (checkpointClientRecord_.contains(clientId, clientSeq)) {
         LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
                      << " has been committed in previous checkpoint/fallback!, Sending committed reply";
 
@@ -1762,7 +1757,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
     // We could resend it's reply, but it's too much work for now.
     // TODO queued requests from fallback occur implicitly are processed here, which is correct, but we should probably
     // make this more explicit.
-    if (!curRecord.update(clientSeq)) {
+    if (!curClientRecord_.update(clientId, clientSeq)) {
         LOG(WARNING) << "DUP dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to duplication!";
 
         return false;
@@ -1786,7 +1781,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
         uint32_t clientSeq = entry->client_seq;
         std::string clientReq = entry->request;
 
-        ClientRecord &cliRecord = clientRecord_[clientId];
+        ClientRecord &cliRecord = curClientRecord_[clientId];
         if (!cliRecord.update(clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                       << " due to duplication in reapplying with record!";
