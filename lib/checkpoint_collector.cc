@@ -95,7 +95,7 @@ bool CheckpointCollector::commitToLog(
 {
     uint32_t seq = commit.seq();
 
-    LogCheckpoint &checkpoint = log->getCheckpoint();
+    LogCheckpoint &checkpoint = log->getStableCheckpoint();
 
     checkpoint.seq = seq;
 
@@ -130,7 +130,7 @@ bool CheckpointCollector::commitToLog(
 }
 
 void CheckpointCollectors::tryInitCheckpointCollector(
-    uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records
+    uint32_t seq, uint32_t instance, std::optional<ClientRecord> &&records
 )
 {
 

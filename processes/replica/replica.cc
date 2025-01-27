@@ -427,7 +427,7 @@ void Replica::processMessagesThd()
                 continue;
             }
 
-            if (swapFreq_ && log_->nextSeq % swapFreq_ == 0)
+            if (swapFreq_ && log_->getNextSeq() == 0)
                 holdAndSwapCliReq(clientHeader);
             else
                 processClientRequest(clientHeader);
@@ -587,7 +587,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     uint32_t seq;
 
     bool success = log_->addEntry(clientId, clientSeq, request.req_data(), result);
-    seq = log_->nextSeq - 1;
+    seq = log_->getNextSeq() - 1;
 
     if (!success) {
         // TODO Handle this more gracefully by queuing requests
@@ -620,9 +620,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
-        if (!(log_->app_->takeDelta() && log_->app_->takeSnapshot()))
-            return;
-        checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecords>(clientRecords_));
+        checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::optional<ClientRecord>(clientRecord_));
         // TODO remove execution result from Reply
         broadcastToReplicas(reply, MessageType::REPLY);
     }
@@ -682,9 +680,12 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         return;
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
-    if (rSeq <= log_->stableCheckpoint.seq) {
+
+    auto &checkpoint = log_->getStableCheckpoint();
+
+    if (rSeq <= checkpoint.seq) {
         VLOG(4) << "Seq " << rSeq << " is already committed, send back commit and skip it"
-                << ". Current checkpoint seq is " << log_->stableCheckpoint.seq;
+                << ". Current checkpoint seq is " << checkpoint.seq;
         sendCatchupCommit(reply.replica_id());
         return;
     }
@@ -692,10 +693,10 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_, std::nullopt);
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
     if (collector.addAndCheckReplyCollection(reply, sig)) {
-        const byte *logDigest = log_->getDigest(rSeq);
-        std::string appDigest = log_->app_->getDigest(rSeq);
-        std::string appDelta = log_->app_->getDelta(rSeq);
-        ClientRecords tmpClientRecords = collector.clientRecords_.value();
+        std::string logDigest = log_->getDigest(rSeq);
+        std::string appDigest = app_->getDigest(rSeq);
+        std::string appDelta = app_->getDelta(rSeq);
+        ClientRecord tmpClientRecord = collector.clientRecords_.value();
         uint32_t instance = instance_;
         // Broadcast commit Message
         dombft::proto::Commit commit;
@@ -708,9 +709,9 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         commit.set_app_delta(appDelta);
 
         byte recordDigest[SHA256_DIGEST_LENGTH];
-        getRecordsDigest(tmpClientRecords, recordDigest);
+        getRecordsDigest(tmpClientRecord, recordDigest);
         commit.mutable_client_records_set()->set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
-        toProtoClientRecords(*commit.mutable_client_records_set(), tmpClientRecords);
+        toProtoClientRecord(*commit.mutable_client_records_set(), tmpClientRecord);
         VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
 
         broadcastToReplicas(commit, MessageType::COMMIT);
@@ -745,11 +746,11 @@ void Replica::applyCheckpointCommit(CheckpointCollector &collector, std::shared_
     bool digest_changed = collector.commitToLog(log_, commitToUse, snapshot);
 
     if (digest_changed) {
-        checkpointClientRecords_.clear();
-        getClientRecordsFromProto(commitToUse.client_records_set(), checkpointClientRecords_);
-        clientRecords_ = checkpointClientRecords_;
+        checkpointClientRecord_.clear();
+        getClientRecordFromProto(commitToUse.client_records_set(), checkpointClientRecord_);
+        clientRecord_ = checkpointClientRecord_;
 
-        int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecords_, collector.clientRecords_.value());
+        int rShiftNum = getRightShiftNumWithRecords(checkpointClientRecord_, collector.clientRecords_.value());
         // that is, there is never a left shift
         assert(rShiftNum >= 0);
         if (rShiftNum > 0) {
@@ -757,7 +758,7 @@ void Replica::applyCheckpointCommit(CheckpointCollector &collector, std::shared_
         }
         reapplyEntriesWithRecord(rShiftNum);
     } else {
-        checkpointClientRecords_ = collector.clientRecords_.value();
+        checkpointClientRecord_ = collector.clientRecords_.value();
     }
     prevCommit_ = commitToUse;
 
@@ -878,7 +879,7 @@ void Replica::processStateSnapshotRequest(const SnapshotRequest &request)
 
     dombft::proto::LogCheckpoint *checkpointProto = snapshotReply.mutable_checkpoint();
     log_->toProtoLogCheckpoint(checkpointProto);
-    toProtoClientRecords(*snapshotReply.mutable_client_records_set(), checkpointClientRecords_);
+    toProtoClientRecord(*snapshotReply.mutable_client_records_set(), checkpointClientRecord_);
 
     sendMsgToDst(snapshotReply, MessageType::SNAPSHOT_REPLY, replicaAddrs_[request.replica_id()]);
 }
@@ -1185,8 +1186,8 @@ void Replica::startFallback()
     fallbackStartMsg.set_pbft_view(pbftView_);
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
-    getRecordsDigest(checkpointClientRecords_, recordDigest);
-    toProtoClientRecords(*fallbackStartMsg.mutable_client_records_set(), checkpointClientRecords_);
+    getRecordsDigest(checkpointClientRecord_, recordDigest);
+    toProtoClientRecord(*fallbackStartMsg.mutable_client_records_set(), checkpointClientRecord_);
 
     uint32_t primaryId = getPrimary();
     LOG(INFO) << "Sending FALLBACK_START to PBFT primary replica " << primaryId;
@@ -1267,7 +1268,7 @@ void Replica::finishFallback()
     // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
     // finishes, the client requests will have f + 1 replicas that executed it in their logs
     checkpointCollectors_.tryInitCheckpointCollector(
-        log_->nextSeq - 1, instance_, std::optional<ClientRecords>(clientRecords_)
+        log_->nextSeq - 1, instance_, std::optional<ClientRecord>(clientRecord_)
     );
     Reply reply;
     replyFromLogEntry(reply, log_->nextSeq - 1);
@@ -1313,7 +1314,7 @@ void Replica::tryFinishFallback()
               << " from own instance=" << instance_;
 
     applySuffixToLog(logSuffix, log_);
-    clientRecords_ = logSuffix.clientRecords;
+    clientRecord_ = logSuffix.clientRecords;
     instance_++;
     sendFallbackSummaryToClients();
     finishFallback();
@@ -1332,7 +1333,7 @@ void Replica::continueFallbackWithSnapshotUpdated()
                   << " is equal to suffix checkpoint seq=" << suffix.checkpoint->seq()
                   << " after fetched state snapshot, applying suffix";
         applySuffixToLog(suffix, log_);
-        clientRecords_ = suffix.clientRecords;
+        clientRecord_ = suffix.clientRecords;
     }
     instance_++;
     sendFallbackSummaryToClients();
@@ -1726,8 +1727,8 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
     uint32_t clientInstance = clientHeader.instance();
     uint32_t clientView = clientHeader.pbft_view();
 
-    ClientRecord &curRecord = clientRecords_[clientId];
-    ClientRecord &checkpointRecord = checkpointClientRecords_[clientId];
+    ClientRecord &curRecord = clientRecord_[clientId];
+    ClientRecord &checkpointRecord = checkpointClientRecord_[clientId];
 
     if (!log_->canAddEntry()) {
         LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq << " due to log being full!";
@@ -1785,7 +1786,7 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
         uint32_t clientSeq = entry->client_seq;
         std::string clientReq = entry->request;
 
-        ClientRecord &cliRecord = clientRecords_[clientId];
+        ClientRecord &cliRecord = clientRecord_[clientId];
         if (!cliRecord.update(clientSeq)) {
             LOG(INFO) << "Dropping request c_id=" << clientId << " c_seq=" << clientSeq
                       << " due to duplication in reapplying with record!";

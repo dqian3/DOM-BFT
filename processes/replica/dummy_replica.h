@@ -54,7 +54,7 @@ private:
 
     // TODO use a log here
     // std::shared_ptr<Log> log_;
-    // ClientRecords clientRecords_;
+    // ClientRecord clientRecords_;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void verifyMessagesThd();

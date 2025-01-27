@@ -19,7 +19,7 @@ bool ClientSequence::update(uint32_t newSeq)
 
 uint32_t ClientSequence::size() const { return lastSeq_ - missedSeqs_.size(); }
 
-ClientRecord::ClientRecord(const CheckpointClientRecordsSet &recordsSet)
+ClientRecord::ClientRecord(const CheckpointClientRecordSet &recordsSet)
 {
     for (const auto &cliRecord : recordsSet.records()) {
         uint32_t id = cliRecord.client_id();
@@ -56,7 +56,7 @@ std::string ClientRecord::digest() const
     SHA256_Final(digest, &ctx);
 }
 
-void ClientRecord::toProto(CheckpointClientRecordsSet &recordsSet) const
+void ClientRecord::toProto(CheckpointClientRecordSet &recordsSet) const
 {
     for (const auto &[id, sequence] : sequences) {
         proto::CheckpointClientRecord *record = recordsSet.add_records();

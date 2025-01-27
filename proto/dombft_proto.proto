@@ -76,7 +76,7 @@ message Commit {
     bytes log_digest = 5;
     bytes app_digest = 6;
     bytes app_delta = 7;
-    CheckpointClientRecordsSet client_records_set = 8;
+    CheckpointClientRecordSet client_records_set = 8;
 
     bool is_catchup = 9;
 }
@@ -97,7 +97,7 @@ message SnapshotReply {
     uint32 pbft_view = 4;
 
     LogCheckpoint checkpoint = 5;
-    CheckpointClientRecordsSet client_records_set = 6;
+    CheckpointClientRecordSet client_records_set = 6;
 }
 
 message FallbackTrigger
@@ -118,7 +118,7 @@ message CheckpointClientRecord
 }
 
 // wraps records and digest
-message CheckpointClientRecordsSet
+message CheckpointClientRecordSet
 {
     bytes client_records_digest = 1;
     repeated CheckpointClientRecord records = 2;
@@ -160,7 +160,7 @@ message FallbackStart
 
     repeated LogEntry log_entries = 4;
     LogCheckpoint checkpoint = 5;
-    CheckpointClientRecordsSet client_records_set = 6;
+    CheckpointClientRecordSet client_records_set = 6;
 }
 
 message FallbackProposal

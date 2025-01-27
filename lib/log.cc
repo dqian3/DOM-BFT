@@ -70,6 +70,8 @@ const std::string &Log::getDigest() const
     return log.back().digest;
 }
 
+uint32_t Log::getNextSeq() const { return nextSeq; }
+
 const std::string &Log::getDigest(uint32_t seq) const
 {
     if (!inRange(seq)) {
@@ -102,6 +104,8 @@ const LogEntry &Log::getEntry(uint32_t seq)
     uint32_t offset = log[0].seq;
     return log[seq - offset];
 }
+
+LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint; }
 
 void Log::commit(uint32_t seq)
 {

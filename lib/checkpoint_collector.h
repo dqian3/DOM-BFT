@@ -25,7 +25,7 @@ public:
     uint32_t instance_;
     Commit commitToUse_;
     std::optional<dombft::proto::Cert> cert_;
-    std::optional<ClientRecords> clientRecords_;
+    std::optional<ClientRecord> clientRecords_;
 
     bool hasOwnReply_ = false;
     bool hasOwnCommit_ = false;
@@ -37,7 +37,7 @@ public:
     std::set<uint32_t> commitMatchedReplicas_;
 
     explicit CheckpointCollector(
-        uint32_t replicaId, uint32_t f, uint32_t seq, uint32_t instance, std::optional<ClientRecords> &records
+        uint32_t replicaId, uint32_t f, uint32_t seq, uint32_t instance, std::optional<ClientRecord> &records
     )
         : replicaId_(replicaId)
         , f_(f)
@@ -69,7 +69,7 @@ public:
 
     inline CheckpointCollector &at(uint32_t seq) { return collectors_.at(seq); }
     inline bool has(uint32_t seq) { return collectors_.find(seq) != collectors_.end(); }
-    void tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecords> &&records);
+    void tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecord> &&records);
     void cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance);
 };
 

@@ -27,14 +27,14 @@ private:
 public:
     ClientRecord() = default;
 
-    ClientRecord(const CheckpointClientRecordsSet &records);
+    ClientRecord(const CheckpointClientRecordSet &records);
 
     bool contains(uint32_t clientId, uint32_t seq) const;
     bool update(uint32_t clientId, uint32_t seq);
 
     std::string digest() const;
 
-    void toProto(CheckpointClientRecordsSet &records) const;
+    void toProto(CheckpointClientRecordSet &records) const;
 
     int numMissing(const ClientRecord &referenceRecord) const;
 };

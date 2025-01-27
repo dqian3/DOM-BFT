@@ -12,16 +12,16 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     uint32_t maxCheckpointSeq = 0;
 
     // First find highest commit point
-    const dombft::proto::CheckpointClientRecordsSet *tmpClientRecordsSetPtr;
+    const dombft::proto::CheckpointClientRecordSet *tmpClientRecordSetPtr;
     for (auto &log : fallbackProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
             maxCheckpointSeq = log.checkpoint().seq();
-            tmpClientRecordsSetPtr = &log.client_records_set();
+            tmpClientRecordSetPtr = &log.client_records_set();
             logSuffix.fetchFromReplicaId = log.replica_id();
         }
     }
-    getClientRecordsFromProto(*tmpClientRecordsSetPtr, logSuffix.clientRecords);
+    getClientRecordFromProto(*tmpClientRecordSetPtr, logSuffix.clientRecords);
     VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
 
     // Find highest request with a cert
@@ -153,7 +153,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
     // First sequence to apply is right after checkpoint
     uint32_t seq = checkpoint->seq() + 1;
     uint32_t idx = 0;
-    dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
+    dombft::ClientRecord &clientRecords = logSuffix.clientRecords;
     // 2.1 Skip the entries that are already in the log (consistent)
     for (; idx < logSuffix.entries.size() && seq < log->nextSeq; idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];

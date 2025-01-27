@@ -52,15 +52,13 @@ public:
 
     void commit(uint32_t seq);
 
+    uint32_t getNextSeq() const;
     const std::string &getDigest() const;
     const std::string &getDigest(uint32_t seq) const;
+    const LogEntry &getEntry(uint32_t seq);
+    LogCheckpoint &getStableCheckpoint();
 
     void toProto(dombft::proto::FallbackStart &msg);
-
-    const LogEntry &getEntry(uint32_t seq);
-
-    LogCheckpoint &getCheckpoint() const;
-
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };
 
