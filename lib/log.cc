@@ -14,15 +14,15 @@ Log::Log(std::shared_ptr<Application> app)
 bool Log::inRange(uint32_t seq) const
 {
     // Note, log.empty() is implicitly checked by the first two conditions
-    return seq > checkpoint.seq && seq < nextSeq && !log.empty();
+    return seq > stableCheckpoint.seq && seq < nextSeq && !log.empty();
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
     std::string prevDigest;
-    if (nextSeq - 1 == checkpoint.seq) {
+    if (nextSeq - 1 == stableCheckpoint.seq) {
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
-        prevDigest = checkpoint.logDigest;
+        prevDigest = stableCheckpoint.logDigest;
     } else {
         uint32_t offset = log[0].seq;
         prevDigest = log[nextSeq - offset].digest;
@@ -84,7 +84,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
 {
     dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    checkpoint.toProto(*checkpointProto);
+    stableCheckpoint.toProto(*checkpointProto);
 
     for (const LogEntry &entry : log) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
@@ -103,23 +103,6 @@ const LogEntry &Log::getEntry(uint32_t seq)
     return log[seq - offset];
 }
 
-// copies the entries at idx to idx + num, starting from startSeq
-void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
-{
-    if (inRange(startSeq)) {
-        std::vector<std::shared_ptr<LogEntry>> temp(nextSeq - startSeq);
-        for (uint32_t i = startSeq; i < nextSeq; i++) {
-            temp[i - startSeq] = log[i % MAX_SPEC_HIST];
-        }
-        for (uint32_t i = startSeq + num; i < nextSeq + num; i++) {
-            log[i % MAX_SPEC_HIST] = temp[i - startSeq - num];
-        }
-        nextSeq += num;
-    } else {
-        LOG(ERROR) << "Sequence number " << startSeq << " is out of range.";
-    }
-}
-
 void Log::commit(uint32_t seq)
 {
     if (inRange(seq)) {
@@ -134,8 +117,9 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    out << "CHECKPOINT " << l.checkpoint.seq << ": " << digest_to_hex(l.checkpoint.logDigest).substr(56) << " | ";
-    uint32_t i = l.checkpoint.seq + 1;
+    out << "CHECKPOINT " << l.stableCheckpoint.seq << ": " << digest_to_hex(l.stableCheckpoint.logDigest).substr(56)
+        << " | ";
+    uint32_t i = l.stableCheckpoint.seq + 1;
     for (const LogEntry &entry : l.log) {
         out << entry;
     }

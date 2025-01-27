@@ -147,7 +147,7 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
     // Step1. Check if currently is behind suffix checkpoint
     // *This is only called when current checkpoint is consistent
-    assert(checkpoint->seq() == log->checkpoint.seq);
+    assert(checkpoint->seq() == log->stableCheckpoint.seq);
 
     // Step2. Find the spot to start applying the suffix
     // First sequence to apply is right after checkpoint
@@ -186,7 +186,8 @@ bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
         uint32_t clientSeq = entry->client_seq();
 
         if (!log->canAddEntry()) {
-            LOG(INFO) << "nextSeq=" << log->nextSeq << " too far ahead of commitPoint.seq=" << log->checkpoint.seq;
+            LOG(INFO) << "nextSeq=" << log->nextSeq
+                      << " too far ahead of commitPoint.seq=" << log->stableCheckpoint.seq;
             break;
         }
         if (!clientRecords[entry->client_id()].update(clientSeq)) {

@@ -80,15 +80,15 @@ std::shared_ptr<Log> logFromTestLog(const TestLog &testLog)
 
     ret->nextSeq = testLog.startSeq + 1;
 
-    ret->checkpoint.seq = testLog.startSeq;
+    ret->stableCheckpoint.seq = testLog.startSeq;
 
     // Zero digest because provided TestLog.digest might be smaller
-    memset(ret->checkpoint.logDigest, 0, SHA256_DIGEST_LENGTH);
-    memcpy(ret->checkpoint.logDigest, testLog.logDigest.c_str(), testLog.logDigest.size());
-    memset(ret->checkpoint.appDigest, 0, SHA256_DIGEST_LENGTH);
+    memset(ret->stableCheckpoint.logDigest, 0, SHA256_DIGEST_LENGTH);
+    memcpy(ret->stableCheckpoint.logDigest, testLog.logDigest.c_str(), testLog.logDigest.size());
+    memset(ret->stableCheckpoint.appDigest, 0, SHA256_DIGEST_LENGTH);
 
     // TODO make this cert "real"
-    ret->checkpoint.cert = dombft::proto::Cert();
+    ret->stableCheckpoint.cert = dombft::proto::Cert();
 
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
@@ -181,7 +181,7 @@ void assertLogEq(Log &log, const TestLog &expected)
     uint32_t startSeq = expected.startSeq;
 
     // Size of suffixes are the same
-    ASSERT_EQ(expected.entries.size(), log.nextSeq - log.checkpoint.seq - 1);
+    ASSERT_EQ(expected.entries.size(), log.nextSeq - log.stableCheckpoint.seq - 1);
 
     int n = expected.entries.size();
     for (int i = 0; i < n; i++) {

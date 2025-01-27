@@ -30,7 +30,7 @@ private:
     // Map of sequence number to certs
     std::map<uint32_t, std::shared_ptr<dombft::proto::Cert>> certs;
 
-    LogCheckpoint checkpoint;
+    LogCheckpoint stableCheckpoint;
 
     // Map of client ids to sequence numbers, for de-duplicating requests
     std::unordered_map<uint32_t, uint32_t> clientSeqs;
@@ -58,6 +58,8 @@ public:
     void toProto(dombft::proto::FallbackStart &msg);
 
     const LogEntry &getEntry(uint32_t seq);
+
+    LogCheckpoint &getCheckpoint() const;
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };

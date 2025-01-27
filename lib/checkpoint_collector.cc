@@ -95,14 +95,16 @@ bool CheckpointCollector::commitToLog(
 {
     uint32_t seq = commit.seq();
 
-    log->checkpoint.seq = seq;
+    LogCheckpoint &checkpoint = log->getCheckpoint();
 
-    memcpy(log->checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
-    memcpy(log->checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
+    checkpoint.seq = seq;
+
+    memcpy(checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
+    memcpy(checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
 
     for (uint32_t r : commitMatchedReplicas_) {
-        log->checkpoint.commitMessages[r] = commits_[r];
-        log->checkpoint.signatures[r] = commitSigs_[r];
+        checkpoint.commitMessages[r] = commits_[r];
+        checkpoint.signatures[r] = commitSigs_[r];
     }
 
     const byte *myDigestBytes = log->getDigest(seq);
@@ -122,8 +124,8 @@ bool CheckpointCollector::commitToLog(
                 << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
         return true;
     }
-    log->commit(log->checkpoint.seq);
-    log->checkpoint.appSnapshot = log->app_->getSnapshot(log->checkpoint.seq);
+    log->commit(checkpoint.seq);
+    checkpoint.appSnapshot = log->app_->getSnapshot(checkpoint.seq);
     return false;
 }
 

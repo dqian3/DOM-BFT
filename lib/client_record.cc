@@ -1,9 +1,9 @@
 #include "client_record.h"
 namespace dombft {
 
-bool ClientRecord::contains(uint32_t seq) const { return seq <= lastSeq_ && !missedSeqs_.contains(seq); }
+bool ClientSequence::contains(uint32_t seq) const { return seq <= lastSeq_ && !missedSeqs_.contains(seq); }
 
-bool ClientRecord::update(uint32_t newSeq)
+bool ClientSequence::update(uint32_t newSeq)
 {
     if (lastSeq_ < newSeq) {
         for (uint32_t i = lastSeq_ + 1; i < newSeq; i++)
@@ -17,96 +17,90 @@ bool ClientRecord::update(uint32_t newSeq)
     return true;
 }
 
-void getClientRecordsFromProto(const CheckpointClientRecordsSet &recordsSet, ClientRecords &dst)
+uint32_t ClientSequence::size() const { return lastSeq_ - missedSeqs_.size(); }
+
+ClientRecord::ClientRecord(const CheckpointClientRecordsSet &recordsSet)
 {
     for (const auto &cliRecord : recordsSet.records()) {
-        uint32_t cliId = cliRecord.client_id();
-        dst[cliId].lastSeq_ = cliRecord.last_seq();
-        for (const auto &s : cliRecord.missed_seqs())
-            dst[cliId].missedSeqs_.insert(s);
+        uint32_t id = cliRecord.client_id();
+        sequences[id].lastSeq_ = cliRecord.last_seq();
+
+        for (const auto &s : cliRecord.missed_seqs()) {
+            sequences[id].missedSeqs_.insert(s);
+        }
     }
 }
 
-void getRecordsDigest(const ClientRecords &records, byte *digest)
+bool ClientRecord::contains(uint32_t clientId, uint32_t seq) const
 {
-    // unsorted data structure will produce non-deterministic digest
-    std::map<uint32_t, ClientRecord> sortedRecords;
-    for (const auto &[cliId, cliRecord] : records) {
-        sortedRecords[cliId] = cliRecord;
-    }
+    return sequences.contains(clientId) && sequences.at(clientId).contains(seq);
+}
+
+bool ClientRecord::update(uint32_t clientId, uint32_t seq)
+{
+    // Returns if the sequence has not already been seen
+    return sequences[clientId].update(seq);
+}
+
+std::string ClientRecord::digest() const
+{
+    byte digest[SHA256_DIGEST_LENGTH];
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
-    for (const auto &[cliId, cliRecord] : sortedRecords) {
-        SHA256_Update(&ctx, &cliId, sizeof(cliId));
-        SHA256_Update(&ctx, &cliRecord.lastSeq_, sizeof(cliRecord.lastSeq_));
-        std::vector<int> sortedSeqs(cliRecord.missedSeqs_.begin(), cliRecord.missedSeqs_.end());
-        std::sort(sortedSeqs.begin(), sortedSeqs.end());
-        for (const auto &s : sortedSeqs)
+    for (const auto &[id, sequence] : sequences) {
+        SHA256_Update(&ctx, &id, sizeof(id));
+        SHA256_Update(&ctx, &sequence.lastSeq_, sizeof(sequence.lastSeq_));
+        for (const auto &s : sequence.missedSeqs_)
             SHA256_Update(&ctx, &s, sizeof(s));
     }
     SHA256_Final(digest, &ctx);
 }
 
-int getRightShiftNumWithRecords(const ClientRecords &checkpointRecords, const ClientRecords &replicaRecords)
+void ClientRecord::toProto(CheckpointClientRecordsSet &recordsSet) const
 {
-    int shiftNum = 0;
-    for (const auto &[cliId, cpRecord] : checkpointRecords) {
+    for (const auto &[id, sequence] : sequences) {
+        proto::CheckpointClientRecord *record = recordsSet.add_records();
+        record->set_client_id(id);
+        record->set_last_seq(sequence.lastSeq_);
+        for (const uint32_t &s : sequence.missedSeqs_) {
+            record->add_missed_seqs(s);
+        }
+    }
+}
+
+int ClientRecord::numMissing(const ClientRecord &referenceRecord) const
+{
+    int ret = 0;
+    for (const auto &[id, otherSequence] : referenceRecord.sequences) {
         // 1. if replica does not have the record for this client, add all req in the checkpoint
-        if (replicaRecords.find(cliId) == replicaRecords.end()) {
-            shiftNum += cpRecord.lastSeq_ - cpRecord.missedSeqs_.size();
+        if (!sequences.contains(id)) {
+            ret += otherSequence.size();
             continue;
         }
-        const ClientRecord &repRecord = replicaRecords.at(cliId);
-        // 2. get the diff in missed reqs
+
+        const ClientSequence &mySequence = sequences.at(id);
+
+        // 2. Get the diff in missed reqs
         //  negatives are fine as then there will be misses in other cliId since the checkpoint interval is a constant
-        shiftNum += static_cast<int>(repRecord.missedSeqs_.size()) - static_cast<int>(cpRecord.missedSeqs_.size());
+        //
+        ret += static_cast<int>(mySequence.missedSeqs_.size()) - static_cast<int>(otherSequence.missedSeqs_.size());
+
         // 3. include the reqs that replica has not received before this checkpoint
         //   note: case2 deducts the reqs missed in cpRecord that in repRecord.lastSeq_ ~ cpRecord.lastSeq_, so it is
         //  fine to add the diff directly here.
-        if (cpRecord.lastSeq_ > repRecord.lastSeq_) {
-            shiftNum += cpRecord.lastSeq_ - repRecord.lastSeq_;
+        if (otherSequence.lastSeq_ > mySequence.lastSeq_) {
+            ret += otherSequence.lastSeq_ - mySequence.lastSeq_;
         }
         // 4. we add back the missed reqs that has seq > cpRecord.lastSeq_ as they are not missed in this
         //  round of checkpointing but was included in the 2nd case
-        if (cpRecord.lastSeq_ < repRecord.lastSeq_) {
-            for (uint32_t i : repRecord.missedSeqs_) {
-                if (i > cpRecord.lastSeq_)
-                    shiftNum--;
+        if (otherSequence.lastSeq_ < mySequence.lastSeq_) {
+            for (uint32_t i : mySequence.missedSeqs_) {
+                if (i > otherSequence.lastSeq_)
+                    ret--;
             }
         }
     }
-    return shiftNum;
-}
-
-bool verifyRecordDigestFromProto(const CheckpointClientRecordsSet &recordsSet)
-{
-    ClientRecords tmpClientRecords;
-    getClientRecordsFromProto(recordsSet, tmpClientRecords);
-    for (const auto &record : tmpClientRecords) {
-        VLOG(6) << "client id: " << record.first << " lastSeq: " << record.second.lastSeq_;
-        for (const auto &seq : record.second.missedSeqs_) {
-            VLOG(6) << "missed seq: " << seq;
-        }
-    }
-    byte recordDigest[SHA256_DIGEST_LENGTH];
-    getRecordsDigest(tmpClientRecords, recordDigest);
-    VLOG(6) << "record digest: " << digest_to_hex(recordDigest, SHA256_DIGEST_LENGTH);
-    VLOG(6) << "message digest: " << digest_to_hex(recordsSet.client_records_digest());
-    return digest_to_hex(recordDigest, SHA256_DIGEST_LENGTH) == digest_to_hex(recordsSet.client_records_digest());
-}
-
-void toProtoClientRecords(
-    CheckpointClientRecordsSet &recordsSet, const std::unordered_map<uint32_t, ClientRecord> &clientRecords
-)
-{
-    for (const auto &[cliId, cliRecord] : clientRecords) {
-        proto::CheckpointClientRecord *record = recordsSet.add_records();
-        record->set_client_id(cliId);
-        record->set_last_seq(cliRecord.lastSeq_);
-        for (const uint32_t &missedSeq : cliRecord.missedSeqs_) {
-            record->add_missed_seqs(missedSeq);
-        }
-    }
+    return ret;
 }
 
 }   // namespace dombft

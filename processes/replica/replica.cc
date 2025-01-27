@@ -682,9 +682,9 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         return;
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
-    if (rSeq <= log_->checkpoint.seq) {
+    if (rSeq <= log_->stableCheckpoint.seq) {
         VLOG(4) << "Seq " << rSeq << " is already committed, send back commit and skip it"
-                << ". Current checkpoint seq is " << log_->checkpoint.seq;
+                << ". Current checkpoint seq is " << log_->stableCheckpoint.seq;
         sendCatchupCommit(reply.replica_id());
         return;
     }
@@ -702,7 +702,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         commit.set_replica_id(replicaId_);
         commit.set_seq(rSeq);
         commit.set_instance(instance);
-        commit.set_prev_checkpoint_seq(log_->checkpoint.seq);
+        commit.set_prev_checkpoint_seq(log_->stableCheckpoint.seq);
         commit.set_log_digest((const char *) logDigest, SHA256_DIGEST_LENGTH);
         commit.set_app_digest(appDigest);
         commit.set_app_delta(appDelta);
@@ -777,7 +777,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         VLOG(4) << "Checkpoint commit instance outdated, skipping";
         return;
     }
-    if (seq <= log_->checkpoint.seq) {
+    if (seq <= log_->stableCheckpoint.seq) {
         VLOG(4) << "Seq " << seq << " is already committed, skipping";
         return;
     }
@@ -800,7 +800,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
     // 1. the agreed commit is a catchup commit or inconsistent with majority, request snapshot
     if (commitToUse.is_catchup() ||
-        (commit.prev_checkpoint_seq() != log_->checkpoint.seq && myDigest != commitToUse.log_digest())) {
+        (commit.prev_checkpoint_seq() != log_->stableCheckpoint.seq && myDigest != commitToUse.log_digest())) {
         LOG(INFO) << "Checkpoint catchup for seq " << seq;
         sendStateSnapshotRequest(commitToUse.replica_id(), commitToUse.seq());
         return;
@@ -841,7 +841,7 @@ void Replica::processStateSnapshotReply(const dombft::proto::SnapshotReply &snap
         VLOG(4) << "Snapshot reply instance outdated, skipping";
         return;
     }
-    if (snapshotReply.seq() <= log_->checkpoint.seq) {
+    if (snapshotReply.seq() <= log_->stableCheckpoint.seq) {
         VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping";
         return;
     }
@@ -858,7 +858,7 @@ void Replica::processStateSnapshotRequest(const SnapshotRequest &request)
     uint32_t reqSeq = request.seq();
     uint32_t instance = request.instance();
     VLOG(3) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq;
-    if (reqSeq > log_->checkpoint.seq) {
+    if (reqSeq > log_->stableCheckpoint.seq) {
         VLOG(4) << "Requested req " << reqSeq << " is ahead of current checkpoint, cannot provide snapshot";
         return;
     }
@@ -867,12 +867,12 @@ void Replica::processStateSnapshotRequest(const SnapshotRequest &request)
     std::shared_ptr<std::string> snapshot = log_->app_->getSnapshot(reqSeq);
     if (snapshot == nullptr) {
         LOG(INFO) << "Requested snapshot for seq " << reqSeq << " is not available, returning current snapshot"
-                  << " for seq " << log_->checkpoint.seq << " instead";
-        snapshot = log_->checkpoint.appSnapshot;
+                  << " for seq " << log_->stableCheckpoint.seq << " instead";
+        snapshot = log_->stableCheckpoint.appSnapshot;
     }
     SnapshotReply snapshotReply;
     snapshotReply.set_instance(instance_);
-    snapshotReply.set_seq(log_->checkpoint.seq);
+    snapshotReply.set_seq(log_->stableCheckpoint.seq);
     snapshotReply.set_replica_id(replicaId_);
     snapshotReply.set_pbft_view(pbftView_);
 
@@ -1216,7 +1216,7 @@ void Replica::sendFallbackSummaryToClients()
     summary.set_replica_id(replicaId_);
     summary.set_pbft_view(pbftView_);
 
-    uint32_t seq = log_->checkpoint.seq;
+    uint32_t seq = log_->stableCheckpoint.seq;
     for (; seq < log_->nextSeq; seq++) {
         std::shared_ptr<::LogEntry> entry = log_->getEntry(seq);   // TODO better namespace
         CommittedReply reply;
@@ -1301,7 +1301,7 @@ void Replica::tryFinishFallback()
 
     // Check if own checkpoint seq is behind suffix checkpoint seq
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
-    ::LogCheckpoint &myCheckpoint = log_->checkpoint;   // bad namespace
+    ::LogCheckpoint &myCheckpoint = log_->stableCheckpoint;   // bad namespace
     if (checkpoint->seq() > myCheckpoint.seq) {
         LOG(INFO) << "Checkpoint seq=" << checkpoint->seq() << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq
                   << ", snapshot will be fetched from replicaId=" << logSuffix.fetchFromReplicaId;
@@ -1323,12 +1323,12 @@ void Replica::continueFallbackWithSnapshotUpdated()
 {
     // TODO(Hao): this is not tested!!
     LogSuffix &suffix = getFallbackLogSuffix();
-    if (suffix.checkpoint->seq() < log_->checkpoint.seq) {
-        LOG(INFO) << "Checkpoint seq=" << log_->checkpoint.seq
+    if (suffix.checkpoint->seq() < log_->stableCheckpoint.seq) {
+        LOG(INFO) << "Checkpoint seq=" << log_->stableCheckpoint.seq
                   << " is greater than suffix checkpoint seq=" << suffix.checkpoint->seq()
                   << " after fetched state snapshot, skip applying suffix";
     } else {
-        LOG(INFO) << "Checkpoint seq=" << log_->checkpoint.seq
+        LOG(INFO) << "Checkpoint seq=" << log_->stableCheckpoint.seq
                   << " is equal to suffix checkpoint seq=" << suffix.checkpoint->seq()
                   << " after fetched state snapshot, applying suffix";
         applySuffixToLog(suffix, log_);
@@ -1772,7 +1772,7 @@ bool Replica::checkDuplicateRequest(const ClientRequest &clientHeader)
 
 void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 {
-    uint32_t startingSeq = log_->checkpoint.seq + 1;
+    uint32_t startingSeq = log_->stableCheckpoint.seq + 1;
     if (rShiftNum) {
         log_->rightShiftEntries(startingSeq - rShiftNum, rShiftNum);
     }
@@ -1796,7 +1796,8 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 
         temp[curSeq - startingSeq] = entry;
         entry->seq = curSeq;
-        auto prevDigest = curSeq == startingSeq ? log_->checkpoint.logDigest : temp[curSeq - startingSeq - 1]->digest;
+        auto prevDigest =
+            curSeq == startingSeq ? log_->stableCheckpoint.logDigest : temp[curSeq - startingSeq - 1]->digest;
 
         entry->updateDigest(prevDigest);
 
