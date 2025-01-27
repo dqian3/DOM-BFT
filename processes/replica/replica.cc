@@ -749,13 +749,9 @@ void Replica::applyCheckpointCommit(CheckpointCollector &collector, std::shared_
         checkpointClientRecord_ = commitToUse.client_records_set();
         curClientRecord_ = checkpointClientRecord_;
 
-        int rShiftNum = collector.clientRecords_.value().numMissing(checkpointClientRecord_);
-        // that is, there is never a left shift
-        assert(rShiftNum >= 0);
-        if (rShiftNum > 0) {
-            VLOG(1) << "Right shift logs by " << rShiftNum << " to align with the checkpoint";
-        }
-        reapplyEntriesWithRecord(rShiftNum);
+        int numMissing = collector.clientRecords_.value().numMissing(checkpointClientRecord_);
+
+        reapplyEntriesWithRecord(numMissing);
     } else {
         checkpointClientRecord_ = collector.clientRecords_.value();
     }

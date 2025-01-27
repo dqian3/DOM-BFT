@@ -49,8 +49,6 @@ private:
     // Replica state
     uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
     std::shared_ptr<Log> log_;
-    ClientRecord curClientRecord_;
-    ClientRecord checkpointClientRecord_;
 
     // State for commit/checkpoint protocol
     // checkpoint seq -> CheckpointCollector

@@ -15,6 +15,7 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/client_record.h"
 
 #include "lib/log_checkpoint.h"
 #include "lib/log_entry.h"
@@ -53,7 +54,13 @@ public:
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
     bool addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
-    void commit(uint32_t seq);
+    // Abort all requests up to and including seq, as well as app state
+    void abort(uint32_t seq);
+
+    // Given a sequence number, commit the request and remove previous state, and save new checkpoint
+    void setCheckpoint(uint32_t seq /*commit messages and signatures*/);
+    // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
+    void applySnapshot(uint32_t seq /*commit messages and signatures*/);
 
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;
@@ -61,7 +68,9 @@ public:
     const LogEntry &getEntry(uint32_t seq);
     LogCheckpoint &getStableCheckpoint();
 
+    // Get uncommitted suffix of the loh
     void toProto(dombft::proto::FallbackStart &msg);
+
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };
 
