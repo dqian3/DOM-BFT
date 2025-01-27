@@ -84,25 +84,32 @@ TEST_F(ClientSequenceUtilTest, UpdateSequenceWithMissingSeq)
 
 TEST_F(ClientRecordShiftTest, GetShiftNumWhenSlow)
 {
-    // client 0 is slow on replica relative to checkpoint
+    // replica:    ... 4 5 _ _ 8 9 10
+    // checkpoint: ... 4 5 6 7 8 _  _
     setSequence(replicaRecord, 0, 8, {6, 7});
     replicaRecord.update(1, 19);
     replicaRecord.update(1, 20);
 
-    EXPECT_EQ(getRightShiftNumWithRecords(checkpointRecord, replicaRecord), 2);
+    EXPECT_EQ(replicaRecord.numMissing(checkpointRecord), 2);
 };
 
 TEST_F(ClientRecordShiftTest, GetShiftNumWhenMiss1)
 {
+    // replica:    ... 4 5 _ _ 8 9 10 _ _ __ __
+    // checkpoint: ... 4 5 _ _ 8 _ __ _ _ 13 14
+
     setSequence(replicaRecord, 0, 14, {6, 7, 9, 10, 11, 12});
 
-    EXPECT_EQ(getRightShiftNumWithRecords(checkpointRecord, replicaRecord), 2);
+    EXPECT_EQ(replicaRecord.numMissing(checkpointRecord), 2);
 };
 
 TEST_F(ClientRecordShiftTest, GetShiftNumWhenMissAndSlow)
 {
+    // replica:    ... 4 5 _ _ 8 9 10
+    // checkpoint: ... 4 _ _ 7 8 _  _
     setSequence(replicaRecord, 0, 8, {5, 6});
+
     replicaRecord.update(1, 19);
 
-    EXPECT_EQ(getRightShiftNumWithRecords(checkpointRecord, replicaRecord), 2);
+    EXPECT_EQ(replicaRecord.numMissing(checkpointRecord), 3);
 };

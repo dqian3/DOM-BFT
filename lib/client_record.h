@@ -16,8 +16,9 @@ struct ClientSequence {
 
     bool contains(uint32_t seq) const;
     bool update(uint32_t newSeq);
-
     uint32_t size() const;
+
+    int numMissing(const ClientSequence &referenceSequence) const;
 };
 
 class ClientRecord {
@@ -36,6 +37,8 @@ public:
 
     void toProto(CheckpointClientRecordSet &records) const;
 
+    // Computes the number of records in referenceRecord that are misssing in this record
+    // Does not check for extra records in this record
     int numMissing(const ClientRecord &referenceRecord) const;
 };
 

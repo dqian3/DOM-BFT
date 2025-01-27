@@ -695,7 +695,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         std::string logDigest = log_->getDigest(rSeq);
         std::string appDigest = app_->getDigest(rSeq);
-        std::string appDelta = app_->getDelta(rSeq);
+
         ClientRecord tmpClientRecord = collector.clientRecords_.value();
         uint32_t instance = instance_;
         // Broadcast commit Message
