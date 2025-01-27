@@ -16,62 +16,16 @@
 #include "lib/application.h"
 #include "lib/apps/counter.h"
 
-struct LogEntry {
-    uint32_t seq;
+#include "lib/log_checkpoint.h"
+#include "lib/log_entry.h"
 
-    uint32_t client_id;
-    uint32_t client_seq;
-
-    std::string request;
-    std::string result;
-
-    byte digest[SHA256_DIGEST_LENGTH];
-
-    LogEntry();
-
-    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, const byte *prev_digest);
-    ~LogEntry();
-
-    void updateDigest(const byte *prev_digest);
-
-    friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);
-};
-
-struct LogCheckpoint {
-    uint32_t seq = 0;
-    // TODO shared ptr here so we don't duplicate it from certs.
-    dombft::proto::Cert cert;
-    byte logDigest[SHA256_DIGEST_LENGTH];
-    byte appDigest[SHA256_DIGEST_LENGTH];
-    std::shared_ptr<std::string> appSnapshot;
-
-    std::map<uint32_t, dombft::proto::Commit> commitMessages;
-    std::map<uint32_t, std::string> signatures;
-
-    // Default constructor
-    LogCheckpoint()
-    {
-        std::memset(logDigest, 0, SHA256_DIGEST_LENGTH);
-        std::memset(appDigest, 0, SHA256_DIGEST_LENGTH);
-    }
-
-    // Copy constructor
-    LogCheckpoint(const LogCheckpoint &other)
-        : seq(other.seq)
-        , cert(other.cert)
-        , appSnapshot(other.appSnapshot)
-        , commitMessages(other.commitMessages)
-        , signatures(other.signatures)
-    {
-        std::memcpy(appDigest, other.appDigest, SHA256_DIGEST_LENGTH);
-    }
-};
-
-struct Log {
+class Log {
 
     // Circular buffer of LogEntry, since we know the history won't exceed MAX_SPEC_HIST
     // TODO static memory here? or is that overoptimizing?
-    std::array<std::shared_ptr<LogEntry>, MAX_SPEC_HIST> log;
+
+private:
+    std::deque<LogEntry> log;
 
     // Map of sequence number to certs
     std::map<uint32_t, std::shared_ptr<dombft::proto::Cert>> certs;
@@ -87,34 +41,29 @@ struct Log {
     // The log claims ownership of the application, instead of the replica
     std::shared_ptr<Application> app_;
 
+public:
     Log(std::shared_ptr<Application> app);
+
+    bool inRange(uint32_t seq) const;
+    bool canAddEntry() const;
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
-    void commit(uint32_t seq);
-
     bool addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
-    const byte *getDigest() const;
-    const byte *getDigest(uint32_t seq) const;
+    void commit(uint32_t seq);
+
+    const std::string &getDigest() const;
+    const std::string &getDigest(uint32_t seq) const;
 
     void toProto(dombft::proto::FallbackStart &msg);
-    void toProtoLogCheckpoint(dombft::proto::LogCheckpoint *msg);
 
-    friend std::ostream &operator<<(std::ostream &out, const Log &l);
-
-    std::shared_ptr<LogEntry> getEntry(uint32_t seq);
-    void setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry);
+    const LogEntry &getEntry(uint32_t seq);
     void rightShiftEntries(uint32_t startSeq, uint32_t num);
 
-    bool inRange(uint32_t seq) const
-    {
-        return seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST);
-    }
-    bool canAddEntry() const { return nextSeq <= checkpoint.seq + MAX_SPEC_HIST; }
+    friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };
 
-std::ostream &operator<<(std::ostream &out, const LogEntry &le);
 std::ostream &operator<<(std::ostream &out, const Log &l);
 
 #endif

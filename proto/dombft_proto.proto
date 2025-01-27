@@ -144,8 +144,7 @@ message LogCheckpoint
 {
     uint32 seq = 1;
     bytes app_digest = 2;
-    bytes app_snapshot = 3;
-    bytes log_digest = 4;
+    bytes log_digest = 3;
 
     repeated Commit commits   = 5;
     repeated bytes signatures = 6;

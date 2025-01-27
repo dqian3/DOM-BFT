@@ -93,8 +93,8 @@ cc_library(
 
 cc_library(
     name = "log",
-    hdrs = ["log.h"],
-    srcs = ["log.cc"],
+    hdrs = ["log.h", "log_checkpoint.h", "log_entry.h"],
+    srcs = ["log.cc", "log_checkpoint.cc", "log_entry.cc"],
     deps = [
         ":common",
         ":utils",
