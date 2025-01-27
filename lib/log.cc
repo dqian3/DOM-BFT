@@ -162,10 +162,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
 
         assert(i == entry.seq);
 
-        if (certs.count(i)) {
-            (*entryProto->mutable_cert()) = *certs[i];
-        }
-
+        // entry proto no longer keeps cert, remove relevant lines. 
         entryProto->set_seq(i);
         entryProto->set_client_id(entry.client_id);
         entryProto->set_client_seq(entry.client_seq);

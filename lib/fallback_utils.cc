@@ -28,43 +28,19 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     uint32_t logToUseIdx = 0;
     uint32_t logToUseSeq = 0;
 
-    const dombft::proto::Cert *cert = nullptr;
     uint32_t maxCertSeq = 0;
 
-    for (int i = 0; i < fallbackProposal.logs().size(); i++) {
-        auto &fallbackLog = fallbackProposal.logs()[i];
-        // TODO verify each log
-        for (const dombft::proto::LogEntry &entry : fallbackLog.log_entries()) {
-            if (!entry.has_cert())
-                continue;
-
-            // Already included in checkpoint
-            if (entry.seq() <= logSuffix.checkpoint->seq())
-                continue;
-
-            if (entry.cert().instance() < fallbackProposal.instance() - 1)
-                continue;
-
-            // TODO verify cert
-            // If the cert doesn't match the log, a bad log suffix could be injected
-            if (entry.seq() > maxCertSeq) {
-                // VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
-                //         << " c_seq=" << entry.cert().replies()[0].client_seq();
-
-                cert = &entry.cert();
-                logToUseIdx = i;
-                maxCertSeq = entry.seq();
-            }
-        }
-    }
-
-    if (cert != nullptr) {
-        VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].client_id()
-                << " c_seq=" << cert->replies()[0].client_seq();
+    // read the max cert seq directly from the proposal
+    maxCertSeq = fallbackProposal.max_cert_seq();
+    if (maxCertSeq > 0) {
+        maxCertSeq = fallbackProposal.max_cert_seq();
+        VLOG(4) << "Max cert seq read from proposal = " << maxCertSeq;
     } else {
-        VLOG(4) << "No certs found!";
+        LOG(WARNING) << "No max cert seq found in fallback proposal! default to checkpoint seq = " << maxCheckpointSeq;
+        maxCertSeq = maxCheckpointSeq;
     }
 
+    // because no cert per entry now, skip this max cert finding loop entirely
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
         if (entry.seq() > maxCertSeq)

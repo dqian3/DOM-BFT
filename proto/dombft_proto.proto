@@ -113,7 +113,7 @@ message LogEntry
     bytes request = 8;
     bytes result = 9;
 
-    optional Cert cert = 10;
+    // optional Cert cert = 10;
 }
 
 
@@ -138,6 +138,7 @@ message FallbackStart
     repeated LogEntry log_entries = 4;
     LogCheckpoint checkpoint = 5;
     CheckpointClientRecordsSet client_records_set = 6;
+    Cert cert = 7;
 }
 
 message FallbackProposal
@@ -147,6 +148,8 @@ message FallbackProposal
 
     repeated FallbackStart logs = 3;
     repeated bytes signatures = 4;
+
+    uint32 max_cert_seq = 5; // indicates the highest seq certiefied in the prpoposal
 }
 
 
