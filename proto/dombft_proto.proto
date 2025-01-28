@@ -112,8 +112,6 @@ message LogEntry
     // TODO is this needed?
     bytes request = 8;
     bytes result = 9;
-
-    // optional Cert cert = 10;
 }
 
 
@@ -148,8 +146,6 @@ message FallbackProposal
 
     repeated FallbackStart logs = 3;
     repeated bytes signatures = 4;
-
-    uint32 max_cert_seq = 5; // indicates the highest seq certiefied in the prpoposal
 }
 
 

@@ -85,6 +85,11 @@ struct Log {
     // The log claims ownership of the application, instead of the replica
     std::shared_ptr<Application> app_;
 
+    // suggested by daniel, moving the stablecert structure into the log
+    // instead of keeping at the log. 
+    std::optional<dombft::proto::Cert> stableCert_;
+    uint32_t stableCertSeq_ = 0;
+
     Log(std::shared_ptr<Application> app);
 
     // Adds an entry and returns whether it is successful.

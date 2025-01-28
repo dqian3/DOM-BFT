@@ -605,13 +605,9 @@ void Replica::processCert(const Cert &cert)
         return;
     }
 
-    //  do not keep cert in each log entry anymore, remove the code. 
-    // instead, check if it is newer than the stable cert that we have right now. 
-    // If newer, update, otherwise, ignore.
-    if (cert.seq() > stableCertSeq_) {
-        stableCert_ = cert;
-        stableCertSeq_ = cert.seq();
-        LOG(INFO) << "Updating stable cert to seq=" << stableCertSeq_;
+    if (!log_->addCert(cert.seq(), cert)) {
+        VLOG(2) << "Failed to add cert for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
+        return;
     }
 
 
@@ -645,13 +641,8 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         //  a newer cert has been formed, update stable cert
-        if (!stableCert_.has_value()){
-            stableCert_ = collector.cert_;
-            stableCertSeq_ = collector.seq_;
-        }
-        if (collector.instance_ == instance_ && collector.seq_ > stableCertSeq_) {
-            stableCert_ = collector.cert_;
-            stableCertSeq_ = collector.seq_;
+        if (!log_->addCert(rSeq, collector.cert_.value())) {
+            VLOG(2) << "Failed to add cert for seq=" << rSeq << " after collecting sufficient replies";
         }
 
         const byte *logDigest = log_->getDigest(rSeq);
@@ -1026,8 +1017,8 @@ void Replica::startFallback()
     fallbackStartMsg.set_instance(instance_);
     fallbackStartMsg.set_replica_id(replicaId_);
     fallbackStartMsg.set_pbft_view(pbftView_);
-    if (stableCert_.has_value()) {
-        *fallbackStartMsg.mutable_cert() = *stableCert_;
+    if (log_->stableCert_.has_value()) {
+        *fallbackStartMsg.mutable_cert() = log_->stableCert_.value();
     }
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
@@ -1168,7 +1159,6 @@ void Replica::doPrePreparePhase(uint32_t instance)
     FallbackProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_instance(instance);
-    proposal->set_max_cert_seq(stableCertSeq_); 
     for (auto &startMsg : fallbackHistorys_) {
         if (startMsg.second.instance() != instance)
             continue;

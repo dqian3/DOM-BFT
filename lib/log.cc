@@ -106,12 +106,19 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     auto entry = getEntry(seq);   // will not be nullptr because range is checked above
     const dombft::proto::Reply &r = cert.replies()[0];
 
+    // adding the check for the instance number. 
     if (r.client_id() != entry->client_id || r.client_seq() != entry->client_seq) {
         VLOG(5) << "Fail adding cert because mismatching request!";
         return false;
     }
 
-    certs[seq] = std::make_shared<dombft::proto::Cert>(cert);
+    // instead of adding the cert to the list of certs, directly updating the stable cert. 
+    // if the cert is newer than the stable cert, update.
+    if (!stableCert_.has_value() || cert.instance() > stableCert_->instance()) {
+        stableCert_ = cert;
+        stableCertSeq_ = seq;
+    }
+
     return true;
 }
 

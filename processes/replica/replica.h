@@ -94,12 +94,6 @@ private:
     // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
     bool holdPrepareOrCommit_ = false;
 
-    // optimization of keeping a single cert only, so far do not need multithreading protection. Given only 1 process thread.
-    std::optional<dombft::proto::Cert> stableCert_;
-    uint32_t stableCertSeq_ = 0;
-    // for incomplete cert, already handled by the checkpoint collectors. 
-    // std::unordered_map<uint32_t, CheckpointCollector> incompleteCerts_;
-
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
     void verifyMessagesThd();
