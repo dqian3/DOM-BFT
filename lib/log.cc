@@ -114,9 +114,9 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 
     // instead of adding the cert to the list of certs, directly updating the stable cert. 
     // if the cert is newer than the stable cert, update.
-    if (!stableCert_.has_value() || cert.instance() > stableCert_->instance()) {
-        stableCert_ = cert;
-        stableCertSeq_ = seq;
+    if (!latestCert_.has_value() || cert.instance() > latestCert_->instance()) {
+        latestCert_ = cert;
+        latestCertSeq_ = seq;
     }
 
     return true;

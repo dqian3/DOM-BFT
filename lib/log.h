@@ -87,8 +87,8 @@ struct Log {
 
     // suggested by daniel, moving the stablecert structure into the log
     // instead of keeping at the log. 
-    std::optional<dombft::proto::Cert> stableCert_;
-    uint32_t stableCertSeq_ = 0;
+    std::optional<dombft::proto::Cert> latestCert_;
+    uint32_t latestCertSeq_ = 0;
 
     Log(std::shared_ptr<Application> app);
 

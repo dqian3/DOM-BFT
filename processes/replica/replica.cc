@@ -639,6 +639,10 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 
     checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_, std::nullopt);
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
+    if (collector.instance_ != reply.instance()) {
+        LOG(INFO) << "Reply instance outdated, skipping";
+        return;
+    }
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         //  a newer cert has been formed, update stable cert
         if (!log_->addCert(rSeq, collector.cert_.value())) {
@@ -1017,8 +1021,8 @@ void Replica::startFallback()
     fallbackStartMsg.set_instance(instance_);
     fallbackStartMsg.set_replica_id(replicaId_);
     fallbackStartMsg.set_pbft_view(pbftView_);
-    if (log_->stableCert_.has_value()) {
-        *fallbackStartMsg.mutable_cert() = log_->stableCert_.value();
+    if (log_->latestCert_.has_value()) {
+        *fallbackStartMsg.mutable_cert() = log_->latestCert_.value();
     }
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
