@@ -95,8 +95,8 @@ TEST_F(ClientRecordShiftTest, GetShiftNumWhenSlow)
 
 TEST_F(ClientRecordShiftTest, GetShiftNumWhenMiss1)
 {
-    // replica:    ... 4 5 _ _ 8 9 10 _ _ __ __
-    // checkpoint: ... 4 5 _ _ 8 _ __ _ _ 13 14
+    // checkpoint: ... 4 5 _ _ 8 9 10 _ _ __ __
+    // replica:    ... 4 5 _ _ 8 _ __ _ _ 13 14
 
     setSequence(replicaRecord, 0, 14, {6, 7, 9, 10, 11, 12});
 
@@ -105,8 +105,8 @@ TEST_F(ClientRecordShiftTest, GetShiftNumWhenMiss1)
 
 TEST_F(ClientRecordShiftTest, GetShiftNumWhenMissAndSlow)
 {
-    // replica:    ... 4 5 _ _ 8 9 10
-    // checkpoint: ... 4 _ _ 7 8 _  _
+    // checkpoint:  ... 4 5 _ _ 8 9 10
+    // replica:     ... 4 _ _ 7 8 _  _
     setSequence(replicaRecord, 0, 8, {5, 6});
 
     replicaRecord.update(1, 19);
