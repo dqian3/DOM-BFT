@@ -610,7 +610,6 @@ void Replica::processCert(const Cert &cert)
         return;
     }
 
-
     reply.set_replica_id(replicaId_);
     reply.set_instance(instance_);
     reply.set_client_id(r.client_id());
@@ -639,10 +638,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 
     checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_, std::nullopt);
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
-    if (collector.instance_ != reply.instance()) {
-        LOG(INFO) << "Reply instance outdated, skipping";
-        return;
-    }
+
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         //  a newer cert has been formed, update stable cert
         if (!log_->addCert(rSeq, collector.cert_.value())) {

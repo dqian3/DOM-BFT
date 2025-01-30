@@ -30,13 +30,27 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
     uint32_t maxCertSeq = 0;
 
-    // get the max cert seq by comparing the seq in each of the included cert. 
-    // we have already verified these certs, so we can trust their seq numbers. 
+    // get the max cert seq by comparing the seq in each of the included cert.
+    // we have already verified these certs, so we can trust their seq numbers.
     for (auto &fallbackLog : fallbackProposal.logs()) {
+        // Already included in checkpoint
+        if (entry.seq() <= logSuffix.checkpoint->seq())
+            continue;
+
+        if (entry.cert().instance() < fallbackProposal.instance() - 1)
+            continue;
+
         if (fallbackLog.cert().seq() > maxCertSeq) {
             maxCertSeq = fallbackLog.cert().seq();
             logToUseIdx = fallbackLog.replica_id();
         }
+    }
+
+    if (cert != nullptr) {
+        VLOG(4) << "Max cert found for seq=" << maxCertSeq << " c_id=" << cert->replies()[0].client_id()
+                << " c_seq=" << cert->replies()[0].client_seq();
+    } else {
+        VLOG(4) << "No certs found!";
     }
 
     // Add entries up to cert

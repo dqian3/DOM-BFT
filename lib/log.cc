@@ -106,15 +106,13 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     auto entry = getEntry(seq);   // will not be nullptr because range is checked above
     const dombft::proto::Reply &r = cert.replies()[0];
 
-    // adding the check for the instance number. 
-    if (r.client_id() != entry->client_id || r.client_seq() != entry->client_seq) {
+    if (r.digest() != std::string(entry->digest, entry->digest + SHA256_DIGEST_LENGTH)) {
         VLOG(5) << "Fail adding cert because mismatching request!";
         return false;
     }
 
-    // instead of adding the cert to the list of certs, directly updating the stable cert. 
-    // if the cert is newer than the stable cert, update.
-    if (!latestCert_.has_value() || cert.instance() > latestCert_->instance()) {
+    // instead of adding the cert to the list of certs, directly updating the latest cert.
+    if (!latestCert_.has_value() || cert.seq() > latestCert_->seq()) {
         latestCert_ = cert;
         latestCertSeq_ = seq;
     }
@@ -169,7 +167,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
 
         assert(i == entry.seq);
 
-        // entry proto no longer keeps cert, remove relevant lines. 
+        // entry proto no longer keeps cert, remove relevant lines.
         entryProto->set_seq(i);
         entryProto->set_client_id(entry.client_id);
         entryProto->set_client_seq(entry.client_seq);
