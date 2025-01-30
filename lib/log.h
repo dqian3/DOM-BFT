@@ -85,6 +85,9 @@ struct Log {
     // The log claims ownership of the application, instead of the replica
     std::shared_ptr<Application> app_;
 
+    std::optional<dombft::proto::Cert> latestCert_;
+    uint32_t latestCertSeq_ = 0;
+
     Log(std::shared_ptr<Application> app);
 
     // Adds an entry and returns whether it is successful.

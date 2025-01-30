@@ -606,7 +606,7 @@ void Replica::processCert(const Cert &cert)
     }
 
     if (!log_->addCert(cert.seq(), cert)) {
-        // If we don't have the matching operation, return false so we don't falsely ack
+        VLOG(2) << "Failed to add cert for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
         return;
     }
 
@@ -638,7 +638,13 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 
     checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_, std::nullopt);
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
+
     if (collector.addAndCheckReplyCollection(reply, sig)) {
+        //  a newer cert has been formed, update stable cert
+        if (!log_->addCert(rSeq, collector.cert_.value())) {
+            VLOG(2) << "Failed to add cert for seq=" << rSeq << " after collecting sufficient replies";
+        }
+
         const byte *logDigest = log_->getDigest(rSeq);
         std::string appDigest = log_->app_->getDigest(rSeq);
         ClientRecords tmpClientRecords = collector.clientRecords_.value();
@@ -1011,6 +1017,9 @@ void Replica::startFallback()
     fallbackStartMsg.set_instance(instance_);
     fallbackStartMsg.set_replica_id(replicaId_);
     fallbackStartMsg.set_pbft_view(pbftView_);
+    if (log_->latestCert_.has_value()) {
+        *fallbackStartMsg.mutable_cert() = log_->latestCert_.value();
+    }
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
     getRecordsDigest(checkpointClientRecords_, recordDigest);
