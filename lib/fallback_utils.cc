@@ -23,26 +23,25 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     getClientRecordsFromProto(*tmpClientRecordsSetPtr, logSuffix.clientRecords);
     VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
 
-    // Find highest request with a cert
+    // Find highest sequence with a cert
     // Idx of log we will use to match our logs to the fallback agreed upon logs (up to cert)
     uint32_t logToUseIdx = 0;
     uint32_t logToUseSeq = 0;
 
+    const dombft::proto::Cert *cert = nullptr;
     uint32_t maxCertSeq = 0;
 
     // get the max cert seq by comparing the seq in each of the included cert.
     // we have already verified these certs, so we can trust their seq numbers.
     for (auto &fallbackLog : fallbackProposal.logs()) {
         // Already included in checkpoint
-        if (entry.seq() <= logSuffix.checkpoint->seq())
-            continue;
-
-        if (entry.cert().instance() < fallbackProposal.instance() - 1)
+        if (fallbackLog.cert().seq() <= logSuffix.checkpoint->seq())
             continue;
 
         if (fallbackLog.cert().seq() > maxCertSeq) {
             maxCertSeq = fallbackLog.cert().seq();
             logToUseIdx = fallbackLog.replica_id();
+            cert = &fallbackLog.cert();
         }
     }
 

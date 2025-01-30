@@ -53,13 +53,13 @@ struct TestLogEntry {
     uint32_t c_id;
     uint32_t c_seq;
 
-    bool cert = false;
     std::string req = "request";
 };
 
 struct TestLog {
     uint32_t startSeq;
     std::string logDigest;
+    uint32_t certSeq;
 
     std::vector<TestLogEntry> entries;
 
@@ -89,16 +89,15 @@ std::shared_ptr<Log> logFromTestLog(const TestLog &testLog)
         std::string res;
         ret->addEntry(e.c_id, e.c_seq, e.req, res);
 
-        if (e.cert) {
+        if (ret->nextSeq - 1 == testLog.certSeq) {
             // TODO make this cert "real"
             dombft::proto::Cert cert;
             cert.set_instance(testLog.instanceNum);
-            cert.set_seq(ret->nextSeq - 1);
+            cert.set_seq(testLog.certSeq);
 
             auto &r = (*cert.add_replies());
             r.set_client_id(e.c_id);
             r.set_client_seq(e.c_seq);
-
             ret->addCert(ret->nextSeq - 1, cert);
         }
     }
@@ -196,16 +195,16 @@ TEST(TestFallbackUtils, LogSuffixFromProposalFPlus1)
     // Test
     TestHistory hist;
 
-    hist.push_back({10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}});
-    hist.push_back({10, "aaaa", {{2, 2}, {1, 2}, {3, 2}}});
-    hist.push_back({10, "aaaa", {{2, 2}, {1, 2}, {3, 2}}});
+    hist.push_back({10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}});
+    hist.push_back({10, "aaaa", 0, {{2, 2}, {1, 2}, {3, 2}}});
+    hist.push_back({10, "aaaa", 0, {{2, 2}, {1, 2}, {3, 2}}});
 
     auto f = generateFallbackProposal(1, hist);
 
     LogSuffix suffix;
     getLogSuffixFromProposal(*f, suffix);
 
-    TestLog expectedLog{10, "aaaa", {{2, 2}, {1, 2}, {3, 2}}};
+    TestLog expectedLog{10, "aaaa", 0, {{2, 2}, {1, 2}, {3, 2}}};
     assertLogSuffixEq(suffix, expectedLog);
 }
 
@@ -214,16 +213,16 @@ TEST(TestFallbackUtils, LogSuffixFromProposalScrambed)
     // Test
     TestHistory hist;
 
-    hist.push_back({10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}});
-    hist.push_back({10, "aaaa", {{2, 2}, {3, 2}, {1, 2}}});
-    hist.push_back({10, "aaaa", {{3, 2}, {1, 2}, {2, 2}}});
+    hist.push_back({10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}});
+    hist.push_back({10, "aaaa", 0, {{2, 2}, {3, 2}, {1, 2}}});
+    hist.push_back({10, "aaaa", 0, {{3, 2}, {1, 2}, {2, 2}}});
 
     auto f = generateFallbackProposal(1, hist);
 
     LogSuffix suffix;
     getLogSuffixFromProposal(*f, suffix);
 
-    TestLog expectedLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}};
+    TestLog expectedLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}};
     assertLogSuffixEq(suffix, expectedLog);
 }
 
@@ -235,8 +234,8 @@ TEST(TestFallbackUtils, ApplyLogSuffix)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
-    TestLog curLog{10, "aaaa", {{1, 2}, {3, 2}, {2, 2}}};
-    TestLog newLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}};
+    TestLog curLog{10, "aaaa", 0, {{1, 2}, {3, 2}, {2, 2}}};
+    TestLog newLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}};
 
     // Generate protocol log
     auto log = logFromTestLog(curLog);
@@ -257,8 +256,8 @@ TEST(TestFallbackUtils, ApplyReplicaAhead)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
-    TestLog curLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
-    TestLog newLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}};
+    TestLog curLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog newLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}};
 
     // Generate protocol log
     auto log = logFromTestLog(curLog);
@@ -277,8 +276,8 @@ TEST(TestFallbackUtils, ApplyReplicaInserted)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
-    TestLog curLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
-    TestLog newLog{10, "aaaa", {{2, 2}, {3, 2}, {4, 2}}};
+    TestLog curLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog newLog{10, "aaaa", 0, {{2, 2}, {3, 2}, {4, 2}}};
 
     // Generate protocol log
     auto log = logFromTestLog(curLog);
@@ -299,13 +298,13 @@ TEST(TestFallbackUtils, Cert)
 {
     // Test
     TestHistory hist;
-    TestLog curLog{10, "aaaa", {{1, 2}}};
+    TestLog curLog{10, "aaaa", 0, {{1, 2}}};
 
     hist.push_back(curLog);
     hist.push_back(curLog);
     // Logs with certs
-    hist.push_back({10, "aaaa", {{1, 3, true}, {2, 3, true}, {3, 3, true}}});
-    TestLog expectedLog{10, "aaaa", {{1, 3}, {2, 3}, {3, 3}, {1, 2}}};
+    hist.push_back({10, "aaaa", 13, {{1, 3}, {2, 3}, {3, 3}}});
+    TestLog expectedLog{10, "aaaa", 0, {{1, 3}, {2, 3}, {3, 3}, {1, 2}}};
 
     auto proposal = generateFallbackProposal(1, hist);
 
@@ -324,13 +323,13 @@ TEST(TestFallbackUtils, Cert2)
 {
     // Test
     TestHistory hist;
-    TestLog curLog{10, "aaaa", {{1, 2}, {2, 2}, {4, 2}, {3, 2}}};
+    TestLog curLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {4, 2}, {3, 2}}};
 
     hist.push_back(curLog);
     hist.push_back(curLog);
     // Logs with certs
-    hist.push_back({10, "aaaa", {{1, 2}, {2, 2}, {3, 2, true}}});
-    TestLog expectedLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    hist.push_back({10, "aaaa", 13, {{1, 2}, {2, 2}, {3, 2}}});
+    TestLog expectedLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
 
     auto proposal = generateFallbackProposal(1, hist);
 
@@ -352,8 +351,8 @@ TEST(TestFallbackUtils, Catchup)
     TestLog behindTestLog = {5, "bbbb", {}};
     auto behindLog = logFromTestLog(behindTestLog);
 
-    hist.push_back({10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}});
-    hist.push_back({10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}});
+    hist.push_back({10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}});
+    hist.push_back({10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}});
     hist.push_back(behindTestLog);
 
     auto proposal = generateFallbackProposal(1, hist);
@@ -367,7 +366,7 @@ TEST(TestFallbackUtils, Catchup)
 
     applySuffixToLog(suffix, behindLog);
 
-    TestLog expectedLog{10, "aaaa", {{1, 2}, {2, 2}, {3, 2}}};
+    TestLog expectedLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}};
     assertLogEq(*behindLog, expectedLog);
 }
 
@@ -375,8 +374,8 @@ TEST(TestFallbackUtils, CheckpointAhead)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
-    TestLog ahead{10, "bbbb", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
-    TestLog behind{8, "aaaa", {{0, 1}, {0, 2}, {1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog ahead{10, "bbbb", 0, {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog behind{8, "aaaa", 0, {{0, 1}, {0, 2}, {1, 2}, {2, 2}, {3, 2}, {4, 2}}};
 
     TestHistory hist;
 
@@ -397,6 +396,6 @@ TEST(TestFallbackUtils, CheckpointAhead)
     LOG(INFO) << "After apply: " << *aheadLog;
 
     // Generate protocol log
-    TestLog expected{10, "bbbb", {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
+    TestLog expected{10, "bbbb", 0, {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
     assertLogEq(*aheadLog, expected);
 }
