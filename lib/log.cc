@@ -175,6 +175,10 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
         entryProto->set_request(entry.request);
         entryProto->set_result(entry.result);
     }
+
+    if (latestCert_.has_value()) {
+        *msg.mutable_cert() = latestCert_.value();
+    }
 }
 
 std::ostream &operator<<(std::ostream &out, const Log &l)

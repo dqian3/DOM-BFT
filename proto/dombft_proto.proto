@@ -136,7 +136,8 @@ message FallbackStart
     repeated LogEntry log_entries = 4;
     LogCheckpoint checkpoint = 5;
     CheckpointClientRecordsSet client_records_set = 6;
-    Cert cert = 7;
+    
+    optional Cert cert = 7;
 }
 
 message FallbackProposal

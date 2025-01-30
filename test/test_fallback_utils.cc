@@ -98,7 +98,10 @@ std::shared_ptr<Log> logFromTestLog(const TestLog &testLog)
             auto &r = (*cert.add_replies());
             r.set_client_id(e.c_id);
             r.set_client_seq(e.c_seq);
-            ret->addCert(ret->nextSeq - 1, cert);
+            r.set_digest(ret->getDigest(), SHA256_DIGEST_LENGTH);
+            if (!ret->addCert(ret->nextSeq - 1, cert)) {
+                LOG(WARNING) << "Could not add cert in logFromTestLog";
+            }
         }
     }
 
@@ -302,7 +305,7 @@ TEST(TestFallbackUtils, Cert)
 
     hist.push_back(curLog);
     hist.push_back(curLog);
-    // Logs with certs
+    // Logs with cert
     hist.push_back({10, "aaaa", 13, {{1, 3}, {2, 3}, {3, 3}}});
     TestLog expectedLog{10, "aaaa", 0, {{1, 3}, {2, 3}, {3, 3}, {1, 2}}};
 

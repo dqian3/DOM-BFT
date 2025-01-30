@@ -1017,9 +1017,6 @@ void Replica::startFallback()
     fallbackStartMsg.set_instance(instance_);
     fallbackStartMsg.set_replica_id(replicaId_);
     fallbackStartMsg.set_pbft_view(pbftView_);
-    if (log_->latestCert_.has_value()) {
-        *fallbackStartMsg.mutable_cert() = log_->latestCert_.value();
-    }
     log_->toProto(fallbackStartMsg);
     byte recordDigest[SHA256_DIGEST_LENGTH];
     getRecordsDigest(checkpointClientRecords_, recordDigest);
