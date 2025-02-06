@@ -12,6 +12,7 @@ struct LogSuffix {
     // For loging purposes
     uint32_t replicaId;
     uint32_t instance;
+    uint32_t fetchFromReplicaId;
 
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;

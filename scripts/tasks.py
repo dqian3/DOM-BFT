@@ -66,7 +66,7 @@ def local(c, config_file="../configs/local.yaml", v=5, prot="dombft",
 
             other_handles.append(hdl)
         # make sure clients would not fallback before any requests are commited, corner case not reolved. 
-        time.sleep(2)
+        time.sleep(3)
 
         for id in range(n_clients):
             cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
@@ -288,7 +288,7 @@ def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull && git checkout more_pbft && bazel build //processes/...")
+    group.run("cd DOM-BFT && git pull --rebase && git checkout kv_store_complete && bazel build //processes/...")
 
     group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
@@ -565,7 +565,8 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                slow_path_freq=0,
                normal_path_freq=0,
                view_change_freq=0,
-               commit_local_in_view_change = False,
+               drop_checkpoint_freq=0,
+               commit_local_in_view_change=False,
                profile=False,
                v=5,
                prot="dombft",
@@ -614,6 +615,9 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
         if slow_path_freq != 0 and (id % 2) == 0:
             swap_arg = f'-swapFreq {slow_path_freq}'
 
+        drop_checkpoint_arg = ''
+        if id ==0 and drop_checkpoint_freq != 0:
+            drop_checkpoint_arg = f'-checkpointDropFreq {drop_checkpoint_freq}'
         view_change_arg = ''
         if (id % 2) == 0:
             if view_change_freq != 0:
@@ -624,7 +628,7 @@ def gcloud_run(c, config_file="../configs/remote-prod.yaml",
                 view_change_arg += f' -viewChangeNum {max_view_change}'
             
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log, profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg} {view_change_arg}")
+        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")

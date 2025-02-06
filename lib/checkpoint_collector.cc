@@ -1,6 +1,8 @@
 #include "checkpoint_collector.h"
 namespace dombft {
 
+// Collects the reply from peers for the same seq num
+// Returns true if it is ok to proceed with the commit stage
 bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig)
 {
 
@@ -19,7 +21,7 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     }
     std::map<ReplyKeyTuple, std::set<uint32_t>> matchingReplies;
 
-    // Find a cert among a set of replies
+    // Try to generate a cert among a set of replies
     for (const auto &entry : replies_) {
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
@@ -59,7 +61,7 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     commitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
     hasOwnCommit_ = hasOwnCommit_ || commitMsg.replica_id() == replicaId_;
 
-    if (!hasOwnCommit_) {
+    if (!hasOwnCommit_ && !commitMsg.is_catchup()) {
         VLOG(4) << "Skipping processing of commit messages until we receive our own...";
         return false;
     }
@@ -68,21 +70,28 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     for (const auto &[replicaId, commit] : commits_) {
 
         CommitKeyTuple key = {
-            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(),
-            commit.client_records_set().client_records_digest()
+            commit.log_digest(),
+            commit.app_digest(),
+            commit.instance(),
+            commit.seq(),
+            commit.client_records_set().client_records_digest(),
+            commit.is_catchup()
         };
         matchingCommits[key].insert(replicaId);
 
         // Need 2f + 1 and own commit
         if (matchingCommits[key].size() >= 2 * f_ + 1) {
             commitMatchedReplicas_ = matchingCommits[key];
+            commitToUse_ = commit;
             return true;
         }
     }
     return false;
 }
 
-bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit)
+bool CheckpointCollector::commitToLog(
+    const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::shared_ptr<std::string> snapshot
+)
 {
     uint32_t seq = commit.seq();
 
@@ -95,21 +104,26 @@ bool CheckpointCollector::commitToLog(const std::shared_ptr<Log> &log, const dom
         log->checkpoint.commitMessages[r] = commits_[r];
         log->checkpoint.signatures[r] = commitSigs_[r];
     }
-    log->commit(log->checkpoint.seq);
 
     const byte *myDigestBytes = log->getDigest(seq);
     std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
 
     // Modifies log if checkpoint is inconsistent with our current log
     if (myDigest != commit.log_digest()) {
-        LOG(INFO) << "Local log digest does not match committed digest, overwriting app snapshot";
 
-        // TODO: counter uses digest as snapshot, need to generalize this
-        log->app_->applySnapshot(commit.app_digest());
+        if (snapshot != nullptr) {
+            LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
+            log->app_->applySnapshot(*snapshot);
+        } else {
+            LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
+            log->app_->applyDelta(commit.app_delta());
+        }
         VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
                 << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
         return true;
     }
+    log->commit(log->checkpoint.seq);
+    log->checkpoint.appSnapshot = log->app_->getSnapshot(log->checkpoint.seq);
     return false;
 }
 
@@ -139,7 +153,8 @@ void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSe
 {
     std::vector<uint32_t> seqsToRemove;
     for (auto &[seq, collector] : collectors_) {
-        if (seq <= committedSeq || collector.instance_ < committedInstance) {
+        // keep the most recent collector for snapshot fetch reply
+        if (seq < committedSeq || collector.instance_ < committedInstance) {
             seqsToRemove.push_back(seq);
         }
     }

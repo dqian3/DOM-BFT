@@ -193,9 +193,12 @@ struct ProcessConfig {
         appStr = parseField<std::string>(config, "app");
         if (appStr == "counter") {
             app = AppType::COUNTER;
+        } else if (appStr == "kv_store") {
+            app = AppType::KV_STORE;
         } else {
-            throw ConfigParseException("Invalid app type");
+            throw ConfigParseException("Invalid app type " + appStr + ". Must be 'counter' or 'kv_store'");
         }
+        LOG(INFO) << "Application type: " << appStr;
 
         parseClientConfig(config);
         parseProxyConfig(config);

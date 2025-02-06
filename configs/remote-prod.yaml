@@ -1,6 +1,6 @@
-app: counter
-transport: nng
+transport: nng 
 
+app: "kv_store"
 
 client:
   ips:
@@ -8,14 +8,16 @@ client:
   - 10.182.0.4
   - 10.142.0.4
   - 10.150.0.9
-  - 10.138.0.8
-  - 10.182.0.6
-  - 10.142.0.6
-  - 10.150.0.3
-  keysDir: keys/client
-  port: 33000
-  runtimeSeconds: 35
+  # - 10.138.0.8
+  # - 10.182.0.6
+  # - 10.142.0.6
+  # - 10.150.0.3
 
+  keysDir: keys/client
+  maxInFlight: 100
+  port: 33000
+  runtimeSeconds: 22
+  
   sendMode: maxInFlight
   maxInFlight: 100
   sendRate: 300

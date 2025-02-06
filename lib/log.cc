@@ -87,6 +87,9 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
 
     res = app_->execute(req, nextSeq);
+    if (res.empty()) {
+        LOG(WARNING) << "Application failed to execute request!";
+    }
     log[nextSeq % log.size()]->result = res;
 
     VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
@@ -144,22 +147,7 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
 {
     dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    if (checkpoint.seq > 0) {
-        checkpointProto->set_seq(checkpoint.seq);
-        checkpointProto->set_app_digest((const char *) checkpoint.appDigest, SHA256_DIGEST_LENGTH);
-        checkpointProto->set_log_digest((const char *) checkpoint.logDigest, SHA256_DIGEST_LENGTH);
-
-        for (auto x : checkpoint.commitMessages) {
-            (*checkpointProto->add_commits()) = x.second;
-            checkpointProto->add_signatures(checkpoint.signatures[x.first]);
-        }
-
-        (*checkpointProto->mutable_cert()) = checkpoint.cert;
-    } else {
-        checkpointProto->set_seq(0);
-        checkpointProto->set_app_digest("");
-        checkpointProto->set_log_digest("");
-    }
+    toProtoLogCheckpoint(checkpointProto);
 
     for (uint32_t i = checkpoint.seq + 1; i < nextSeq; i++) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
@@ -181,6 +169,27 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
     }
 }
 
+void Log::toProtoLogCheckpoint(dombft::proto::LogCheckpoint *checkpointProto)
+{
+    if (checkpoint.seq > 0) {
+        checkpointProto->set_seq(checkpoint.seq);
+        checkpointProto->set_app_digest((const char *) checkpoint.appDigest, SHA256_DIGEST_LENGTH);
+        checkpointProto->set_log_digest((const char *) checkpoint.logDigest, SHA256_DIGEST_LENGTH);
+        checkpointProto->set_app_snapshot(*checkpoint.appSnapshot);
+
+        for (auto x : checkpoint.commitMessages) {
+            (*checkpointProto->add_commits()) = x.second;
+            checkpointProto->add_signatures(checkpoint.signatures[x.first]);
+        }
+
+        (*checkpointProto->mutable_cert()) = checkpoint.cert;
+    } else {
+        checkpointProto->set_seq(0);
+        checkpointProto->set_app_digest("");
+        checkpointProto->set_log_digest("");
+        checkpointProto->set_app_snapshot("");
+    }
+}
 std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer

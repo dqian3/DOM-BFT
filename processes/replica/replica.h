@@ -56,6 +56,7 @@ private:
     // State for commit/checkpoint protocol
     // checkpoint seq -> CheckpointCollector
     CheckpointCollectors checkpointCollectors_;
+    Commit prevCommit_;
 
     // State for fallback
     bool fallback_ = false;
@@ -68,6 +69,7 @@ private:
     byte proposalDigest_[SHA256_DIGEST_LENGTH];
     std::map<uint32_t, dombft::proto::FallbackStart> fallbackHistorys_;
     std::map<uint32_t, std::string> fallbackHistorySigs_;
+    std::optional<LogSuffix> fallbackProposalLogSuffix_;
 
     // State for PBFT
     bool viewChange_ = false;
@@ -81,8 +83,9 @@ private:
     std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
     std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
-    // State for actively triggering fallback
+    // State for actively triggering fallback and other testings
     uint32_t swapFreq_;
+    uint32_t checkpointDropFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
     // State for triggering view change
@@ -103,6 +106,9 @@ private:
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
+    void processStateSnapshotReplyForCheckpoint(const dombft::proto::SnapshotReply &snapshotReply);
+    void processStateSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
+    void processStateSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig);
     void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
     void checkTimeouts();
@@ -115,8 +121,11 @@ private:
     // Fallback Helpers
     void startFallback();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void applyFallbackProposal();
     void finishFallback();
+    void tryFinishFallback();
+    void sendFallbackSummaryToClients();
+    void continueFallbackWithSnapshotUpdated();
+    LogSuffix &getFallbackLogSuffix();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
@@ -154,10 +163,16 @@ private:
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
+    // wrappers
+    void sendCatchupCommit(uint32_t replicaId);
+    void sendStateSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
+    void applyCheckpointCommit(CheckpointCollector &collector, std::shared_ptr<std::string> snapshot = nullptr);
+    bool ifDropCheckpoint(uint32_t seq);
+
 public:
     Replica(
         const ProcessConfig &config, uint32_t replicaId, uint32_t triggerFallbackFreq = 0, uint32_t viewChangeFreq = 0,
-        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0
+        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0, uint32_t checkpointDropFreq = 0
     );
     ~Replica();
 

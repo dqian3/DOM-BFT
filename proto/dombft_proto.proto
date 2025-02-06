@@ -71,9 +71,32 @@ message Commit {
     uint32 replica_id = 1;
     uint32 instance = 2;
     uint32 seq = 3;
+    uint32 prev_checkpoint_seq = 4;
 
-    bytes log_digest = 4;
-    bytes app_digest = 5;
+    bytes log_digest = 5;
+    bytes app_digest = 6;
+    bytes app_delta = 7;
+    CheckpointClientRecordsSet client_records_set = 8;
+
+    bool is_catchup = 9;
+}
+
+message SnapshotRequest {
+    uint32 instance = 1;
+    uint32 seq = 2;
+    uint32 replica_id = 3;
+    uint32 pbft_view = 4;
+
+    bool for_fallback = 5;
+}
+
+message SnapshotReply {
+    uint32 instance = 1;
+    uint32 seq = 2;
+    uint32 replica_id = 3;
+    uint32 pbft_view = 4;
+
+    LogCheckpoint checkpoint = 5;
     CheckpointClientRecordsSet client_records_set = 6;
 }
 
@@ -117,13 +140,14 @@ message LogEntry
 
 message LogCheckpoint
 {
-    uint32 seq = 4;
-    bytes app_digest = 5;
-    bytes log_digest = 6;
+    uint32 seq = 1;
+    bytes app_digest = 2;
+    bytes app_snapshot = 3;
+    bytes log_digest = 4;
 
-    repeated Commit commits   = 7;
-    repeated bytes signatures = 8;
-    Cert cert = 10;
+    repeated Commit commits   = 5;
+    repeated bytes signatures = 6;
+    Cert cert = 7;
 }
 
 

@@ -37,7 +37,7 @@
 #define SEND_TO_LEADER 0
 
 #define MAX_SPEC_HIST       50000
-#define CHECKPOINT_INTERVAL 500
+#define CHECKPOINT_INTERVAL 2000
 
 typedef unsigned char byte;
 typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
@@ -80,6 +80,9 @@ enum MessageType {
     PBFT_COMMIT = 17,
     PBFT_VIEWCHANGE = 18,
     PBFT_NEWVIEW = 19,
+
+    SNAPSHOT_REQUEST = 20,
+    SNAPSHOT_REPLY = 21,
 };
 
 /**
@@ -99,7 +102,7 @@ struct MessageHeader {
     MessageHeader(const uint8_t t, const uint32_t l, const uint32_t sl)
         : msgType(t)
         , msgLen(l)
-        , sigLen(sl) {};
+        , sigLen(sl){};
 };
 
 #endif
