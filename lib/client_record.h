@@ -1,13 +1,13 @@
-#ifndef DOM_BFT_CLIENT_RECORD_H
-#define DOM_BFT_CLIENT_RECORD_H
+#ifndef CLIENT_RECORD_H
+#define CLIENT_RECORD_H
 
 #include "lib/common.h"
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 #include <glog/logging.h>
 
-namespace dombft {
-using namespace dombft::proto;
+#include <map>
+#include <set>
 
 // I would put this inside Client Record, but we already have tests that I'm too lazy to rewrite
 struct ClientSequence {
@@ -28,20 +28,18 @@ private:
 public:
     ClientRecord() = default;
 
-    ClientRecord(const CheckpointClientRecordSet &records);
+    ClientRecord(const dombft::proto::ClientRecord &records);
 
     bool contains(uint32_t clientId, uint32_t seq) const;
     bool update(uint32_t clientId, uint32_t seq);
 
     std::string digest() const;
 
-    void toProto(CheckpointClientRecordSet &records) const;
+    void toProto(dombft::proto::ClientRecord &records) const;
 
     // Computes the number of records in referenceRecord that are misssing in this record
     // Does not check for extra records in this record
     int numMissing(const ClientRecord &referenceRecord) const;
 };
-
-}   // namespace dombft
 
 #endif   // DOM_BFT_CLIENT_RECORD_H

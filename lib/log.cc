@@ -67,15 +67,23 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     return true;
 }
 
+// Abort all requests up to and including seq, as well as app state
+void Log::abort(uint32_t seq) {}
+
+// Given a sequence number, commit the request and remove previous state, and save new checkpoint
+void Log::setCheckpoint(uint32_t seq) {}
+// Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
+void Log::applySnapshot(uint32_t seq) {}
+
+uint32_t Log::getNextSeq() const { return nextSeq; }
+
 const std::string &Log::getDigest() const
 {
     if (log.empty()) {
-        return;
+        return stableCheckpoint.logDigest;
     }
     return log.back().digest;
 }
-
-uint32_t Log::getNextSeq() const { return nextSeq; }
 
 const std::string &Log::getDigest(uint32_t seq) const
 {
@@ -86,6 +94,19 @@ const std::string &Log::getDigest(uint32_t seq) const
     uint32_t offset = log[0].seq;
     return log[nextSeq - offset].digest;
 }
+
+const LogEntry &Log::getEntry(uint32_t seq)
+{
+    if (inRange(seq)) {
+    } else {
+        throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
+    }
+
+    uint32_t offset = log[0].seq;
+    return log[seq - offset];
+}
+
+LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint; }
 
 void Log::toProto(dombft::proto::FallbackStart &msg)
 {
@@ -103,36 +124,12 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
     }
 }
 
-const LogEntry &Log::getEntry(uint32_t seq)
-{
-    if (inRange(seq)) {
-    } else {
-        throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
-    }
-
-    uint32_t offset = log[0].seq;
-    return log[seq - offset];
-}
-
-LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint; }
-
-void Log::commit(uint32_t seq)
-{
-    if (inRange(seq)) {
-        app_.get()->commit(seq);
-        certs.erase(certs.begin(), certs.lower_bound(seq));
-    } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
-    }
-}
-
 std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
     out << "CHECKPOINT " << l.stableCheckpoint.seq << ": " << digest_to_hex(l.stableCheckpoint.logDigest).substr(56)
         << " | ";
-    uint32_t i = l.stableCheckpoint.seq + 1;
     for (const LogEntry &entry : l.log) {
         out << entry;
     }

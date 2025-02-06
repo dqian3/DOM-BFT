@@ -102,6 +102,7 @@ cc_library(
         "@openssl//:openssl",
         "//proto:dombft_proto_cc",
         "//lib:application",
+        "//lib:client_record",
     ],
     visibility = ["//visibility:public"],
 )
@@ -117,7 +118,7 @@ cc_library(
         "@openssl//:openssl",
         "//lib:log",
         "//proto:dombft_proto_cc",
-        "//lib:client_record"
+        "//lib:client_record",
     ],
     visibility = ["//visibility:public"],
 )

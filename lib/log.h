@@ -6,6 +6,7 @@
 
 #include <openssl/sha.h>
 
+#include <deque>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -22,9 +23,6 @@
 
 class Log {
 
-    // Circular buffer of LogEntry, since we know the history won't exceed MAX_SPEC_HIST
-    // TODO static memory here? or is that overoptimizing?
-
 private:
     std::deque<LogEntry> log;
 
@@ -40,7 +38,7 @@ private:
     uint32_t lastExecuted;
 
     // The log also keeps track of client records, and will de-deduplicate requests
-    ClientRecord clientRecord_;
+    ClientRecord clientRecord;
 
     // The log claims ownership of the application, instead of the replica
     std::shared_ptr<Application> app_;

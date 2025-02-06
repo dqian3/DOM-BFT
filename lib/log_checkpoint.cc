@@ -6,11 +6,11 @@ LogCheckpoint::LogCheckpoint() {}
 
 LogCheckpoint::LogCheckpoint(const LogCheckpoint &other)
     : seq(other.seq)
-    , appSnapshot(other.appSnapshot)
-    , commitMessages(other.commitMessages)
-    , signatures(other.signatures)
     , logDigest(other.logDigest)
     , appDigest(other.appDigest)
+    , commitMessages(other.commitMessages)
+    , signatures(other.signatures)
+
 {
 }
 

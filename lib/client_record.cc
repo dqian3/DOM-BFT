@@ -1,5 +1,4 @@
 #include "client_record.h"
-namespace dombft {
 
 bool ClientSequence::contains(uint32_t seq) const { return seq <= lastSeq_ && !missedSeqs_.contains(seq); }
 
@@ -41,13 +40,13 @@ int ClientSequence::numMissing(const ClientSequence &referenceSequence) const
     return ret;
 }
 
-ClientRecord::ClientRecord(const CheckpointClientRecordSet &recordsSet)
+ClientRecord::ClientRecord(const dombft::proto::ClientRecord &recordProto)
 {
-    for (const auto &cliRecord : recordsSet.records()) {
-        uint32_t id = cliRecord.client_id();
-        sequences[id].lastSeq_ = cliRecord.last_seq();
+    for (const auto &sequence : recordProto.sequences()) {
+        uint32_t id = sequence.client_id();
+        sequences[id].lastSeq_ = sequence.last_seq();
 
-        for (const auto &s : cliRecord.missed_seqs()) {
+        for (const auto &s : sequence.missed_seqs()) {
             sequences[id].missedSeqs_.insert(s);
         }
     }
@@ -80,10 +79,10 @@ std::string ClientRecord::digest() const
     return std::string(digest, digest + SHA256_DIGEST_LENGTH);
 }
 
-void ClientRecord::toProto(CheckpointClientRecordSet &recordsSet) const
+void ClientRecord::toProto(dombft::proto::ClientRecord &recordProto) const
 {
     for (const auto &[id, sequence] : sequences) {
-        proto::CheckpointClientRecord *record = recordsSet.add_records();
+        dombft::proto::ClientSequence *record = recordProto.add_sequences();
         record->set_client_id(id);
         record->set_last_seq(sequence.lastSeq_);
         for (const uint32_t &s : sequence.missedSeqs_) {
@@ -111,5 +110,3 @@ int ClientRecord::numMissing(const ClientRecord &referenceRecord) const
     }
     return ret;
 }
-
-}   // namespace dombft
