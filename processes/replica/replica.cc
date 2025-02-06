@@ -656,7 +656,7 @@ void Replica::processCert(const Cert &cert)
     }
 
     if (!log_->addCert(cert.seq(), cert)) {
-        // If we don't have the matching operation, return false so we don't falsely ack
+        VLOG(2) << "Failed to add cert for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
         return;
     }
 
@@ -692,6 +692,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 
     checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_, std::nullopt);
     CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
+
     if (collector.addAndCheckReplyCollection(reply, sig)) {
         std::string logDigest = log_->getDigest(rSeq);
         std::string appDigest = app_->getDigest(rSeq);

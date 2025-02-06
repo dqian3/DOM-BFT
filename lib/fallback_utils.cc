@@ -24,7 +24,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     getClientRecordFromProto(*tmpClientRecordSetPtr, logSuffix.clientRecords);
     VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
 
-    // Find highest request with a cert
+    // Find highest sequence with a cert
     // Idx of log we will use to match our logs to the fallback agreed upon logs (up to cert)
     uint32_t logToUseIdx = 0;
     uint32_t logToUseSeq = 0;
@@ -32,30 +32,19 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     const dombft::proto::Cert *cert = nullptr;
     uint32_t maxCertSeq = 0;
 
+    // get the max cert seq by comparing the seq in each of the included cert.
+    // we have already verified these certs, so we can trust their seq numbers.
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
-        auto &fallbackLog = fallbackProposal.logs()[i];
-        // TODO verify each log
-        for (const dombft::proto::LogEntry &entry : fallbackLog.log_entries()) {
-            if (!entry.has_cert())
-                continue;
+        const dombft::proto::FallbackStart &fallbackLog = fallbackProposal.logs()[i];
 
-            // Already included in checkpoint
-            if (entry.seq() <= logSuffix.checkpoint->seq())
-                continue;
+        // Already included in checkpoint
+        if (!fallbackLog.has_cert() || fallbackLog.cert().seq() <= logSuffix.checkpoint->seq())
+            continue;
 
-            if (entry.cert().instance() < fallbackProposal.instance() - 1)
-                continue;
-
-            // TODO verify cert
-            // If the cert doesn't match the log, a bad log suffix could be injected
-            if (entry.seq() > maxCertSeq) {
-                // VLOG(4) << "Cert found for seq=" << entry.seq() << " c_id=" << entry.cert().replies()[0].client_id()
-                //         << " c_seq=" << entry.cert().replies()[0].client_seq();
-
-                cert = &entry.cert();
-                logToUseIdx = i;
-                maxCertSeq = entry.seq();
-            }
+        if (fallbackLog.cert().seq() > maxCertSeq) {
+            maxCertSeq = fallbackLog.cert().seq();
+            logToUseIdx = i;
+            cert = &fallbackLog.cert();
         }
     }
 

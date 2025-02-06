@@ -45,6 +45,9 @@ private:
     // The log claims ownership of the application, instead of the replica
     std::shared_ptr<Application> app_;
 
+    std::optional<dombft::proto::Cert> latestCert_;
+    uint32_t latestCertSeq_ = 0;
+
 public:
     Log(std::shared_ptr<Application> app);
 

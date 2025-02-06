@@ -53,12 +53,21 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     auto entry = getEntry(seq);   // will not be nullptr because range is checked above
     const dombft::proto::Reply &r = cert.replies()[0];
 
+<<<<<<< HEAD
     if (r.client_id() != entry.client_id || r.client_seq() != entry.client_seq) {
+=======
+    if (r.digest() != std::string(entry->digest, entry->digest + SHA256_DIGEST_LENGTH)) {
+>>>>>>> main
         VLOG(5) << "Fail adding cert because mismatching request!";
         return false;
     }
 
-    certs[seq] = std::make_shared<dombft::proto::Cert>(cert);
+    // instead of adding the cert to the list of certs, directly updating the latest cert.
+    if (!latestCert_.has_value() || cert.seq() > latestCert_->seq()) {
+        latestCert_ = cert;
+        latestCertSeq_ = seq;
+    }
+
     return true;
 }
 
@@ -90,7 +99,25 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
 
     for (const LogEntry &entry : log) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
+<<<<<<< HEAD
         entry.toProto(*entryProto);
+=======
+        LogEntry &entry = *log[i % log.size()];
+
+        assert(i == entry.seq);
+
+        // entry proto no longer keeps cert, remove relevant lines.
+        entryProto->set_seq(i);
+        entryProto->set_client_id(entry.client_id);
+        entryProto->set_client_seq(entry.client_seq);
+        entryProto->set_digest(entry.digest, SHA256_DIGEST_LENGTH);
+        entryProto->set_request(entry.request);
+        entryProto->set_result(entry.result);
+>>>>>>> main
+    }
+
+    if (latestCert_.has_value()) {
+        *msg.mutable_cert() = latestCert_.value();
     }
 }
 

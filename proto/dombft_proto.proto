@@ -135,8 +135,6 @@ message LogEntry
     // TODO is this needed?
     bytes request = 8;
     bytes result = 9;
-
-    optional Cert cert = 10;
 }
 
 
@@ -161,6 +159,8 @@ message FallbackStart
     repeated LogEntry log_entries = 4;
     LogCheckpoint checkpoint = 5;
     CheckpointClientRecordSet client_records_set = 6;
+    
+    optional Cert cert = 7;
 }
 
 message FallbackProposal
