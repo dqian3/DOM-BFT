@@ -504,8 +504,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
                 << " seq=" << reply.seq() << " instance=" << reply.instance()
-                << " latency=" << now - reqState.firstSendTime
-                << " digest=" << digest_to_hex(reply.digest()).substr(56);
+                << " latency=" << now - reqState.firstSendTime << " digest=" << digest_to_hex(reply.digest());
 
         lastFastPath_ = clientSeq;
 
@@ -587,7 +586,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " instance=" << certReply.instance()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime
-                << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest()).substr(56);
+                << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest());
         lastNormalPath_ = cseq;
         commitRequest(cseq);
     }

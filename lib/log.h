@@ -34,8 +34,7 @@ private:
     // Map of client ids to sequence numbers, for de-duplicating requests
     std::unordered_map<uint32_t, uint32_t> clientSeqs;
 
-    uint32_t nextSeq;
-    uint32_t lastExecuted;
+    uint32_t nextSeq_;
 
     // The log also keeps track of client records, and will de-deduplicate requests
     ClientRecord clientRecord;

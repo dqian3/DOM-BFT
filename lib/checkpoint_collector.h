@@ -12,7 +12,6 @@
 #include <span>
 
 namespace dombft {
-using namespace dombft::proto;
 
 typedef std::tuple<std::string, uint32_t, uint32_t> ReplyKeyTuple;
 typedef std::tuple<std::string, std::string, uint32_t, uint32_t, std::string, bool> CommitKeyTuple;

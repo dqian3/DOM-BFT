@@ -599,8 +599,7 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     if (VLOG_IS_ON(2)) {
         VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-                << " client_seq=" << clientSeq << " instance=" << instance_
-                << " digest=" << digest_to_hex(digest).substr(56);
+                << " client_seq=" << clientSeq << " instance=" << instance_ << " digest=" << digest_to_hex(digest);
     } else {
         // TODO do some logging here?
     }
@@ -713,7 +712,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         getRecordsDigest(tmpClientRecord, recordDigest);
         commit.mutable_client_records_set()->set_client_records_digest(recordDigest, SHA256_DIGEST_LENGTH);
         toProtoClientRecord(*commit.mutable_client_records_set(), tmpClientRecord);
-        VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest).substr(56);
+        VLOG(1) << "Commit msg record digest: " << digest_to_hex(recordDigest);
 
         broadcastToReplicas(commit, MessageType::COMMIT);
         return;
@@ -1172,7 +1171,7 @@ void Replica::startFallback()
     // Start fallback timer to change primary if timeout
     fallbackStartTime_ = GetMicrosecondTimestamp();
 
-    VLOG(1) << "PERF event=fallback_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+    VLOG(1) << "PERF event=fallback_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq_
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
 
     // Extract log into start fallback message
@@ -1214,7 +1213,7 @@ void Replica::sendFallbackSummaryToClients()
     summary.set_pbft_view(pbftView_);
 
     uint32_t seq = log_->stableCheckpoint.seq;
-    for (; seq < log_->nextSeq; seq++) {
+    for (; seq < log_->nextSeq_; seq++) {
         std::shared_ptr<::LogEntry> entry = log_->getEntry(seq);   // TODO better namespace
         CommittedReply reply;
 
@@ -1241,7 +1240,7 @@ void Replica::sendFallbackSummaryToClients()
 
 void Replica::finishFallback()
 {
-    VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+    VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->nextSeq_
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
     LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
@@ -1264,10 +1263,10 @@ void Replica::finishFallback()
     // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
     // finishes, the client requests will have f + 1 replicas that executed it in their logs
     checkpointCollectors_.tryInitCheckpointCollector(
-        log_->nextSeq - 1, instance_, std::optional<ClientRecord>(curClientRecord_)
+        log_->nextSeq_ - 1, instance_, std::optional<ClientRecord>(curClientRecord_)
     );
     Reply reply;
-    replyFromLogEntry(reply, log_->nextSeq - 1);
+    replyFromLogEntry(reply, log_->nextSeq_ - 1);
     broadcastToReplicas(reply, MessageType::REPLY);
 
     for (auto &[_, req] : fallbackQueuedReqs_) {
@@ -1553,7 +1552,7 @@ void Replica::startViewChange()
     fallback_ = true;
     viewChange_ = true;
     viewPrepared_ = false;
-    VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq
+    VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->nextSeq_
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "Starting ViewChange on instance " << instance_ << " pbft_view " << pbftView_;
 
@@ -1771,8 +1770,8 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
     }
     log_->app_->abort(startingSeq - 1);
     uint32_t curSeq = startingSeq;
-    std::vector<std::shared_ptr<::LogEntry>> temp(log_->nextSeq - startingSeq);
-    for (uint32_t s = startingSeq; s < log_->nextSeq; s++) {
+    std::vector<std::shared_ptr<::LogEntry>> temp(log_->nextSeq_ - startingSeq);
+    for (uint32_t s = startingSeq; s < log_->nextSeq_; s++) {
         std::shared_ptr<::LogEntry> entry = log_->getEntry(s);
         uint32_t clientId = entry->client_id;
         uint32_t clientSeq = entry->client_seq;
@@ -1794,14 +1793,13 @@ void Replica::reapplyEntriesWithRecord(uint32_t rShiftNum)
 
         entry->updateDigest(prevDigest);
 
-        VLOG(1) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest).substr(56)
-                << " c_id=" << clientId << " c_seq=" << clientSeq
-                << " prevDigest=" << digest_to_hex(prevDigest).substr(56);
+        VLOG(1) << "PERF event=update_digest seq=" << curSeq << " digest=" << digest_to_hex(entry->digest)
+                << " c_id=" << clientId << " c_seq=" << clientSeq << " prevDigest=" << digest_to_hex(prevDigest);
         curSeq++;
     }
 
-    if (curSeq != log_->nextSeq) {
-        log_->nextSeq = curSeq;
+    if (curSeq != log_->nextSeq_) {
+        log_->nextSeq_ = curSeq;
         for (uint32_t i = startingSeq; i < curSeq; i++) {
             log_->setEntry(i, temp[i - startingSeq]);
         }

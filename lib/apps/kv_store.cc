@@ -227,8 +227,8 @@ bool KVStore::commit(uint32_t commit_idx)
     SHA256_Final(digest, &ctx);
     memcpy(committed_data_digest, digest, SHA256_DIGEST_LENGTH);
 
-    LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committed_data.size()
-              << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
+    // LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committed_data.size()
+    //           << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
 
     // remove snapshots and delta that are older than commit_idx
     auto it = snapshots_data.begin();

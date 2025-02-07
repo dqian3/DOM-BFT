@@ -5,8 +5,7 @@
 #include <glog/logging.h>
 
 Log::Log(std::shared_ptr<Application> app)
-    : nextSeq(1)
-    , lastExecuted(0)
+    : nextSeq_(1)
     , app_(std::move(app))
 {
 }
@@ -14,32 +13,35 @@ Log::Log(std::shared_ptr<Application> app)
 bool Log::inRange(uint32_t seq) const
 {
     // Note, log.empty() is implicitly checked by the first two conditions
-    return seq > stableCheckpoint.seq && seq < nextSeq && !log.empty();
+    return seq > stableCheckpoint.seq && seq < nextSeq_ && !log.empty();
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
     std::string prevDigest;
-    if (nextSeq - 1 == stableCheckpoint.seq) {
-        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
+
+    LOG(INFO) << "Adding entry to log with seq=" << nextSeq_ << " stableCheckpoint.seq=" << stableCheckpoint.seq;
+
+    if (nextSeq_ - 1 == stableCheckpoint.seq) {
+        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_;
         prevDigest = stableCheckpoint.logDigest;
     } else {
-        uint32_t offset = log[0].seq;
-        prevDigest = log[nextSeq - offset].digest;
+        assert(!log.empty());
+        prevDigest = log.back().digest;
     }
 
-    log.emplace_back(nextSeq, c_id, c_seq, req, prevDigest);
+    log.emplace_back(nextSeq_, c_id, c_seq, req, prevDigest);
 
-    res = app_->execute(req, nextSeq);
+    res = app_->execute(req, nextSeq_);
     if (res.empty()) {
         LOG(WARNING) << "Application failed to execute request!";
     }
-    log[nextSeq % log.size()].result = res;
+    log[nextSeq_ % log.size()].result = res;
 
-    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
-            << " digest=" << digest_to_hex(log[nextSeq % log.size()].digest).substr(56);
+    VLOG(4) << "Adding new entry at seq=" << nextSeq_ << " c_id=" << c_id << " c_seq=" << c_seq
+            << " digest=" << digest_to_hex(log[nextSeq_ % log.size()].digest);
 
-    nextSeq++;
+    nextSeq_++;
     return true;
 }
 
@@ -67,15 +69,27 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     return true;
 }
 
-// Abort all requests up to and including seq, as well as app state
-void Log::abort(uint32_t seq) {}
+// Abort all requests starting from and including seq, as well as app state
+void Log::abort(uint32_t seq)
+{
+    if (seq >= nextSeq_) {
+        nextSeq_ = seq;
+        return;
+    }
+
+    // remove all entries from seq to the end
+    log.erase(log.begin() + (seq - log[0].seq), log.end());
+
+    app_->abort(seq);   // TODO off by one?
+    nextSeq_ = seq;
+}
 
 // Given a sequence number, commit the request and remove previous state, and save new checkpoint
 void Log::setCheckpoint(uint32_t seq) {}
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
 void Log::applySnapshot(uint32_t seq) {}
 
-uint32_t Log::getNextSeq() const { return nextSeq; }
+uint32_t Log::getNextSeq() const { return nextSeq_; }
 
 const std::string &Log::getDigest() const
 {
@@ -92,17 +106,18 @@ const std::string &Log::getDigest(uint32_t seq) const
     }
 
     uint32_t offset = log[0].seq;
-    return log[nextSeq - offset].digest;
+    assert(log[seq - offset].seq == seq);
+    return log[seq - offset].digest;
 }
 
 const LogEntry &Log::getEntry(uint32_t seq)
 {
-    if (inRange(seq)) {
-    } else {
+    if (!inRange(seq)) {
         throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
-
     uint32_t offset = log[0].seq;
+
+    assert(log[seq - offset].seq == seq);
     return log[seq - offset];
 }
 
@@ -128,8 +143,7 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    out << "CHECKPOINT " << l.stableCheckpoint.seq << ": " << digest_to_hex(l.stableCheckpoint.logDigest).substr(56)
-        << " | ";
+    out << "CHECKPOINT " << l.stableCheckpoint.seq << ": " << digest_to_hex(l.stableCheckpoint.logDigest) << " | ";
     for (const LogEntry &entry : l.log) {
         out << entry;
     }

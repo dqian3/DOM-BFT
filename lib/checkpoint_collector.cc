@@ -1,6 +1,8 @@
 #include "checkpoint_collector.h"
 namespace dombft {
 
+using namespace proto;
+
 // Collects the reply from peers for the same seq num
 // Returns true if it is ok to proceed with the commit stage
 bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig)
@@ -26,7 +28,7 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
 
-        VLOG(4) << digest_to_hex(reply.digest()).substr(0, 8) << " " << reply.seq() << " " << reply.instance();
+        VLOG(4) << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.instance();
 
         ReplyKeyTuple key = {reply.digest(), reply.instance(), reply.seq()};
 
@@ -110,22 +112,22 @@ bool CheckpointCollector::commitToLog(
     const byte *myDigestBytes = log->getDigest(seq);
     std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
 
-    // Modifies log if checkpoint is inconsistent with our current log
-    if (myDigest != commit.log_digest()) {
+    // // Modifies log if checkpoint is inconsistent with our current log
+    // if (myDigest != commit.log_digest()) {
 
-        if (snapshot != nullptr) {
-            LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
-            log->app_->applySnapshot(*snapshot);
-        } else {
-            LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
-            log->app_->applyDelta(commit.app_delta());
-        }
-        VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest).substr(56)
-                << " new_digest=" << digest_to_hex(commit.log_digest()).substr(56);
-        return true;
-    }
-    log->commit(checkpoint.seq);
-    checkpoint.appSnapshot = log->app_->getSnapshot(checkpoint.seq);
+    //     if (snapshot != nullptr) {
+    //         LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
+    //         log->app_->applySnapshot(*snapshot);
+    //     } else {
+    //         LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
+    //         log->app_->applyDelta(commit.app_delta());
+    //     }
+    //     VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest)
+    //             << " new_digest=" << digest_to_hex(commit.log_digest());
+    //     return true;
+    // }
+    // log->commit(checkpoint.seq);
+    // checkpoint.appSnapshot = log->app_->getSnapshot(checkpoint.seq);
     return false;
 }
 

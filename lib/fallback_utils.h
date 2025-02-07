@@ -15,8 +15,6 @@ struct LogSuffix {
 
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
-
-    ClientRecord clientRecord;
 };
 
 struct PBFTState {
@@ -28,10 +26,10 @@ struct PBFTState {
 
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
 
-bool applySuffixWithCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log);
+void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log);
 
-bool applySuffixWithoutCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log);
+void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log);
 
-bool applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log);
+void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log);
 
 #endif

@@ -10,8 +10,6 @@
 // Get Current Microsecond Timestamp
 int64_t GetMicrosecondTimestamp();
 
-std::string digest_to_hex(const byte *digest, size_t len = SHA256_DIGEST_LENGTH);
-
 std::string digest_to_hex(const std::string &digest);
 
 #endif

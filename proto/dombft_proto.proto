@@ -97,7 +97,6 @@ message SnapshotReply {
     uint32 pbft_view = 4;
 
     LogCheckpoint checkpoint = 5;
-    ClientRecord client_record = 6;
 }
 
 message FallbackTrigger
@@ -147,6 +146,8 @@ message LogCheckpoint
     repeated Commit commits   = 5;
     repeated bytes signatures = 6;
     Cert cert = 7;
+
+    ClientRecord client_record = 8;
 }
 
 
@@ -158,7 +159,6 @@ message FallbackStart
 
     repeated LogEntry log_entries = 4;
     LogCheckpoint checkpoint = 5;
-    ClientRecord client_record = 6;
     
     optional Cert cert = 7;
 }
