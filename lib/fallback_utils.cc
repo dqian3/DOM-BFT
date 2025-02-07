@@ -11,7 +11,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     // TODO verify messages so this isn't unsafe
     uint32_t maxCheckpointSeq = 0;
 
-    // First find highest commit point
+    // First find highest checkpoint
     for (auto &log : fallbackProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
@@ -52,11 +52,14 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         VLOG(4) << "No certs found!";
     }
 
+    std::set<std::pair<uint32_t, uint32_t>> clientReqsAdded;
+
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
         if (entry.seq() > maxCertSeq)
             break;
 
+        clientReqsAdded.insert({entry.client_id(), entry.client_seq()});
         logSuffix.entries.push_back(&entry);
     }
 
@@ -92,6 +95,10 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 
         if (entry.seq() > logToUseSeq)
             break;
+
+        if (clientReqsAdded.contains({entry.client_id(), entry.client_seq()}))
+            continue;
+        clientReqsAdded.insert({entry.client_id(), entry.client_seq()});
 
         logSuffix.entries.push_back(&entry);
     }
@@ -150,7 +157,7 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
     LOG(INFO) << "Start applySuffixAfterCheckpoint";
 
-    // 2.1 Skip the entries that are already in the log (consistent)
+    // 2 Skip the entries that are already in the log (consistent)
     for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
@@ -166,8 +173,6 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
     LOG(INFO) << "Aborting own entries from seq=" << seq;
     log->abort(seq);
-
-    LOG(INFO) << *log;
 
     // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
     for (; idx < logSuffix.entries.size(); idx++) {

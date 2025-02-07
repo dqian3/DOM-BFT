@@ -20,8 +20,6 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 {
     std::string prevDigest;
 
-    LOG(INFO) << "Adding entry to log with seq=" << nextSeq_ << " stableCheckpoint.seq=" << stableCheckpoint.seq;
-
     if (nextSeq_ - 1 == stableCheckpoint.seq) {
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_;
         prevDigest = stableCheckpoint.logDigest;

@@ -246,7 +246,7 @@ TEST(TestFallbackUtils, ApplyLogSuffix)
     auto ret = suffixFromTestLog(newLog, suffix);
 
     std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
-    EXPECT_CALL(*mockApp, abort(11)).WillOnce(Return(true));
+    EXPECT_CALL(*mockApp, abort(12)).WillOnce(Return(true));
 
     applySuffixWithoutSnapshot(suffix, log);
 
@@ -318,7 +318,7 @@ TEST(TestFallbackUtils, Cert)
     auto [log, app] = logFromTestLog(curLog);
 
     std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
-    EXPECT_CALL(*mockApp, abort(12)).WillOnce(Return(true));
+    EXPECT_CALL(*mockApp, abort(11)).WillOnce(Return(true));
 
     applySuffixWithoutSnapshot(suffix, log);
     assertLogEq(*log, expectedLog);
