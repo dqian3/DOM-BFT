@@ -57,7 +57,7 @@ public:
     // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
     void resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-    void applySnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
+    void applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
 
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;

@@ -750,7 +750,6 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != commitToUse.log_digest()) {
             LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";
-            LOG(INFO) << "Exiting because not implemented...";
             // TODO choose a random replica from those that have this
             sendSnapshotRequest(commitToUse.replica_id(), commitToUse.seq());
 
@@ -822,7 +821,27 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         ::LogCheckpoint checkpoint;
         checkpointCollectors_.at(snapshotReply.seq()).getCheckpoint(checkpoint);
-        log_->applySnapshot(snapshotReply.seq(), checkpoint, snapshotReply.snapshot());
+        log_->applySnapshotModifyLog(snapshotReply.seq(), checkpoint, snapshotReply.snapshot());
+
+        // Resend replies after modifying log
+        for (int seq = log_->getStableCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
+            auto &entry = log_->getEntry(seq);
+
+            Reply reply;
+
+            reply.set_client_id(entry.client_id);
+            reply.set_client_seq(entry.client_seq);
+            reply.set_replica_id(replicaId_);
+            reply.set_result(entry.result);
+            reply.set_seq(seq);
+            reply.set_instance(instance_);
+            reply.set_digest(entry.digest);
+
+            VLOG(1) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest).substr(56)
+                    << " c_id=" << entry.client_id << " c_seq=" << entry.client_seq;
+
+            sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
+        }
     }
 }
 
@@ -1276,7 +1295,7 @@ void Replica::tryFinishFallback()
             applySuffixWithoutSnapshot(logSuffix, log_);
             finishFallback();
         } else {
-            LOG(INFO) << "Fallback Checkpoint seq=" << checkpoint->seq()
+            LOG(INFO) << "Fallback checkpoint seq=" << checkpoint->seq()
                       << " is inconsistent with my log, snapshot will be fetched from replicaId=";
             sendSnapshotRequest(logSuffix.checkpointReplica, checkpoint->seq());
         }

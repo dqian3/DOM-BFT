@@ -112,7 +112,7 @@ void Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const s
 }
 
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-void Log::applySnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+void Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
 {
     // Number of missing entries in my log.
     uint32_t numMissing = clientRecord.numMissing(checkpoint.clientRecord_);
