@@ -21,6 +21,8 @@
 #include "lib/log_checkpoint.h"
 #include "lib/log_entry.h"
 
+// Note for implementation, we should try and keep the log always in a valid state
+// (where the app and the log are consistent)
 class Log {
 
 private:
@@ -52,7 +54,7 @@ public:
     // Given a sequence number, commit the log and remove previous state, and save new checkpoint
     void setStableCheckpoint(const LogCheckpoint &checkpoint);
 
-    // Given a snapshot of the app state, reset log state to match this snapshot
+    // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
     void resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
     void applySnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);

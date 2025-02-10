@@ -78,23 +78,6 @@ message Commit {
     ClientRecord client_record = 8;
 }
 
-message SnapshotRequest {
-    uint32 instance = 1;
-    uint32 seq = 2;
-    uint32 replica_id = 3;
-    uint32 pbft_view = 4;
-
-    bool for_fallback = 5;
-}
-
-message SnapshotReply {
-    uint32 instance = 1;
-    uint32 seq = 2;
-    uint32 replica_id = 3;
-    uint32 pbft_view = 4;
-
-    LogCheckpoint checkpoint = 5;
-}
 
 message FallbackTrigger
 {
@@ -103,6 +86,19 @@ message FallbackTrigger
     bytes req_data = 5;
     // Reuse Cert message here, since it is just a set of replies.
     optional Cert proof = 6;
+}
+
+message LogEntry
+{
+    uint32 seq = 4;
+    uint32 client_id = 5;
+    uint32 client_seq = 6;
+
+    bytes digest = 7;
+
+    // TODO is this needed?
+    bytes request = 8;
+    bytes result = 9;
 }
 
 message ClientSequence
@@ -119,20 +115,6 @@ message ClientRecord
     bytes digest = 1;
     repeated ClientSequence sequences = 2;
 }
-
-message LogEntry
-{
-    uint32 seq = 4;
-    uint32 client_id = 5;
-    uint32 client_seq = 6;
-
-    bytes digest = 7;
-
-    // TODO is this needed?
-    bytes request = 8;
-    bytes result = 9;
-}
-
 
 message LogCheckpoint
 {
@@ -232,6 +214,23 @@ message PBFTNewView
     uint32 instance = 3;
     repeated PBFTViewChange view_changes = 4;
     repeated bytes view_change_sigs = 5;
+}
+
+message SnapshotRequest {
+    uint32 instance = 1;
+    uint32 seq = 2;
+    uint32 replica_id = 3;
+    uint32 last_checkpoint_seq = 4;
+
+    bool for_fallback = 5;
+}
+
+message SnapshotReply {
+    uint32 instance = 1;
+    uint32 seq = 2;
+    uint32 replica_id = 3;
+    uint32 pbft_view = 4;
+    bytes snapshot = 5;
 }
 
 message DummyProtocolMessage

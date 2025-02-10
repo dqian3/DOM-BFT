@@ -20,6 +20,12 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 {
     std::string prevDigest;
 
+    // TODO check duplicates
+    if (clientRecord.update(c_id, c_seq)) {
+        VLOG(4) << "Duplicate request detected by the log! c_id=" << c_id << " c_seq=" << c_seq;
+        return false;
+    }
+
     if (nextSeq_ - 1 == stableCheckpoint_.seq) {
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_;
         prevDigest = stableCheckpoint_.logDigest;
@@ -92,10 +98,47 @@ void Log::setStableCheckpoint(const LogCheckpoint &checkpoint)
     app_->commit(checkpoint.seq);
 }
 
-// Given a snapshot of the app state, reset log state to match this snapshot
-void Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot) {}
+// Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
+void Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+{
+    stableCheckpoint_ = checkpoint;
+    clientRecord = checkpoint.clientRecord_;
+    nextSeq_ = seq + 1;
+    latestCertSeq_ = 0;
+    latestCert_ = std::nullopt;
+
+    app_->applySnapshot(snapshot);
+    log.clear();
+}
+
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-void Log::applySnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot) {}
+void Log::applySnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+{
+    // Number of missing entries in my log.
+    uint32_t numMissing = clientRecord.numMissing(checkpoint.clientRecord_);
+
+    // Remove all log entries before the checkpoint, but keep the last numMissing entries
+    while (!log.empty() && log[0].seq <= checkpoint.seq - numMissing) {
+        log.pop_front();
+    }
+
+    // TODO check off by one here
+    app_->applySnapshot(snapshot);
+    clientRecord = checkpoint.clientRecord_;
+    latestCert_.reset();
+    latestCertSeq_ = 0;
+
+    // Requests we want to try reapplying
+    // Note this clears the current log
+    std::deque<LogEntry> toReapply(std::move(log));
+    nextSeq_ = checkpoint.seq + 1;
+
+    // Reapply the rest of the entries in the log by modifying them in place
+    for (LogEntry &entry : toReapply) {
+        std::string temp;   // result gets stored here, but we don't need it
+        addEntry(entry.client_id, entry.client_seq, entry.request, temp);
+    }
+}
 
 uint32_t Log::getNextSeq() const { return nextSeq_; }
 
