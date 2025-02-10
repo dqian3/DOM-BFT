@@ -49,10 +49,13 @@ public:
     // Abort all requests up to and including seq, as well as app state
     void abort(uint32_t seq);
 
-    // Given a sequence number, commit the request and remove previous state, and save new checkpoint
+    // Given a sequence number, commit the log and remove previous state, and save new checkpoint
     void setStableCheckpoint(const LogCheckpoint &checkpoint);
+
+    // Given a snapshot of the app state, reset log state to match this snapshot
+    void resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-    void applySnapshot(uint32_t seq /*commit messages and signatures*/);
+    void applySnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
 
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;

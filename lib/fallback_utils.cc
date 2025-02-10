@@ -15,6 +15,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     for (auto &log : fallbackProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
+            logSuffix.checkpointReplica = log.replica_id();
             maxCheckpointSeq = log.checkpoint().seq();
         }
     }
@@ -133,7 +134,12 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     return true;
 }
 
-void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log) {}
+void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot)
+{
+    ::LogCheckpoint checkpoint(*logSuffix.checkpoint);
+    log->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshot);
+    applySuffixAfterCheckpoint(logSuffix, log);
+}
 
 void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
@@ -141,10 +147,9 @@ void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
               << " stable checkpoint seq=" << log->getStableCheckpoint().seq;
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
-    // Step1. Check if currently is behind suffix checkpoint
-    // *This is only called when current checkpoint is consistent
-    assert(checkpoint->seq() == log->getStableCheckpoint().seq);
 
+    // *This should only be called when current checkpoint is consistent with fallback checkpoint
+    assert(checkpoint->seq() == log->getStableCheckpoint().seq);
     applySuffixAfterCheckpoint(logSuffix, log);
 }
 

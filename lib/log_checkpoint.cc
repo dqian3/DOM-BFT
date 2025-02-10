@@ -1,8 +1,19 @@
 
 #include "lib/log_checkpoint.h"
 
-// Default constructor
-LogCheckpoint::LogCheckpoint() {}
+LogCheckpoint::LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto)
+{
+    seq = checkpointProto.seq();
+    appDigest = checkpointProto.app_digest();
+    logDigest = checkpointProto.log_digest();
+
+    for (int i = 0; i < checkpointProto.commits_size(); i++) {
+        commitMessages[checkpointProto.commits(i).replica_id()] = checkpointProto.commits(i);
+        signatures[checkpointProto.commits(i).replica_id()] = checkpointProto.signatures(i);
+    }
+
+    clientRecord_ = ClientRecord(checkpointProto.client_record());
+}
 
 LogCheckpoint::LogCheckpoint(const LogCheckpoint &other)
     : seq(other.seq)

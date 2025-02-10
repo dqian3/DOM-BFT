@@ -13,6 +13,7 @@ struct LogSuffix {
     uint32_t replicaId;
     uint32_t instance;
 
+    uint32_t checkpointReplica;
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
 };
@@ -26,7 +27,7 @@ struct PBFTState {
 
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
 
-void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log);
+void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot);
 
 void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log);
 

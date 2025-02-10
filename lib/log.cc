@@ -92,8 +92,10 @@ void Log::setStableCheckpoint(const LogCheckpoint &checkpoint)
     app_->commit(checkpoint.seq);
 }
 
+// Given a snapshot of the app state, reset log state to match this snapshot
+void Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot) {}
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-void Log::applySnapshot(uint32_t seq) {}
+void Log::applySnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot) {}
 
 uint32_t Log::getNextSeq() const { return nextSeq_; }
 

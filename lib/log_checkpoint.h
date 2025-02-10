@@ -9,6 +9,7 @@
 #include <map>
 
 struct LogCheckpoint {
+
     uint32_t seq = 0;
     // TODO shared ptr here so we don't duplicate it from certs.
     std::string logDigest;
@@ -19,7 +20,8 @@ struct LogCheckpoint {
 
     ClientRecord clientRecord_;
 
-    LogCheckpoint();
+    LogCheckpoint() = default;
+    LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto);
     LogCheckpoint(const LogCheckpoint &other);
 
     void toProto(dombft::proto::LogCheckpoint &checkpointProto);
