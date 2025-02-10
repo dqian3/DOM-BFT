@@ -104,4 +104,11 @@ struct MessageHeader {
         , sigLen(sl) {};
 };
 
+// Just to help vscode with recognizing this namespace
+namespace dombft {
+namespace proto {
+
+}
+}   // namespace dombft
+
 #endif

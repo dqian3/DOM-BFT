@@ -25,21 +25,13 @@ class Log {
 
 private:
     std::deque<LogEntry> log;
-
-    // Map of sequence number to certs
-    std::map<uint32_t, std::shared_ptr<dombft::proto::Cert>> certs;
-
-    LogCheckpoint stableCheckpoint;
-
-    // Map of client ids to sequence numbers, for de-duplicating requests
-    std::unordered_map<uint32_t, uint32_t> clientSeqs;
-
     uint32_t nextSeq_;
+    LogCheckpoint stableCheckpoint_;
 
     // The log also keeps track of client records, and will de-deduplicate requests
     ClientRecord clientRecord;
 
-    // The log claims ownership of the application, instead of the replica
+    // The log shares ownership of the application with the replica
     std::shared_ptr<Application> app_;
 
     std::optional<dombft::proto::Cert> latestCert_;
@@ -58,7 +50,7 @@ public:
     void abort(uint32_t seq);
 
     // Given a sequence number, commit the request and remove previous state, and save new checkpoint
-    void setCheckpoint(uint32_t seq /*commit messages and signatures*/);
+    void setStableCheckpoint(const LogCheckpoint &checkpoint);
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
     void applySnapshot(uint32_t seq /*commit messages and signatures*/);
 
@@ -67,6 +59,8 @@ public:
     const std::string &getDigest(uint32_t seq) const;
     const LogEntry &getEntry(uint32_t seq);
     LogCheckpoint &getStableCheckpoint();
+
+    ClientRecord &getClientRecord();
 
     // Get uncommitted suffix of the loh
     void toProto(dombft::proto::FallbackStart &msg);

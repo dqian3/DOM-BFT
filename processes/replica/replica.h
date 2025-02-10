@@ -49,11 +49,11 @@ private:
     // Replica state
     uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
     std::shared_ptr<Log> log_;
+    std::shared_ptr<Application> app_;
 
     // State for commit/checkpoint protocol
     // checkpoint seq -> CheckpointCollector
     CheckpointCollectors checkpointCollectors_;
-    Commit prevCommit_;
 
     // State for fallback
     bool fallback_ = false;
@@ -111,7 +111,7 @@ private:
     void checkTimeouts();
 
     bool verifyCert(const dombft::proto::Cert &cert);
-    bool verifyFallbackProof(const Cert &proof);
+    bool verifyFallbackProof(const dombft::proto::Cert &proof);
     bool verifyFallbackProposal(const dombft::proto::FallbackProposal &proposal);
     bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
 
@@ -161,10 +161,7 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
     // wrappers
-    void sendCatchupCommit(uint32_t replicaId);
     void sendStateSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
-    void applyCheckpointCommit(CheckpointCollector &collector, std::shared_ptr<std::string> snapshot = nullptr);
-    bool ifDropCheckpoint(uint32_t seq);
 
 public:
     Replica(

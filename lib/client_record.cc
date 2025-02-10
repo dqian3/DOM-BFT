@@ -89,6 +89,8 @@ void ClientRecord::toProto(dombft::proto::ClientRecord &recordProto) const
             record->add_missed_seqs(s);
         }
     }
+
+    recordProto.set_digest(digest());
 }
 
 // Computes the number of records in referenceRecord that are misssing in this record

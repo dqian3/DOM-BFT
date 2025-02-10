@@ -13,16 +13,16 @@ Log::Log(std::shared_ptr<Application> app)
 bool Log::inRange(uint32_t seq) const
 {
     // Note, log.empty() is implicitly checked by the first two conditions
-    return seq > stableCheckpoint.seq && seq < nextSeq_ && !log.empty();
+    return seq > stableCheckpoint_.seq && seq < nextSeq_ && !log.empty();
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
     std::string prevDigest;
 
-    if (nextSeq_ - 1 == stableCheckpoint.seq) {
+    if (nextSeq_ - 1 == stableCheckpoint_.seq) {
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_;
-        prevDigest = stableCheckpoint.logDigest;
+        prevDigest = stableCheckpoint_.logDigest;
     } else {
         assert(!log.empty());
         prevDigest = log.back().digest;
@@ -83,7 +83,15 @@ void Log::abort(uint32_t seq)
 }
 
 // Given a sequence number, commit the request and remove previous state, and save new checkpoint
-void Log::setCheckpoint(uint32_t seq) {}
+void Log::setStableCheckpoint(const LogCheckpoint &checkpoint)
+{
+    stableCheckpoint_ = checkpoint;
+
+    // Truncate log up to the checkpoint
+    log.erase(log.begin(), log.begin() + (checkpoint.seq - log[0].seq + 1));
+    app_->commit(checkpoint.seq);
+}
+
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
 void Log::applySnapshot(uint32_t seq) {}
 
@@ -92,7 +100,7 @@ uint32_t Log::getNextSeq() const { return nextSeq_; }
 const std::string &Log::getDigest() const
 {
     if (log.empty()) {
-        return stableCheckpoint.logDigest;
+        return stableCheckpoint_.logDigest;
     }
     return log.back().digest;
 }
@@ -119,13 +127,15 @@ const LogEntry &Log::getEntry(uint32_t seq)
     return log[seq - offset];
 }
 
-LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint; }
+LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint_; }
+
+ClientRecord &Log::getClientRecord() { return clientRecord; }
 
 void Log::toProto(dombft::proto::FallbackStart &msg)
 {
     dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    stableCheckpoint.toProto(*checkpointProto);
+    stableCheckpoint_.toProto(*checkpointProto);
 
     for (const LogEntry &entry : log) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
@@ -141,7 +151,7 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    out << "CHECKPOINT " << l.stableCheckpoint.seq << ": " << digest_to_hex(l.stableCheckpoint.logDigest) << " | ";
+    out << "CHECKPOINT " << l.stableCheckpoint_.seq << ": " << digest_to_hex(l.stableCheckpoint_.logDigest) << " | ";
     for (const LogEntry &entry : l.log) {
         out << entry;
     }

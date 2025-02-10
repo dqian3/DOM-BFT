@@ -31,4 +31,6 @@ void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto)
         checkpointProto.set_app_digest("");
         checkpointProto.set_log_digest("");
     }
+
+    clientRecord_.toProto(*checkpointProto.mutable_client_record());
 }

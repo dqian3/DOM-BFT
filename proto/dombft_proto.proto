@@ -71,14 +71,11 @@ message Commit {
     uint32 replica_id = 1;
     uint32 instance = 2;
     uint32 seq = 3;
-    uint32 prev_checkpoint_seq = 4;
 
     bytes log_digest = 5;
     bytes app_digest = 6;
-    bytes app_delta = 7;
-    ClientRecord client_record = 8;
 
-    bool is_catchup = 9;
+    ClientRecord client_record = 8;
 }
 
 message SnapshotRequest {

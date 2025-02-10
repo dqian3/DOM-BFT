@@ -11,10 +11,8 @@
 #include <optional>
 #include <span>
 
-namespace dombft {
-
 typedef std::tuple<std::string, uint32_t, uint32_t> ReplyKeyTuple;
-typedef std::tuple<std::string, std::string, uint32_t, uint32_t, std::string, bool> CommitKeyTuple;
+typedef std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> CommitKeyTuple;
 
 class CheckpointCollector {
 public:
@@ -22,12 +20,12 @@ public:
     uint32_t f_;
     uint32_t seq_;
     uint32_t instance_;
-    Commit commitToUse_;
-    std::optional<dombft::proto::Cert> cert_;
-    std::optional<ClientRecord> clientRecords_;
 
+    std::optional<dombft::proto::Cert> cert_;
     bool hasOwnReply_ = false;
-    bool hasOwnCommit_ = false;
+
+    std::optional<dombft::proto::Commit> commitToUse_;
+    std::optional<ClientRecord> clientRecord_;
 
     std::map<uint32_t, dombft::proto::Reply> replies_;
     std::map<uint32_t, std::string> replySigs_;
@@ -44,14 +42,13 @@ public:
         , instance_(instance)
         , cert_(std::nullopt)
     {
-        clientRecords_ = std::move(records);
+        clientRecord_ = std::move(records);
     }
 
     bool addAndCheckReplyCollection(const dombft::proto::Reply &reply, std::span<byte> sig);
     bool addAndCheckCommitCollection(const dombft::proto::Commit &commitMsg, const std::span<byte> sig);
-    bool commitToLog(
-        const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::shared_ptr<std::string> snapshot
-    );
+
+    void getCheckpoint(LogCheckpoint &checkpoint);
 };
 
 class CheckpointCollectors {
@@ -71,7 +68,5 @@ public:
     void tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecord> &&records);
     void cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance);
 };
-
-}   // namespace dombft
 
 #endif   // DOM_BFT_CHECKPOINT_H

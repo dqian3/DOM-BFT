@@ -1,19 +1,17 @@
 #include "checkpoint_collector.h"
-namespace dombft {
 
-using namespace proto;
+using namespace dombft::proto;
 
 // Collects the reply from peers for the same seq num
 // Returns true if it is ok to proceed with the commit stage
 bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig)
 {
-
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
     hasOwnReply_ = hasOwnReply_ || reply.replica_id() == replicaId_;
-    // Don't try finishing the commit if our log hasn't reached the seq being committed
+    // Don't try starting commit if our log hasn't reached the seq being committed
     if (!hasOwnReply_) {
-        VLOG(4) << "Skipping processing of commit messages until we receive our own...";
+        VLOG(4) << "Skipping processing of reply messages until we receive our own...";
         return false;
     }
 
@@ -50,34 +48,25 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     }
     return false;
 }
+
 bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, const std::span<byte> sig)
 {
 
     // verify the record is not tampered by a malicious replica
-    if (!verifyRecordDigestFromProto(commitMsg.client_records_set())) {
+    if (::ClientRecord(commitMsg.client_record()).digest() != commitMsg.client_record().digest()) {
         VLOG(5) << "Client records from commit msg from replica " << commitMsg.replica_id()
                 << " does not match the carried records digest";
         return false;
     }
     commits_[commitMsg.replica_id()] = commitMsg;
     commitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
-    hasOwnCommit_ = hasOwnCommit_ || commitMsg.replica_id() == replicaId_;
 
-    if (!hasOwnCommit_ && !commitMsg.is_catchup()) {
-        VLOG(4) << "Skipping processing of commit messages until we receive our own...";
-        return false;
-    }
     std::map<CommitKeyTuple, std::set<uint32_t>> matchingCommits;
     // Find a cert among a set of replies
     for (const auto &[replicaId, commit] : commits_) {
 
         CommitKeyTuple key = {
-            commit.log_digest(),
-            commit.app_digest(),
-            commit.instance(),
-            commit.seq(),
-            commit.client_records_set().client_records_digest(),
-            commit.is_catchup()
+            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_record().digest(),
         };
         matchingCommits[key].insert(replicaId);
 
@@ -91,51 +80,42 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     return false;
 }
 
-bool CheckpointCollector::commitToLog(
-    const std::shared_ptr<Log> &log, const dombft::proto::Commit &commit, std::shared_ptr<std::string> snapshot
-)
+void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint)
 {
-    uint32_t seq = commit.seq();
+    // Only valid to get checkpoint if we have colllected enough commits
+    assert(commitToUse_.has_value());
+    assert(clientRecord_.has_value());
 
-    LogCheckpoint &checkpoint = log->getStableCheckpoint();
+    checkpoint.seq = seq_;
+    checkpoint.logDigest = commitToUse_->log_digest();
+    checkpoint.appDigest = commitToUse_->app_digest();
+    checkpoint.clientRecord_ = clientRecord_.value();
 
-    checkpoint.seq = seq;
+    CommitKeyTuple keyToUse = {
+        commitToUse_->log_digest(),
+        commitToUse_->app_digest(),
+        commitToUse_->instance(),
+        commitToUse_->seq(),
+        commitToUse_->client_record().digest(),
+    };
 
-    memcpy(checkpoint.appDigest, commit.app_digest().c_str(), commit.app_digest().size());
-    memcpy(checkpoint.logDigest, commit.log_digest().c_str(), commit.log_digest().size());
+    for (const auto &[replicaId, commit] : commits_) {
+        CommitKeyTuple key = {
+            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_record().digest(),
+        };
 
-    for (uint32_t r : commitMatchedReplicas_) {
-        checkpoint.commitMessages[r] = commits_[r];
-        checkpoint.signatures[r] = commitSigs_[r];
+        if (key != keyToUse)
+            continue;
+
+        checkpoint.commitMessages[replicaId] = commit;
+        checkpoint.signatures[replicaId] = commitSigs_[replicaId];
     }
-
-    const byte *myDigestBytes = log->getDigest(seq);
-    std::string myDigest(myDigestBytes, myDigestBytes + SHA256_DIGEST_LENGTH);
-
-    // // Modifies log if checkpoint is inconsistent with our current log
-    // if (myDigest != commit.log_digest()) {
-
-    //     if (snapshot != nullptr) {
-    //         LOG(INFO) << "Local log digest does not match committed digest, updating app data with snapshot";
-    //         log->app_->applySnapshot(*snapshot);
-    //     } else {
-    //         LOG(INFO) << "Local log digest does not match committed digest, updating app data with delta";
-    //         log->app_->applyDelta(commit.app_delta());
-    //     }
-    //     VLOG(5) << "Apply commit: old_digest=" << digest_to_hex(myDigest)
-    //             << " new_digest=" << digest_to_hex(commit.log_digest());
-    //     return true;
-    // }
-    // log->commit(checkpoint.seq);
-    // checkpoint.appSnapshot = log->app_->getSnapshot(checkpoint.seq);
-    return false;
 }
 
 void CheckpointCollectors::tryInitCheckpointCollector(
-    uint32_t seq, uint32_t instance, std::optional<ClientRecord> &&records
+    uint32_t seq, uint32_t instance, std::optional<::ClientRecord> &&records
 )
 {
-
     if (collectors_.contains(seq)) {
         CheckpointCollector &collector = collectors_.at(seq);
         // Note: both instance and records are from current replica not others
@@ -144,7 +124,7 @@ void CheckpointCollectors::tryInitCheckpointCollector(
             collectors_.erase(seq);
             collectors_.emplace(seq, CheckpointCollector(replicaId_, f_, seq, instance, records));
         } else if (records.has_value()) {
-            collector.clientRecords_ = std::move(records);
+            collector.clientRecord_ = std::move(records);
         }
     } else {
         collectors_.emplace(seq, CheckpointCollector(replicaId_, f_, seq, instance, records));
@@ -168,4 +148,3 @@ void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSe
         collectors_.erase(seq);
     }
 }
-}   // namespace dombft
