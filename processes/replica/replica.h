@@ -47,7 +47,7 @@ private:
     std::unique_ptr<Endpoint> endpoint_;
 
     // Replica state
-    uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
+    uint32_t instance_ = 1;   // in context of PBFT, this variable is the NEXT sequence number
     std::shared_ptr<Log> log_;
     std::shared_ptr<Application> app_;
 
