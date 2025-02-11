@@ -87,7 +87,10 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
 
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
-        log->addEntry(e.c_id, e.c_seq, e.req, res);
+
+        if (!log->addEntry(e.c_id, e.c_seq, e.req, res)) {
+            LOG(WARNING) << "Could not add entry in logFromTestLog c_id=" << e.c_id << " c_seq=" << e.c_seq;
+        }
 
         if (log->getNextSeq() - 1 == testLog.certSeq) {
             // TODO make this cert "real"
@@ -116,6 +119,8 @@ std::unique_ptr<dombft::proto::FallbackStart> suffixFromTestLog(const TestLog &t
     log->toProto(*logMsg);
 
     ret.checkpoint = &logMsg->checkpoint();
+    ret.replicaId = 5;
+    ret.instance = 5;
 
     for (auto &e : logMsg->log_entries()) {
         ret.entries.push_back(&e);
@@ -155,7 +160,7 @@ void assertLogSuffixEq(const LogSuffix &suffix, const TestLog &expected)
 {
     // TODO check checkpoint
 
-    EXPECT_EQ(suffix.entries.size(), expected.entries.size());
+    ASSERT_EQ(suffix.entries.size(), expected.entries.size());
 
     int n = expected.entries.size();
     for (int i = 0; i < n; i++) {
@@ -190,8 +195,15 @@ void assertLogEq(Log &log, const TestLog &expected)
     }
 }
 
+#include <gtest/gtest.h>
+
+class LoggingFixture : public ::testing::Test {
+protected:
+    void SetUp() override { FLAGS_v = 6; }
+};
+
 /************************ Start getLogSuffixFromProposal tests ************************/
-TEST(TestFallbackUtils, LogSuffixFromProposalFPlus1)
+TEST_F(LoggingFixture, LogSuffixFromProposalFPlus1)
 {
     // Test
     TestHistory hist;
@@ -209,7 +221,7 @@ TEST(TestFallbackUtils, LogSuffixFromProposalFPlus1)
     assertLogSuffixEq(suffix, expectedLog);
 }
 
-TEST(TestFallbackUtils, LogSuffixFromProposalScrambed)
+TEST_F(LoggingFixture, LogSuffixFromProposalScrambed)
 {
     // Test
     TestHistory hist;
@@ -231,7 +243,7 @@ TEST(TestFallbackUtils, LogSuffixFromProposalScrambed)
 
 /************************ Start applyLogSuffix tests ************************/
 
-TEST(TestFallbackUtils, ApplyLogSuffix)
+TEST_F(LoggingFixture, ApplyLogSuffix)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
@@ -253,7 +265,7 @@ TEST(TestFallbackUtils, ApplyLogSuffix)
     assertLogEq(*log, newLog);
 }
 
-TEST(TestFallbackUtils, ApplyReplicaAhead)
+TEST_F(LoggingFixture, ApplyReplicaAhead)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
@@ -273,7 +285,7 @@ TEST(TestFallbackUtils, ApplyReplicaAhead)
     assertLogEq(*log, newLog);
 }
 
-TEST(TestFallbackUtils, ApplyReplicaInserted)
+TEST_F(LoggingFixture, ApplyReplicaInserted)
 {
     // Test
     // TODO we would probably need to mock out verifaction of certs and stuff here
@@ -295,7 +307,7 @@ TEST(TestFallbackUtils, ApplyReplicaInserted)
 
 /************************ Start end to end tests ************************/
 
-TEST(TestFallbackUtils, Cert)
+TEST_F(LoggingFixture, Cert)
 {
     // Test
     TestHistory hist;
@@ -324,7 +336,7 @@ TEST(TestFallbackUtils, Cert)
     assertLogEq(*log, expectedLog);
 }
 
-TEST(TestFallbackUtils, Cert2)
+TEST_F(LoggingFixture, Cert2)
 {
     // Test
     TestHistory hist;
@@ -353,7 +365,7 @@ TEST(TestFallbackUtils, Cert2)
     assertLogEq(*log, expectedLog);
 }
 
-TEST(TestFallbackUtils, Catchup)
+TEST_F(LoggingFixture, Catchup)
 {
     // TODO this fails because we don't have a way to apply the snapshot
     // TestHistory hist;
@@ -379,7 +391,7 @@ TEST(TestFallbackUtils, Catchup)
     // assertLogEq(*behindLog, expectedLog);
 }
 
-TEST(TestFallbackUtils, CheckpointAhead)
+TEST_F(LoggingFixture, CheckpointAhead)
 {
     // TODO this fails because we don't have a way to apply the snapshot
 

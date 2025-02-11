@@ -160,8 +160,10 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     uint32_t seq = logSuffix.checkpoint->seq() + 1;
     uint32_t idx = 0;
 
-    LOG(INFO) << "Start applySuffixAfterCheckpoint";
+    // Reset the client record to the one in the checkpoint so we can rebuild it
+    log->getClientRecord() = log->getStableCheckpoint().clientRecord_;
 
+    LOG(INFO) << "Start applySuffixAfterCheckpoint";
     // 2 Skip the entries that are already in the log (consistent)
     for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
@@ -173,6 +175,8 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
         VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                 << " since already in log at seq=" << seq;
+
+        log->getClientRecord().update(entry->client_id(), entry->client_seq());
         seq++;
     }
 
@@ -181,6 +185,8 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
     // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
     for (; idx < logSuffix.entries.size(); idx++) {
+        LOG(INFO) << "Applying entry at seq=" << seq << " log next seq=" << log->getNextSeq();
+
         assert(seq == log->getNextSeq());
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
         uint32_t clientId = entry->client_id();
@@ -189,6 +195,7 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         std::string result;
         if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
             LOG(ERROR) << "Failure to add log entry!";
+            continue;
         }
 
         VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq

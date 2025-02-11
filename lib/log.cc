@@ -21,7 +21,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     std::string prevDigest;
 
     // TODO check duplicates
-    if (clientRecord.update(c_id, c_seq)) {
+    if (!clientRecord.update(c_id, c_seq)) {
         VLOG(4) << "Duplicate request detected by the log! c_id=" << c_id << " c_seq=" << c_seq;
         return false;
     }
