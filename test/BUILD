@@ -1,10 +1,21 @@
+
 cc_test(
-  name = "test_log",
+  name = "test_cert_collector",
   size = "small",
-  srcs = ["test_log.cc"],
+  srcs = ["test_cert_collector.cc"],
   deps = [
-    "//lib:log",
-    "@com_google_googletest//:gtest_main"
+    "//lib:cert_collector",
+    "@com_google_googletest//:gtest_main",
+  ],
+)
+
+cc_test(
+  name = "test_client_record",
+  size = "small",
+  srcs = ["test_client_record.cc"],
+  deps = [
+    "//lib:client_record",
+    "@com_google_googletest//:gtest_main",
   ],
 )
 
@@ -21,11 +32,11 @@ cc_test(
 )
 
 cc_test(
-  name = "test_client_record",
+  name = "test_log",
   size = "small",
-  srcs = ["test_client_record.cc"],
+  srcs = ["test_log.cc"],
   deps = [
-    "//lib:client_record",
-    "@com_google_googletest//:gtest_main",
+    "//lib:log",
+    "@com_google_googletest//:gtest_main"
   ],
 )
