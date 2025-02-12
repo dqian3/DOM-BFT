@@ -6,6 +6,7 @@
 
 #include <openssl/sha.h>
 
+#include <deque>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -15,109 +16,63 @@
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
+#include "lib/client_record.h"
 
-struct LogEntry {
-    uint32_t seq;
+#include "lib/log_checkpoint.h"
+#include "lib/log_entry.h"
 
-    uint32_t client_id;
-    uint32_t client_seq;
+// Note for implementation, we should try and keep the log always in a valid state
+// (where the app and the log are consistent)
+class Log {
 
-    std::string request;
-    std::string result;
+private:
+    std::deque<LogEntry> log;
+    uint32_t nextSeq_;
+    LogCheckpoint stableCheckpoint_;
 
-    byte digest[SHA256_DIGEST_LENGTH];
+    // The log also keeps track of client records, and will de-deduplicate requests
+    ClientRecord clientRecord;
 
-    LogEntry();
-
-    LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, const byte *prev_digest);
-    ~LogEntry();
-
-    void updateDigest(const byte *prev_digest);
-
-    friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);
-};
-
-struct LogCheckpoint {
-    uint32_t seq = 0;
-    // TODO shared ptr here so we don't duplicate it from certs.
-    dombft::proto::Cert cert;
-    byte logDigest[SHA256_DIGEST_LENGTH];
-    byte appDigest[SHA256_DIGEST_LENGTH];
-    std::shared_ptr<std::string> appSnapshot;
-
-    std::map<uint32_t, dombft::proto::Commit> commitMessages;
-    std::map<uint32_t, std::string> signatures;
-
-    // Default constructor
-    LogCheckpoint()
-    {
-        std::memset(logDigest, 0, SHA256_DIGEST_LENGTH);
-        std::memset(appDigest, 0, SHA256_DIGEST_LENGTH);
-    }
-
-    // Copy constructor
-    LogCheckpoint(const LogCheckpoint &other)
-        : seq(other.seq)
-        , cert(other.cert)
-        , appSnapshot(other.appSnapshot)
-        , commitMessages(other.commitMessages)
-        , signatures(other.signatures)
-    {
-        std::memcpy(appDigest, other.appDigest, SHA256_DIGEST_LENGTH);
-    }
-};
-
-struct Log {
-
-    // Circular buffer of LogEntry, since we know the history won't exceed MAX_SPEC_HIST
-    // TODO static memory here? or is that overoptimizing?
-    std::array<std::shared_ptr<LogEntry>, MAX_SPEC_HIST> log;
-
-    // Map of sequence number to certs
-    std::map<uint32_t, std::shared_ptr<dombft::proto::Cert>> certs;
-
-    LogCheckpoint checkpoint;
-
-    // Map of client ids to sequence numbers, for de-duplicating requests
-    std::unordered_map<uint32_t, uint32_t> clientSeqs;
-
-    uint32_t nextSeq;
-    uint32_t lastExecuted;
-
-    // The log claims ownership of the application, instead of the replica
+    // The log shares ownership of the application with the replica
     std::shared_ptr<Application> app_;
 
     std::optional<dombft::proto::Cert> latestCert_;
     uint32_t latestCertSeq_ = 0;
 
+public:
     Log(std::shared_ptr<Application> app);
+
+    bool inRange(uint32_t seq) const;
 
     // Adds an entry and returns whether it is successful.
     bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
-    void commit(uint32_t seq);
-
     bool addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
-    const byte *getDigest() const;
-    const byte *getDigest(uint32_t seq) const;
+    // Abort all requests up to and including seq, as well as app state
+    void abort(uint32_t seq);
 
+    // Given a sequence number, commit the log and remove previous state, and save new checkpoint
+    void setStableCheckpoint(const LogCheckpoint &checkpoint);
+
+    // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
+    void resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
+    // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
+    void applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
+
+    uint32_t getNextSeq() const;
+    const std::string &getDigest() const;
+    const std::string &getDigest(uint32_t seq) const;
+    const LogEntry &getEntry(uint32_t seq);
+    LogCheckpoint &getStableCheckpoint();
+
+    ClientRecord &getClientRecord();
+
+    // Get uncommitted suffix of the loh
     void toProto(dombft::proto::FallbackStart &msg);
-    void toProtoLogCheckpoint(dombft::proto::LogCheckpoint *msg);
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
-
-    std::shared_ptr<LogEntry> getEntry(uint32_t seq);
-    void setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry);
-    void rightShiftEntries(uint32_t startSeq, uint32_t num);
-
-    bool inRange(uint32_t seq) const
-    {
-        return seq < nextSeq && (seq >= nextSeq - MAX_SPEC_HIST || seq < MAX_SPEC_HIST);
-    }
-    bool canAddEntry() const { return nextSeq <= checkpoint.seq + MAX_SPEC_HIST; }
 };
 
-std::ostream &operator<<(std::ostream &out, const LogEntry &le);
 std::ostream &operator<<(std::ostream &out, const Log &l);
 
 #endif

@@ -25,7 +25,7 @@ typedef struct AppLayerResponse {
 class Application {
 
 public:
-    virtual ~Application(){};
+    virtual ~Application() {};
 
     virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) = 0;
 
@@ -51,12 +51,12 @@ public:
     virtual void storeAppStateInYAML(const std::string &filename) = 0;
 };
 
-class AppTrafficGen {
+class ApplicationClient {
 public:
-    virtual ~AppTrafficGen() = default;
+    virtual ~ApplicationClient() = default;
 
-    // Virtual function to generate app traffic
-    virtual void *generateAppTraffic() = 0;
+    // Generate app traffic as serialized message
+    virtual std::string generateAppRequest() = 0;
 };
 
 #endif

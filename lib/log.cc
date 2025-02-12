@@ -4,98 +4,48 @@
 
 #include <glog/logging.h>
 
-LogEntry::LogEntry()
-    : seq(0)
-    , client_id(0)
-    , client_seq(0)
-{
-    memset(digest, 0, SHA256_DIGEST_LENGTH);
-}
-
-LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &req, const byte *prev_digest)
-    : seq(s)
-    , client_id(c_id)
-    , client_seq(c_seq)
-    , request(req)   // Manually allocate some memory to store the request
-{
-    result = "";
-
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-
-    SHA256_Update(&ctx, &seq, sizeof(seq));
-    SHA256_Update(&ctx, &client_id, sizeof(client_id));
-    SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
-    SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, request.c_str(), request.length());
-    SHA256_Final(digest, &ctx);
-}
-
-void LogEntry::updateDigest(const byte *prev_digest)
-{
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-
-    SHA256_Update(&ctx, &seq, sizeof(seq));
-    SHA256_Update(&ctx, &client_id, sizeof(client_id));
-    SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
-    SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, request.c_str(), request.length());
-    SHA256_Final(digest, &ctx);
-}
-
-LogEntry::~LogEntry() {}
-
-std::ostream &operator<<(std::ostream &out, const LogEntry &le)
-{
-    out << le.seq << ": (" << le.client_id << ", " << le.client_seq << ") " << digest_to_hex(le.digest).substr(56)
-        << " | ";
-    return out;
-}
-
 Log::Log(std::shared_ptr<Application> app)
-    : nextSeq(1)
-    , lastExecuted(0)
+    : nextSeq_(1)
     , app_(std::move(app))
 {
-    LOG(INFO) << "Initializing log entries";
-    // Zero initialize all the entries
-    // TODO: there's probably a better way to handle this
-    for (uint32_t i = 0; i < log.size(); i++) {
-        log[i] = std::make_unique<LogEntry>();
-    }
+}
+
+bool Log::inRange(uint32_t seq) const
+{
+    // Note, log.empty() is implicitly checked by the first two conditions
+    return seq > stableCheckpoint_.seq && seq < nextSeq_ && !log.empty();
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
 {
-    assert(nextSeq);
-    byte *prevDigest = nullptr;
-    if (nextSeq - 1 == checkpoint.seq) {
-        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq;
-        prevDigest = checkpoint.logDigest;
+    std::string prevDigest;
+
+    // TODO check duplicates
+    if (!clientRecord.update(c_id, c_seq)) {
+        VLOG(4) << "Duplicate request detected by the log! c_id=" << c_id << " c_seq=" << c_seq;
+        return false;
+    }
+
+    if (nextSeq_ - 1 == stableCheckpoint_.seq) {
+        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_;
+        prevDigest = stableCheckpoint_.logDigest;
     } else {
-        prevDigest = log[(nextSeq - 1) % log.size()]->digest;
+        assert(!log.empty());
+        prevDigest = log.back().digest;
     }
 
-    if (!canAddEntry()) {
-        throw std::runtime_error(
-            "nextSeq = " + std::to_string(nextSeq) +
-            " too far ahead of commitPoint.seq = " + std::to_string(checkpoint.seq)
-        );
-    }
+    log.emplace_back(nextSeq_, c_id, c_seq, req, prevDigest);
 
-    log[nextSeq % log.size()] = std::make_unique<LogEntry>(nextSeq, c_id, c_seq, req, prevDigest);
-
-    res = app_->execute(req, nextSeq);
+    res = app_->execute(req, nextSeq_);
     if (res.empty()) {
         LOG(WARNING) << "Application failed to execute request!";
     }
-    log[nextSeq % log.size()]->result = res;
+    log[nextSeq_ % log.size()].result = res;
 
-    VLOG(4) << "Adding new entry at seq=" << nextSeq << " c_id=" << c_id << " c_seq=" << c_seq
-            << " digest=" << digest_to_hex(log[nextSeq % log.size()]->digest).substr(56);
+    VLOG(4) << "Adding new entry at seq=" << nextSeq_ << " c_id=" << c_id << " c_seq=" << c_seq
+            << " digest=" << digest_to_hex(log[nextSeq_ % log.size()].digest);
 
-    nextSeq++;
+    nextSeq_++;
     return true;
 }
 
@@ -109,7 +59,7 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     auto entry = getEntry(seq);   // will not be nullptr because range is checked above
     const dombft::proto::Reply &r = cert.replies()[0];
 
-    if (r.digest() != std::string(entry->digest, entry->digest + SHA256_DIGEST_LENGTH)) {
+    if (r.client_id() != entry.client_id || r.client_seq() != entry.client_seq) {
         VLOG(5) << "Fail adding cert because mismatching request!";
         return false;
     }
@@ -123,45 +73,118 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     return true;
 }
 
-const byte *Log::getDigest() const
+// Abort all requests starting from and including seq, as well as app state
+void Log::abort(uint32_t seq)
 {
-    if (nextSeq == 0) {
-        return nullptr;
+    if (seq >= nextSeq_) {
+        nextSeq_ = seq;
+        return;
     }
 
-    uint32_t prevSeq = (nextSeq + log.size() - 1) % log.size();
-    return log[prevSeq]->digest;
+    // remove all entries from seq to the end
+    log.erase(log.begin() + (seq - log[0].seq), log.end());
+
+    app_->abort(seq);   // TODO off by one?
+    nextSeq_ = seq;
 }
 
-const byte *Log::getDigest(uint32_t seq) const
+// Given a sequence number, commit the request and remove previous state, and save new checkpoint
+void Log::setStableCheckpoint(const LogCheckpoint &checkpoint)
+{
+    stableCheckpoint_ = checkpoint;
+
+    // Truncate log up to the checkpoint
+    log.erase(log.begin(), log.begin() + (checkpoint.seq - log[0].seq + 1));
+    app_->commit(checkpoint.seq);
+}
+
+// Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
+void Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+{
+    stableCheckpoint_ = checkpoint;
+    clientRecord = checkpoint.clientRecord_;
+    nextSeq_ = seq + 1;
+    latestCertSeq_ = 0;
+    latestCert_ = std::nullopt;
+
+    app_->applySnapshot(snapshot);
+    log.clear();
+}
+
+// Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
+void Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+{
+    // Number of missing entries in my log.
+    uint32_t numMissing = clientRecord.numMissing(checkpoint.clientRecord_);
+
+    // Remove all log entries before the checkpoint, but keep the last numMissing entries
+    while (!log.empty() && log[0].seq <= checkpoint.seq - numMissing) {
+        log.pop_front();
+    }
+
+    // TODO check off by one here
+    app_->applySnapshot(snapshot);
+    clientRecord = checkpoint.clientRecord_;
+    latestCert_.reset();
+    latestCertSeq_ = 0;
+
+    // Requests we want to try reapplying
+    // Note this clears the current log
+    std::deque<LogEntry> toReapply(std::move(log));
+    nextSeq_ = checkpoint.seq + 1;
+
+    // Reapply the rest of the entries in the log by modifying them in place
+    for (LogEntry &entry : toReapply) {
+        std::string temp;   // result gets stored here, but we don't need it
+        addEntry(entry.client_id, entry.client_seq, entry.request, temp);
+    }
+}
+
+uint32_t Log::getNextSeq() const { return nextSeq_; }
+
+const std::string &Log::getDigest() const
+{
+    if (log.empty()) {
+        return stableCheckpoint_.logDigest;
+    }
+    return log.back().digest;
+}
+
+const std::string &Log::getDigest(uint32_t seq) const
 {
     if (!inRange(seq)) {
-        LOG(ERROR) << "Tried to access digest of seq=" << seq << " but nextSeq=" << nextSeq;
-        return nullptr;
+        throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
-    uint32_t seqIdx = (seq + log.size()) % log.size();
-    return log[seqIdx]->digest;
+
+    uint32_t offset = log[0].seq;
+    assert(log[seq - offset].seq == seq);
+    return log[seq - offset].digest;
 }
+
+const LogEntry &Log::getEntry(uint32_t seq)
+{
+    if (!inRange(seq)) {
+        throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
+    }
+    uint32_t offset = log[0].seq;
+
+    assert(log[seq - offset].seq == seq);
+    return log[seq - offset];
+}
+
+LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint_; }
+
+ClientRecord &Log::getClientRecord() { return clientRecord; }
 
 void Log::toProto(dombft::proto::FallbackStart &msg)
 {
     dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    toProtoLogCheckpoint(checkpointProto);
+    stableCheckpoint_.toProto(*checkpointProto);
 
-    for (uint32_t i = checkpoint.seq + 1; i < nextSeq; i++) {
+    for (const LogEntry &entry : log) {
         dombft::proto::LogEntry *entryProto = msg.add_log_entries();
-        LogEntry &entry = *log[i % log.size()];
-
-        assert(i == entry.seq);
-
-        // entry proto no longer keeps cert, remove relevant lines.
-        entryProto->set_seq(i);
-        entryProto->set_client_id(entry.client_id);
-        entryProto->set_client_seq(entry.client_seq);
-        entryProto->set_digest(entry.digest, SHA256_DIGEST_LENGTH);
-        entryProto->set_request(entry.request);
-        entryProto->set_result(entry.result);
+        entry.toProto(*entryProto);
     }
 
     if (latestCert_.has_value()) {
@@ -169,84 +192,13 @@ void Log::toProto(dombft::proto::FallbackStart &msg)
     }
 }
 
-void Log::toProtoLogCheckpoint(dombft::proto::LogCheckpoint *checkpointProto)
-{
-    if (checkpoint.seq > 0) {
-        checkpointProto->set_seq(checkpoint.seq);
-        checkpointProto->set_app_digest((const char *) checkpoint.appDigest, SHA256_DIGEST_LENGTH);
-        checkpointProto->set_log_digest((const char *) checkpoint.logDigest, SHA256_DIGEST_LENGTH);
-        checkpointProto->set_app_snapshot(*checkpoint.appSnapshot);
-
-        for (auto x : checkpoint.commitMessages) {
-            (*checkpointProto->add_commits()) = x.second;
-            checkpointProto->add_signatures(checkpoint.signatures[x.first]);
-        }
-
-        (*checkpointProto->mutable_cert()) = checkpoint.cert;
-    } else {
-        checkpointProto->set_seq(0);
-        checkpointProto->set_app_digest("");
-        checkpointProto->set_log_digest("");
-        checkpointProto->set_app_snapshot("");
-    }
-}
 std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    out << "CHECKPOINT " << l.checkpoint.seq << ": " << digest_to_hex(l.checkpoint.logDigest).substr(56) << " | ";
-    uint32_t i = l.checkpoint.seq + 1;
-    for (; i < l.nextSeq; i++) {
-        int idx = i % MAX_SPEC_HIST;
-        out << *l.log[idx];
+    out << "CHECKPOINT " << l.stableCheckpoint_.seq << ": " << digest_to_hex(l.stableCheckpoint_.logDigest) << " | ";
+    for (const LogEntry &entry : l.log) {
+        out << entry;
     }
     return out;
-}
-
-std::shared_ptr<LogEntry> Log::getEntry(uint32_t seq)
-{
-    if (inRange(seq)) {
-        uint32_t index = seq % MAX_SPEC_HIST;
-        return log[index];
-    } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
-        return nullptr;
-    }
-}
-
-void Log::setEntry(uint32_t seq, std::shared_ptr<LogEntry> &entry)
-{
-    if (inRange(seq)) {
-        uint32_t index = seq % MAX_SPEC_HIST;
-        log[index] = entry;
-    } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
-    }
-}
-
-// copies the entries at idx to idx + num, starting from startSeq
-void Log::rightShiftEntries(uint32_t startSeq, uint32_t num)
-{
-    if (inRange(startSeq)) {
-        std::vector<std::shared_ptr<LogEntry>> temp(nextSeq - startSeq);
-        for (uint32_t i = startSeq; i < nextSeq; i++) {
-            temp[i - startSeq] = log[i % MAX_SPEC_HIST];
-        }
-        for (uint32_t i = startSeq + num; i < nextSeq + num; i++) {
-            log[i % MAX_SPEC_HIST] = temp[i - startSeq - num];
-        }
-        nextSeq += num;
-    } else {
-        LOG(ERROR) << "Sequence number " << startSeq << " is out of range.";
-    }
-}
-
-void Log::commit(uint32_t seq)
-{
-    if (inRange(seq)) {
-        app_.get()->commit(seq);
-        certs.erase(certs.begin(), certs.lower_bound(seq));
-    } else {
-        LOG(ERROR) << "Sequence number " << seq << " is out of range.";
-    }
 }

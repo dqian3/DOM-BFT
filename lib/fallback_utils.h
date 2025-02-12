@@ -6,17 +6,16 @@
 
 #include "proto/dombft_proto.pb.h"
 
-// Struct that references the checkpoint and order of entries to use within
-// the given FallbackProposal message
+// Struct that records the checkpoint and order of entries to use within
+// the given FallbackProposal
 struct LogSuffix {
     // For loging purposes
     uint32_t replicaId;
     uint32_t instance;
-    uint32_t fetchFromReplicaId;
 
+    uint32_t checkpointReplica;
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
-    dombft::ClientRecords clientRecords;
 };
 
 struct PBFTState {
@@ -27,6 +26,11 @@ struct PBFTState {
 };
 
 bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix);
-bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log);
+
+void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot);
+
+void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log);
+
+void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log);
 
 #endif

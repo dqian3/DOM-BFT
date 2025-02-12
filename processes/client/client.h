@@ -80,7 +80,7 @@ private:
     std::unique_ptr<Timer> terminateTimer_;
 
     /* Class for generating requests */
-    std::unique_ptr<AppTrafficGen> trafficGen_;
+    std::unique_ptr<ApplicationClient> trafficGen_;
     AppType appType_;
 
     SignatureProvider sigProvider_;

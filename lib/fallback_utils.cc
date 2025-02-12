@@ -11,17 +11,15 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     // TODO verify messages so this isn't unsafe
     uint32_t maxCheckpointSeq = 0;
 
-    // First find highest commit point
-    const dombft::proto::CheckpointClientRecordsSet *tmpClientRecordsSetPtr;
+    // First find highest checkpoint
     for (auto &log : fallbackProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
+            logSuffix.checkpointReplica = log.replica_id();
             maxCheckpointSeq = log.checkpoint().seq();
-            tmpClientRecordsSetPtr = &log.client_records_set();
-            logSuffix.fetchFromReplicaId = log.replica_id();
         }
     }
-    getClientRecordsFromProto(*tmpClientRecordsSetPtr, logSuffix.clientRecords);
+
     VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
 
     // Find highest sequence with a cert
@@ -55,11 +53,14 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         VLOG(4) << "No certs found!";
     }
 
+    std::set<std::pair<uint32_t, uint32_t>> clientReqsAdded;
+
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
         if (entry.seq() > maxCertSeq)
             break;
 
+        clientReqsAdded.insert({entry.client_id(), entry.client_seq()});
         logSuffix.entries.push_back(&entry);
     }
 
@@ -96,6 +97,10 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
         if (entry.seq() > logToUseSeq)
             break;
 
+        if (clientReqsAdded.contains({entry.client_id(), entry.client_seq()}))
+            continue;
+        clientReqsAdded.insert({entry.client_id(), entry.client_seq()});
+
         logSuffix.entries.push_back(&entry);
     }
 
@@ -129,70 +134,73 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     return true;
 }
 
-bool applySuffixToLog(LogSuffix &logSuffix, const std::shared_ptr<Log> &log)
+void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot)
 {
-    LOG(INFO) << "Applying checkpoint";
+    ::LogCheckpoint checkpoint(*logSuffix.checkpoint);
+    log->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshot);
+    applySuffixAfterCheckpoint(logSuffix, log);
+}
 
+void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log)
+{
+
+    LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
+              << " stable checkpoint seq=" << log->getStableCheckpoint().seq;
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
-    // Step1. Check if currently is behind suffix checkpoint
-    // *This is only called when current checkpoint is consistent
-    assert(checkpoint->seq() == log->checkpoint.seq);
 
+    // *This should only be called when current checkpoint is consistent with fallback checkpoint
+    assert(checkpoint->seq() == log->getStableCheckpoint().seq);
+    applySuffixAfterCheckpoint(logSuffix, log);
+}
+
+void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
+{
     // Step2. Find the spot to start applying the suffix
     // First sequence to apply is right after checkpoint
-    uint32_t seq = checkpoint->seq() + 1;
+    uint32_t seq = logSuffix.checkpoint->seq() + 1;
     uint32_t idx = 0;
-    dombft::ClientRecords &clientRecords = logSuffix.clientRecords;
-    // 2.1 Skip the entries that are already in the log (consistent)
-    for (; idx < logSuffix.entries.size() && seq < log->nextSeq; idx++) {
+
+    // Reset the client record to the one in the checkpoint so we can rebuild it
+    log->getClientRecord() = log->getStableCheckpoint().clientRecord_;
+
+    LOG(INFO) << "Start applySuffixAfterCheckpoint";
+    // 2 Skip the entries that are already in the log (consistent)
+    for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
-        std::shared_ptr<LogEntry> myEntry = log->getEntry(seq);
-        std::string myDigest(myEntry->digest, myEntry->digest + SHA256_DIGEST_LENGTH);
+
         // 2.2 If inconsistency is detected, abort own entries after the last consistent entry
-        if (myDigest != entry->digest()) {
-            log->app_->abort(seq - 1);
+        if (log->getDigest(seq) != entry->digest()) {
             break;
         }
-        // 2.3 Update client records & skip the duplicated entries
-        if (!clientRecords[entry->client_id()].update(entry->client_seq())) {
-            // TODO this is not ideal; we will reppeat client ops, but replicas will still be
-            // consistent.
-            VLOG(4) << "Skipped entry seq=" << seq << " c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
-                    << " because it is a duplicate!";
-            continue;
-        }
+
         VLOG(6) << "Skipping c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
                 << " since already in log at seq=" << seq;
+
+        log->getClientRecord().update(entry->client_id(), entry->client_seq());
         seq++;
     }
 
+    LOG(INFO) << "Aborting own entries from seq=" << seq;
+    log->abort(seq);
+
     // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
-    log->nextSeq = seq;
     for (; idx < logSuffix.entries.size(); idx++) {
-        assert(seq == log->nextSeq);
+        LOG(INFO) << "Applying entry at seq=" << seq << " log next seq=" << log->getNextSeq();
+
+        assert(seq == log->getNextSeq());
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
 
-        if (!log->canAddEntry()) {
-            LOG(INFO) << "nextSeq=" << log->nextSeq << " too far ahead of commitPoint.seq=" << log->checkpoint.seq;
-            break;
-        }
-        if (!clientRecords[entry->client_id()].update(clientSeq)) {
-            LOG(INFO) << "Dropping request c_id=" << entry->client_id() << " c_seq=" << entry->client_seq()
-                      << " due to duplication in applying suffix!";
-            continue;
-        }
-
         std::string result;
         if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
             LOG(ERROR) << "Failure to add log entry!";
+            continue;
         }
 
         VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                 << " instance=" << logSuffix.instance << " client_id=" << clientId
-                << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest()).substr(56);
+                << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest());
         seq++;
     }
-    return true;
 }

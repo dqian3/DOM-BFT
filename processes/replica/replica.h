@@ -47,16 +47,13 @@ private:
     std::unique_ptr<Endpoint> endpoint_;
 
     // Replica state
-    uint32_t instance_ = 0;   // in context of PBFT, this variable the NEXT sequence number
+    uint32_t instance_ = 1;   // in context of PBFT, this variable is the NEXT sequence number
     std::shared_ptr<Log> log_;
-    ClientRecords clientRecords_;
-    ClientRecords checkpointClientRecords_;
-    std::map<uint32_t, std::map<uint32_t, dombft::Reply>> replyCache_;
+    std::shared_ptr<Application> app_;
 
     // State for commit/checkpoint protocol
     // checkpoint seq -> CheckpointCollector
     CheckpointCollectors checkpointCollectors_;
-    Commit prevCommit_;
 
     // State for fallback
     bool fallback_ = false;
@@ -106,15 +103,14 @@ private:
     void processCert(const dombft::proto::Cert &cert);
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
-    void processStateSnapshotReplyForCheckpoint(const dombft::proto::SnapshotReply &snapshotReply);
-    void processStateSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
-    void processStateSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
+    void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
+    void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
     void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig);
     void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
     void checkTimeouts();
 
     bool verifyCert(const dombft::proto::Cert &cert);
-    bool verifyFallbackProof(const Cert &proof);
+    bool verifyFallbackProof(const dombft::proto::Cert &proof);
     bool verifyFallbackProposal(const dombft::proto::FallbackProposal &proposal);
     bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
 
@@ -124,7 +120,6 @@ private:
     void finishFallback();
     void tryFinishFallback();
     void sendFallbackSummaryToClients();
-    void continueFallbackWithSnapshotUpdated();
     LogSuffix &getFallbackLogSuffix();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
@@ -150,24 +145,14 @@ private:
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg);
     void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
     void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
-
     void getProposalDigest(byte *digest, const dombft::proto::FallbackProposal &proposal);
-
-    // helpers for client records
-    bool checkDuplicateRequest(const dombft::proto::ClientRequest &clientHeader);
-    void reapplyEntriesWithRecord(uint32_t rShiftNum);
 
     // sending helpers
     // note even though these are templates, we can define them in the cpp file because they are private
     // to this class.
+    void sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
-
-    // wrappers
-    void sendCatchupCommit(uint32_t replicaId);
-    void sendStateSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
-    void applyCheckpointCommit(CheckpointCollector &collector, std::shared_ptr<std::string> snapshot = nullptr);
-    bool ifDropCheckpoint(uint32_t seq);
 
 public:
     Replica(

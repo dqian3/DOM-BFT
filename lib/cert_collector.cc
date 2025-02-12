@@ -38,6 +38,8 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 
         if (instanceCounts[reply.instance()] >= f_ + 1) {
             instance_ = std::max(instance_, reply.instance());
+            cert_.reset();
+            VLOG(4) << "Increasing instance for cert collector to " << instance_;
         }
     }
 
@@ -83,8 +85,8 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         for (const auto &[replicaId, reply] : replies_) {
             dombft::apps::CounterResponse response;
             response.ParseFromString(reply.result());
-            oss << replicaId << " " << digest_to_hex(reply.digest()).substr(56) << " " << reply.seq() << " "
-                << reply.instance() << " " << response.value() << "\n";
+            oss << replicaId << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.instance()
+                << " " << response.value() << "\n";
         }
 
         std::string logOutput = oss.str();

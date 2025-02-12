@@ -5,7 +5,7 @@ app: "kv_store"
 client:
   ips: 
   - "127.0.1.0"
-  # - "127.0.1.1"
+  - "127.0.1.1"
   port: 33000
   keysDir: keys/client
   normalPathTimeout: 15000    # 15ms
