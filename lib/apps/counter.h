@@ -62,11 +62,11 @@ private:
     std::vector<VersionedValue> version_hist;
 };
 
-class CounterTrafficGen : public AppTrafficGen {
+class CounterClient : public ApplicationClient {
 public:
-    CounterTrafficGen() = default;
+    CounterClient() = default;
 
-    void *generateAppTraffic() override;
+    std::string generateAppRequest() override;
 };
 
 #endif

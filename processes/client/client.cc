@@ -111,10 +111,10 @@ Client::Client(const ProcessConfig &config, size_t id)
     endpoint_->RegisterTimer(terminateTimer_.get());
 
     if (config.app == AppType::COUNTER) {
-        trafficGen_ = std::make_unique<CounterTrafficGen>();
+        trafficGen_ = std::make_unique<CounterClient>();
         appType_ = AppType::COUNTER;
     } else if (config.app == AppType::KV_STORE) {
-        trafficGen_ = std::make_unique<KVStoreTrafficGen>();
+        trafficGen_ = std::make_unique<KVStoreClient>();
         appType_ = AppType::KV_STORE;
     } else {
         LOG(ERROR) << "Unknown application type for client!";
@@ -167,17 +167,7 @@ Client::~Client()
 
 void Client::fillRequestData(ClientRequest &request)
 {
-    auto appRequest = trafficGen_->generateAppTraffic();
-    // TODO: this has to be hard coded in an inelegant way. May imporve this later
-    std::string reqData;
-
-    if (appType_ == AppType::COUNTER) {
-        auto *counterReq = (dombft::apps::CounterRequest *) appRequest;
-        reqData = counterReq->SerializeAsString();
-    } else if (appType_ == AppType::KV_STORE) {
-        auto *kvStoreReq = (dombft::apps::KVRequest *) appRequest;
-        reqData = kvStoreReq->SerializeAsString();
-    }
+    std::string reqData = trafficGen_->generateAppRequest();
 
     if (reqData.size() < requestSize_) {
         request.set_padding(std::string(requestSize_ - reqData.size(), '\0'));

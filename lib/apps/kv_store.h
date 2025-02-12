@@ -55,19 +55,19 @@ public:
     void storeAppStateInYAML(const std::string &filename) override;
 };
 
-class KVStoreTrafficGen : public AppTrafficGen {
+class KVStoreClient : public ApplicationClient {
     uint32_t keyLen;
     uint32_t valLen;
 
 public:
-    KVStoreTrafficGen()
+    KVStoreClient()
         : keyLen(KEY_MIN_LENGTH)
         , valLen(VALUE_MIN_LENGTH)
     {
     }
 
     std::string randomStringNormDist(std::string::size_type length);
-    void *generateAppTraffic() override;
+    std::string generateAppRequest() override;
 };
 
 #endif

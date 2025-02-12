@@ -158,10 +158,10 @@ void Counter::storeAppStateInYAML(const std::string &filename)
     std::cout << "App state saved to " << filename << std::endl;
 }
 
-void *CounterTrafficGen::generateAppTraffic()
+std::string CounterClient::generateAppRequest()
 {
     CounterRequest *request = new CounterRequest();
     request->set_op(CounterOperation::INCREMENT);
 
-    return request;
+    return request->SerializeAsString();
 }

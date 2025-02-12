@@ -255,7 +255,7 @@ void KVStore::storeAppStateInYAML(const std::string &filename)
     std::cout << "App state saved to " << filename << std::endl;
 }
 
-std::string KVStoreTrafficGen::randomStringNormDist(std::string::size_type length)
+std::string KVStoreClient::randomStringNormDist(std::string::size_type length)
 {
     static auto &chrs = "0123456789"
                         "abcdefghijklmnopqrstuvwxyz"
@@ -269,7 +269,7 @@ std::string KVStoreTrafficGen::randomStringNormDist(std::string::size_type lengt
         s += chrs[pick(rg)];
     return s;
 }
-void *KVStoreTrafficGen::generateAppTraffic()
+std::string KVStoreClient::generateAppRequest()
 {
     // TODO(Hao): test with set only for now.
     KVRequest *req = new KVRequest();
@@ -280,5 +280,6 @@ void *KVStoreTrafficGen::generateAppTraffic()
     keyLen = (keyLen + 1) > KEY_MAX_LENGTH ? KEY_MIN_LENGTH : (keyLen + 1);
     valLen = (valLen + 1) > VALUE_MAX_LENGTH ? VALUE_MIN_LENGTH : (valLen + 1);
     LOG(INFO) << "Generated request: " << req->key() << " " << req->value();
-    return req;
+
+    return req->SerializeAsString();
 }
