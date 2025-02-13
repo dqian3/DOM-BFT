@@ -111,33 +111,52 @@ bool KVStore::abort(const uint32_t abort_idx)
     return true;
 }
 
-void KVStore::applyDelta(const std::string &delta)
+bool KVStore::applyDelta(const std::string &delta, const std::string &digest)
 {
     throw std::runtime_error("Delta not implemented yet for KVStore");
 }
 
-void KVStore::applySnapshot(const std::string &snapshot)
+bool KVStore::applySnapshot(const std::string &snapshot, const std::string &digest)
 {
+
+    byte computedDigest[SHA256_DIGEST_LENGTH];
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
+    SHA256_Final(computedDigest, &ctx);
+
+    if (std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH) != digest) {
+        LOG(ERROR) << "Snapshot digest does not match";
+        return false;
+    }
+
     try {
+        std::map<std::string, std::string> new_data;
+
         std::istringstream iss(snapshot);
         std::string kv;
-        data.clear();
         while (std::getline(iss, kv, ',')) {
             std::istringstream kvss(kv);
             std::string key, value;
             std::getline(kvss, key, ':');
             std::getline(kvss, value, ':');
-            data[key] = value;
+            new_data[key] = value;
         }
+
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
+
+        std::swap(data, new_data);
     } catch (std::exception &e) {
-        LOG(ERROR) << "Failed to apply snapshot: " << e.what();
+        LOG(ERROR) << "Failed to parse snapshot: " << e.what();
+        return false;
     }
+
+    return true;
 }
 
-AppSnapshot KVStore::takeSnapshot()
+::AppSnapshot KVStore::takeSnapshot()
 {
-    AppSnapshot ret;
+    ::AppSnapshot ret;
     ret.idx = requests.empty() ? committedIdx : requests.back().idx;
 
     // TODO this only works if key/value data does not have ":" or ","

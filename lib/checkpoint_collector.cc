@@ -106,7 +106,7 @@ bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, st
     std::pair<uint32_t, uint32_t> key = {reply.instance(), reply.seq()};
 
     if (!replyCollectors_.contains(key)) {
-        replyCollectors_[key] = ReplyCollector(replicaId_, f_, reply.instance(), reply.seq());
+        replyCollectors_.emplace(key, ReplyCollector(replicaId_, f_, reply.instance(), reply.seq()));
     }
 
     return replyCollectors_.at(key).addAndCheckReply(reply, sig);
@@ -117,7 +117,7 @@ bool CheckpointCollector::addAndCheckCommit(const dombft::proto::Commit &commit,
     std::pair<uint32_t, uint32_t> key = {commit.instance(), commit.seq()};
 
     if (!commitCollectors_.contains(key)) {
-        commitCollectors_[key] = CommitCollector(f_, commit.instance(), commit.seq());
+        commitCollectors_.emplace(key, CommitCollector(f_, commit.instance(), commit.seq()));
     }
 
     return commitCollectors_.at(key).addAndCheckCommit(commit, sig);

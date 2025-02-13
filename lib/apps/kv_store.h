@@ -14,17 +14,17 @@
 #define VALUE_MAX_LENGTH 6
 #define VALUE_MIN_LENGTH 2
 
-typedef struct {
+struct KVStoreRequest {
     uint32_t idx;
     std::string key;
     std::string value;
-    KVRequestType type;
+    dombft::apps::KVRequestType type;
 };
 
 class KVStore : public Application {
 
 private:
-    std::vector<dombft::apps::KVStoreRequest> requests;
+    std::vector<KVStoreRequest> requests;
     std::map<std::string, std::string> data;
     std::map<std::string, std::string> committedData;
     uint32_t committedIdx;

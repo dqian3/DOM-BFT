@@ -782,18 +782,15 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     }
     // In fact, returned state snapshot is always the latest snapshot (with the checkpoint.seq)
     // the LOG is just to make it clear.
-    std::shared_ptr<std::string> snapshot = app_->getSnapshot(reqSeq);
-    if (snapshot == nullptr) {
-        LOG(INFO) << "Requested snapshot for seq " << reqSeq << " is not available, returning current snapshot"
-                  << " for seq " << log_->getStableCheckpoint().seq << " instead";
-    }
+
+    // TODO, use request's last checkpoint sequence to return a delta instead..
 
     SnapshotReply snapshotReply;
     snapshotReply.set_instance(instance_);
     snapshotReply.set_seq(log_->getStableCheckpoint().seq);
     snapshotReply.set_replica_id(replicaId_);
     snapshotReply.set_pbft_view(pbftView_);
-    snapshotReply.set_snapshot(*snapshot);
+    snapshotReply.set_snapshot(appSnapshotStore_.getSnapshot());
 
     sendMsgToDst(snapshotReply, MessageType::SNAPSHOT_REPLY, replicaAddrs_[request.replica_id()]);
 }

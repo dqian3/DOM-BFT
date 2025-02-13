@@ -116,11 +116,12 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
     version_hist.clear();
 
     LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
+    return true;
 }
 
-AppSnapshot Counter::takeSnapshot()
+::AppSnapshot Counter::takeSnapshot()
 {
-    AppSnapshot ret;
+    ::AppSnapshot ret;
     ret.idx = version_hist.empty() ? committed_state.version : version_hist.back().version;
 
     ret.snapshot = std::to_string(committed_state.version) + "," + std::to_string(committed_state.value);
