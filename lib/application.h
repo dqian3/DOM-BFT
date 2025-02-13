@@ -12,7 +12,7 @@
 
 enum class AppType { KV_STORE, COUNTER };
 
-typedef struct AppSnapshot {
+struct AppSnapshot {
     uint32_t idx;
 
     std::string snapshot;

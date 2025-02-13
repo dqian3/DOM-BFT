@@ -822,7 +822,12 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         ::LogCheckpoint checkpoint;
         checkpointCollector_.getCheckpoint(instance_, snapshotReply.seq(), checkpoint);
-        log_->applySnapshotModifyLog(snapshotReply.seq(), checkpoint, snapshotReply.snapshot());
+
+        if (!log_->applySnapshotModifyLog(snapshotReply.seq(), checkpoint, snapshotReply.snapshot())) {
+            LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
+            // TODO handle this better
+            throw std::runtime_error("Snapshot digest mismatch");
+        }
 
         // Resend replies after modifying log
         for (int seq = log_->getStableCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {

@@ -19,12 +19,12 @@ typedef struct {
     std::string key;
     std::string value;
     KVRequestType type;
-} KVStoreRequest;
+};
 
 class KVStore : public Application {
 
 private:
-    std::vector<KVStoreRequest> requests;
+    std::vector<dombft::apps::KVStoreRequest> requests;
     std::map<std::string, std::string> data;
     std::map<std::string, std::string> committedData;
     uint32_t committedIdx;

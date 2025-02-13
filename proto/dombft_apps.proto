@@ -6,8 +6,8 @@ message AppSnapshot {
     bool is_delta = 1;
     
     // Snapshots can consist of multiple deltas
-    repeated uint32 delta_from_idx = 2
-    repeated bytes delta = 3
+    repeated uint32 delta_from_idx = 2;
+    repeated bytes delta = 3;
 
     bytes snapshot = 4;
 }

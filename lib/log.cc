@@ -99,21 +99,25 @@ void Log::setStableCheckpoint(const LogCheckpoint &checkpoint)
 }
 
 // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-void Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+bool Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
 {
     stableCheckpoint_ = checkpoint;
     clientRecord = checkpoint.clientRecord_;
     nextSeq_ = seq + 1;
     latestCertSeq_ = 0;
     latestCert_ = std::nullopt;
-
-    app_->applySnapshot(snapshot);
     log.clear();
+
+    return app_->applySnapshot(snapshot, checkpoint.appDigest);
 }
 
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-void Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+bool Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
 {
+    if (!app_->applySnapshot(snapshot, checkpoint.appDigest)) {
+        return false;
+    }
+
     // Number of missing entries in my log.
     uint32_t numMissing = clientRecord.numMissing(checkpoint.clientRecord_);
 
@@ -122,8 +126,6 @@ void Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, 
         log.pop_front();
     }
 
-    // TODO check off by one here
-    app_->applySnapshot(snapshot);
     clientRecord = checkpoint.clientRecord_;
     latestCert_.reset();
     latestCertSeq_ = 0;
@@ -133,7 +135,7 @@ void Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, 
     std::deque<LogEntry> toReapply(std::move(log));
     nextSeq_ = checkpoint.seq + 1;
 
-    // Reapply the rest of the entries in the log by modifying them in place
+    // Reapply the rest of the entries in the log
     for (LogEntry &entry : toReapply) {
         std::string temp;   // result gets stored here, but we don't need it
         addEntry(entry.client_id, entry.client_seq, entry.request, temp);

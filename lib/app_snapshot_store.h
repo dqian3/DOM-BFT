@@ -18,7 +18,7 @@ private:
     std::string stableSnapshot_;
     uint32_t stableSnapshotIdx_;
 
-    std::map<uint32_t.std::string> deltas_;
+    std::map<uint32_t, std::string> deltas_;
 };
 
 #endif
