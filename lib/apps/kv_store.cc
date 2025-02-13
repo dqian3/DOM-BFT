@@ -1,22 +1,25 @@
 #include "kv_store.h"
 
 #include <random>
+#include <sstream>
+
+using namespace dombft::apps;
 
 KVStore::~KVStore() {}
 
-std::string KVStore::execute(const std::string &serialized_request, const uint32_t execute_idx)
+std::string KVStore::execute(const std::string &serialized_request, uint32_t execute_idx)
 {
-    std::unique_ptr<KVRequest> kvReq = std::make_unique<KVRequest>();
-    if (!kvReq->ParseFromString(serialized_request)) {
+    KVRequest req;
+    if (req.ParseFromString(serialized_request)) {
         LOG(ERROR) << "Failed to parse KVRequest";
-        return {};
+        return "";
     }
     KVResponse response;
 
-    std::string key = kvReq->key();
-    std::string value = {};
-    KVRequestType type = kvReq->msg_type();
-    // print out the request
+    KVRequestType type = req.msg_type();
+    std::string key = req.key();
+    std::string value = req.value();
+
     if (type == KVRequestType::GET) {
         if (data.count(key)) {
             response.set_ok(true);
@@ -26,14 +29,18 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
             response.set_ok(false);
         }
     } else if (type == KVRequestType::SET) {
-        data[key] = kvReq->value();   // TODO check value is there   <--why
+        data[key] = req.value();
         response.set_ok(true);
-        VLOG(6) << "SET key: " << key << " value: " << kvReq->value();
+        VLOG(6) << "SET key: " << key << " value: " << req.value();
+
     } else if (type == KVRequestType::DELETE) {
         bool deleted = data.erase(key);
         response.set_ok(deleted);
-        if (deleted)
-            VLOG(6) << "DELETE key: " << key;
+        if (deleted) {
+            VLOG(6) << "DELETE key: " << key << " success";
+        } else {
+            VLOG(6) << "DELETE key: " << key << " fail";
+        }
     } else {
         LOG(ERROR) << "Unknown KVRequestType";
         return "";
@@ -41,221 +48,139 @@ std::string KVStore::execute(const std::string &serialized_request, const uint32
 
     std::string ret;
     if (!response.SerializeToString(&ret)) {
-        LOG(ERROR) << "Failed to serialize CounterResponse";
         throw std::runtime_error("Failed to serialize CounterResponse message.");
     }
     requests.push_back({execute_idx, key, value, type});
+
     return ret;
-}
-
-std::string KVStore::getDigest(uint32_t digest_idx)
-{
-    if (digest_idx >= requests.back().idx) {
-        LOG(ERROR) << "Invalid digest idx: " << digest_idx << " out of range";
-        return {};
-    }
-    byte digest[SHA256_DIGEST_LENGTH];
-    std::string all;
-    // we use request history as part of the digest instead of data
-    // since it is easier to keep track of the idx
-    for (auto &ele : requests) {
-        all += std::to_string(ele.idx) + ele.key + ele.value + std::to_string(static_cast<int>(ele.type));
-        if (ele.idx == digest_idx) {
-            break;
-        }
-    }
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, committed_data_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, all.c_str(), all.size());
-    SHA256_Final(digest, &ctx);
-    return {reinterpret_cast<char *>(digest), SHA256_DIGEST_LENGTH};
-}
-
-bool KVStore::takeDelta()
-{
-    if (requests.empty())
-        return false;
-
-    std::string sp = {};
-    if (committed_data.empty()) {
-        for (auto &kv : data) {
-            sp += kv.first + ":" + kv.second + ",";
-        }
-    } else {
-        std::map<std::string, std::string> delta = getDeltaFromCommit();
-        for (auto &kv : delta) {
-            sp += kv.first + ":" + kv.second + ",";
-        }
-    }
-    delta_data[requests.back().idx] = sp;
-    return true;
-}
-
-bool KVStore::takeSnapshot()
-{
-    std::string sp = {};
-    for (auto &kv : data) {
-        sp += kv.first + ":" + kv.second + ",";
-    }
-    snapshots_data[requests.back().idx] = std::make_shared<std::string>(sp);
-    return true;
-}
-
-std::shared_ptr<std::string> KVStore::getSnapshot(uint32_t seq)
-{
-    return snapshots_data.count(seq) ? snapshots_data[seq] : nullptr;
-}
-std::string KVStore::getDelta(uint32_t seq) { return delta_data.count(seq) ? delta_data[seq] : ""; }
-
-void KVStore::applyDelta(const std::string &delta)
-{
-    try {
-        std::istringstream iss(delta);
-        std::string kv;
-        data = committed_data;
-        while (std::getline(iss, kv, ',')) {
-            std::istringstream kvss(kv);
-            std::string key, value;
-            std::getline(kvss, key, ':');
-            std::getline(kvss, value, ':');
-            if (value.empty()) {
-                data.erase(key);
-            } else {
-                data[key] = value;
-            }
-        }
-        LOG(INFO) << "Applied delta, data size: " << data.size();
-    } catch (std::exception &e) {
-        LOG(ERROR) << "Failed to apply delta: " << e.what();
-    }
-}
-void KVStore::applySnapshot(const std::string &snapshot)
-{
-    try {
-        std::istringstream iss(snapshot);
-        std::string kv;
-        data.clear();
-        while (std::getline(iss, kv, ',')) {
-            std::istringstream kvss(kv);
-            std::string key, value;
-            std::getline(kvss, key, ':');
-            std::getline(kvss, value, ':');
-            data[key] = value;
-        }
-        LOG(INFO) << "Applied snapshot, data size: " << data.size();
-    } catch (std::exception &e) {
-        LOG(ERROR) << "Failed to apply snapshot: " << e.what();
-    }
-}
-
-std::map<std::string, std::string> KVStore::getDeltaFromCommit()
-{
-    std::map<std::string, std::string> delta;
-    for (const auto &req : requests) {
-        if (req.type == KVRequestType::SET) {
-            delta[req.key] = req.value;
-        } else if (req.type == KVRequestType::DELETE) {
-            // empty string means delete
-            delta[req.key] = "";
-        }
-    }
-    LOG(INFO) << "Generated delta from requests, size: " << delta.size();
-    return delta;
-}
-
-bool KVStore::abort(const uint32_t abort_idx)
-{
-    LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-    if (abort_idx < requests.front().idx) {
-        LOG(ERROR) << "Abort index is  less than the oldest uncommitted request with index " << requests.front().idx
-                   << ". Unable to revert.";
-        return false;
-    }
-    if (abort_idx > requests.back().idx) {
-        LOG(ERROR) << "Abort index is greater than the newest uncommitted request with index " << requests.back().idx
-                   << ". Unable to revert.";
-        return false;
-    }
-    // reapply committed data and ops before abort_idx
-    data = committed_data;
-    uint32_t i = 0;
-    for (auto &ele : requests) {
-        if (ele.idx > abort_idx) {
-            requests.erase(requests.begin() + i, requests.end());
-            break;
-        }
-        // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
-        if (ele.type == KVRequestType::SET) {
-            data[ele.key] = ele.value;
-        } else if (ele.type == KVRequestType::DELETE) {
-            data.erase(ele.key);
-        }
-        i++;
-    }
-    return true;
 }
 
 bool KVStore::commit(uint32_t commit_idx)
 {
     LOG(INFO) << "Committing counter value at idx: " << commit_idx;
     // update committed_data_digest alone the way
-    byte digest[SHA256_DIGEST_LENGTH];
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    std::string all;
 
     uint32_t i = 0;
-    for (auto &ele : requests) {
-        if (ele.idx > commit_idx) {
-            break;
-        }
+    for (uint32_t i = 0; i < requests.size() && requests[i].idx <= commit_idx; i++) {
         // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
-        if (ele.type == KVRequestType::SET) {
-            committed_data[ele.key] = ele.value;
-        } else if (ele.type == KVRequestType::DELETE) {
-            committed_data.erase(ele.key);
+        KVStoreRequest &r = requests[i];
+        if (r.type == KVRequestType::SET) {
+            committedData[r.key] = r.value;
+        } else if (r.type == KVRequestType::DELETE) {
+            committedData.erase(r.key);
         }
         i++;
-        all += std::to_string(ele.idx) + ele.key + ele.value + std::to_string(static_cast<int>(ele.type));
     }
     // remove committed requests
     requests.erase(requests.begin(), requests.begin() + i);
+    committedIdx = commit_idx;
 
-    SHA256_Update(&ctx, committed_data_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, all.c_str(), all.size());
-    SHA256_Final(digest, &ctx);
-    memcpy(committed_data_digest, digest, SHA256_DIGEST_LENGTH);
+    LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committedData.size();
+    return true;
+}
 
-    // LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committed_data.size()
-    //           << " digest: " << digest_to_hex(committed_data_digest, SHA256_DIGEST_LENGTH);
-
-    // remove snapshots and delta that are older than commit_idx
-    auto it = snapshots_data.begin();
-    while (it != snapshots_data.end()) {
-        if (it->first < commit_idx) {
-            delta_data.erase(it->first);
-            it = snapshots_data.erase(it);
-        } else {
-            ++it;
+bool KVStore::abort(uint32_t abort_idx)
+{
+    LOG(INFO) << "Aborting operations starting from idx=" << abort_idx;
+    if (abort_idx <= committedIdx) {
+        LOG(WARNING) << "Abort index is less than committed request with index " << requests.front().idx
+                     << ", abort failed";
+        return false;
+    }
+    if (requests.empty() || abort_idx > requests.back().idx) {
+        LOG(WARNING) << "Abort index is greater than the newest uncommitted request with index " << requests.back().idx
+                     << ". Nothing will happen.";
+        return true;
+    }
+    // reapply committed data and ops before abort_idx
+    data = committedData;
+    uint32_t i = 0;
+    for (auto &r : requests) {
+        if (r.idx >= abort_idx) {
+            requests.erase(requests.begin() + i, requests.end());
+            break;
         }
+        // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
+        if (r.type == KVRequestType::SET) {
+            data[r.key] = r.value;
+        } else if (r.type == KVRequestType::DELETE) {
+            data.erase(r.key);
+        }
+        i++;
     }
     return true;
 }
 
-void KVStore::storeAppStateInYAML(const std::string &filename)
+bool KVStore::applyDelta(const std::string &delta, const std::string &digest)
 {
-    // TODO(Hao): maybe add some metadata as well
-    std::ofstream fout(filename);
-    YAML::Node node;
-    for (auto &kv : data) {
-        node[kv.first] = kv.second;
-    }
-    fout << node;
-    std::cout << "App state saved to " << filename << std::endl;
+    throw std::runtime_error("Delta not implemented yet for KVStore");
 }
 
-std::string KVStoreClient::randomStringNormDist(std::string::size_type length)
+bool KVStore::applySnapshot(const std::string &snapshot, const std::string &digest)
+{
+
+    byte computedDigest[SHA256_DIGEST_LENGTH];
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
+    SHA256_Final(computedDigest, &ctx);
+
+    if (std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH) != digest) {
+        LOG(ERROR) << "Snapshot digest does not match";
+        return false;
+    }
+
+    try {
+        std::map<std::string, std::string> new_data;
+
+        std::istringstream iss(snapshot);
+        std::string kv;
+        while (std::getline(iss, kv, ',')) {
+            std::istringstream kvss(kv);
+            std::string key, value;
+            std::getline(kvss, key, ':');
+            std::getline(kvss, value, ':');
+            new_data[key] = value;
+        }
+
+        LOG(INFO) << "Applied snapshot, data size: " << data.size();
+
+        std::swap(data, new_data);
+    } catch (std::exception &e) {
+        LOG(ERROR) << "Failed to parse snapshot: " << e.what();
+        return false;
+    }
+
+    return true;
+}
+
+::AppSnapshot KVStore::takeSnapshot()
+{
+    ::AppSnapshot ret;
+    ret.idx = requests.empty() ? committedIdx : requests.back().idx;
+
+    // TODO this only works if key/value data does not have ":" or ","
+    // we should use a better serialization format
+    for (auto &kv : data) {
+        ret.snapshot += kv.first + ":" + kv.second + ",";
+    }
+
+    // TODO use cryptopp instead
+    byte digest[SHA256_DIGEST_LENGTH];
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, ret.snapshot.c_str(), ret.snapshot.size());
+    SHA256_Final(digest, &ctx);
+
+    for (auto &r : requests) {
+        ret.delta += r.idx + ":" + r.key + ":" + r.value + ":" + std::to_string(r.type) + ",";
+    }
+    ret.fromIdxDelta = committedIdx;
+
+    return ret;
+}
+
+std::string KVStoreClient::randomString(std::string::size_type length)
 {
     static auto &chrs = "0123456789"
                         "abcdefghijklmnopqrstuvwxyz"
@@ -273,8 +198,8 @@ std::string KVStoreClient::generateAppRequest()
 {
     // TODO(Hao): test with set only for now.
     KVRequest *req = new KVRequest();
-    req->set_key(randomStringNormDist(keyLen));
-    req->set_value(randomStringNormDist(valLen));
+    req->set_key(randomString(keyLen));
+    req->set_value(randomString(valLen));
     req->set_msg_type(KVRequestType::SET);
     // TODO(Hao): make it more random, now KV always have same length
     keyLen = (keyLen + 1) > KEY_MAX_LENGTH ? KEY_MIN_LENGTH : (keyLen + 1);

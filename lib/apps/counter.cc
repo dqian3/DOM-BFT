@@ -6,7 +6,7 @@ using namespace dombft::apps;
 
 Counter::~Counter() {}
 
-std::string Counter::execute(const std::string &serialized_request, const uint32_t execute_idx)
+std::string Counter::execute(const std::string &serialized_request, uint32_t execute_idx)
 {
     std::unique_ptr<CounterRequest> counterReq = std::make_unique<CounterRequest>();
     if (!counterReq->ParseFromString(serialized_request)) {
@@ -50,13 +50,13 @@ bool Counter::commit(uint32_t commit_idx)
 
     // Keep the most recent commit
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [commit_idx](const VersionedValue &v) {
-        return v.version < commit_idx;
+        return v.version <= commit_idx;
     });
 
     if (it != version_hist.rend()) {
         committed_state.value = it->value;
         committed_state.version = commit_idx;
-        version_hist.erase(version_hist.begin(), it.base());
+        version_hist.erase(version_hist.begin(), it.base() + 1);
 
         LOG(INFO) << "Committed counter value: " << it->value;
     } else {
@@ -67,71 +67,32 @@ bool Counter::commit(uint32_t commit_idx)
     return true;
 }
 
-std::string Counter::getDigest(uint32_t digest_idx)
+bool Counter::abort(uint32_t abort_idx)
 {
-    // Find the latest versioned value at or before digest_idx
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [digest_idx](const VersionedValue &v) {
-        return v.version <= digest_idx;
-    });
-
-    VersionedValue target;
-    if (it != version_hist.rend()) {
-        target = *it;
-    } else {
-        target = committed_state;
-    }
-    std::string digest;
-    digest = std::to_string(target.version) + "," + std::to_string(target.value);
-    return digest;
-}
-
-std::shared_ptr<std::string> Counter::getSnapshot(uint32_t seq)
-{
-    LOG(INFO) << "Get counter snapshot(digest) at seq " << seq;
-    return std::make_shared<std::string>(getDigest(seq));
-}
-
-void Counter::applyDelta(const std::string &snap) { applySnapshot(snap); }
-
-void Counter::applySnapshot(const std::string &snap)
-{
-    // get the element seperated by ,
-    std::string version_str = snap.substr(0, snap.find(','));
-    std::string value_str = snap.substr(snap.find(',') + 1);
-    committed_state.version = std::stoull(version_str);
-    committed_state.value = std::stoi(value_str);
-    counter = committed_state.value;
-    version_hist.clear();
-
-    LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
-}
-
-bool Counter::abort(const uint32_t abort_idx)
-{
-    LOG(INFO) << "Aborting operations after idx: " << abort_idx;
+    LOG(INFO) << "Aborting operations starting from idx: " << abort_idx;
     if (abort_idx < committed_state.version) {
-        // or revert to committed state?
         LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version
                    << ". Unable to revert.";
         return false;
     }
-    if (abort_idx < version_hist.front().version) {
-        version_hist.erase(version_hist.begin(), version_hist.end());
-    } else if (abort_idx >= version_hist.back().version) {
-        LOG(WARNING) << "Requested abort index is greater than the last version in history. No aborting";
+
+    if (abort_idx > version_hist.back().version) {
+        LOG(WARNING
+        ) << "Requested abort index is greater than the last version in history. No requests will be aborted";
         return true;
+    } else if (abort_idx < version_hist.front().version) {
+        version_hist.erase(version_hist.begin(), version_hist.end());
     } else {
-        auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [abort_idx](const VersionedValue &v) {
-            return v.version <= abort_idx;
+        auto it = std::find_if(version_hist.begin(), version_hist.end(), [abort_idx](const VersionedValue &v) {
+            return v.version < abort_idx;
         });
-        if (it != version_hist.rend()) {
+        if (it != version_hist.end()) {
             // Erase all entries from the point found + 1 to the end entries from the point found to the end
-            version_hist.erase(it.base(), version_hist.end());
+            version_hist.erase(it + 1, version_hist.end());
         }
     }
 
     // Revert the counter to the last state not yet erased
-    // for kv, fancier later.
     if (!version_hist.empty()) {
         counter = version_hist.back().value;
     } else {
@@ -142,20 +103,33 @@ bool Counter::abort(const uint32_t abort_idx)
     return true;
 }
 
-void Counter::storeAppStateInYAML(const std::string &filename)
+bool Counter::applyDelta(const std::string &snap, const std::string &digest) { return applySnapshot(snap, digest); }
+
+bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
 {
-    std::map<std::string, std::string> app_state;
-    app_state["counter"] = std::to_string(counter);
-    app_state["committed_state"] = std::to_string(committed_state.value);
-    app_state["committed_version"] = std::to_string(committed_state.version);
-    // store to yaml file
-    std::ofstream fout(filename);
-    YAML::Node node;
-    for (auto &kv : app_state) {
-        node[kv.first] = kv.second;
-    }
-    fout << node;
-    std::cout << "App state saved to " << filename << std::endl;
+    // get the element seperated by ,
+    std::string version_str = snap.substr(0, snap.find(','));
+    std::string value_str = snap.substr(snap.find(',') + 1);
+    committed_state.version = std::stoull(version_str);
+    committed_state.value = std::stoi(value_str);
+    counter = committed_state.value;
+    version_hist.clear();
+
+    LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
+    return true;
+}
+
+::AppSnapshot Counter::takeSnapshot()
+{
+    ::AppSnapshot ret;
+    ret.idx = version_hist.empty() ? committed_state.version : version_hist.back().version;
+
+    ret.snapshot = std::to_string(committed_state.version) + "," + std::to_string(committed_state.value);
+    ret.digest = ret.snapshot;
+    ret.delta = ret.snapshot;
+    ret.fromIdxDelta = committed_state.version;
+
+    return ret;
 }
 
 std::string CounterClient::generateAppRequest()

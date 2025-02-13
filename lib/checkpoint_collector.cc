@@ -4,7 +4,7 @@ using namespace dombft::proto;
 
 // Collects the reply from peers for the same seq num
 // Returns true if it is ok to proceed with the commit stage
-bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::span<byte> sig)
+bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 {
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
@@ -49,7 +49,13 @@ bool CheckpointCollector::addAndCheckReplyCollection(const Reply &reply, std::sp
     return false;
 }
 
-bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, const std::span<byte> sig)
+void ReplyCollector::getCert(dombft::proto::Cert &cert)
+{
+    assert(cert_.has_value());
+    cert = cert_.value();
+}
+
+bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span<byte> sig)
 {
 
     // verify the record is not tampered by a malicious replica
@@ -59,7 +65,7 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
         return false;
     }
     commits_[commitMsg.replica_id()] = commitMsg;
-    commitSigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
+    sigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
 
     std::map<CommitKeyTuple, std::set<uint32_t>> matchingCommits;
     // Find a cert among a set of replies
@@ -70,9 +76,8 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
         };
         matchingCommits[key].insert(replicaId);
 
-        // Need 2f + 1 and own commit
         if (matchingCommits[key].size() >= 2 * f_ + 1) {
-            commitMatchedReplicas_ = matchingCommits[key];
+            matchedReplicas_ = matchingCommits[key];
             commitToUse_ = commit;
             return true;
         }
@@ -80,71 +85,93 @@ bool CheckpointCollector::addAndCheckCommitCollection(const Commit &commitMsg, c
     return false;
 }
 
-void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint)
+void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
 {
     // Only valid to get checkpoint if we have colllected enough commits
     assert(commitToUse_.has_value());
-    assert(clientRecord_.has_value());
 
     checkpoint.seq = seq_;
     checkpoint.logDigest = commitToUse_->log_digest();
     checkpoint.appDigest = commitToUse_->app_digest();
-    checkpoint.clientRecord_ = clientRecord_.value();
+    checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
-    CommitKeyTuple keyToUse = {
-        commitToUse_->log_digest(),
-        commitToUse_->app_digest(),
-        commitToUse_->instance(),
-        commitToUse_->seq(),
-        commitToUse_->client_record().digest(),
-    };
-
-    for (const auto &[replicaId, commit] : commits_) {
-        CommitKeyTuple key = {
-            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_record().digest(),
-        };
-
-        if (key != keyToUse)
-            continue;
-
-        checkpoint.commitMessages[replicaId] = commit;
-        checkpoint.signatures[replicaId] = commitSigs_[replicaId];
+    for (uint32_t replicaId : matchedReplicas_) {
+        checkpoint.commitMessages[replicaId] = commits_[replicaId];
+        checkpoint.signatures[replicaId] = sigs_[replicaId];
     }
 }
 
-void CheckpointCollectors::tryInitCheckpointCollector(
-    uint32_t seq, uint32_t instance, std::optional<::ClientRecord> &&records
+bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig)
+{
+    std::pair<uint32_t, uint32_t> key = {reply.instance(), reply.seq()};
+
+    if (!replyCollectors_.contains(key)) {
+        replyCollectors_.emplace(key, ReplyCollector(replicaId_, f_, reply.instance(), reply.seq()));
+    }
+
+    return replyCollectors_.at(key).addAndCheckReply(reply, sig);
+}
+
+bool CheckpointCollector::addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
+{
+    std::pair<uint32_t, uint32_t> key = {commit.instance(), commit.seq()};
+
+    if (!commitCollectors_.contains(key)) {
+        commitCollectors_.emplace(key, CommitCollector(f_, commit.instance(), commit.seq()));
+    }
+
+    return commitCollectors_.at(key).addAndCheckCommit(commit, sig);
+}
+
+void CheckpointCollector::getCert(uint32_t instance, uint32_t seq, dombft::proto::Cert &cert)
+{
+
+    std::pair<uint32_t, uint32_t> key = {instance, seq};
+
+    assert(replyCollectors_.contains(key));
+    replyCollectors_.at(key).getCert(cert);
+}
+
+void CheckpointCollector::getCommitToUse(uint32_t instance, uint32_t seq, dombft::proto::Commit &commit)
+{
+    std::pair<uint32_t, uint32_t> key = {instance, seq};
+
+    assert(commitCollectors_.contains(key));
+    assert(commitCollectors_.at(key).commitToUse_.has_value());
+    commitCollectors_.at(key).commitToUse_.value();
+}
+
+void CheckpointCollector::getCheckpoint(uint32_t instance, uint32_t seq, ::LogCheckpoint &checkpoint)
+{
+    std::pair<uint32_t, uint32_t> key = {instance, seq};
+
+    assert(commitCollectors_.contains(key));
+    commitCollectors_.at(key).getCheckpoint(checkpoint);
+}
+
+const CheckpointState &CheckpointCollector::getCachedState(uint32_t seq) { return states_.at(seq); }
+
+void CheckpointCollector::cacheState(
+    uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, AppSnapshot &&snapshot
 )
 {
-    if (collectors_.contains(seq)) {
-        CheckpointCollector &collector = collectors_.at(seq);
-        // Note: both instance and records are from current replica not others
-        //  clear the collector if the instance is outdated
-        if (collector.instance_ < instance) {
-            collectors_.erase(seq);
-            collectors_.emplace(seq, CheckpointCollector(replicaId_, f_, seq, instance, records));
-        } else if (records.has_value()) {
-            collector.clientRecord_ = std::move(records);
-        }
-    } else {
-        collectors_.emplace(seq, CheckpointCollector(replicaId_, f_, seq, instance, records));
-        VLOG(3) << "Collector for seq " << seq
-                << " is added. Now number of checkpoint collectors : " << collectors_.size();
+    if (states_.contains(seq)) {
+        VLOG(4) << "Overwriting existing checkpoint state for seq=" << seq;
     }
+
+    // TODO we can look at the current digest here to clean up any stale collectors
+    // However, since replica won't process messages from previous instances, it's also probably fine to not do this...
+    states_[seq] = {logDigest, clientRecord, std::move(snapshot)};
 }
 
-void CheckpointCollectors::cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance)
+void CheckpointCollector::cleanStaleCollectors(uint32_t committedSeq, uint32_t committedInstance)
 {
-    std::vector<uint32_t> seqsToRemove;
-    for (auto &[seq, collector] : collectors_) {
-        // keep the most recent collector for snapshot fetch reply
-        if (seq < committedSeq || collector.instance_ < committedInstance) {
-            seqsToRemove.push_back(seq);
-        }
-    }
-    for (uint32_t seq : seqsToRemove) {
-        if (seq != committedSeq)
-            VLOG(1) << "PERF event=checkpoint_skipped seq=" << seq;
-        collectors_.erase(seq);
-    }
+    VLOG(1) << "Cleaning up any checkpoint state since checkpoint committed at seq=" << committedSeq
+            << " instance=" << committedInstance;
+
+    std::pair<uint32_t, uint32_t> key = {committedInstance, committedSeq};
+
+    states_.erase(states_.begin(), states_.upper_bound(committedSeq));
+    replyCollectors_.erase(replyCollectors_.begin(), replyCollectors_.upper_bound(key));
+    commitCollectors_.erase(commitCollectors_.begin(), commitCollectors_.upper_bound(key));
 }

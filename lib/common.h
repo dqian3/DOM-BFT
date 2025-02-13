@@ -98,7 +98,7 @@ struct MessageHeader {
     uint8_t msgType;
     uint32_t msgLen;
     uint32_t sigLen;
-    MessageHeader(const uint8_t t, const uint32_t l, const uint32_t sl)
+    MessageHeader(const uint8_t t, uint32_t l, uint32_t sl)
         : msgType(t)
         , msgLen(l)
         , sigLen(sl) {};

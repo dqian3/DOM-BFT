@@ -85,7 +85,7 @@ void ClientRecord::toProto(dombft::proto::ClientRecord &recordProto) const
         dombft::proto::ClientSequence *record = recordProto.add_sequences();
         record->set_client_id(id);
         record->set_last_seq(sequence.lastSeq_);
-        for (const uint32_t &s : sequence.missedSeqs_) {
+        for (uint32_t s : sequence.missedSeqs_) {
             record->add_missed_seqs(s);
         }
     }

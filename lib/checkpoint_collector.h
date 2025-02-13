@@ -12,61 +12,97 @@
 #include <span>
 
 typedef std::tuple<std::string, uint32_t, uint32_t> ReplyKeyTuple;
-typedef std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> CommitKeyTuple;
 
-class CheckpointCollector {
-public:
+struct ReplyCollector {
     uint32_t replicaId_;
     uint32_t f_;
-    uint32_t seq_;
     uint32_t instance_;
+    uint32_t seq_;
 
-    std::optional<dombft::proto::Cert> cert_;
     bool hasOwnReply_ = false;
-
-    std::optional<dombft::proto::Commit> commitToUse_;
-    std::optional<ClientRecord> clientRecord_;
 
     std::map<uint32_t, dombft::proto::Reply> replies_;
     std::map<uint32_t, std::string> replySigs_;
-    std::map<uint32_t, dombft::proto::Commit> commits_;
-    std::map<uint32_t, std::string> commitSigs_;
-    std::set<uint32_t> commitMatchedReplicas_;
+    std::optional<dombft::proto::Cert> cert_;
 
-    explicit CheckpointCollector(
-        uint32_t replicaId, uint32_t f, uint32_t seq, uint32_t instance, std::optional<ClientRecord> &records
-    )
+    ReplyCollector(uint32_t replicaId, uint32_t f, uint32_t seq, uint32_t instance)
         : replicaId_(replicaId)
         , f_(f)
-        , seq_(seq)
         , instance_(instance)
-        , cert_(std::nullopt)
+        , seq_(seq)
     {
-        clientRecord_ = std::move(records);
     }
 
-    bool addAndCheckReplyCollection(const dombft::proto::Reply &reply, std::span<byte> sig);
-    bool addAndCheckCommitCollection(const dombft::proto::Commit &commitMsg, const std::span<byte> sig);
-
-    void getCheckpoint(LogCheckpoint &checkpoint);
+    bool addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig);
+    void getCert(dombft::proto::Cert &cert);
 };
 
-class CheckpointCollectors {
-    std::map<uint32_t, CheckpointCollector> collectors_;
+typedef std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> CommitKeyTuple;
+
+struct CommitCollector {
+    uint32_t f_;
+    uint32_t instance_;
+
+    uint32_t seq_;
+
+    std::optional<dombft::proto::Commit> commitToUse_;
+
+    std::map<uint32_t, dombft::proto::Commit> commits_;
+    std::map<uint32_t, std::string> sigs_;
+    std::set<uint32_t> matchedReplicas_;
+
+    CommitCollector(uint32_t f, uint32_t instance, uint32_t seq)
+        : f_(f)
+        , instance_(instance)
+        , seq_(seq)
+    {
+    }
+
+    bool addAndCheckCommit(const dombft::proto::Commit &commitMsg, const std::span<byte> sig);
+    void getCheckpoint(::LogCheckpoint &checkpoint);
+};
+
+// Cached state of the log (snapshot, client record, digest) that the replica may need to
+// finish checkpointing
+struct CheckpointState {
+    std::string logDigest;
+    ::ClientRecord clientRecord_;
+
+    AppSnapshot snapshot;
+};
+
+class CheckpointCollector {
+    // Each collector is indexed by (instance, key)
+    std::map<std::pair<uint32_t, uint32_t>, ReplyCollector> replyCollectors_;
+    std::map<std::pair<uint32_t, uint32_t>, CommitCollector> commitCollectors_;
+
+    // We only need our own latests state, so don't index by instance
+    std::map<uint32_t, CheckpointState> states_;
+
     uint32_t replicaId_;
     uint32_t f_;
 
 public:
-    explicit CheckpointCollectors(uint32_t replicaId, uint32_t f)
+    explicit CheckpointCollector(uint32_t replicaId, uint32_t f)
         : replicaId_(replicaId)
         , f_(f)
     {
     }
 
-    inline CheckpointCollector &at(uint32_t seq) { return collectors_.at(seq); }
-    inline bool has(uint32_t seq) { return collectors_.find(seq) != collectors_.end(); }
-    void tryInitCheckpointCollector(uint32_t seq, uint32_t instance, std::optional<ClientRecord> &&records);
-    void cleanSkippedCheckpointCollectors(uint32_t committedSeq, uint32_t committedInstance);
+    bool addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig);
+    bool addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig);
+
+    void getCert(uint32_t instance, uint32_t seq, dombft::proto::Cert &cert);
+
+    void getCommitToUse(uint32_t instance, uint32_t seq, dombft::proto::Commit &commit);
+    void getCheckpoint(uint32_t instance, uint32_t seq, ::LogCheckpoint &checkpoint);
+
+    const CheckpointState &getCachedState(uint32_t seq);
+
+    void
+    cacheState(uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, AppSnapshot &&snapshot);
+
+    void cleanStaleCollectors(uint32_t committedSeq, uint32_t committedInstance);
 };
 
 #endif   // DOM_BFT_CHECKPOINT_H

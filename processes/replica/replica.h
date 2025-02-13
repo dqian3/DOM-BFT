@@ -1,7 +1,10 @@
 #include "processes/process_config.h"
 
-#include "lib/checkpoint_collector.h"
 #include "lib/common.h"
+
+#include "lib/app_snapshot_store.h"
+#include "lib/application.h"
+#include "lib/checkpoint_collector.h"
 #include "lib/fallback_utils.h"
 #include "lib/log.h"
 #include "lib/signature_provider.h"
@@ -50,10 +53,10 @@ private:
     uint32_t instance_ = 1;   // in context of PBFT, this variable is the NEXT sequence number
     std::shared_ptr<Log> log_;
     std::shared_ptr<Application> app_;
+    AppSnapshotStore appSnapshotStore_;
 
     // State for commit/checkpoint protocol
-    // checkpoint seq -> CheckpointCollector
-    CheckpointCollectors checkpointCollectors_;
+    CheckpointCollector checkpointCollector_;
 
     // State for fallback
     bool fallback_ = false;

@@ -40,7 +40,7 @@ void NngSendThread::run()
     auto send_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
         NngSendThread *t = (NngSendThread *) w->data;
 
-        const uint32_t BATCH_SIZE = 5;
+        uint32_t BATCH_SIZE = 5;
         std::vector<std::vector<byte>> msgs(BATCH_SIZE);
         size_t numMsgs;
         while (numMsgs = t->queue_.wait_dequeue_bulk_timed(msgs.begin(), 5, 50000)) {

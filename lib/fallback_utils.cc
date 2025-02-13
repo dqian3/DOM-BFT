@@ -137,7 +137,13 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
 void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot)
 {
     ::LogCheckpoint checkpoint(*logSuffix.checkpoint);
-    log->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshot);
+
+    if (!log->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshot)) {
+        // TODO handle this case properly
+        LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
+        throw std::runtime_error("Snapshot digest mismatch");
+    }
+
     applySuffixAfterCheckpoint(logSuffix, log);
 }
 
