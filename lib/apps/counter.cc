@@ -6,7 +6,7 @@ using namespace dombft::apps;
 
 Counter::~Counter() {}
 
-std::string Counter::execute(const std::string &serialized_request, const uint32_t execute_idx)
+std::string Counter::execute(const std::string &serialized_request, uint32_t execute_idx)
 {
     std::unique_ptr<CounterRequest> counterReq = std::make_unique<CounterRequest>();
     if (!counterReq->ParseFromString(serialized_request)) {
@@ -67,7 +67,7 @@ bool Counter::commit(uint32_t commit_idx)
     return true;
 }
 
-bool Counter::abort(const uint32_t abort_idx)
+bool Counter::abort(uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations starting from idx: " << abort_idx;
     if (abort_idx < committed_state.version) {

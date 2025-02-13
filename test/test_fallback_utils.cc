@@ -34,16 +34,12 @@ public:
 class MockApplication : public Application {
 public:
     // Mock the pure virtual functions from the Application class
-    MOCK_METHOD(std::string, execute, (const std::string &serialized_request, const uint32_t execute_idx), (override));
+    MOCK_METHOD(std::string, execute, (const std::string &serialized_request, uint32_t execute_idx), (override));
     MOCK_METHOD(bool, commit, (uint32_t commit_idx), (override));
-    MOCK_METHOD(bool, abort, (const uint32_t abort_idx), (override));
-    MOCK_METHOD(std::string, getDigest, (uint32_t digest_idx), (override));
-    MOCK_METHOD(bool, takeSnapshot, (), (override));
-    MOCK_METHOD(std::shared_ptr<std::string>, getSnapshot, (uint32_t seq), (override));
-    MOCK_METHOD(void, applySnapshot, (const std::string &snapshot), (override));
-    MOCK_METHOD(bool, takeDelta, (), (override));
-    MOCK_METHOD(std::string, getDelta, (uint32_t seq), (override));
-    MOCK_METHOD(void, applyDelta, (const std::string &snapshot), (override));
+    MOCK_METHOD(bool, abort, (uint32_t abort_idx), (override));
+    MOCK_METHOD(bool, applySnapshot, (const std::string &snapshot, const std::string &digest), (override));
+    MOCK_METHOD(bool, applyDelta, (const std::string &delta, const std::string &digest), (override));
+    MOCK_METHOD(AppSnapshot, takeSnapshot, (), (override));
 
     MockApplication()
     {

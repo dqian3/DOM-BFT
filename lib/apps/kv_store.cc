@@ -7,7 +7,7 @@ using namespace dombft::apps;
 
 KVStore::~KVStore() {}
 
-std::string KVStore::execute(const std::string &serialized_request, const uint32_t execute_idx)
+std::string KVStore::execute(const std::string &serialized_request, uint32_t execute_idx)
 {
     KVRequest req;
     if (req.ParseFromString(serialized_request)) {
@@ -79,7 +79,7 @@ bool KVStore::commit(uint32_t commit_idx)
     return true;
 }
 
-bool KVStore::abort(const uint32_t abort_idx)
+bool KVStore::abort(uint32_t abort_idx)
 {
     LOG(INFO) << "Aborting operations starting from idx=" << abort_idx;
     if (abort_idx <= committedIdx) {

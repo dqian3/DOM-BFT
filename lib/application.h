@@ -28,12 +28,12 @@ public:
     virtual ~Application() {};
 
     // Execute the request and return the serialized response
-    virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) = 0;
+    virtual std::string execute(const std::string &serialized_request, uint32_t execute_idx) = 0;
 
     // Cleanup any unecessary metadata for rolling back to any state before or including commit_idx
     virtual bool commit(uint32_t commit_idx) = 0;
     // Reset application state, so that any requests following and including abort_idx are rolled back
-    virtual bool abort(const uint32_t abort_idx) = 0;
+    virtual bool abort(uint32_t abort_idx) = 0;
 
     virtual bool applySnapshot(const std::string &snapshot, const std::string &digest) = 0;
     virtual bool applyDelta(const std::string &delta, const std::string &digest) = 0;

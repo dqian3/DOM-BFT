@@ -32,10 +32,10 @@ private:
 public:
     ~KVStore();
 
-    std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
+    std::string execute(const std::string &serialized_request, uint32_t execute_idx) override;
 
     bool commit(uint32_t commit_idx) override;
-    bool abort(const uint32_t abort_idx) override;
+    bool abort(uint32_t abort_idx) override;
 
     bool applySnapshot(const std::string &snapshot, const std::string &digest) override;
     bool applyDelta(const std::string &delta, const std::string &digest) override;
