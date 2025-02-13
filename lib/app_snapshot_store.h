@@ -7,18 +7,22 @@
 
 class AppSnapshotStore {
 
+public:
     AppSnapshotStore() {}
 
-    void updateSnapshot(AppSnapshot &&snapshot);
+    void addSnapshot(std::string &&snapshot, uint32_t idx);
+    // void addSnapshotWithDelta(AppSnapshot &&snapshot, uint32_t idx);
 
-    std::string getSnapshotForIdx(uint32_t fromIdx);
+    std::string getSnapshot();
+    // std::string getDeltasFromIdx(uint32_t fromIdx);
 
 private:
     // Corresponds to stable checkpoint
     std::string stableSnapshot_;
     uint32_t stableSnapshotIdx_;
 
-    std::map<uint32_t, std::string> deltas_;
+    // Enocded deltas and the indices they work from
+    // std::map<uint32_t, std::string> deltas_;
 };
 
 #endif

@@ -143,6 +143,7 @@ void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, con
         LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
         throw std::runtime_error("Snapshot digest mismatch");
     }
+
     applySuffixAfterCheckpoint(logSuffix, log);
 }
 

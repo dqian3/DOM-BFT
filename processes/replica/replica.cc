@@ -758,6 +758,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             ::LogCheckpoint checkpoint;
             checkpointCollector_.getCheckpoint(commit.instance(), seq, checkpoint);
             log_->setStableCheckpoint(checkpoint);
+            // TODO move this and use delta information...
+            appSnapshotStore_.addSnapshot(std::string(checkpointCollector_.getCachedState(seq).snapshot.snapshot), seq);
         }
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
@@ -813,9 +815,10 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // Finish applying LogSuffix computed from fallback proposal and return to normal processing
         LogSuffix &logSuffix = getFallbackLogSuffix();
         // TODO make sure this isn't outdated...
-        // TOOD handle if this snapshot is incorrect (i.e. applying it doesn't match the digest)
 
         applySuffixWithSnapshot(logSuffix, log_, snapshotReply.snapshot());
+        appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
+
     } else {
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
@@ -828,6 +831,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             // TODO handle this better
             throw std::runtime_error("Snapshot digest mismatch");
         }
+        appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
 
         // Resend replies after modifying log
         for (int seq = log_->getStableCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
