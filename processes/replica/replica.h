@@ -53,7 +53,7 @@ private:
 
     // State for commit/checkpoint protocol
     // checkpoint seq -> CheckpointCollector
-    CheckpointCollectors checkpointCollectors_;
+    CheckpointCollector checkpointCollector_;
 
     // State for fallback
     bool fallback_ = false;

@@ -26,7 +26,7 @@ Replica::Replica(
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
     , instance_(0)
-    , checkpointCollectors_(replicaId_, f_)
+    , checkpointCollector_(replicaId_, f_)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
     , viewChangeFreq_(viewChangeFreq)
@@ -139,10 +139,6 @@ void Replica::run()
         thd.join();
     }
     processThread_.join();
-    // Take too long to finish, uncomment if needed..
-    //    const std::string filename = "replica" + std::to_string(replicaId_) + "_app_state.yaml";
-    //    log_->app_->storeAppStateInYAML(filename);
-    //    LOG(INFO) << "Result written to " << filename;
 }
 
 void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
@@ -626,8 +622,11 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     // Try and commit every CHECKPOINT_INTERVAL replies
     if (seq % CHECKPOINT_INTERVAL == 0) {
+        // Save a digest of the application state and also save a snapshot
+
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
-        checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, log_->getClientRecord());
+        checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->takeSnapshot());
+
         // TODO remove execution result from Reply
         broadcastToReplicas(reply, MessageType::REPLY);
     }
@@ -696,14 +695,15 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         return;
     }
 
-    checkpointCollectors_.tryInitCheckpointCollector(rSeq, instance_, std::nullopt);
-    CheckpointCollector &collector = checkpointCollectors_.at(rSeq);
+    if (checkpointCollector_.addAndCheckReply(reply, sig)) {
+        assert(reply.instance() == instance_);
 
-    if (collector.addAndCheckReplyCollection(reply, sig)) {
-        log_->addCert(rSeq, collector.cert_.value());
+        dombft::proto::Cert cert;
+        checkpointCollector_.getCert(instance_, rSeq, cert);
+        log_->addCert(rSeq, cert);
 
         std::string logDigest = log_->getDigest(rSeq);
-        std::string appDigest = app_->getDigest(rSeq);
+        std::string appDigest = checkpointCollector_.getCachedState(rSeq).snapshot.digest;
 
         uint32_t instance = instance_;
         // Broadcast commit Message
@@ -714,7 +714,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         commit.set_log_digest(logDigest);
         commit.set_app_digest(appDigest);
 
-        collector.clientRecord_->toProto(*commit.mutable_client_record());
+        checkpointCollector_.getCachedState(rSeq).clientRecord_.toProto(*commit.mutable_client_record());
         broadcastToReplicas(commit, MessageType::COMMIT);
         return;
     }
@@ -733,12 +733,13 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         return;
     }
 
-    checkpointCollectors_.tryInitCheckpointCollector(seq, instance_, std::nullopt);
-    CheckpointCollector &collector = checkpointCollectors_.at(seq);
     // add current commit msg to collector
     // use the majority agreed commit message if exists
-    if (collector.addAndCheckCommitCollection(commit, sig)) {
-        const Commit &commitToUse = collector.commitToUse_.value();
+    if (checkpointCollector_.addAndCheckCommit(commit, sig)) {
+        // TODO we can update our instance in case commit.instance() > instance_
+        assert(instance_ == commit.instance());
+        dombft::proto::Commit commitToUse;
+        checkpointCollector_.getCommitToUse(commit.instance(), seq, commitToUse);
 
         if (checkpointDropFreq_ && seq / CHECKPOINT_INTERVAL % checkpointDropFreq_ == 0) {
             LOG(INFO) << "Dropping checkpoint seq=" << seq;
@@ -755,12 +756,12 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
         } else {
             ::LogCheckpoint checkpoint;
-            collector.getCheckpoint(checkpoint);
+            checkpointCollector_.getCheckpoint(commit.instance(), seq, checkpoint);
             log_->setStableCheckpoint(checkpoint);
         }
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
-        checkpointCollectors_.cleanSkippedCheckpointCollectors(seq, instance_);
+        checkpointCollector_.cleanStaleCollectors(seq, instance_);
 
         // Unregister fallbackStart timer set by request timeout in slow path
         //  as checkpoint confirms progress
@@ -820,7 +821,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // TODO make sure this isn't outdated...
 
         ::LogCheckpoint checkpoint;
-        checkpointCollectors_.at(snapshotReply.seq()).getCheckpoint(checkpoint);
+        checkpointCollector_.getCheckpoint(instance_, snapshotReply.seq(), checkpoint);
         log_->applySnapshotModifyLog(snapshotReply.seq(), checkpoint, snapshotReply.snapshot());
 
         // Resend replies after modifying log
@@ -1240,17 +1241,17 @@ void Replica::finishFallback()
     fallbackPBFTCommits_.clear();
     fallbackProposalLogSuffix_.reset();
 
-    if (!app_->takeSnapshot())
-        return;
     // TODO: since the fallback is PBFT, we can simply set the checkpoint here already using the PBFT messages as proofs
     // For the sake of implementation simplicity, we just trigger the usual checkpointing process
     // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
     // finishes, the client requests will have f + 1 replicas that executed it in their logs
-    checkpointCollectors_.tryInitCheckpointCollector(
-        log_->getNextSeq() - 1, instance_, std::optional<::ClientRecord>(log_->getClientRecord())
-    );
+
+    uint32_t seq = log_->getNextSeq() - 1;
+
+    checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->takeSnapshot());
+
     Reply reply;
-    replyFromLogEntry(reply, log_->getNextSeq() - 1);
+    replyFromLogEntry(reply, seq);
     broadcastToReplicas(reply, MessageType::REPLY);
 
     for (auto &[_, req] : fallbackQueuedReqs_) {

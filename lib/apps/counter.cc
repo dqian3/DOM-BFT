@@ -50,13 +50,13 @@ bool Counter::commit(uint32_t commit_idx)
 
     // Keep the most recent commit
     auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [commit_idx](const VersionedValue &v) {
-        return v.version < commit_idx;
+        return v.version <= commit_idx;
     });
 
     if (it != version_hist.rend()) {
         committed_state.value = it->value;
         committed_state.version = commit_idx;
-        version_hist.erase(version_hist.begin(), it.base());
+        version_hist.erase(version_hist.begin(), it.base() + 1);
 
         LOG(INFO) << "Committed counter value: " << it->value;
     } else {
@@ -67,33 +67,45 @@ bool Counter::commit(uint32_t commit_idx)
     return true;
 }
 
-std::string Counter::getDigest(uint32_t digest_idx)
+bool Counter::abort(const uint32_t abort_idx)
 {
-    // Find the latest versioned value at or before digest_idx
-    auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [digest_idx](const VersionedValue &v) {
-        return v.version <= digest_idx;
-    });
-
-    VersionedValue target;
-    if (it != version_hist.rend()) {
-        target = *it;
-    } else {
-        target = committed_state;
+    LOG(INFO) << "Aborting operations starting from idx: " << abort_idx;
+    if (abort_idx < committed_state.version) {
+        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version
+                   << ". Unable to revert.";
+        return false;
     }
-    std::string digest;
-    digest = std::to_string(target.version) + "," + std::to_string(target.value);
-    return digest;
+
+    if (abort_idx > version_hist.back().version) {
+        LOG(WARNING
+        ) << "Requested abort index is greater than the last version in history. No requests will be aborted";
+        return true;
+    } else if (abort_idx < version_hist.front().version) {
+        version_hist.erase(version_hist.begin(), version_hist.end());
+    } else {
+        auto it = std::find_if(version_hist.begin(), version_hist.end(), [abort_idx](const VersionedValue &v) {
+            return v.version < abort_idx;
+        });
+        if (it != version_hist.end()) {
+            // Erase all entries from the point found + 1 to the end entries from the point found to the end
+            version_hist.erase(it + 1, version_hist.end());
+        }
+    }
+
+    // Revert the counter to the last state not yet erased
+    if (!version_hist.empty()) {
+        counter = version_hist.back().value;
+    } else {
+        counter = committed_state.value;
+    }
+    LOG(INFO) << "Counter reverted to stable value: " << counter;
+
+    return true;
 }
 
-std::shared_ptr<std::string> Counter::getSnapshot(uint32_t seq)
-{
-    LOG(INFO) << "Get counter snapshot(digest) at seq " << seq;
-    return std::make_shared<std::string>(getDigest(seq));
-}
+bool Counter::applyDelta(const std::string &snap, const std::string &digest) { return applySnapshot(snap, digest); }
 
-void Counter::applyDelta(const std::string &snap) { applySnapshot(snap); }
-
-void Counter::applySnapshot(const std::string &snap)
+bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
 {
     // get the element seperated by ,
     std::string version_str = snap.substr(0, snap.find(','));
@@ -106,56 +118,17 @@ void Counter::applySnapshot(const std::string &snap)
     LOG(INFO) << "Applying snapshot with value " << counter << " and version " << committed_state.version;
 }
 
-bool Counter::abort(const uint32_t abort_idx)
+AppSnapshot Counter::takeSnapshot()
 {
-    LOG(INFO) << "Aborting operations after idx: " << abort_idx;
-    if (abort_idx < committed_state.version) {
-        // or revert to committed state?
-        LOG(ERROR) << "Abort index is less than the committed state version " << committed_state.version
-                   << ". Unable to revert.";
-        return false;
-    }
-    if (abort_idx < version_hist.front().version) {
-        version_hist.erase(version_hist.begin(), version_hist.end());
-    } else if (abort_idx >= version_hist.back().version) {
-        LOG(WARNING) << "Requested abort index is greater than the last version in history. No aborting";
-        return true;
-    } else {
-        auto it = std::find_if(version_hist.rbegin(), version_hist.rend(), [abort_idx](const VersionedValue &v) {
-            return v.version <= abort_idx;
-        });
-        if (it != version_hist.rend()) {
-            // Erase all entries from the point found + 1 to the end entries from the point found to the end
-            version_hist.erase(it.base(), version_hist.end());
-        }
-    }
+    AppSnapshot ret;
+    ret.idx = version_hist.empty() ? committed_state.version : version_hist.back().version;
 
-    // Revert the counter to the last state not yet erased
-    // for kv, fancier later.
-    if (!version_hist.empty()) {
-        counter = version_hist.back().value;
-    } else {
-        counter = committed_state.value;
-    }
-    LOG(INFO) << "Counter reverted to stable value: " << counter;
+    ret.snapshot = std::to_string(committed_state.version) + "," + std::to_string(committed_state.value);
+    ret.digest = ret.snapshot;
+    ret.delta = ret.snapshot;
+    ret.fromIdxDelta = committed_state.version;
 
-    return true;
-}
-
-void Counter::storeAppStateInYAML(const std::string &filename)
-{
-    std::map<std::string, std::string> app_state;
-    app_state["counter"] = std::to_string(counter);
-    app_state["committed_state"] = std::to_string(committed_state.value);
-    app_state["committed_version"] = std::to_string(committed_state.version);
-    // store to yaml file
-    std::ofstream fout(filename);
-    YAML::Node node;
-    for (auto &kv : app_state) {
-        node[kv.first] = kv.second;
-    }
-    fout << node;
-    std::cout << "App state saved to " << filename << std::endl;
+    return ret;
 }
 
 std::string CounterClient::generateAppRequest()

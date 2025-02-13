@@ -44,7 +44,6 @@ public:
     MOCK_METHOD(bool, takeDelta, (), (override));
     MOCK_METHOD(std::string, getDelta, (uint32_t seq), (override));
     MOCK_METHOD(void, applyDelta, (const std::string &snapshot), (override));
-    MOCK_METHOD(void, storeAppStateInYAML, (const std::string &filename), (override));
 
     MockApplication()
     {

@@ -84,7 +84,7 @@ void Log::abort(uint32_t seq)
     // remove all entries from seq to the end
     log.erase(log.begin() + (seq - log[0].seq), log.end());
 
-    app_->abort(seq);   // TODO off by one?
+    app_->abort(seq);
     nextSeq_ = seq;
 }
 
