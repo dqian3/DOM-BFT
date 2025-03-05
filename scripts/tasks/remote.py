@@ -3,7 +3,7 @@ import os
 import time
 
 import yaml
-from fabric import Connection, ThreadingGroup
+from fabric import Connection, ThreadingGroup, SerialGroup
 from invoke import task
 
 #=================================================
@@ -63,8 +63,11 @@ def get_process_ips(config_file, resolve):
 
 
 def get_all_ips(config_file, resolve):
-    return [*get_process_ips(config_file, resolve)]
-
+    return [
+        ip 
+        for ip_list in get_process_ips(config_file, resolve)
+        for ip in ip_list 
+    ]
 
 #=================================================
 #             Main experiment tasks
@@ -307,7 +310,7 @@ def run_rate_exp(c, config_file="../configs/remote-prod.yaml",
 
 @task
 def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
-    group = ThreadingGroup(get_all_ips(config=config_file, resolve=resolve))
+    group = ThreadingGroup(*get_all_ips(config=config_file, resolve=resolve))
     group.run("rm -rf keys/*")
     
     print("Copying keys over...")
@@ -318,45 +321,72 @@ def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x)
 
 
 @task
-def copy_bin(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
-
+def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, resolve=lambda x: x):
     replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
+    group = ThreadingGroup(*replicas, *receivers, *proxies, *clients)    
 
-    # TODO try and check to see if binaries are stale
-    print(f"Copying binaries over to one machine {clients[0]}")
-    start_time = time.time()
-    conn = Connection(clients[0])
+    if upload_once:
+        # TODO try and check to see if binaries are stale
+        print(f"Copying binaries over to one machine {clients[0]}")
+        start_time = time.time()
+        conn = Connection(clients[0])
 
-    conn.run("chmod +w dombft_*", warn=True)
-    conn.put("../bazel-bin/processes/replica/dombft_replica")
-    conn.put("../bazel-bin/processes/receiver/dombft_receiver")
-    conn.put("../bazel-bin/processes/proxy/dombft_proxy")
-    conn.put("../bazel-bin/processes/client/dombft_client")
-    conn.run("chmod +w dombft_*", warn=True)
+        conn.run("chmod +w dombft_*", warn=True)
+        conn.put("../bazel-bin/processes/replica/dombft_replica")
+        conn.put("../bazel-bin/processes/receiver/dombft_receiver")
+        conn.put("../bazel-bin/processes/proxy/dombft_proxy")
+        conn.put("../bazel-bin/processes/client/dombft_client")
+        conn.run("chmod +w dombft_*", warn=True)
 
-    print(f"Copying took {time.time() - start_time:.0f}s")
+        print(f"Copying took {time.time() - start_time:.0f}s")
 
 
-    print(f"Copying to other machines")
-    start_time = time.time()
+        print(f"Copying to other machines")
+        start_time = time.time()
 
-    for ip in replicas:
-        print(f"Copying dombft_replica to {ip}")
-        conn.run(f"scp dombft_replica {ip}:", warn=True)
+        for ip in replicas:
+            print(f"Copying dombft_replica to {ip}")
+            conn.run(f"scp dombft_replica {ip}:", warn=True)
 
-    for ip in receivers:
-        print(f"Copying dombft_receiver to {ip}")
-        conn.run(f"scp dombft_receiver {ip}:", warn=True)
+        for ip in receivers:
+            print(f"Copying dombft_receiver to {ip}")
+            conn.run(f"scp dombft_receiver {ip}:", warn=True)
 
-    for ip in proxies:
-        print(f"Copying dombft_proxy to {ip}")
-        conn.run(f"scp dombft_proxy {ip}:", warn=True)
+        for ip in proxies:
+            print(f"Copying dombft_proxy to {ip}")
+            conn.run(f"scp dombft_proxy {ip}:", warn=True)
 
-    for ip in set(clients[1:]): # Skip own
-        print(f"Copying dombft_client to {ip}")
-        conn.run(f"scp dombft_client {ip}:", warn=True)
+        for ip in set(clients[1:]): # Skip own
+            print(f"Copying dombft_client to {ip}")
+            conn.run(f"scp dombft_client {ip}:", warn=True)
 
-    print(f"Copying to other machines took {time.time() - start_time:.0f}s")
+        print(f"Copying to other machines took {time.time() - start_time:.0f}s")
+
+    else:
+        # Otherwise, just copy to all machines
+
+        replicas = SerialGroup(*replicas)
+        receivers = SerialGroup(*receivers)
+        proxies = SerialGroup(*proxies)
+        clients = SerialGroup(*clients)
+
+        group.run("chmod +w dombft_*", warn=True)
+
+        print("Copying binaries over...")
+
+        replicas.put("../bazel-bin/processes/replica/dombft_replica")
+        print("Copied replica")
+
+        receivers.put("../bazel-bin/processes/receiver/dombft_receiver")
+        print("Copied receiver")
+
+        proxies.put("../bazel-bin/processes/proxy/dombft_proxy")
+        print("Copied proxy")
+
+        clients.put("../bazel-bin/processes/client/dombft_client")
+        print("Copied client")
+
+
 
 
 @task
@@ -382,11 +412,50 @@ def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, set
 
 @task
 def cmd(c, cmd, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
-    group = ThreadingGroup(get_all_ips(config_file, resolve))
+    print(get_all_ips(config_file, resolve))
+
+    group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.run(cmd)
 
 
 @task
 def copy(c, file, config_file="../configs/remote-prod.yaml"):
-    group = ThreadingGroup(get_all_ips(config_file, resolve))
+    group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.put(file)
+
+
+@task
+def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False, resolve=lambda x: x):
+    _, receivers, proxies, _ = get_process_ips(config_file, resolve)
+
+    addrs = receivers + proxies
+
+    # Only need to do this on proxies and receivers
+    group = ThreadingGroup(*addrs)
+
+    if install:
+        group.put("../ttcs-agent_1.3.0_amd64.deb")
+        group.run("sudo dpkg -i ttcs-agent_1.3.0_amd64.deb")
+
+    with open("../ttcs-agent.cfg") as ttcs_file:
+        ttcs_template = ttcs_file.read()
+
+    ip = addrs[0]
+    ttcs_config = ttcs_template.format(ip, ip, 10, "false")
+    Connection(ip).run(f"echo '{ttcs_config}' | sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
+
+    for ip in addrs[1:]:
+        ttcs_config = ttcs_template.format(ip, ip, 1, "true")
+        Connection(ip).run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
+
+    group.run("sudo systemctl stop ntp", warn=True)
+    group.run("sudo systemctl disable ntp", warn=True)
+    group.run("sudo systemctl stop systemd-timesyncd", warn=True)
+    group.run("sudo systemctl disable systemd-timesyncd", warn=True)
+
+    group.run("sudo systemctl enable ttcs-agent", warn=True)
+
+    if install:
+        group.run("sudo systemctl start ttcs-agent")
+    else:
+        group.run("sudo systemctl restart ttcs-agent")

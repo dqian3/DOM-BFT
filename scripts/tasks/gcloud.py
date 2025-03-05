@@ -78,48 +78,12 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
 @task
 def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False):
     config_file = os.path.abspath(config_file)
-
-    with open(config_file) as cfg_file:
-        config = yaml.load(cfg_file, Loader=yaml.Loader)
-
-    ext_ips = get_gcloud_ext_ips(c)
-    int_ips =  config["receiver"]["ips"] + config["proxy"]["ips"]
-
-    # Only need to do this on proxies and receivers
-    group = ThreadingGroup(
-        *(ext_ips[ip] for ip in int_ips)
-    )
-
-    if install:
-        group.put("../ttcs-agent_1.3.0_amd64.deb")
-        group.run("sudo dpkg -i ttcs-agent_1.3.0_amd64.deb")
-
-    with open("../ttcs-agent.cfg") as ttcs_file:
-        ttcs_template = ttcs_file.read()
-
-    ip = int_ips[0]
-    ttcs_config = ttcs_template.format(ip, ip, 10, "false")
-    Connection(ext_ips[ip]).run(f"echo '{ttcs_config}' | sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
-
-    for ip in int_ips[1:]:
-        ttcs_config = ttcs_template.format(ip, ip, 1, "true")
-        Connection(ext_ips[ip]).run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
-
-    group.run("sudo systemctl stop ntp", warn=True)
-    group.run("sudo systemctl disable ntp", warn=True)
-    group.run("sudo systemctl stop systemd-timesyncd", warn=True)
-    group.run("sudo systemctl disable systemd-timesyncd", warn=True)
-
-    group.run("sudo systemctl enable ttcs-agent", warn=True)
-
-    if install:
-        group.run("sudo systemctl start ttcs-agent")
-    else:
-        group.run("sudo systemctl restart ttcs-agent")
+    resolve = get_address_resolver(config_file)
+    remote.setup_clockwork(c, config_file=config_file, resolve=resolve, install=install)
 
 
 @task
-def gcloud_build(c, config_file="../configs/remote-prod.yaml", setup=False):
+def build(c, config_file="../configs/remote-prod.yaml", setup=False):
     config_file = os.path.abspath(config_file)
     resolve = get_address_resolver(config_file)
     remote.build(c, config_file=config_file, resolve=resolve, setup=setup)
