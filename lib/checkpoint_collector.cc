@@ -138,7 +138,7 @@ void CheckpointCollector::getCommitToUse(uint32_t instance, uint32_t seq, dombft
 
     assert(commitCollectors_.contains(key));
     assert(commitCollectors_.at(key).commitToUse_.has_value());
-    commitCollectors_.at(key).commitToUse_.value();
+    commit = commitCollectors_.at(key).commitToUse_.value();
 }
 
 void CheckpointCollector::getCheckpoint(uint32_t instance, uint32_t seq, ::LogCheckpoint &checkpoint)
@@ -171,7 +171,7 @@ void CheckpointCollector::cleanStaleCollectors(uint32_t committedSeq, uint32_t c
 
     std::pair<uint32_t, uint32_t> key = {committedInstance, committedSeq};
 
-    states_.erase(states_.begin(), states_.upper_bound(committedSeq));
-    replyCollectors_.erase(replyCollectors_.begin(), replyCollectors_.upper_bound(key));
-    commitCollectors_.erase(commitCollectors_.begin(), commitCollectors_.upper_bound(key));
+    states_.erase(states_.begin(), --states_.upper_bound(committedSeq));
+    replyCollectors_.erase(replyCollectors_.begin(), --replyCollectors_.upper_bound(key));
+    commitCollectors_.erase(commitCollectors_.begin(), --commitCollectors_.upper_bound(key));
 }

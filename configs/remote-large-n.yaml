@@ -107,3 +107,4 @@ replica:
   numSendThreads: 6
   numVerifyThreads: 6
   port: 34000
+  checkpointInterval: 2000

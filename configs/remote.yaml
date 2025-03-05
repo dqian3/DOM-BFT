@@ -66,4 +66,5 @@ replica:
   numVerifyThreads: 2
   numSendThreads: 4
 
+  checkpointInterval: 2000
 

@@ -36,8 +36,6 @@
 // For working with dummy protocols
 #define SEND_TO_LEADER 0
 
-#define CHECKPOINT_INTERVAL 2000
-
 typedef unsigned char byte;
 typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
 

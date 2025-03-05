@@ -20,12 +20,13 @@ Replica::Replica(
 )
     : replicaId_(replicaId)
     , f_(config.replicaIps.size() / 3)
+    , checkpointInterval_(config.replicaCheckpointInterval)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , fallbackTimeout_(config.replicaFallbackTimeout)
     , viewChangeTimeout_(config.replicaFallbackStartTimeout)
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
-    , instance_(0)
+    , instance_(1)
     , checkpointCollector_(replicaId_, f_)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
@@ -620,8 +621,8 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
-    // Try and commit every CHECKPOINT_INTERVAL replies
-    if (seq % CHECKPOINT_INTERVAL == 0) {
+    // Try and commit every checkpointInterval replies
+    if (seq % checkpointInterval_ == 0) {
         // Save a digest of the application state and also save a snapshot
 
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
@@ -741,13 +742,13 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         dombft::proto::Commit commitToUse;
         checkpointCollector_.getCommitToUse(commit.instance(), seq, commitToUse);
 
-        if (checkpointDropFreq_ && seq / CHECKPOINT_INTERVAL % checkpointDropFreq_ == 0) {
+        if (checkpointDropFreq_ && seq / checkpointInterval_ % checkpointDropFreq_ == 0) {
             LOG(INFO) << "Dropping checkpoint seq=" << seq;
             return;
         }
-        LOG(INFO) << "Try to commit seq=" << seq;
-
         uint32_t seq = commitToUse.seq();
+
+        LOG(INFO) << "Trying to commit seq=" << seq;
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != commitToUse.log_digest()) {
             LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";
@@ -760,10 +761,10 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             log_->setStableCheckpoint(checkpoint);
             // TODO move this and use delta information...
             appSnapshotStore_.addSnapshot(std::string(checkpointCollector_.getCachedState(seq).snapshot.snapshot), seq);
-        }
 
-        // if there is overlapping and later checkpoint commits first, skip earlier ones
-        checkpointCollector_.cleanStaleCollectors(seq, instance_);
+            // if there is overlapping and later checkpoint commits first, skip earlier ones
+            checkpointCollector_.cleanStaleCollectors(seq, instance_);
+        }
 
         // Unregister fallbackStart timer set by request timeout in slow path
         //  as checkpoint confirms progress
@@ -829,6 +830,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             throw std::runtime_error("Snapshot digest mismatch");
         }
         appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
+
+        // if there is overlapping and later checkpoint commits first, skip earlier ones
+        checkpointCollector_.cleanStaleCollectors(snapshotReply.seq(), instance_);
 
         // Resend replies after modifying log
         for (int seq = log_->getStableCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
