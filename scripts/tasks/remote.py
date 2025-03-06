@@ -310,7 +310,7 @@ def run_rate_exp(c, config_file="../configs/remote-prod.yaml",
 
 @task
 def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
-    group = ThreadingGroup(*get_all_ips(config=config_file, resolve=resolve))
+    group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.run("rm -rf keys/*")
     
     print("Copying keys over...")
