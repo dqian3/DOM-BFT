@@ -31,6 +31,7 @@ private:
     Address receiverAddr_;
     std::vector<Address> clientAddrs_;
     uint32_t f_;
+    uint32_t checkpointInterval_;
     uint32_t numVerifyThreads_;
     uint64_t fallbackTimeout_;
     uint64_t viewChangeTimeout_;

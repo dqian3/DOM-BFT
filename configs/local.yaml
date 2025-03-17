@@ -1,6 +1,6 @@
 transport: nng 
 
-app: "kv_store"
+app: kv_store
 
 client:
   ips: 
@@ -56,4 +56,5 @@ replica:
   fallbackStartTimeout: 50000
   numVerifyThreads: 1
   numSendThreads: 2
+  checkpointInterval: 100
 

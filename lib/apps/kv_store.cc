@@ -10,7 +10,7 @@ KVStore::~KVStore() {}
 std::string KVStore::execute(const std::string &serialized_request, uint32_t execute_idx)
 {
     KVRequest req;
-    if (req.ParseFromString(serialized_request)) {
+    if (!req.ParseFromString(serialized_request)) {
         LOG(ERROR) << "Failed to parse KVRequest";
         return "";
     }
@@ -118,12 +118,14 @@ bool KVStore::applyDelta(const std::string &delta, const std::string &digest)
 
 bool KVStore::applySnapshot(const std::string &snapshot, const std::string &digest)
 {
-
     byte computedDigest[SHA256_DIGEST_LENGTH];
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
     SHA256_Final(computedDigest, &ctx);
+
+    VLOG(4) << digest.size() << " " << digest_to_hex(digest);
+    VLOG(4) << digest_to_hex(std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH));
 
     if (std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH) != digest) {
         LOG(ERROR) << "Snapshot digest does not match";
@@ -194,6 +196,7 @@ std::string KVStoreClient::randomString(std::string::size_type length)
         s += chrs[pick(rg)];
     return s;
 }
+
 std::string KVStoreClient::generateAppRequest()
 {
     // TODO(Hao): test with set only for now.

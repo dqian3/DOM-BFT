@@ -58,6 +58,7 @@ struct ProcessConfig {
     std::string replicaKeysDir;
     int replicaNumSendThreads;
     int replicaNumVerifyThreads;
+    uint32_t replicaCheckpointInterval;
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -172,6 +173,8 @@ struct ProcessConfig {
 
             replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads");
             replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");
+
+            replicaCheckpointInterval = parseField<int>(replicaNode, "checkpointInterval");
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing replica " + std::string(e.what()));
