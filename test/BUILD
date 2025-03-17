@@ -21,11 +21,11 @@ cc_test(
 
 
 cc_test(
-  name = "test_fallback_utils",
+  name = "test_repair_utils",
   size = "small",
-  srcs = ["test_fallback_utils.cc"],
+  srcs = ["test_repair_utils.cc"],
   deps = [
-    "//lib:fallback_utils",
+    "//lib:repair_utils",
     "//lib:signature_provider",
     "@com_google_googletest//:gtest_main",
   ],

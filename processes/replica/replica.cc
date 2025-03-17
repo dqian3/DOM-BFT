@@ -15,19 +15,20 @@ namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(
-    const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq, uint32_t viewChangeFreq,
+    const ProcessConfig &config, uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq,
     bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq
 )
     : replicaId_(replicaId)
     , f_(config.replicaIps.size() / 3)
     , checkpointInterval_(config.replicaCheckpointInterval)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
-    , fallbackTimeout_(config.replicaFallbackTimeout)
-    , viewChangeTimeout_(config.replicaFallbackStartTimeout)
+    , repairTimeout_(config.replicaRepairTimeout)
+    , repairViewTimeout_(config.replicaRepairViewTimeout)
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
     , instance_(1)
     , checkpointCollector_(replicaId_, f_)
+    , crashed_(crashed)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
     , viewChangeFreq_(viewChangeFreq)
@@ -263,29 +264,79 @@ void Replica::verifyMessagesThd()
 
 #endif
 
-        // Fallback related
+        // Repair related
 
-        else if (hdr->msgType == FALLBACK_TRIGGER) {
-            FallbackTrigger fallbackTriggerMsg;
+        else if (hdr->msgType == REPAIR_CLIENT_TIMEOUT) {
+            RepairClientTimeout timeoutMsg;
 
-            if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse COMMIT message";
+            if (!timeoutMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
+                return;
+            }
+            if (!sigProvider_.verify(hdr, "client", timeoutMsg.client_id())) {
+                LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
 
-            if (!fallbackTriggerMsg.has_proof() || verifyFallbackProof(fallbackTriggerMsg.proof()))
-                processQueue_.enqueue(msg);
-
+            processQueue_.enqueue(msg);
         }
 
-        else if (hdr->msgType == FALLBACK_START) {
-            FallbackStart fallbackStartMsg;
-            if (!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse FallbackStart message";
+        else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
+            RepairReplicaTimeout timeoutMsg;
+
+            if (!timeoutMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
+                return;
+            }
+
+            if (!sigProvider_.verify(hdr, "replica", timeoutMsg.replica_id())) {
+                LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", fallbackStartMsg.replica_id())) {
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == REPAIR_REPLY_PROOF) {
+            RepairReplyProof proofMsg;
+
+            if (!proofMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_REPLY_PROOF message";
+                return;
+            }
+
+            if (!verifyRepairReplyProof(proofMsg)) {
+                LOG(WARNING) << "Failed to verify repair reply proof!";
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == REPAIR_TIMEOUT_PROOF) {
+            RepairTimeoutProof proofMsg;
+
+            if (!proofMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_TRIGGER message";
+                return;
+            }
+
+            if (!verifyRepairTimeoutProof(proofMsg)) {
+                LOG(WARNING) << "Failed to verify repair timeout proof!";
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == REPAIR_START) {
+            RepairStart repairStartMsg;
+            if (!repairStartMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse RepairStart message";
+                continue;
+            }
+
+            if (!sigProvider_.verify(hdr, "replica", repairStartMsg.replica_id())) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -303,9 +354,9 @@ void Replica::verifyMessagesThd()
             }
 
             // Verify logs in proposal
-            FallbackProposal proposal = PBFTPrePrepareMsg.proposal();
-            if (!verifyFallbackProposal(proposal)) {
-                LOG(INFO) << "Failed to verify fallback proposal!";
+            RepairProposal proposal = PBFTPrePrepareMsg.proposal();
+            if (!verifyRepairProposal(proposal)) {
+                LOG(INFO) << "Failed to verify repair proposal!";
                 continue;
             }
             byte tmpDigest[SHA256_DIGEST_LENGTH];
@@ -419,13 +470,13 @@ void Replica::processMessagesThd()
                 continue;
             }
 
-            if (fallback_) {
-                VLOG(6) << "Queuing request due to fallback";
-                fallbackQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
+            if (repair_) {
+                VLOG(6) << "Queuing request due to repair";
+                repairQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
                 continue;
             }
 
-            if (swapFreq_ && log_->getNextSeq() == 0)
+            if (swapFreq_ && log_->getNextSeq() % swapFreq_ == 0)
                 holdAndSwapCliReq(clientHeader);
             else
                 processClientRequest(clientHeader);
@@ -491,25 +542,58 @@ void Replica::processMessagesThd()
             processSnapshotReply(reply);
         }
 
-        else if (hdr->msgType == FALLBACK_TRIGGER) {
-            FallbackTrigger fallbackTriggerMsg;
-
-            if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
-                return;
-            }
-
-            processFallbackTrigger(fallbackTriggerMsg, std::span{body + hdr->msgLen, hdr->sigLen});
-        }
-
-        if (hdr->msgType == FALLBACK_START) {
-            FallbackStart msg;
+        else if (hdr->msgType == REPAIR_CLIENT_TIMEOUT) {
+            RepairClientTimeout msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+                LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
                 return;
             }
-            processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+
+            processRepairClientTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+
+        else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
+            RepairReplicaTimeout msg;
+
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
+                return;
+            }
+
+            processRepairReplicaTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+
+        else if (hdr->msgType == REPAIR_REPLY_PROOF) {
+            RepairReplyProof msg;
+
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_REPLY_PROOF message";
+                return;
+            }
+
+            processRepairReplyProof(msg);
+        }
+
+        else if (hdr->msgType == REPAIR_TIMEOUT_PROOF) {
+            RepairTimeoutProof msg;
+
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_TRIGGER message";
+                return;
+            }
+
+            processRepairTimeoutProof(msg);
+        }
+
+        if (hdr->msgType == REPAIR_START) {
+            RepairStart msg;
+
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_TRIGGER message";
+                return;
+            }
+            processRepairStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
         if (hdr->msgType == PBFT_PREPREPARE) {
@@ -582,7 +666,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     // we should return a CommittedReply, and client only needs f + 1
     if (log_->getStableCheckpoint().clientRecord_.contains(clientId, clientSeq)) {
         LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
-                     << " has been committed in previous checkpoint/fallback!, Sending committed reply";
+                     << " has been committed in previous checkpoint/repair!, Sending committed reply";
 
         CommittedReply reply;
 
@@ -766,9 +850,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             checkpointCollector_.cleanStaleCollectors(seq, instance_);
         }
 
-        // Unregister fallbackStart timer set by request timeout in slow path
-        //  as checkpoint confirms progress
-        fallbackTriggerTime_ = 0;
+        // Unregister repair timer set by client as checkpoint confirms progress
+        repairTimeoutStart_ = 0;
     }
 }
 
@@ -809,9 +892,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
     LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
               << snapshotReply.seq();
 
-    if (fallback_) {
-        // Finish applying LogSuffix computed from fallback proposal and return to normal processing
-        LogSuffix &logSuffix = getFallbackLogSuffix();
+    if (repair_) {
+        // Finish applying LogSuffix computed from repair proposal and return to normal processing
+        LogSuffix &logSuffix = getRepairLogSuffix();
         // TODO make sure this isn't outdated...
 
         applySuffixWithSnapshot(logSuffix, log_, snapshotReply.snapshot());
@@ -856,45 +939,109 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
     }
 }
 
-void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig)
+void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig)
 {
-    // Ignore repeated fallback triggers
-    if (fallback_) {
-        LOG(WARNING) << "Received fallback trigger during a fallback from client " << msg.client_id()
+    if (repair_) {
+        LOG(WARNING) << "Received repair trigger during a repair from client " << msg.client_id()
                      << " for cseq=" << msg.client_seq();
         return;
     }
 
-    if (!msg.has_proof() && fallbackTriggerTime_ != 0) {
-        LOG(WARNING) << "Received redundant fallback trigger due to client side timeout from client_id="
+    if (repairTimeoutStart_ != 0) {
+        LOG(WARNING) << "Received redundant repair trigger due to client side timeout from client_id="
                      << msg.client_id() << " for cseq=" << msg.client_seq();
         return;
     }
 
-    LOG(INFO) << "Received fallback trigger from client_id=" << msg.client_id() << " for cseq=" << msg.client_seq();
+    if (msg.instance() != instance_) {
+        LOG(WARNING) << "Received repair trigger for instance " << msg.instance() << " != " << instance_;
+        return;
+    }
 
-    if (msg.has_proof()) {
-        // Proof is verified by verify thread
-        if (msg.proof().instance() < instance_) {
-            LOG(INFO) << "Received fallback trigger proof for previous instance " << msg.proof().instance() << " < "
-                      << instance_;
-            return;
-        }
+    LOG(INFO) << "Received repair trigger from client_id=" << msg.client_id() << " for cseq=" << msg.client_seq();
+    repairTimeoutStart_ = GetMicrosecondTimestamp();
+}
 
-        LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
+void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig)
+{
+    // Note assume msg is verfied here
+    if (repair_) {
+        VLOG(4) << "Received repair replica timeout during a repair from replica " << msg.replica_id();
+        return;
+    }
 
-        // TODO we need to broadcast this with the original signature
-        broadcastToReplicas(msg, FALLBACK_TRIGGER);
-        startFallback();
-    } else {
-        fallbackTriggerTime_ = GetMicrosecondTimestamp();
+    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for instance " << msg.instance();
+
+    uint32_t repId = msg.replica_id();
+
+    repairReplicaTimeouts_[repId] = msg;
+    repairReplicaTimeoutSigs_[repId] = std::string(sig.begin(), sig.end());
+
+    dombft::proto::RepairTimeoutProof proof;
+    for (auto &[repId, msg] : repairReplicaTimeouts_) {
+        if (msg.instance() != instance_)
+            continue;
+
+        (*proof.add_timeouts()) = msg;
+        proof.add_signatures(repairReplicaTimeoutSigs_[repId]);
+    }
+
+    if (proof.timeouts_size() == f_ + 1) {
+        LOG(INFO) << "Gathered timeout proof for instance " << instance_ << ", starting repair and broadcasting!";
+        broadcastToReplicas(proof, REPAIR_TIMEOUT_PROOF);
+        startRepair();
     }
 }
 
-void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig)
+void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg)
+{
+    // Ignore repeated repair triggers
+    if (repair_) {
+        LOG(WARNING) << "Received repair trigger during a repair from client " << msg.client_id()
+                     << " for cseq=" << msg.client_seq();
+        return;
+    }
+
+    // Proof is verified by verify thread
+    if (msg.instance() < instance_) {
+        LOG(INFO) << "Received repair trigger proof for previous instance " << msg.instance() << " < " << instance_;
+        return;
+    }
+
+    LOG(INFO) << "Repair trigger has a proof, starting repair!";
+
+    // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
+    // if we already are in fallback.
+    broadcastToReplicas(msg, REPAIR_REPLY_PROOF);
+    startRepair();
+}
+
+void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg)
+{
+    // Ignore repeated repair triggers
+    if (repair_) {
+        VLOG(5) << "Received timeout proof after I already started repair for instance " << instance_;
+        return;
+    }
+
+    // Proof is verified by verify thread
+    if (msg.instance() < instance_) {
+        LOG(INFO) << "Received repair timeout proof for previous instance " << msg.instance() << " < " << instance_;
+        return;
+    }
+
+    LOG(INFO) << "Received repair timeout proof, starting repair!";
+
+    // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
+    // if we already are in fallback.
+    broadcastToReplicas(msg, REPAIR_TIMEOUT_PROOF);
+    startRepair();
+}
+
+void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
 {
     if ((msg.pbft_view() % replicaAddrs_.size()) != replicaId_) {
-        LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " pbft_view " << msg.pbft_view()
+        LOG(INFO) << "Received REPAIR_START for instance " << msg.instance() << " pbft_view " << msg.pbft_view()
                   << " where I am not proposer";
         return;
     }
@@ -902,28 +1049,28 @@ void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig
     uint32_t repId = msg.replica_id();
     uint32_t repInstance = msg.instance();
     if (msg.instance() < instance_) {
-        LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " from replica " << repId
+        LOG(INFO) << "Received REPAIR_START for instance " << msg.instance() << " from replica " << repId
                   << " while own is " << instance_;
         return;
     }
 
     // A corner case where (older instance + pbft_view) targets the same primary and overwrite the newer ones
-    if (fallbackHistorys_.count(repId) && fallbackHistorys_[repId].instance() >= repInstance) {
-        LOG(INFO) << "Received FALLBACK_START for instance " << repInstance << " pbft_view " << msg.pbft_view()
+    if (repairHistorys_.count(repId) && repairHistorys_[repId].instance() >= repInstance) {
+        LOG(INFO) << "Received REPAIR_START for instance " << repInstance << " pbft_view " << msg.pbft_view()
                   << " from replica " << repId << " which is outdated";
         return;
     }
-    fallbackHistorys_[repId] = msg;
-    fallbackHistorySigs_[repId] = std::string(sig.begin(), sig.end());
+    repairHistorys_[repId] = msg;
+    repairHistorySigs_[repId] = std::string(sig.begin(), sig.end());
 
-    LOG(INFO) << "Received fallbackStart message from replica " << repId;
+    LOG(INFO) << "Received repairStart message from replica " << repId;
 
     if (!isPrimary()) {
         return;
     }
 
-    // First check if we have 2f + 1 fallback start messages for the same instance
-    auto numStartMsgs = std::count_if(fallbackHistorys_.begin(), fallbackHistorys_.end(), [&](auto &startMsg) {
+    // First check if we have 2f + 1 repair start messages for the same instance
+    auto numStartMsgs = std::count_if(repairHistorys_.begin(), repairHistorys_.end(), [&](auto &startMsg) {
         return startMsg.second.instance() == repInstance;
     });
 
@@ -936,17 +1083,24 @@ void Replica::checkTimeouts()
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    if (fallbackTriggerTime_ != 0 && now - fallbackTriggerTime_ > fallbackTimeout_) {
-        fallbackTriggerTime_ = 0;
-        LOG(WARNING) << "fallbackStartTimer for instance=" << instance_ << " timed out! Starting fallback";
-        this->startFallback();   // Note this changes fallbackStartTime, so we need to get the time again
+    if (repairTimeoutStart_ != 0 && now - repairTimeoutStart_ > repairTimeout_) {
+        repairTimeoutStart_ = 0;
+        LOG(WARNING) << "repairStartTimer for instance=" << instance_ << " timed out! Sending timeout message!";
+
+        RepairReplicaTimeout msg;
+        msg.set_instance(instance_);
+        msg.set_replica_id(replicaId_);
+
+        broadcastToReplicas(msg, MessageType::REPAIR_REPLICA_TIMEOUT);
     };
 
     now = GetMicrosecondTimestamp();
 
-    if (fallbackStartTime_ != 0 && now - fallbackStartTime_ > viewChangeTimeout_) {
-        fallbackStartTime_ = now;
-        LOG(WARNING) << "Fallback for instance=" << instance_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
+    if (repairViewStart_ != 0 && now - repairViewStart_ > repairViewTimeout_) {
+        repairViewStart_ = now;
+        // TODO increment view change here if neeeded
+
+        LOG(WARNING) << "Repair for instance=" << instance_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
         pbftViewChanges_.clear();
         pbftViewChangeSigs_.clear();
         this->startViewChange();
@@ -968,6 +1122,10 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
 
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
 {
+    if (crashed_) {
+        return;
+    }
+
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
@@ -977,6 +1135,11 @@ template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type,
 
 template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageType type)
 {
+    // Simulate crashing by just not sending anything
+    if (crashed_) {
+        return;
+    }
+
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
@@ -1034,10 +1197,10 @@ bool Replica::verifyCert(const Cert &cert)
     return true;
 }
 
-bool Replica::verifyFallbackProof(const Cert &proof)
+bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
 {
     if (proof.replies().size() < f_ + 1) {
-        LOG(INFO) << "Received fallback proof of size " << proof.replies().size()
+        LOG(INFO) << "Received repair proof of size " << proof.replies().size()
                   << ", which is smaller than f + 1, f=" << f_;
         return false;
     }
@@ -1093,7 +1256,50 @@ bool Replica::verifyFallbackProof(const Cert &proof)
     return true;
 }
 
-bool Replica::verifyFallbackProposal(const FallbackProposal &proposal)
+bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
+{
+    if (proof.timeouts().size() < f_ + 1) {
+        LOG(INFO) << "Received repair timeout proof of size " << proof.timeouts().size()
+                  << ", which is smaller than f + 1, f=" << f_;
+        return false;
+    }
+
+    if (proof.timeouts().size() != proof.signatures().size()) {
+        LOG(WARNING) << "Proof replies size " << proof.timeouts().size() << " is not equal to "
+                     << "cert signatures size" << proof.signatures().size();
+        return false;
+    }
+
+    std::set<int> replicaIds;
+
+    for (int i = 0; i < proof.timeouts_size(); i++) {
+        const RepairReplicaTimeout &timeout = proof.timeouts()[i];
+        const std::string &sig = proof.signatures()[i];
+
+        if (replicaIds.contains(timeout.replica_id())) {
+            LOG(INFO) << "Proof has replies from the same replica!";
+            return false;
+        }
+
+        if (proof.instance() != timeout.instance()) {
+            LOG(INFO) << "Proof has replies from different instances!";
+            return false;
+        }
+
+        std::string serializedTimeout = timeout.SerializeAsString();
+        if (!sigProvider_.verify(
+                (byte *) serializedTimeout.c_str(), serializedTimeout.size(), (byte *) sig.c_str(), sig.size(),
+                "replica", timeout.replica_id()
+            )) {
+            LOG(INFO) << "Proof failed to verify!";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool Replica::verifyRepairProposal(const RepairProposal &proposal)
 {
     std::vector<std::tuple<byte *, uint32_t>> logSigs;
     for (auto &sig : proposal.signatures()) {
@@ -1146,39 +1352,39 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
         LOG(INFO) << "View Change with different instance";
         return false;
     }
-    const FallbackProposal &proposal = viewChangeMsg.proposal();
-    if (!verifyFallbackProposal(proposal)) {
-        LOG(INFO) << "Failed to verify fallback proposal!";
+    const RepairProposal &proposal = viewChangeMsg.proposal();
+    if (!verifyRepairProposal(proposal)) {
+        LOG(INFO) << "Failed to verify repair proposal!";
         return false;
     }
     return true;
 }
 
-// ============== Fallback ==============
+// ============== Repair ==============
 
-void Replica::startFallback()
+void Replica::startRepair()
 {
-    assert(!fallback_);
-    fallback_ = true;
-    LOG(INFO) << "Starting fallback on instance " << instance_;
+    assert(!repair_);
+    repair_ = true;
+    LOG(INFO) << "Starting repair on instance " << instance_;
 
-    // Start fallback timer to change primary if timeout
-    fallbackStartTime_ = GetMicrosecondTimestamp();
+    // Start repair timer to change primary if timeout
+    repairViewStart_ = GetMicrosecondTimestamp();
 
-    VLOG(1) << "PERF event=fallback_start replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+    VLOG(1) << "PERF event=repair_start replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
 
-    // Extract log into start fallback message
-    FallbackStart fallbackStartMsg;
-    fallbackStartMsg.set_instance(instance_);
-    fallbackStartMsg.set_replica_id(replicaId_);
-    fallbackStartMsg.set_pbft_view(pbftView_);
-    log_->toProto(fallbackStartMsg);
+    // Extract log into start repair message
+    RepairStart repairStartMsg;
+    repairStartMsg.set_instance(instance_);
+    repairStartMsg.set_replica_id(replicaId_);
+    repairStartMsg.set_pbft_view(pbftView_);
+    log_->toProto(repairStartMsg);
 
     uint32_t primaryId = getPrimary();
-    LOG(INFO) << "Sending FALLBACK_START to PBFT primary replica " << primaryId;
-    sendMsgToDst(fallbackStartMsg, FALLBACK_START, replicaAddrs_[primaryId]);
-    LOG(INFO) << "DUMP start fallback instance=" << instance_ << " " << *log_;
+    LOG(INFO) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
+    sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
+    LOG(INFO) << "DUMP start repair instance=" << instance_ << " " << *log_;
 }
 
 void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
@@ -1194,9 +1400,9 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_digest(entry.digest);
 }
 
-void Replica::sendFallbackSummaryToClients()
+void Replica::sendRepairSummaryToClients()
 {
-    FallbackSummary summary;
+    RepairSummary summary;
     std::set<int> clients;
 
     summary.set_instance(instance_);
@@ -1219,22 +1425,22 @@ void Replica::sendFallbackSummaryToClients()
         (*summary.add_replies()) = reply;
     }
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::FALLBACK_SUMMARY);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::REPAIR_SUMMARY);
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
     // TODO make this only send to clients that need it
-    LOG(INFO) << "Sending fallback summary for instance=" << instance_;
+    LOG(INFO) << "Sending repair summary for instance=" << instance_;
     for (auto &addr : clientAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
     }
 }
 
-void Replica::finishFallback()
+void Replica::finishRepair()
 {
-    VLOG(1) << "PERF event=fallback_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+    VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
 
-    LOG(INFO) << "DUMP finish fallback instance=" << instance_ << " " << *log_;
+    LOG(INFO) << "DUMP finish repair instance=" << instance_ << " " << *log_;
 
     instance_++;
     LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
@@ -1245,16 +1451,16 @@ void Replica::finishFallback()
         viewChangeCounter_ += 1;
     }
 
-    fallback_ = false;
-    fallbackProposal_.reset();
-    fallbackPrepares_.clear();
-    fallbackPBFTCommits_.clear();
-    fallbackProposalLogSuffix_.reset();
+    repair_ = false;
+    repairProposal_.reset();
+    repairPrepares_.clear();
+    repairPBFTCommits_.clear();
+    repairProposalLogSuffix_.reset();
 
-    // TODO: since the fallback is PBFT, we can simply set the checkpoint here already using the PBFT messages as proofs
-    // For the sake of implementation simplicity, we just trigger the usual checkpointing process
-    // However, client requests are still safe, as even if the next fallback is triggered before this checkpoint
-    // finishes, the client requests will have f + 1 replicas that executed it in their logs
+    // TODO: since the repair is PBFT, we can simply set the checkpoint here already using the PBFT messages as
+    // proofs For the sake of implementation simplicity, we just trigger the usual checkpointing process However,
+    // client requests are still safe, as even if the next repair is triggered before this checkpoint finishes, the
+    // client requests will have f + 1 replicas that executed it in their logs
 
     uint32_t seq = log_->getNextSeq() - 1;
 
@@ -1264,30 +1470,30 @@ void Replica::finishFallback()
     replyFromLogEntry(reply, seq);
     broadcastToReplicas(reply, MessageType::REPLY);
 
-    for (auto &[_, req] : fallbackQueuedReqs_) {
+    for (auto &[_, req] : repairQueuedReqs_) {
         VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
         processClientRequest(req);
     }
-    fallbackQueuedReqs_.clear();
+    repairQueuedReqs_.clear();
 }
 
-void Replica::tryFinishFallback()
+void Replica::tryFinishRepair()
 {
-    assert(fallbackProposal_.has_value());
-    if (fallbackProposal_.value().instance() == instance_ - 1) {
-        // This happens if the fallback instance is already committed on the current replica, but other replicas
+    assert(repairProposal_.has_value());
+    if (repairProposal_.value().instance() == instance_ - 1) {
+        // This happens if the repair instance is already committed on the current replica, but other replicas
         // initiated a view change.
         assert(viewChange_);
-        LOG(INFO) << "Fallback on instance " << instance_ - 1 << " already committed on current replica, skipping";
+        LOG(INFO) << "Repair on instance " << instance_ - 1 << " already committed on current replica, skipping";
         return;
     }
 
-    FallbackProposal &proposal = fallbackProposal_.value();
+    RepairProposal &proposal = repairProposal_.value();
     instance_ = proposal.instance();
     // Reset timer
-    fallbackStartTime_ = 0;
+    repairViewStart_ = 0;
 
-    LogSuffix &logSuffix = getFallbackLogSuffix();
+    LogSuffix &logSuffix = getRepairLogSuffix();
 
     // Check if own checkpoint seq is behind suffix checkpoint seq
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
@@ -1298,36 +1504,35 @@ void Replica::tryFinishFallback()
         // we need to request a snapshot from the replica that has the checkpoint
 
         if (checkpoint->log_digest() == log_->getDigest(checkpoint->seq())) {
-            LOG(INFO) << "Fallback checkpoint seq=" << checkpoint->seq()
-                      << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq
-                      << ", applying checkpoint before fallback";
+            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq()
+                      << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq << ", applying checkpoint before repair";
             log_->setStableCheckpoint(*checkpoint);
 
             applySuffixWithoutSnapshot(logSuffix, log_);
-            finishFallback();
+            finishRepair();
         } else {
-            LOG(INFO) << "Fallback checkpoint seq=" << checkpoint->seq()
+            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq()
                       << " is inconsistent with my log, snapshot will be fetched from replicaId=";
             sendSnapshotRequest(logSuffix.checkpointReplica, checkpoint->seq());
         }
 
     } else {
         applySuffixWithoutSnapshot(logSuffix, log_);
-        finishFallback();
+        finishRepair();
     }
 }
 
-LogSuffix &Replica::getFallbackLogSuffix()
+LogSuffix &Replica::getRepairLogSuffix()
 {
-    // This is just to cache the processing of the fallbackProposal
+    // This is just to cache the processing of the repairProposal
     // TODO make sure this works during view change as well.
-    if (!fallbackProposalLogSuffix_.has_value() || fallbackProposalLogSuffix_.value().instance != instance_) {
-        fallbackProposalLogSuffix_ = LogSuffix();
-        fallbackProposalLogSuffix_->replicaId = replicaId_;
-        fallbackProposalLogSuffix_->instance = instance_;
-        getLogSuffixFromProposal(fallbackProposal_.value(), fallbackProposalLogSuffix_.value());
+    if (!repairProposalLogSuffix_.has_value() || repairProposalLogSuffix_.value().instance != instance_) {
+        repairProposalLogSuffix_ = LogSuffix();
+        repairProposalLogSuffix_->replicaId = replicaId_;
+        repairProposalLogSuffix_->instance = instance_;
+        getLogSuffixFromProposal(repairProposal_.value(), repairProposalLogSuffix_.value());
     }
-    return fallbackProposalLogSuffix_.value();
+    return repairProposalLogSuffix_.value();
 }
 
 void Replica::doPrePreparePhase(uint32_t instance)
@@ -1342,16 +1547,16 @@ void Replica::doPrePreparePhase(uint32_t instance)
     prePrepare.set_primary_id(replicaId_);
     prePrepare.set_instance(instance);
     prePrepare.set_pbft_view(pbftView_);
-    // Piggyback the fallback proposal
-    FallbackProposal *proposal = prePrepare.mutable_proposal();
+    // Piggyback the repair proposal
+    RepairProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_instance(instance);
-    for (auto &startMsg : fallbackHistorys_) {
+    for (auto &startMsg : repairHistorys_) {
         if (startMsg.second.instance() != instance)
             continue;
 
         *(proposal->add_logs()) = startMsg.second;
-        *(proposal->add_signatures()) = fallbackHistorySigs_[startMsg.first];
+        *(proposal->add_signatures()) = repairHistorySigs_[startMsg.first];
     }
     getProposalDigest(proposalDigest_, *proposal);
     prePrepare.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
@@ -1360,10 +1565,10 @@ void Replica::doPrePreparePhase(uint32_t instance)
 
 void Replica::doPreparePhase()
 {
-    LOG(INFO) << "Prepare for instance=" << fallbackProposal_->instance() << " replicaId=" << replicaId_;
+    LOG(INFO) << "Prepare for instance=" << repairProposal_->instance() << " replicaId=" << replicaId_;
     PBFTPrepare prepare;
     prepare.set_replica_id(replicaId_);
-    prepare.set_instance(fallbackProposal_->instance());
+    prepare.set_instance(repairProposal_->instance());
     prepare.set_pbft_view(pbftView_);
     prepare.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
     broadcastToReplicas(prepare, PBFT_PREPARE);
@@ -1371,7 +1576,7 @@ void Replica::doPreparePhase()
 
 void Replica::doCommitPhase()
 {
-    uint32_t proposalInst = fallbackProposal_.value().instance();
+    uint32_t proposalInst = repairProposal_.value().instance();
     LOG(INFO) << "PBFTCommit for instance=" << proposalInst << " replicaId=" << replicaId_;
     PBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
@@ -1390,7 +1595,7 @@ void Replica::doCommitPhase()
 void Replica::processPrePrepare(const PBFTPrePrepare &msg)
 {
     if (msg.instance() < instance_) {
-        LOG(INFO) << "Received old fallback preprepare from instance=" << msg.instance() << " own instance is "
+        LOG(INFO) << "Received old repair preprepare from instance=" << msg.instance() << " own instance is "
                   << instance_;
         return;
     }
@@ -1400,14 +1605,14 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
         return;
     }
     if (getPrimary() != msg.primary_id()) {
-        LOG(INFO) << "Received fallback preprepare from non-primary replica " << msg.primary_id()
+        LOG(INFO) << "Received repair preprepare from non-primary replica " << msg.primary_id()
                   << ". Current selected primary is " << getPrimary();
         return;
     }
 
     LOG(INFO) << "PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
     // accepts the proposal as long as it's from the primary
-    fallbackProposal_ = msg.proposal();
+    repairProposal_ = msg.proposal();
     memcpy(proposalDigest_, msg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
 
     if (viewChangeByPrepare()) {
@@ -1427,17 +1632,17 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return;
     }
     if (inInst < instance_ && viewPrepared_) {
-        LOG(INFO) << "Received old fallback prepare from instance=" << inInst << " own instance is " << instance_;
+        LOG(INFO) << "Received old repair prepare from instance=" << inInst << " own instance is " << instance_;
         return;
     }
 
-    if (fallbackPrepares_.count(msg.replica_id()) && fallbackPrepares_[msg.replica_id()].instance() > inInst &&
-        fallbackPrepares_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
+    if (repairPrepares_.count(msg.replica_id()) && repairPrepares_[msg.replica_id()].instance() > inInst &&
+        repairPrepares_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
         LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for instance=" << inInst;
         return;
     }
-    fallbackPrepares_[msg.replica_id()] = msg;
-    fallbackPrepareSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
+    repairPrepares_[msg.replica_id()] = msg;
+    repairPrepareSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
     LOG(INFO) << "Prepare RECEIVED for instance=" << inInst << " from replicaId=" << msg.replica_id();
     // skip if already prepared for it
     // note: if viewPrepared_==false, then viewChange_==true
@@ -1445,13 +1650,13 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         LOG(INFO) << "Already prepared for instance=" << inInst << " pbft_view=" << pbftView_;
         return;
     }
-    if (!fallbackProposal_.has_value() || fallbackProposal_.value().instance() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().instance() < inInst) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process prepare";
         return;
     }
     // Make sure the Prepare msgs are for the corresponding PrePrepare msg
-    auto numMsgs = std::count_if(fallbackPrepares_.begin(), fallbackPrepares_.end(), [this](auto &curMsg) {
-        return curMsg.second.instance() == fallbackProposal_.value().instance() &&
+    auto numMsgs = std::count_if(repairPrepares_.begin(), repairPrepares_.end(), [this](auto &curMsg) {
+        return curMsg.second.instance() == repairProposal_.value().instance() &&
                memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
                curMsg.second.pbft_view() == pbftView_;
     });
@@ -1460,15 +1665,15 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return;
     }
     // Store PBFT states for potential view change
-    preparedInstance_ = fallbackProposal_.value().instance();
+    preparedInstance_ = repairProposal_.value().instance();
     viewPrepared_ = true;
-    pbftState_.proposal = fallbackProposal_.value();
+    pbftState_.proposal = repairProposal_.value();
     memcpy(pbftState_.proposal_digest, proposalDigest_, SHA256_DIGEST_LENGTH);
     pbftState_.prepares.clear();
-    for (const auto &[repId, prepare] : fallbackPrepares_) {
+    for (const auto &[repId, prepare] : repairPrepares_) {
         if (prepare.instance() == preparedInstance_) {
             pbftState_.prepares[repId] = prepare;
-            pbftState_.prepareSigs[repId] = fallbackPrepareSigs_[repId];
+            pbftState_.prepareSigs[repId] = repairPrepareSigs_[repId];
         }
     }
     LOG(INFO) << "Prepare received from 2f + 1 replicas, agreement reached for instance=" << preparedInstance_
@@ -1495,18 +1700,18 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         return;
     }
     if (inInst < instance_ && !viewChange_) {
-        LOG(INFO) << "Received old fallback commit from instance=" << inInst << " own instance is " << instance_;
+        LOG(INFO) << "Received old repair commit from instance=" << inInst << " own instance is " << instance_;
         return;
     }
-    if (fallbackPBFTCommits_.count(msg.replica_id()) && fallbackPBFTCommits_[msg.replica_id()].instance() > inInst &&
-        fallbackPBFTCommits_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
+    if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].instance() > inInst &&
+        repairPBFTCommits_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
         LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for instance=" << inInst;
         return;
     }
-    fallbackPBFTCommits_[msg.replica_id()] = msg;
+    repairPBFTCommits_[msg.replica_id()] = msg;
     LOG(INFO) << "PBFTCommit RECEIVED for instance=" << inInst << " from replicaId=" << msg.replica_id();
 
-    if (!fallbackProposal_.has_value() || fallbackProposal_.value().instance() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().instance() < inInst) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process commit";
         return;
     }
@@ -1516,7 +1721,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         // TODO get the proposal from another replica...
         return;
     }
-    auto numMsgs = std::count_if(fallbackPBFTCommits_.begin(), fallbackPBFTCommits_.end(), [this](auto &curMsg) {
+    auto numMsgs = std::count_if(repairPBFTCommits_.begin(), repairPBFTCommits_.end(), [this](auto &curMsg) {
         return curMsg.second.instance() == preparedInstance_ &&
                memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
                curMsg.second.pbft_view() == pbftView_;
@@ -1525,13 +1730,13 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         return;
     }
     LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
-    tryFinishFallback();
+    tryFinishRepair();
 }
 
 void Replica::startViewChange()
 {
     pbftView_++;
-    fallback_ = true;
+    repair_ = true;
     viewChange_ = true;
     viewPrepared_ = false;
     VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
@@ -1589,7 +1794,7 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
     // 1. delaying timer setting for better liveness (avoid frequent view changes)
     // 2. check if the majority has a larger view# and start view change if so (avoid starting view change too late)
 
-    fallbackStartTime_ = GetMicrosecondTimestamp();   // reset view change timeout (1) above
+    repairViewStart_ = GetMicrosecondTimestamp();   // reset view change timeout (1) above
 
     if (inViewNum > pbftView_) {
         LOG(INFO) << "Majority has a larger view number, starting a new view change for the major view";
@@ -1666,26 +1871,26 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
     // in case it is not in view change already. Not quite sure this is correct way tho
     if (!viewChange_) {
         viewChange_ = true;
-        fallback_ = true;
+        repair_ = true;
         viewPrepared_ = false;
-        fallbackProposal_.reset();
-        fallbackPrepares_.clear();
-        fallbackPBFTCommits_.clear();
+        repairProposal_.reset();
+        repairPrepares_.clear();
+        repairPBFTCommits_.clear();
     }
 
     // TODO(Hao): test this corner case later
     if (msg.instance() == UINT32_MAX) {
         LOG(INFO) << "No previously prepared instance in new view, go back to normal state. EXIT FOR NOW";
-        assert(msg.instance() != UINT32_MAX);
-        return;
+        // assert(msg.instance() != UINT32_MAX);
+        // return;
     }
-    fallbackProposal_ = maxVC.proposal();
+    repairProposal_ = maxVC.proposal();
     memcpy(proposalDigest_, maxVC.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
     // set view change param to true to bypass instance check.
     doPreparePhase();
 }
 
-void Replica::getProposalDigest(byte *digest, const FallbackProposal &proposal)
+void Replica::getProposalDigest(byte *digest, const RepairProposal &proposal)
 {
     // use signatures as digest, since signatures are can function as the the digest of each proposal
     std::string digestStr;

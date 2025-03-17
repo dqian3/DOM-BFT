@@ -16,6 +16,7 @@ client:
   keysDir: keys/client
   normalPathTimeout: 15000   # 15 ms
   slowPathTimeout:   1000000  # 1 s
+  requestTimeout: 1000000     # 1 s
 
   sendMode: "maxInFlight"
   maxInFlight: 1
@@ -61,8 +62,8 @@ replica:
   - "10.128.0.9"
   port: 34000
   keysDir: "keys/replica"
-  fallbackTimeout: 2000000
-  fallbackStartTimeout: 500000
+  repairViewTimeout: 2000000
+  repairTimeout: 500000
   numVerifyThreads: 2
   numSendThreads: 4
 

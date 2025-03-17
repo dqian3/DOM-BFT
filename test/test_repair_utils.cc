@@ -1,6 +1,6 @@
 #include "lib/application.h"
-#include "lib/fallback_utils.h"
 #include "lib/log.h"
+#include "lib/repair_utils.h"
 #include "lib/signature_provider.h"
 
 #include <gmock/gmock.h>
@@ -106,11 +106,11 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
     return {log, app};
 }
 
-std::unique_ptr<dombft::proto::FallbackStart> suffixFromTestLog(const TestLog &testLog, LogSuffix &ret)
+std::unique_ptr<dombft::proto::RepairStart> suffixFromTestLog(const TestLog &testLog, LogSuffix &ret)
 {
     auto [log, app] = logFromTestLog(testLog);
 
-    auto logMsg = std::make_unique<dombft::proto::FallbackStart>();
+    auto logMsg = std::make_unique<dombft::proto::RepairStart>();
     log->toProto(*logMsg);
 
     ret.checkpoint = &logMsg->checkpoint();
@@ -127,16 +127,16 @@ std::unique_ptr<dombft::proto::FallbackStart> suffixFromTestLog(const TestLog &t
 
 // Create logs with requests of just raw integers, based on
 // TODO make a checkpoint here too
-std::unique_ptr<dombft::proto::FallbackProposal> generateFallbackProposal(int f, TestHistory &history)
+std::unique_ptr<dombft::proto::RepairProposal> generateRepairProposal(int f, TestHistory &history)
 {
-    std::unique_ptr<dombft::proto::FallbackProposal> ret = std::make_unique<dombft::proto::FallbackProposal>();
+    std::unique_ptr<dombft::proto::RepairProposal> ret = std::make_unique<dombft::proto::RepairProposal>();
     int instanceNum = 5;
 
     for (TestLog &t : history) {
         auto [log, app] = logFromTestLog(t);
 
         // This is a bit messy oops
-        dombft::proto::FallbackStart logMsg;
+        dombft::proto::RepairStart logMsg;
         log->toProto(logMsg);
 
         (*ret->add_logs()) = logMsg;
@@ -207,7 +207,7 @@ TEST_F(LoggingFixture, LogSuffixFromProposalFPlus1)
     hist.push_back({10, "aaaa", 0, {{2, 2}, {1, 2}, {3, 2}}});
     hist.push_back({10, "aaaa", 0, {{2, 2}, {1, 2}, {3, 2}}});
 
-    auto f = generateFallbackProposal(1, hist);
+    auto f = generateRepairProposal(1, hist);
 
     LogSuffix suffix;
     getLogSuffixFromProposal(*f, suffix);
@@ -225,7 +225,7 @@ TEST_F(LoggingFixture, LogSuffixFromProposalScrambed)
     hist.push_back({10, "aaaa", 0, {{2, 2}, {3, 2}, {1, 2}}});
     hist.push_back({10, "aaaa", 0, {{3, 2}, {1, 2}, {2, 2}}});
 
-    auto f = generateFallbackProposal(1, hist);
+    auto f = generateRepairProposal(1, hist);
 
     LogSuffix suffix;
     getLogSuffixFromProposal(*f, suffix);
@@ -248,7 +248,7 @@ TEST_F(LoggingFixture, ApplyLogSuffix)
     // Generate protocol log
     auto [log, app] = logFromTestLog(curLog);
 
-    // Generate suffix for fallback
+    // Generate suffix for repair
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
@@ -270,7 +270,7 @@ TEST_F(LoggingFixture, ApplyReplicaAhead)
     // Generate protocol log
     auto [log, app] = logFromTestLog(curLog);
 
-    // Generate suffix for fallback
+    // Generate suffix for repair
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
@@ -290,7 +290,7 @@ TEST_F(LoggingFixture, ApplyReplicaInserted)
     // Generate protocol log
     auto [log, app] = logFromTestLog(curLog);
 
-    // Generate suffix for fallback
+    // Generate suffix for repair
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
@@ -314,7 +314,7 @@ TEST_F(LoggingFixture, Cert)
     hist.push_back({10, "aaaa", 13, {{1, 3}, {2, 3}, {3, 3}}});
     TestLog expectedLog{10, "aaaa", 0, {{1, 3}, {2, 3}, {3, 3}, {1, 2}}};
 
-    auto proposal = generateFallbackProposal(1, hist);
+    auto proposal = generateRepairProposal(1, hist);
 
     // Test suffix
     LogSuffix suffix;
@@ -343,7 +343,7 @@ TEST_F(LoggingFixture, Cert2)
     hist.push_back({10, "aaaa", 13, {{1, 2}, {2, 2}, {3, 2}}});
     TestLog expectedLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}, {4, 2}}};
 
-    auto proposal = generateFallbackProposal(1, hist);
+    auto proposal = generateRepairProposal(1, hist);
 
     // Test suffix
     LogSuffix suffix;
@@ -371,7 +371,7 @@ TEST_F(LoggingFixture, Catchup)
     // hist.push_back({10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}});
     // hist.push_back(behindTestLog);
 
-    // auto proposal = generateFallbackProposal(1, hist);
+    // auto proposal = generateRepairProposal(1, hist);
 
     // LogSuffix suffix;
     // getLogSuffixFromProposal(*proposal, suffix);
@@ -401,9 +401,9 @@ TEST_F(LoggingFixture, CheckpointAhead)
     // hist.push_back(behind);
     // hist.push_back(behind);
 
-    // auto proposal = generateFallbackProposal(1, hist);
+    // auto proposal = generateRepairProposal(1, hist);
 
-    // // Generate suffix for fallback
+    // // Generate suffix for repair
     // LogSuffix suffix;
     // getLogSuffixFromProposal(*proposal, suffix);
 

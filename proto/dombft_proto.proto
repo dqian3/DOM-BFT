@@ -78,15 +78,40 @@ message Commit {
     ClientRecord client_record = 8;
 }
 
-
-message FallbackTrigger
+message RepairClientTimeout
 {
+
     uint32 client_id = 1;
     uint32 client_seq = 2;
-    bytes req_data = 5;
-    // Reuse Cert message here, since it is just a set of replies.
-    optional Cert proof = 6;
+
+    uint32 instance = 3;
+
+    // could add request here too, but we do not
 }
+
+message RepairReplicaTimeout
+{
+    uint32 instance = 1;
+    uint32 replica_id = 2;
+}
+
+message RepairTimeoutProof {
+    uint32 instance = 1;
+
+    repeated RepairReplicaTimeout timeouts = 2;
+    repeated bytes signatures = 3;
+}
+
+message RepairReplyProof {
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+
+    uint32 instance = 3;
+
+    repeated Reply replies = 4;
+    repeated bytes signatures = 5;
+}
+
 
 message LogEntry
 {
@@ -130,7 +155,7 @@ message LogCheckpoint
 }
 
 
-message FallbackStart
+message RepairStart
 {
     uint32 pbft_view = 1;
     uint32 instance = 2;
@@ -142,12 +167,12 @@ message FallbackStart
     optional Cert cert = 7;
 }
 
-message FallbackProposal
+message RepairProposal
 {
     uint32 instance = 1;
     uint32 replica_id = 2; //primary id
 
-    repeated FallbackStart logs = 3;
+    repeated RepairStart logs = 3;
     repeated bytes signatures = 4;
 }
 
@@ -161,7 +186,7 @@ message CommittedReply
     bytes result = 5;
 }
 
-message FallbackSummary
+message RepairSummary
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
@@ -175,11 +200,11 @@ message PBFTPrePrepare
     uint32 primary_id = 2;
     uint32 pbft_view= 3;
 
-    FallbackProposal proposal = 4;
+    RepairProposal proposal = 4;
     bytes proposal_digest = 5;
 }
 
-message  PBFTPrepare
+message PBFTPrepare
 {
     uint32 instance = 1;
     uint32 replica_id = 2;
@@ -203,7 +228,7 @@ message PBFTViewChange
     repeated  PBFTPrepare prepares = 4;
     repeated  bytes prepare_sigs = 5;
     // we add the "request" for simplicity though PBFT use fetching when the request is missing
-    FallbackProposal proposal = 6;
+    RepairProposal proposal = 6;
     bytes proposal_digest = 7;
 }
 
@@ -222,7 +247,7 @@ message SnapshotRequest {
     uint32 replica_id = 3;
     uint32 last_checkpoint_seq = 4;
 
-    bool for_fallback = 5;
+    bool for_repair = 5;
 }
 
 message SnapshotReply {

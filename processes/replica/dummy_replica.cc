@@ -302,8 +302,8 @@ void DummyReplica::processMessagesThd()
 
                     if (commitCounts[seq] == 2 * f_ + 1) {
 
-                        // Use Fallback Summary here since client only needs to see f + 1 of these
-                        FallbackSummary summary;
+                        // Use Repair Summary here since client only needs to see f + 1 of these
+                        RepairSummary summary;
                         std::set<int> clients;
 
                         summary.set_instance(0);
@@ -316,7 +316,7 @@ void DummyReplica::processMessagesThd()
 
                         *(summary.add_replies()) = reply;
 
-                        sendMsgToDst(summary, MessageType::FALLBACK_SUMMARY, clientAddrs_[protoMsg.client_id()]);
+                        sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[protoMsg.client_id()]);
                         VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         // Update committed and clean up state.

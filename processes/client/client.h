@@ -33,18 +33,19 @@ struct RequestState {
     uint64_t sendTime;
 
     // Normal path state
-    uint64_t certTime;
+    uint64_t certTime = 0;
     bool certSent = false;
     uint64_t certSendTime = false;
     std::set<int> certReplies;
 
     // Slow Path state
+    bool hasQuorum = false;
+    uint64_t quorumTime = 0;   // Time by when we have 2f + 1 replies
     bool triggerSent = false;
     uint64_t triggerSendTime;
-    std::optional<dombft::proto::Cert> triggerProof;
 
     // TODO keep track of matching replies, not just number of replies, of which we need f + 1
-    std::set<int> fallbackReplies;
+    std::set<int> repairReplies;
 };
 
 enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
@@ -67,6 +68,7 @@ private:
 
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
+    uint64_t requestTimeout_;
 
     /** The endpoint uses to submit request to proxies and receive replies*/
     std::unique_ptr<Endpoint> endpoint_;
@@ -111,7 +113,7 @@ private:
     void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
     void handleCommittedReply(const dombft::proto::CommittedReply &reply, std::span<byte> sig);
-    void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
+    void handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig);
 
     void fillRequestData(dombft::proto::ClientRequest &request);
     void submitRequest();
