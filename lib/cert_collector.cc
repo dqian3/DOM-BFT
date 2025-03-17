@@ -37,9 +37,11 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         instanceCounts[reply.instance()]++;
 
         if (instanceCounts[reply.instance()] >= f_ + 1) {
-            instance_ = std::max(instance_, reply.instance());
-            cert_.reset();
-            VLOG(4) << "Increasing instance for cert collector to " << instance_;
+            if (reply.instance() > instance_) {
+                instance_ = reply.instance();
+                cert_.reset();
+                VLOG(4) << "Increasing instance for cert collector to " << instance_;
+            }
         }
     }
 

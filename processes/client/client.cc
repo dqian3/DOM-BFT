@@ -351,7 +351,8 @@ void Client::checkTimeouts()
             continue;
         }
 
-        if (!reqState.triggerSent && now - reqState.quorumTime > slowPathTimeout_) {
+        if (!reqState.triggerSent && reqState.collector.numReceived() > 2 * f_ + 1 &&
+            now - reqState.quorumTime > slowPathTimeout_) {
             LOG(INFO) << "Client attempting repair on request " << clientSeq << " sendTime=" << reqState.sendTime
                       << " now=" << now << " due to timeout";
 
@@ -538,23 +539,22 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         reqState.triggerSent = true;
         lastSlowPath_ = clientSeq;
 
-        RepairReplyProof repairTriggerMsg;
+        RepairReplyProof proofMsg;
 
-        repairTriggerMsg.set_client_id(clientId_);
-        repairTriggerMsg.set_client_seq(clientSeq);
+        proofMsg.set_client_id(clientId_);
+        proofMsg.set_client_seq(clientSeq);
+        proofMsg.set_instance(reqState.collector.instance_);
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             if (reply.instance() != reqState.collector.instance_)
                 continue;
 
             auto &sig = reqState.collector.signatures_[replicaId];
-            repairTriggerMsg.add_signatures(std::string(sig.begin(), sig.end()));
-            (*repairTriggerMsg.add_replies()) = reply;
+            proofMsg.add_signatures(std::string(sig.begin(), sig.end()));
+            (*proofMsg.add_replies()) = reply;
         }
-
         reqState.triggerSendTime = GetMicrosecondTimestamp();
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(repairTriggerMsg, REPAIR_REPLY_PROOF);
-        // Skip signing here, we can just verify the contained messages
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }

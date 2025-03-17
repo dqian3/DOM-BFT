@@ -40,6 +40,7 @@ client:
 
   normalPathTimeout: 200000
   slowPathTimeout: 1000000
+  requestTimeout: 1000000     # 1 s
 
 proxy:
   forwardPort: 31000

@@ -39,6 +39,7 @@ struct RequestState {
     std::set<int> certReplies;
 
     // Slow Path state
+    bool hasQuorum = false;
     uint64_t quorumTime = 0;   // Time by when we have 2f + 1 replies
     bool triggerSent = false;
     uint64_t triggerSendTime;

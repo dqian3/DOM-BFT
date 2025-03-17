@@ -475,7 +475,7 @@ void Replica::processMessagesThd()
                 continue;
             }
 
-            if (swapFreq_ && log_->getNextSeq() == 0)
+            if (swapFreq_ && log_->getNextSeq() % swapFreq_ == 0)
                 holdAndSwapCliReq(clientHeader);
             else
                 processClientRequest(clientHeader);
