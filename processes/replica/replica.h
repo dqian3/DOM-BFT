@@ -66,9 +66,9 @@ private:
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> fallbackQueuedReqs_;
 
     // fallback proposal is the current PBFT request
-    std::optional<dombft::proto::FallbackProposal> fallbackProposal_;
+    std::optional<dombft::proto::RepairProposal> fallbackProposal_;
     byte proposalDigest_[SHA256_DIGEST_LENGTH];
-    std::map<uint32_t, dombft::proto::FallbackStart> fallbackHistorys_;
+    std::map<uint32_t, dombft::proto::RepairStart> fallbackHistorys_;
     std::map<uint32_t, std::string> fallbackHistorySigs_;
     std::optional<LogSuffix> fallbackProposalLogSuffix_;
 
@@ -110,12 +110,12 @@ private:
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
     void processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, std::span<byte> sig);
-    void processFallbackStart(const dombft::proto::FallbackStart &msg, std::span<byte> sig);
+    void processRepairStart(const dombft::proto::RepairStart &msg, std::span<byte> sig);
     void checkTimeouts();
 
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyFallbackProof(const dombft::proto::Cert &proof);
-    bool verifyFallbackProposal(const dombft::proto::FallbackProposal &proposal);
+    bool verifyRepairProposal(const dombft::proto::RepairProposal &proposal);
     bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
 
     // Fallback Helpers
@@ -123,7 +123,7 @@ private:
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
     void finishFallback();
     void tryFinishFallback();
-    void sendFallbackSummaryToClients();
+    void sendRepairSummaryToClients();
     LogSuffix &getFallbackLogSuffix();
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
@@ -149,7 +149,7 @@ private:
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg);
     void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
     void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
-    void getProposalDigest(byte *digest, const dombft::proto::FallbackProposal &proposal);
+    void getProposalDigest(byte *digest, const dombft::proto::RepairProposal &proposal);
 
     // sending helpers
     // note even though these are templates, we can define them in the cpp file because they are private

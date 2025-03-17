@@ -22,8 +22,8 @@ Replica::Replica(
     , f_(config.replicaIps.size() / 3)
     , checkpointInterval_(config.replicaCheckpointInterval)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
-    , fallbackTimeout_(config.replicaFallbackTimeout)
-    , viewChangeTimeout_(config.replicaFallbackStartTimeout)
+    , fallbackTimeout_(config.replicaRepairViewTimeout)
+    , viewChangeTimeout_(config.replicaRepairStartTimeout)
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
     , instance_(1)
@@ -279,9 +279,9 @@ void Replica::verifyMessagesThd()
         }
 
         else if (hdr->msgType == FALLBACK_START) {
-            FallbackStart fallbackStartMsg;
+            RepairStart fallbackStartMsg;
             if (!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse FallbackStart message";
+                LOG(ERROR) << "Unable to parse RepairStart message";
                 continue;
             }
 
@@ -303,8 +303,8 @@ void Replica::verifyMessagesThd()
             }
 
             // Verify logs in proposal
-            FallbackProposal proposal = PBFTPrePrepareMsg.proposal();
-            if (!verifyFallbackProposal(proposal)) {
+            RepairProposal proposal = PBFTPrePrepareMsg.proposal();
+            if (!verifyRepairProposal(proposal)) {
                 LOG(INFO) << "Failed to verify fallback proposal!";
                 continue;
             }
@@ -503,13 +503,13 @@ void Replica::processMessagesThd()
         }
 
         if (hdr->msgType == FALLBACK_START) {
-            FallbackStart msg;
+            RepairStart msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
                 return;
             }
-            processFallbackStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+            processRepairStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
         if (hdr->msgType == PBFT_PREPREPARE) {
@@ -891,7 +891,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, 
     }
 }
 
-void Replica::processFallbackStart(const FallbackStart &msg, std::span<byte> sig)
+void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
 {
     if ((msg.pbft_view() % replicaAddrs_.size()) != replicaId_) {
         LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " pbft_view " << msg.pbft_view()
@@ -1093,7 +1093,7 @@ bool Replica::verifyFallbackProof(const Cert &proof)
     return true;
 }
 
-bool Replica::verifyFallbackProposal(const FallbackProposal &proposal)
+bool Replica::verifyRepairProposal(const RepairProposal &proposal)
 {
     std::vector<std::tuple<byte *, uint32_t>> logSigs;
     for (auto &sig : proposal.signatures()) {
@@ -1146,8 +1146,8 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
         LOG(INFO) << "View Change with different instance";
         return false;
     }
-    const FallbackProposal &proposal = viewChangeMsg.proposal();
-    if (!verifyFallbackProposal(proposal)) {
+    const RepairProposal &proposal = viewChangeMsg.proposal();
+    if (!verifyRepairProposal(proposal)) {
         LOG(INFO) << "Failed to verify fallback proposal!";
         return false;
     }
@@ -1169,7 +1169,7 @@ void Replica::startFallback()
             << " instance=" << instance_ << " pbft_view=" << pbftView_;
 
     // Extract log into start fallback message
-    FallbackStart fallbackStartMsg;
+    RepairStart fallbackStartMsg;
     fallbackStartMsg.set_instance(instance_);
     fallbackStartMsg.set_replica_id(replicaId_);
     fallbackStartMsg.set_pbft_view(pbftView_);
@@ -1194,9 +1194,9 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_digest(entry.digest);
 }
 
-void Replica::sendFallbackSummaryToClients()
+void Replica::sendRepairSummaryToClients()
 {
-    FallbackSummary summary;
+    RepairSummary summary;
     std::set<int> clients;
 
     summary.set_instance(instance_);
@@ -1282,7 +1282,7 @@ void Replica::tryFinishFallback()
         return;
     }
 
-    FallbackProposal &proposal = fallbackProposal_.value();
+    RepairProposal &proposal = fallbackProposal_.value();
     instance_ = proposal.instance();
     // Reset timer
     fallbackStartTime_ = 0;
@@ -1343,7 +1343,7 @@ void Replica::doPrePreparePhase(uint32_t instance)
     prePrepare.set_instance(instance);
     prePrepare.set_pbft_view(pbftView_);
     // Piggyback the fallback proposal
-    FallbackProposal *proposal = prePrepare.mutable_proposal();
+    RepairProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_instance(instance);
     for (auto &startMsg : fallbackHistorys_) {
@@ -1685,7 +1685,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
     doPreparePhase();
 }
 
-void Replica::getProposalDigest(byte *digest, const FallbackProposal &proposal)
+void Replica::getProposalDigest(byte *digest, const RepairProposal &proposal)
 {
     // use signatures as digest, since signatures are can function as the the digest of each proposal
     std::string digestStr;

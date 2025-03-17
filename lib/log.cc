@@ -178,7 +178,7 @@ LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint_; }
 
 ClientRecord &Log::getClientRecord() { return clientRecord; }
 
-void Log::toProto(dombft::proto::FallbackStart &msg)
+void Log::toProto(dombft::proto::RepairStart &msg)
 {
     dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 

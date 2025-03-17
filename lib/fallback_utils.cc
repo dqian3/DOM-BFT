@@ -2,7 +2,7 @@
 
 #include "utils.h"
 
-bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackProposal, LogSuffix &logSuffix)
+bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackProposal, LogSuffix &logSuffix)
 {
     LOG(INFO) << "Start getLogSuffixFromProposal";
 
@@ -33,7 +33,7 @@ bool getLogSuffixFromProposal(const dombft::proto::FallbackProposal &fallbackPro
     // get the max cert seq by comparing the seq in each of the included cert.
     // we have already verified these certs, so we can trust their seq numbers.
     for (int i = 0; i < fallbackProposal.logs().size(); i++) {
-        const dombft::proto::FallbackStart &fallbackLog = fallbackProposal.logs()[i];
+        const dombft::proto::RepairStart &fallbackLog = fallbackProposal.logs()[i];
 
         // Already included in checkpoint
         if (!fallbackLog.has_cert() || fallbackLog.cert().seq() <= logSuffix.checkpoint->seq())

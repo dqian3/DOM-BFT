@@ -68,7 +68,7 @@ public:
     ClientRecord &getClientRecord();
 
     // Get uncommitted suffix of the loh
-    void toProto(dombft::proto::FallbackStart &msg);
+    void toProto(dombft::proto::RepairStart &msg);
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };

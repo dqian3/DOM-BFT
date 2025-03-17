@@ -303,7 +303,7 @@ void DummyReplica::processMessagesThd()
                     if (commitCounts[seq] == 2 * f_ + 1) {
 
                         // Use Fallback Summary here since client only needs to see f + 1 of these
-                        FallbackSummary summary;
+                        RepairSummary summary;
                         std::set<int> clients;
 
                         summary.set_instance(0);

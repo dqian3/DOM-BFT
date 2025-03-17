@@ -448,7 +448,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         handleCommittedReply(reply, std::span{body + hdr->msgLen, hdr->sigLen});
     } else if (hdr->msgType == MessageType::FALLBACK_SUMMARY) {
-        FallbackSummary fallbackSummary;
+        RepairSummary fallbackSummary;
 
         if (!fallbackSummary.ParseFromArray(body, hdr->msgLen)) {
             LOG(ERROR) << "Unable to parse FALLBACK_SUMMARY message";
@@ -460,7 +460,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        handleFallbackSummary(fallbackSummary, std::span{body + hdr->msgLen, hdr->sigLen});
+        handleRepairSummary(fallbackSummary, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 }
 
@@ -607,7 +607,7 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
     }
 }
 
-void Client::handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig)
+void Client::handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig)
 {
     VLOG(2) << "Received fallback summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();

@@ -53,8 +53,8 @@ struct ProcessConfig {
 
     std::vector<std::string> replicaIps;
     int replicaPort;
-    int replicaFallbackStartTimeout;
-    int replicaFallbackTimeout;
+    int replicaRepairTimeout;
+    int replicaRepairViewTimeout;
     std::string replicaKeysDir;
     int replicaNumSendThreads;
     int replicaNumVerifyThreads;
@@ -168,8 +168,8 @@ struct ProcessConfig {
             replicaPort = parseField<int>(replicaNode, "port");
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
 
-            replicaFallbackStartTimeout = parseField<int>(replicaNode, "fallbackStartTimeout");
-            replicaFallbackTimeout = parseField<int>(replicaNode, "fallbackTimeout");
+            replicaRepairTimeout = parseField<int>(replicaNode, "fallbackStartTimeout");
+            replicaRepairViewTimeout = parseField<int>(replicaNode, "fallbackTimeout");
 
             replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads");
             replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");
