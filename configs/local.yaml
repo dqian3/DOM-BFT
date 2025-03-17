@@ -10,7 +10,7 @@ client:
   keysDir: keys/client
   normalPathTimeout: 15000    # 15ms
   slowPathTimeout:   200000   # 200 ms
-  requestTimeout: 1000000     # 1 s
+  requestTimeout: 10000000    # 10 s
 
   sendMode: "maxInFlight"
   maxInFlight: 5

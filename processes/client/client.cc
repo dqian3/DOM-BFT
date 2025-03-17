@@ -501,8 +501,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
-                << " seq=" << reply.seq() << " round=" << reply.round()
-                << " latency=" << now - reqState.firstSendTime << " digest=" << digest_to_hex(reply.digest());
+                << " seq=" << reply.seq() << " round=" << reply.round() << " latency=" << now - reqState.firstSendTime
+                << " digest=" << digest_to_hex(reply.digest());
 
         lastFastPath_ = clientSeq;
 
@@ -573,8 +573,8 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     auto &reqState = requestStates_.at(cseq);
     reqState.certReplies.insert(certReply.replica_id());
 
-    VLOG(4) << "Received cert ack client_seq=" << cseq << " seq=" << certReply.seq()
-            << " round=" << certReply.round() << " replica_id=" << certReply.replica_id();
+    VLOG(4) << "Received cert ack client_seq=" << cseq << " seq=" << certReply.seq() << " round=" << certReply.round()
+            << " replica_id=" << certReply.replica_id();
 
     if (reqState.certReplies.size() >= 2 * f_ + 1) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
@@ -613,8 +613,7 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
 
 void Client::handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig)
 {
-    VLOG(2) << "Received repair summary for round=" << summary.round()
-            << " from replicaId=" << summary.replica_id();
+    VLOG(2) << "Received repair summary for round=" << summary.round() << " from replicaId=" << summary.replica_id();
 
     for (const CommittedReply &reply : summary.replies()) {
         handleCommittedReply(reply, sig);

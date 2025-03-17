@@ -131,6 +131,7 @@ private:
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyRepairReplyProof(const dombft::proto::RepairReplyProof &proof);
     bool verifyRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &proof);
+    bool verifyRepairLog(const dombft::proto::RepairStart &log);
     bool verifyRepairProposal(const dombft::proto::RepairProposal &proposal);
     bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
 

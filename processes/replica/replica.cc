@@ -1279,6 +1279,7 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
             LOG(INFO) << "Proof has replies from the same replica!";
             return false;
         }
+        replicaIds.insert(timeout.replica_id());
 
         if (proof.round() != timeout.round()) {
             LOG(INFO) << "Proof has replies from different rounds!";
@@ -1298,6 +1299,42 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
     return true;
 }
 
+bool Replica::verifyRepairLog(const RepairStart &log)
+{
+    if (!verifyCert(log.cert())) {
+        return false;
+    }
+
+    const LogCheckpoint &checkpoint = log.checkpoint();
+    if (checkpoint.commits().size() != 2 * f_ + 1 && checkpoint.commits().size() != checkpoint.signatures().size()) {
+        return false;
+    }
+
+    // TODO this could be optimized by checking equality to our own or other existing checkpoints
+    std::set<uint32_t> replicaIds;
+    for (int i = 0; i < checkpoint.commits().size(); i++) {
+        const Commit &commit = checkpoint.commits()[i];
+        const std::string &sig = checkpoint.signatures()[i];
+        const std::string serializedCommit = commit.SerializeAsString();
+
+        if (replicaIds.contains(commit.replica_id())) {
+            LOG(INFO) << "Checkpoint commits contains multiple of the same replica!";
+            return false;
+        }
+        replicaIds.insert(commit.replica_id());
+
+        if (!sigProvider_.verify(
+                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
+                commit.replica_id()
+            )) {
+            LOG(INFO) << "Failed to verify replica signature in repair log checkpoint!";
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool Replica::verifyRepairProposal(const RepairProposal &proposal)
 {
     std::vector<std::tuple<byte *, uint32_t>> logSigs;
@@ -1305,6 +1342,9 @@ bool Replica::verifyRepairProposal(const RepairProposal &proposal)
         logSigs.emplace_back((byte *) sig.data(), sig.length());
     }
     uint32_t ind = 0;
+
+    uint32_t numVerified = 0;
+
     for (auto &log : proposal.logs()) {
         std::string logStr = log.SerializeAsString();
         byte *logBuffer = (byte *) logStr.data();
@@ -1315,7 +1355,13 @@ bool Replica::verifyRepairProposal(const RepairProposal &proposal)
             LOG(INFO) << "Failed to verify replica signature in proposal!";
             return false;
         }
+
+        if (!verifyRepairLog(log)) {
+            LOG(INFO) << "Failed to verify repair log from " << log.replica_id();
+            return false;
+        }
     }
+
     return true;
 }
 
