@@ -9,7 +9,8 @@ client:
   port: 33000
   keysDir: keys/client
   normalPathTimeout: 15000    # 15ms
-  slowPathTimeout:   1000000  # 1 s
+  slowPathTimeout:   200000   # 200 ms
+  requestTimeout: 1000000     # 1 s
 
   sendMode: "maxInFlight"
   maxInFlight: 5
@@ -52,8 +53,8 @@ replica:
   port: 34000
   app: "counter"
   keysDir: "keys/replica"
-  fallbackTimeout: 4000000
-  fallbackStartTimeout: 50000
+  repairViewTimeout: 4000000
+  repairTimeout: 50000
   numVerifyThreads: 1
   numSendThreads: 2
   checkpointInterval: 100

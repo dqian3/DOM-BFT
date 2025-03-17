@@ -248,7 +248,7 @@ TEST_F(LoggingFixture, ApplyLogSuffix)
     // Generate protocol log
     auto [log, app] = logFromTestLog(curLog);
 
-    // Generate suffix for fallback
+    // Generate suffix for repair
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
@@ -270,7 +270,7 @@ TEST_F(LoggingFixture, ApplyReplicaAhead)
     // Generate protocol log
     auto [log, app] = logFromTestLog(curLog);
 
-    // Generate suffix for fallback
+    // Generate suffix for repair
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
@@ -290,7 +290,7 @@ TEST_F(LoggingFixture, ApplyReplicaInserted)
     // Generate protocol log
     auto [log, app] = logFromTestLog(curLog);
 
-    // Generate suffix for fallback
+    // Generate suffix for repair
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
@@ -403,7 +403,7 @@ TEST_F(LoggingFixture, CheckpointAhead)
 
     // auto proposal = generateRepairProposal(1, hist);
 
-    // // Generate suffix for fallback
+    // // Generate suffix for repair
     // LogSuffix suffix;
     // getLogSuffixFromProposal(*proposal, suffix);
 

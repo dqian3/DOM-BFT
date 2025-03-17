@@ -2,17 +2,17 @@
 
 #include "utils.h"
 
-bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackProposal, LogSuffix &logSuffix)
+bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposal, LogSuffix &logSuffix)
 {
     LOG(INFO) << "Start getLogSuffixFromProposal";
 
-    uint32_t f = fallbackProposal.logs().size() / 2;
+    uint32_t f = repairProposal.logs().size() / 2;
 
     // TODO verify messages so this isn't unsafe
     uint32_t maxCheckpointSeq = 0;
 
     // First find highest checkpoint
-    for (auto &log : fallbackProposal.logs()) {
+    for (auto &log : repairProposal.logs()) {
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
             logSuffix.checkpointReplica = log.replica_id();
@@ -23,7 +23,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackPropo
     VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
 
     // Find highest sequence with a cert
-    // Idx of log we will use to match our logs to the fallback agreed upon logs (up to cert)
+    // Idx of log we will use to match our logs to the repair agreed upon logs (up to cert)
     uint32_t logToUseIdx = 0;
     uint32_t logToUseSeq = 0;
 
@@ -32,17 +32,17 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackPropo
 
     // get the max cert seq by comparing the seq in each of the included cert.
     // we have already verified these certs, so we can trust their seq numbers.
-    for (int i = 0; i < fallbackProposal.logs().size(); i++) {
-        const dombft::proto::RepairStart &fallbackLog = fallbackProposal.logs()[i];
+    for (int i = 0; i < repairProposal.logs().size(); i++) {
+        const dombft::proto::RepairStart &repairLog = repairProposal.logs()[i];
 
         // Already included in checkpoint
-        if (!fallbackLog.has_cert() || fallbackLog.cert().seq() <= logSuffix.checkpoint->seq())
+        if (!repairLog.has_cert() || repairLog.cert().seq() <= logSuffix.checkpoint->seq())
             continue;
 
-        if (fallbackLog.cert().seq() > maxCertSeq) {
-            maxCertSeq = fallbackLog.cert().seq();
+        if (repairLog.cert().seq() > maxCertSeq) {
+            maxCertSeq = repairLog.cert().seq();
             logToUseIdx = i;
-            cert = &fallbackLog.cert();
+            cert = &repairLog.cert();
         }
     }
 
@@ -56,7 +56,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackPropo
     std::set<std::pair<uint32_t, uint32_t>> clientReqsAdded;
 
     // Add entries up to cert
-    for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
+    for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
         if (entry.seq() > maxCertSeq)
             break;
 
@@ -68,8 +68,8 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackPropo
     std::map<uint32_t, std::map<std::string, uint32_t>> matchingEntries;
 
     // Find the common suffix after the max cert position
-    for (int i = 0; i < fallbackProposal.logs().size(); i++) {
-        auto &log = fallbackProposal.logs()[i];
+    for (int i = 0; i < repairProposal.logs().size(); i++) {
+        auto &log = repairProposal.logs()[i];
         // TODO verify each checkpoint
         for (const dombft::proto::LogEntry &entry : log.log_entries()) {
             if (entry.seq() <= maxCertSeq)
@@ -90,7 +90,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackPropo
     VLOG(4) << "f + 1 matching digests found from maxCertSeq=" << maxCertSeq << " to seq=" << logToUseSeq;
 
     // Add entries with f + 1 entries
-    for (const dombft::proto::LogEntry &entry : fallbackProposal.logs()[logToUseIdx].log_entries()) {
+    for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
         if (entry.seq() <= maxCertSeq)
             continue;
 
@@ -109,8 +109,8 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackPropo
 
     std::map<uint32_t, std::map<uint32_t, const dombft::proto::LogEntry *>> remainingClientReqs;
 
-    for (int i = 0; i < fallbackProposal.logs().size(); i++) {
-        auto &log = fallbackProposal.logs()[i];
+    for (int i = 0; i < repairProposal.logs().size(); i++) {
+        auto &log = repairProposal.logs()[i];
         // TODO verify each checkpoint
         for (const dombft::proto::LogEntry &entry : log.log_entries()) {
             remainingClientReqs[entry.client_id()][entry.client_seq()] = &entry;
@@ -154,7 +154,7 @@ void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log)
               << " stable checkpoint seq=" << log->getStableCheckpoint().seq;
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
 
-    // *This should only be called when current checkpoint is consistent with fallback checkpoint
+    // *This should only be called when current checkpoint is consistent with repair checkpoint
     assert(checkpoint->seq() == log->getStableCheckpoint().seq);
     applySuffixAfterCheckpoint(logSuffix, log);
 }
@@ -204,7 +204,7 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
             continue;
         }
 
-        VLOG(1) << "PERF event=fallback_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
+        VLOG(1) << "PERF event=repair_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                 << " instance=" << logSuffix.instance << " client_id=" << clientId
                 << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest());
         seq++;

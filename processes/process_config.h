@@ -170,8 +170,8 @@ struct ProcessConfig {
             replicaPort = parseField<int>(replicaNode, "port");
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
 
-            replicaRepairTimeout = parseField<int>(replicaNode, "fallbackStartTimeout");
-            replicaRepairViewTimeout = parseField<int>(replicaNode, "fallbackTimeout");
+            replicaRepairTimeout = parseField<int>(replicaNode, "repairTimeout");
+            replicaRepairViewTimeout = parseField<int>(replicaNode, "repairViewTimeout");
 
             replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads");
             replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");

@@ -81,8 +81,8 @@ receiver:
   shards: 1
 
 replica:
-  fallbackStartTimeout: 5000000
-  fallbackTimeout: 10000000
+  repairTimeout: 5000000
+  repairViewTimeout: 10000000
   ips:
   - 10.138.0.4
   - 10.182.0.2

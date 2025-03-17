@@ -78,30 +78,38 @@ message Commit {
     ClientRecord client_record = 8;
 }
 
-message RepairTrigger
+message RepairClientTimeout
 {
-    uint32 instance = 1;
 
-    message TimeoutProof {
-        repeated RepairTriggerTimeout timeouts = 1;
-        repeated bytes signatures = 2;
-    }
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
 
-    message ReplyProof {
-        repeated Reply replies = 1;
-        repeated bytes signatures = 2;
-    }
+    uint32 instance = 3;
 
-    // Reuse Cert message here, since it is just a set of replies.
-    oneof proof {
-        TimeoutProof timeoutProof = 3;
-        ReplyProof replyProof = 4;
-    }
+    // could add request here too, but we do not
 }
 
-message RepairTriggerTimeout
+message RepairReplicaTimeout
 {
     uint32 instance = 1;
+    uint32 replica_id = 2;
+}
+
+message RepairTimeoutProof {
+    uint32 instance = 1;
+
+    repeated RepairReplicaTimeout timeouts = 2;
+    repeated bytes signatures = 3;
+}
+
+message RepairReplyProof {
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+
+    uint32 instance = 3;
+
+    repeated Reply replies = 4;
+    repeated bytes signatures = 5;
 }
 
 
@@ -239,7 +247,7 @@ message SnapshotRequest {
     uint32 replica_id = 3;
     uint32 last_checkpoint_seq = 4;
 
-    bool for_fallback = 5;
+    bool for_repair = 5;
 }
 
 message SnapshotReply {

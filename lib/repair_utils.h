@@ -25,7 +25,7 @@ struct PBFTState {
     std::map<uint32_t, std::string> prepareSigs;
 };
 
-bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &fallbackProposal, LogSuffix &logSuffix);
+bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposal, LogSuffix &logSuffix);
 
 void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot);
 

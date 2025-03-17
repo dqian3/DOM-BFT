@@ -352,18 +352,20 @@ void Client::checkTimeouts()
         }
 
         if (!reqState.triggerSent && now - reqState.quorumTime > slowPathTimeout_) {
-            LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
+            LOG(INFO) << "Client attempting repair on request " << clientSeq << " sendTime=" << reqState.sendTime
                       << " now=" << now << " due to timeout";
 
             reqState.triggerSent = true;
             reqState.triggerSendTime = now;
             lastSlowPath_ = clientSeq;
 
-            RepairTrigger repairTriggerMsg;
-            repairTriggerMsg.set_instance(reqState.collector.instance_);
+            RepairClientTimeout msg;
+            msg.set_client_id(clientId_);
+            msg.set_client_seq(clientSeq);
+            msg.set_instance(reqState.collector.instance_);
 
             // TODO set request data
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(repairTriggerMsg, REPAIR_TRIGGER);
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, REPAIR_CLIENT_TIMEOUT);
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
             for (const Address &addr : replicaAddrs_) {
                 endpoint_->SendPreparedMsgTo(addr);
@@ -372,7 +374,7 @@ void Client::checkTimeouts()
 
         if (reqState.triggerSent && now - reqState.triggerSendTime > slowPathTimeout_) {
             // This is expected to happen when the replicas are making progress without the client's request
-            LOG(INFO) << "Client fallback on request " << clientSeq << " timed out again, retrying request through DOM";
+            LOG(INFO) << "Client repair on request " << clientSeq << " timed out again, retrying request through DOM";
             ClientRequest &req = reqState.request;
             req.set_send_time(now);
 
@@ -449,19 +451,19 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
 
         handleCommittedReply(reply, std::span{body + hdr->msgLen, hdr->sigLen});
     } else if (hdr->msgType == MessageType::REPAIR_SUMMARY) {
-        RepairSummary fallbackSummary;
+        RepairSummary repairSummary;
 
-        if (!fallbackSummary.ParseFromArray(body, hdr->msgLen)) {
+        if (!repairSummary.ParseFromArray(body, hdr->msgLen)) {
             LOG(ERROR) << "Unable to parse REPAIR_SUMMARY message";
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", fallbackSummary.replica_id())) {
+        if (!sigProvider_.verify(hdr, "replica", repairSummary.replica_id())) {
             LOG(INFO) << "Failed to verify replica signature for REPAIR_SUMMARY!";
             return;
         }
 
-        handleRepairSummary(fallbackSummary, std::span{body + hdr->msgLen, hdr->sigLen});
+        handleRepairSummary(repairSummary, std::span{body + hdr->msgLen, hdr->sigLen});
     }
 }
 
@@ -530,28 +532,29 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
     if (!reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_) {
-        LOG(INFO) << "Client detected cert is impossible, triggering fallback with proof for cseq=" << clientSeq;
+        LOG(INFO) << "Client detected cert is impossible, triggering repair with proof for cseq=" << clientSeq;
 
         reqState.triggerSendTime = now;
         reqState.triggerSent = true;
         lastSlowPath_ = clientSeq;
 
-        RepairTrigger_ReplyProof triggerProof;
-        RepairTrigger repairTriggerMsg;
+        RepairReplyProof repairTriggerMsg;
+
+        repairTriggerMsg.set_client_id(clientId_);
+        repairTriggerMsg.set_client_seq(clientSeq);
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             if (reply.instance() != reqState.collector.instance_)
                 continue;
 
             auto &sig = reqState.collector.signatures_[replicaId];
-            triggerProof.add_signatures(std::string(sig.begin(), sig.end()));
-            (*triggerProof.add_replies()) = reply;
+            repairTriggerMsg.add_signatures(std::string(sig.begin(), sig.end()));
+            (*repairTriggerMsg.add_replies()) = reply;
         }
 
-        (*repairTriggerMsg.mutable_replyproof()) = triggerProof;
-
         reqState.triggerSendTime = GetMicrosecondTimestamp();
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(repairTriggerMsg, REPAIR_TRIGGER);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(repairTriggerMsg, REPAIR_REPLY_PROOF);
+        // Skip signing here, we can just verify the contained messages
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }
@@ -595,8 +598,8 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
 
     auto &reqState = requestStates_.at(cseq);
 
-    reqState.fallbackReplies.insert(reply.replica_id());
-    if (reqState.fallbackReplies.size() >= f_ + 1) {
+    reqState.repairReplies.insert(reply.replica_id());
+    if (reqState.repairReplies.size() >= f_ + 1) {
         // Request is committed, so we can clean up state!
         // TODO check we have a consistent set of application replies!
 
@@ -610,7 +613,7 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
 
 void Client::handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig)
 {
-    VLOG(2) << "Received fallback summary for instance=" << summary.instance()
+    VLOG(2) << "Received repair summary for instance=" << summary.instance()
             << " from replicaId=" << summary.replica_id();
 
     for (const CommittedReply &reply : summary.replies()) {

@@ -101,7 +101,6 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
             print(cmd)
 
             other_handles.append(hdl)
-        # make sure clients would not fallback before any requests are commited, corner case not reolved. 
         time.sleep(3)
 
         for id in range(n_clients):
