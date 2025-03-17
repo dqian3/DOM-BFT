@@ -32,6 +32,7 @@ struct ProcessConfig {
     int clientRuntimeSeconds;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
+    int clientRequestTimeout;
     int clientMaxInFlight;
     int clientSendRate;
     std::string clientSendMode;
@@ -113,6 +114,7 @@ struct ProcessConfig {
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
+            clientRequestTimeout = parseField<int>(clientNode, "requestTimeout");
             clientMaxInFlight = parseField<int>(clientNode, "maxInFlight");
             clientSendRate = parseField<int>(clientNode, "sendRate");
             clientSendMode = parseField<std::string>(clientNode, "sendMode");

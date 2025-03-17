@@ -108,9 +108,9 @@ cc_library(
 )
 
 cc_library(
-    name = "fallback_utils",
-    hdrs = ["fallback_utils.h"],
-    srcs = ["fallback_utils.cc"],
+    name = "repair_utils",
+    hdrs = ["repair_utils.h"],
+    srcs = ["repair_utils.cc"],
     deps = [
         ":common",
         ":utils",

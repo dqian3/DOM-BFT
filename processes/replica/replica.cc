@@ -265,7 +265,7 @@ void Replica::verifyMessagesThd()
 
         // Fallback related
 
-        else if (hdr->msgType == FALLBACK_TRIGGER) {
+        else if (hdr->msgType == REPAIR_TRIGGER) {
             FallbackTrigger fallbackTriggerMsg;
 
             if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
@@ -278,7 +278,7 @@ void Replica::verifyMessagesThd()
 
         }
 
-        else if (hdr->msgType == FALLBACK_START) {
+        else if (hdr->msgType == REPAIR_START) {
             RepairStart fallbackStartMsg;
             if (!fallbackStartMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse RepairStart message";
@@ -491,22 +491,22 @@ void Replica::processMessagesThd()
             processSnapshotReply(reply);
         }
 
-        else if (hdr->msgType == FALLBACK_TRIGGER) {
+        else if (hdr->msgType == REPAIR_TRIGGER) {
             FallbackTrigger fallbackTriggerMsg;
 
             if (!fallbackTriggerMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+                LOG(ERROR) << "Unable to parse REPAIR_TRIGGER message";
                 return;
             }
 
             processFallbackTrigger(fallbackTriggerMsg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == FALLBACK_START) {
+        if (hdr->msgType == REPAIR_START) {
             RepairStart msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse FALLBACK_TRIGGER message";
+                LOG(ERROR) << "Unable to parse REPAIR_TRIGGER message";
                 return;
             }
             processRepairStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
@@ -884,7 +884,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, 
         LOG(INFO) << "Fallback trigger has a proof, starting fallback!";
 
         // TODO we need to broadcast this with the original signature
-        broadcastToReplicas(msg, FALLBACK_TRIGGER);
+        broadcastToReplicas(msg, REPAIR_TRIGGER);
         startFallback();
     } else {
         fallbackTriggerTime_ = GetMicrosecondTimestamp();
@@ -894,7 +894,7 @@ void Replica::processFallbackTrigger(const dombft::proto::FallbackTrigger &msg, 
 void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
 {
     if ((msg.pbft_view() % replicaAddrs_.size()) != replicaId_) {
-        LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " pbft_view " << msg.pbft_view()
+        LOG(INFO) << "Received REPAIR_START for instance " << msg.instance() << " pbft_view " << msg.pbft_view()
                   << " where I am not proposer";
         return;
     }
@@ -902,14 +902,14 @@ void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
     uint32_t repId = msg.replica_id();
     uint32_t repInstance = msg.instance();
     if (msg.instance() < instance_) {
-        LOG(INFO) << "Received FALLBACK_START for instance " << msg.instance() << " from replica " << repId
+        LOG(INFO) << "Received REPAIR_START for instance " << msg.instance() << " from replica " << repId
                   << " while own is " << instance_;
         return;
     }
 
     // A corner case where (older instance + pbft_view) targets the same primary and overwrite the newer ones
     if (fallbackHistorys_.count(repId) && fallbackHistorys_[repId].instance() >= repInstance) {
-        LOG(INFO) << "Received FALLBACK_START for instance " << repInstance << " pbft_view " << msg.pbft_view()
+        LOG(INFO) << "Received REPAIR_START for instance " << repInstance << " pbft_view " << msg.pbft_view()
                   << " from replica " << repId << " which is outdated";
         return;
     }
@@ -1176,8 +1176,8 @@ void Replica::startFallback()
     log_->toProto(fallbackStartMsg);
 
     uint32_t primaryId = getPrimary();
-    LOG(INFO) << "Sending FALLBACK_START to PBFT primary replica " << primaryId;
-    sendMsgToDst(fallbackStartMsg, FALLBACK_START, replicaAddrs_[primaryId]);
+    LOG(INFO) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
+    sendMsgToDst(fallbackStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
     LOG(INFO) << "DUMP start fallback instance=" << instance_ << " " << *log_;
 }
 
@@ -1219,7 +1219,7 @@ void Replica::sendRepairSummaryToClients()
         (*summary.add_replies()) = reply;
     }
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::FALLBACK_SUMMARY);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::REPAIR_SUMMARY);
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
     // TODO make this only send to clients that need it

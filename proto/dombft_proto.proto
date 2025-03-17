@@ -83,7 +83,7 @@ message RepairTrigger
     uint32 instance = 1;
 
     message TimeoutProof {
-        repeated FallbackTriggerTimeout timeouts = 1;
+        repeated RepairTriggerTimeout timeouts = 1;
         repeated bytes signatures = 2;
     }
 
@@ -93,9 +93,9 @@ message RepairTrigger
     }
 
     // Reuse Cert message here, since it is just a set of replies.
-    optional oneof proof {
-        RepairProposal repair = 1;
-        RepairStart start = 2;
+    oneof proof {
+        TimeoutProof timeoutProof = 3;
+        ReplyProof replyProof = 4;
     }
 }
 
@@ -196,7 +196,7 @@ message PBFTPrePrepare
     bytes proposal_digest = 5;
 }
 
-message  PBFTPrepare
+message PBFTPrepare
 {
     uint32 instance = 1;
     uint32 replica_id = 2;

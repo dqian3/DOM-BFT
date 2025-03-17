@@ -28,6 +28,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     f_ = config.replicaIps.size() / 3;
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;
+    requestTimeout_ = config.clientRequestTimeout;
 
     LOG(INFO) << "Running for " << config.clientRuntimeSeconds << " seconds";
 
@@ -334,6 +335,8 @@ void Client::checkTimeouts()
     for (auto &entry : requestStates_) {
         int clientSeq = entry.first;
         RequestState &reqState = entry.second;
+
+        // Normal path timeout, if we have received cert, and
         if (reqState.collector.hasCert() && !reqState.certSent && now - reqState.certTime > normalPathTimeout_) {
             VLOG(2) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
             reqState.certSent = true;
@@ -348,7 +351,7 @@ void Client::checkTimeouts()
             continue;
         }
 
-        if (!reqState.triggerSent && now - reqState.sendTime > slowPathTimeout_) {
+        if (!reqState.triggerSent && now - reqState.quorumTime > slowPathTimeout_) {
             LOG(INFO) << "Client attempting fallback on request " << clientSeq << " sendTime=" << reqState.sendTime
                       << " now=" << now << " due to timeout";
 
@@ -356,13 +359,11 @@ void Client::checkTimeouts()
             reqState.triggerSendTime = now;
             lastSlowPath_ = clientSeq;
 
-            FallbackTrigger fallbackTriggerMsg;
-
-            fallbackTriggerMsg.set_client_id(clientId_);
-            fallbackTriggerMsg.set_client_seq(clientSeq);
+            RepairTrigger repairTriggerMsg;
+            repairTriggerMsg.set_instance(reqState.collector.instance_);
 
             // TODO set request data
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(repairTriggerMsg, REPAIR_TRIGGER);
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
             for (const Address &addr : replicaAddrs_) {
                 endpoint_->SendPreparedMsgTo(addr);
@@ -447,16 +448,16 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
         }
 
         handleCommittedReply(reply, std::span{body + hdr->msgLen, hdr->sigLen});
-    } else if (hdr->msgType == MessageType::FALLBACK_SUMMARY) {
+    } else if (hdr->msgType == MessageType::REPAIR_SUMMARY) {
         RepairSummary fallbackSummary;
 
         if (!fallbackSummary.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse FALLBACK_SUMMARY message";
+            LOG(ERROR) << "Unable to parse REPAIR_SUMMARY message";
             return;
         }
 
         if (!sigProvider_.verify(hdr, "replica", fallbackSummary.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature for FALLBACK_SUMMARY!";
+            LOG(INFO) << "Failed to verify replica signature for REPAIR_SUMMARY!";
             return;
         }
 
@@ -482,6 +483,10 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     bool hasCertBefore = reqState.collector.hasCert();
     uint32_t maxMatchSize = reqState.collector.insertReply(reply, std::vector<byte>(sig.begin(), sig.end()));
+
+    if (reqState.collector.numReceived() == 2 * f_ + 1) {
+        reqState.quorumTime = now;
+    }
 
     // Just collected cert
     if (!hasCertBefore && reqState.collector.hasCert()) {
@@ -531,26 +536,22 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         reqState.triggerSent = true;
         lastSlowPath_ = clientSeq;
 
-        reqState.triggerProof = Cert();
-        FallbackTrigger fallbackTriggerMsg;
-
-        fallbackTriggerMsg.set_client_id(clientId_);
-        fallbackTriggerMsg.set_client_seq(clientSeq);
+        RepairTrigger_ReplyProof triggerProof;
+        RepairTrigger repairTriggerMsg;
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
             if (reply.instance() != reqState.collector.instance_)
                 continue;
 
             auto &sig = reqState.collector.signatures_[replicaId];
-            reqState.triggerProof->add_signatures(std::string(sig.begin(), sig.end()));
-            (*reqState.triggerProof->add_replies()) = reply;
+            triggerProof.add_signatures(std::string(sig.begin(), sig.end()));
+            (*triggerProof.add_replies()) = reply;
         }
-        reqState.triggerProof->set_instance(reqState.collector.instance_);
 
-        (*fallbackTriggerMsg.mutable_proof()) = *reqState.triggerProof;
+        (*repairTriggerMsg.mutable_replyproof()) = triggerProof;
 
         reqState.triggerSendTime = GetMicrosecondTimestamp();
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(fallbackTriggerMsg, FALLBACK_TRIGGER);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(repairTriggerMsg, REPAIR_TRIGGER);
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }
