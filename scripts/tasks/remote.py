@@ -105,6 +105,7 @@ def run(
     profile=False,
 
     # Optional args to modify the dombft experiments
+    num_crashed=0,
     slow_path_freq=0,
     normal_path_freq=0,
     view_change_freq=0,
@@ -148,6 +149,7 @@ def run(
         if id ==0 and drop_checkpoint_freq != 0:
             drop_checkpoint_arg = f'-checkpointDropFreq {drop_checkpoint_freq}'
         view_change_arg = ''
+
         if (id % 2) == 0:
             if view_change_freq != 0:
                 view_change_arg = f'-viewChangeFreq {view_change_freq}'
@@ -155,9 +157,15 @@ def run(
                 view_change_arg += ' -commitLocalInViewChange'
             if max_view_change != 0:
                 view_change_arg += f' -viewChangeNum {max_view_change}'
-            
+
+        if (id < num_crashed):
+            crashed_arg = '-crashed'
+        else:
+            crashed_arg = ''
+
+
         arun = arun_on(ip, f"replica{id}.log", profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")

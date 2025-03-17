@@ -52,7 +52,7 @@ private:
     std::unique_ptr<Endpoint> endpoint_;
 
     // Replica state
-    uint32_t instance_ = 1;   // in context of PBFT, this variable is the NEXT sequence number
+    uint32_t instance_ = 1;
     std::shared_ptr<Log> log_;
     std::shared_ptr<Application> app_;
     AppSnapshotStore appSnapshotStore_;
@@ -62,6 +62,8 @@ private:
 
     // State for repair
     bool repair_ = false;
+
+    bool repairTimeoutSent_ = false;
     uint64_t repairTimeoutStart_ = 0;
     uint64_t repairViewStart_ = 0;
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> repairQueuedReqs_;
@@ -90,6 +92,7 @@ private:
     std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
     // State for actively triggering repair and other testings
+    bool crashed_;
     uint32_t swapFreq_;
     uint32_t checkpointDropFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
@@ -173,8 +176,9 @@ private:
 
 public:
     Replica(
-        const ProcessConfig &config, uint32_t replicaId, uint32_t triggerRepairFreq = 0, uint32_t viewChangeFreq = 0,
-        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0, uint32_t checkpointDropFreq = 0
+        const ProcessConfig &config, uint32_t replicaId, bool crashed = false, uint32_t triggerRepairFreq = 0,
+        uint32_t viewChangeFreq = 0, bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0,
+        uint32_t checkpointDropFreq = 0
     );
     ~Replica();
 

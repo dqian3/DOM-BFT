@@ -47,6 +47,7 @@ def genkeys(c, config_file, algorithm="ED25519", keysize=2048):
 
 @task
 def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
+            num_crashed=0,
             slow_path_freq=0,
             normal_path_freq=0,
             view_change_freq=0,
@@ -83,7 +84,14 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
                     view_change_arg = f'-viewChangeFreq {view_change_freq}'
                 if commit_local_in_view_change and view_change_freq == 0:
                     view_change_arg += ' -commitLocalInViewChange'
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
+            
+            if (id < num_crashed):
+                crashed_arg = '-crashed'
+            else:
+                crashed_arg = ''
+
+            
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)

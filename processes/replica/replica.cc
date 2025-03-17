@@ -15,7 +15,7 @@ namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(
-    const ProcessConfig &config, uint32_t replicaId, uint32_t swapFreq, uint32_t viewChangeFreq,
+    const ProcessConfig &config, uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq,
     bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq
 )
     : replicaId_(replicaId)
@@ -28,6 +28,7 @@ Replica::Replica(
     , sendThreadpool_(config.replicaNumSendThreads)
     , instance_(1)
     , checkpointCollector_(replicaId_, f_)
+    , crashed_(crashed)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
     , viewChangeFreq_(viewChangeFreq)
@@ -969,6 +970,8 @@ void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTime
         return;
     }
 
+    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for instance " << msg.instance();
+
     uint32_t repId = msg.replica_id();
 
     repairReplicaTimeouts_[repId] = msg;
@@ -1083,6 +1086,12 @@ void Replica::checkTimeouts()
     if (repairTimeoutStart_ != 0 && now - repairTimeoutStart_ > repairTimeout_) {
         repairTimeoutStart_ = 0;
         LOG(WARNING) << "repairStartTimer for instance=" << instance_ << " timed out! Sending timeout message!";
+
+        RepairReplicaTimeout msg;
+        msg.set_instance(instance_);
+        msg.set_replica_id(replicaId_);
+
+        broadcastToReplicas(msg, MessageType::REPAIR_REPLICA_TIMEOUT);
     };
 
     now = GetMicrosecondTimestamp();
@@ -1113,6 +1122,10 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
 
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
 {
+    if (crashed_) {
+        return;
+    }
+
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
@@ -1122,6 +1135,11 @@ template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type,
 
 template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageType type)
 {
+    // Simulate crashing by just not sending anything
+    if (crashed_) {
+        return;
+    }
+
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
@@ -1863,8 +1881,8 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
     // TODO(Hao): test this corner case later
     if (msg.instance() == UINT32_MAX) {
         LOG(INFO) << "No previously prepared instance in new view, go back to normal state. EXIT FOR NOW";
-        assert(msg.instance() != UINT32_MAX);
-        return;
+        // assert(msg.instance() != UINT32_MAX);
+        // return;
     }
     repairProposal_ = maxVC.proposal();
     memcpy(proposalDigest_, maxVC.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);

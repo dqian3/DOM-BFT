@@ -351,7 +351,7 @@ void Client::checkTimeouts()
             continue;
         }
 
-        if (!reqState.triggerSent && reqState.collector.numReceived() > 2 * f_ + 1 &&
+        if (!reqState.triggerSent && reqState.collector.numReceived() >= 2 * f_ + 1 &&
             now - reqState.quorumTime > slowPathTimeout_) {
             LOG(INFO) << "Client attempting repair on request " << clientSeq << " sendTime=" << reqState.sendTime
                       << " now=" << now << " due to timeout";
