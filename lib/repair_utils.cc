@@ -205,8 +205,8 @@ void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         }
 
         VLOG(1) << "PERF event=repair_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
-                << " instance=" << logSuffix.instance << " client_id=" << clientId
-                << " client_seq=" << entry->client_seq() << " digest=" << digest_to_hex(log->getDigest());
+                << " round=" << logSuffix.round << " client_id=" << clientId << " client_seq=" << entry->client_seq()
+                << " digest=" << digest_to_hex(log->getDigest());
         seq++;
     }
 }

@@ -273,7 +273,7 @@ void Client::retryRequests()
         req.set_send_time(now);
         reqState = RequestState(f_, req, now);
         threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
-        VLOG(1) << "Retrying cseq=" << reqState.clientSeq << " after instance/view update";
+        VLOG(1) << "Retrying cseq=" << reqState.clientSeq << " after round/view update";
     }
 }
 
@@ -363,7 +363,7 @@ void Client::checkTimeouts()
             RepairClientTimeout msg;
             msg.set_client_id(clientId_);
             msg.set_client_seq(clientSeq);
-            msg.set_instance(reqState.collector.instance_);
+            msg.set_round(reqState.collector.round_);
 
             // TODO set request data
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, REPAIR_CLIENT_TIMEOUT);
@@ -481,7 +481,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     auto &reqState = requestStates_.at(clientSeq);
 
-    VLOG(4) << "Received reply from replica " << reply.replica_id() << " instance " << reply.instance() << " for c_seq "
+    VLOG(4) << "Received reply from replica " << reply.replica_id() << " round " << reply.round() << " for c_seq "
             << clientSeq << " at log pos " << reply.seq() << " after " << now - reqState.sendTime << " usec";
 
     bool hasCertBefore = reqState.collector.hasCert();
@@ -501,7 +501,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
-                << " seq=" << reply.seq() << " instance=" << reply.instance()
+                << " seq=" << reply.seq() << " round=" << reply.round()
                 << " latency=" << now - reqState.firstSendTime << " digest=" << digest_to_hex(reply.digest());
 
         lastFastPath_ = clientSeq;
@@ -516,7 +516,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         return;
 
     // `hasCert() == true` iff maxMatchSize >= 2 * f_ + 1
-    // TODO handle sending cert in new instance better
+    // TODO handle sending cert in new round better
     if (!reqState.certSent && reqState.collector.hasCert()) {
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
         reqState.certSent = true;
@@ -543,10 +543,10 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
         proofMsg.set_client_id(clientId_);
         proofMsg.set_client_seq(clientSeq);
-        proofMsg.set_instance(reqState.collector.instance_);
+        proofMsg.set_round(reqState.collector.round_);
 
         for (auto &[replicaId, reply] : reqState.collector.replies_) {
-            if (reply.instance() != reqState.collector.instance_)
+            if (reply.round() != reqState.collector.round_)
                 continue;
 
             auto &sig = reqState.collector.signatures_[replicaId];
@@ -574,11 +574,11 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     reqState.certReplies.insert(certReply.replica_id());
 
     VLOG(4) << "Received cert ack client_seq=" << cseq << " seq=" << certReply.seq()
-            << " instance=" << certReply.instance() << " replica_id=" << certReply.replica_id();
+            << " round=" << certReply.round() << " replica_id=" << certReply.replica_id();
 
     if (reqState.certReplies.size() >= 2 * f_ + 1) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
-                << " seq=" << certReply.seq() << " instance=" << certReply.instance()
+                << " seq=" << certReply.seq() << " round=" << certReply.round()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest());
         lastNormalPath_ = cseq;
@@ -613,7 +613,7 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
 
 void Client::handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig)
 {
-    VLOG(2) << "Received repair summary for instance=" << summary.instance()
+    VLOG(2) << "Received repair summary for round=" << summary.round()
             << " from replicaId=" << summary.replica_id();
 
     for (const CommittedReply &reply : summary.replies()) {

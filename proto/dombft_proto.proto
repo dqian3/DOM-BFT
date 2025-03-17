@@ -4,7 +4,7 @@ package dombft.proto;
 message ClientRequest {
     uint32 client_id = 1;
     uint32 client_seq = 2;
-    uint32 instance = 3;
+    uint32 round = 3;
     uint32 pbft_view = 4;
 
     uint64 send_time = 5;
@@ -36,7 +36,7 @@ message Reply {
     uint32 client_id = 1;
     uint32 client_seq = 2;
 
-    uint32 instance = 3;
+    uint32 round = 3;
 
     // Tentative global ordering
     uint32 seq = 5;
@@ -52,7 +52,7 @@ message Cert {
     // we just repeat them here since it's easier
     // seq is also just for convenience
     uint32 seq = 1;
-    uint32 instance = 2;
+    uint32 round = 2;
     
     repeated Reply replies    = 4;
     repeated bytes signatures = 5;
@@ -63,13 +63,13 @@ message CertReply {
     uint32 replica_id = 1;
     uint32 client_id = 2;
     uint32 client_seq = 3;
-    uint32 instance = 4;
+    uint32 round = 4;
     uint32 seq = 5;
 }
 
 message Commit {
     uint32 replica_id = 1;
-    uint32 instance = 2;
+    uint32 round = 2;
     uint32 seq = 3;
 
     bytes log_digest = 5;
@@ -84,19 +84,19 @@ message RepairClientTimeout
     uint32 client_id = 1;
     uint32 client_seq = 2;
 
-    uint32 instance = 3;
+    uint32 round = 3;
 
     // could add request here too, but we do not
 }
 
 message RepairReplicaTimeout
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
 }
 
 message RepairTimeoutProof {
-    uint32 instance = 1;
+    uint32 round = 1;
 
     repeated RepairReplicaTimeout timeouts = 2;
     repeated bytes signatures = 3;
@@ -106,7 +106,7 @@ message RepairReplyProof {
     uint32 client_id = 1;
     uint32 client_seq = 2;
 
-    uint32 instance = 3;
+    uint32 round = 3;
 
     repeated Reply replies = 4;
     repeated bytes signatures = 5;
@@ -158,7 +158,7 @@ message LogCheckpoint
 message RepairStart
 {
     uint32 pbft_view = 1;
-    uint32 instance = 2;
+    uint32 round = 2;
     uint32 replica_id = 3;
 
     repeated LogEntry log_entries = 4;
@@ -169,7 +169,7 @@ message RepairStart
 
 message RepairProposal
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2; //primary id
 
     repeated RepairStart logs = 3;
@@ -188,7 +188,7 @@ message CommittedReply
 
 message RepairSummary
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
     repeated CommittedReply replies = 3;
     uint32 pbft_view = 4;
@@ -196,7 +196,7 @@ message RepairSummary
 
 message PBFTPrePrepare
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 primary_id = 2;
     uint32 pbft_view= 3;
 
@@ -206,7 +206,7 @@ message PBFTPrePrepare
 
 message PBFTPrepare
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
     uint32 pbft_view= 3;
     bytes proposal_digest = 4;
@@ -214,7 +214,7 @@ message PBFTPrepare
 
 message PBFTCommit
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
     uint32 pbft_view= 3;
     bytes proposal_digest = 4;
@@ -222,7 +222,7 @@ message PBFTCommit
 
 message PBFTViewChange
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
     uint32 pbft_view= 3;
     repeated  PBFTPrepare prepares = 4;
@@ -236,13 +236,13 @@ message PBFTNewView
 {
     uint32 primary_id = 1;
     uint32 pbft_view= 2;
-    uint32 instance = 3;
+    uint32 round = 3;
     repeated PBFTViewChange view_changes = 4;
     repeated bytes view_change_sigs = 5;
 }
 
 message SnapshotRequest {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 seq = 2;
     uint32 replica_id = 3;
     uint32 last_checkpoint_seq = 4;
@@ -251,7 +251,7 @@ message SnapshotRequest {
 }
 
 message SnapshotReply {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 seq = 2;
     uint32 replica_id = 3;
     uint32 pbft_view = 4;

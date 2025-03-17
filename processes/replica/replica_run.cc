@@ -15,7 +15,7 @@ DEFINE_int32(viewChangeNum, 0, "Max number of view changes to trigger");
 DEFINE_int32(checkpointDropFreq, 0, "Trigger checkpoint drop every <checkpointDropFreq> checkpoints");
 DEFINE_bool(
     commitLocalInViewChange, false,
-    "Send pbft commit to self so that it can advance to next instance while others are still in the previous instance; "
+    "Send pbft commit to self so that it can advance to next round while others are still in the previous round; "
     "work with viewChangeFreq"
 );
 DEFINE_string(prot, "dombft", "Protocol for the replica");

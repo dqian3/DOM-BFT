@@ -26,7 +26,7 @@ Replica::Replica(
     , repairViewTimeout_(config.replicaRepairViewTimeout)
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
-    , instance_(1)
+    , round_(1)
     , checkpointCollector_(replicaId_, f_)
     , crashed_(crashed)
     , swapFreq_(swapFreq)
@@ -691,8 +691,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     seq = log_->getNextSeq() - 1;
 
     VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-            << " client_seq=" << clientSeq << " instance=" << instance_
-            << " digest=" << digest_to_hex(log_->getDigest());
+            << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest());
 
     Reply reply;
     reply.set_client_id(clientId);
@@ -700,7 +699,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_replica_id(replicaId_);
     reply.set_result(result);
     reply.set_seq(seq);
-    reply.set_instance(instance_);
+    reply.set_round(round_);
     reply.set_digest(log_->getDigest());
 
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
@@ -740,9 +739,9 @@ void Replica::processCert(const Cert &cert)
     const Reply &r = cert.replies()[0];
     CertReply reply;
 
-    if (cert.instance() < instance_) {
-        VLOG(2) << "Received stale cert with instance " << cert.instance() << " < " << instance_
-                << " for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
+    if (cert.round() < round_) {
+        VLOG(2) << "Received stale cert with round " << cert.round() << " < " << round_ << " for seq=" << r.seq()
+                << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
         return;
     }
 
@@ -752,7 +751,7 @@ void Replica::processCert(const Cert &cert)
     }
 
     reply.set_replica_id(replicaId_);
-    reply.set_instance(instance_);
+    reply.set_round(round_);
     reply.set_client_id(r.client_id());
     reply.set_client_seq(r.client_seq());
     reply.set_seq(r.seq());
@@ -766,8 +765,8 @@ void Replica::processCert(const Cert &cert)
 void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
     uint32_t rSeq = reply.seq();
-    if (reply.instance() < instance_) {
-        VLOG(4) << "Checkpoint reply seq=" << rSeq << " instance outdated, skipping";
+    if (reply.round() < round_) {
+        VLOG(4) << "Checkpoint reply seq=" << rSeq << " round outdated, skipping";
         return;
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
@@ -781,21 +780,21 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
 
     if (checkpointCollector_.addAndCheckReply(reply, sig)) {
-        assert(reply.instance() == instance_);
+        assert(reply.round() == round_);
 
         dombft::proto::Cert cert;
-        checkpointCollector_.getCert(instance_, rSeq, cert);
+        checkpointCollector_.getCert(round_, rSeq, cert);
         log_->addCert(rSeq, cert);
 
         std::string logDigest = log_->getDigest(rSeq);
         std::string appDigest = checkpointCollector_.getCachedState(rSeq).snapshot.digest;
 
-        uint32_t instance = instance_;
+        uint32_t round = round_;
         // Broadcast commit Message
         dombft::proto::Commit commit;
         commit.set_replica_id(replicaId_);
         commit.set_seq(rSeq);
-        commit.set_instance(instance);
+        commit.set_round(round);
         commit.set_log_digest(logDigest);
         commit.set_app_digest(appDigest);
 
@@ -809,8 +808,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 {
     uint32_t seq = commit.seq();
     VLOG(3) << "Processing COMMIT from replica " << commit.replica_id() << " for seq " << seq;
-    if (commit.instance() < instance_) {
-        VLOG(4) << "Checkpoint commit instance outdated, skipping";
+    if (commit.round() < round_) {
+        VLOG(4) << "Checkpoint commit round outdated, skipping";
         return;
     }
     if (seq <= log_->getStableCheckpoint().seq) {
@@ -821,10 +820,10 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     // add current commit msg to collector
     // use the majority agreed commit message if exists
     if (checkpointCollector_.addAndCheckCommit(commit, sig)) {
-        // TODO we can update our instance in case commit.instance() > instance_
-        assert(instance_ == commit.instance());
+        // TODO we can update our round in case commit.round() > round_
+        assert(round_ == commit.round());
         dombft::proto::Commit commitToUse;
-        checkpointCollector_.getCommitToUse(commit.instance(), seq, commitToUse);
+        checkpointCollector_.getCommitToUse(commit.round(), seq, commitToUse);
 
         if (checkpointDropFreq_ && seq / checkpointInterval_ % checkpointDropFreq_ == 0) {
             LOG(INFO) << "Dropping checkpoint seq=" << seq;
@@ -841,13 +840,13 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
         } else {
             ::LogCheckpoint checkpoint;
-            checkpointCollector_.getCheckpoint(commit.instance(), seq, checkpoint);
+            checkpointCollector_.getCheckpoint(commit.round(), seq, checkpoint);
             log_->setStableCheckpoint(checkpoint);
             // TODO move this and use delta information...
             appSnapshotStore_.addSnapshot(std::string(checkpointCollector_.getCachedState(seq).snapshot.snapshot), seq);
 
             // if there is overlapping and later checkpoint commits first, skip earlier ones
-            checkpointCollector_.cleanStaleCollectors(seq, instance_);
+            checkpointCollector_.cleanStaleCollectors(seq, round_);
         }
 
         // Unregister repair timer set by client as checkpoint confirms progress
@@ -858,7 +857,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 void Replica::processSnapshotRequest(const SnapshotRequest &request)
 {
     uint32_t reqSeq = request.seq();
-    uint32_t instance = request.instance();
+    uint32_t round = request.round();
     VLOG(3) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq;
     if (reqSeq > log_->getStableCheckpoint().seq) {
         VLOG(4) << "Requested req " << reqSeq << " is ahead of current checkpoint, cannot provide snapshot";
@@ -870,7 +869,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     // TODO, use request's last checkpoint sequence to return a delta instead..
 
     SnapshotReply snapshotReply;
-    snapshotReply.set_instance(instance_);
+    snapshotReply.set_round(round_);
     snapshotReply.set_seq(log_->getStableCheckpoint().seq);
     snapshotReply.set_replica_id(replicaId_);
     snapshotReply.set_pbft_view(pbftView_);
@@ -881,8 +880,8 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 
 void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply)
 {
-    if (snapshotReply.instance() < instance_) {
-        VLOG(4) << "Snapshot reply instance outdated, skipping";
+    if (snapshotReply.round() < round_) {
+        VLOG(4) << "Snapshot reply round outdated, skipping";
         return;
     }
     if (snapshotReply.seq() <= log_->getStableCheckpoint().seq) {
@@ -905,7 +904,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // TODO make sure this isn't outdated...
 
         ::LogCheckpoint checkpoint;
-        checkpointCollector_.getCheckpoint(instance_, snapshotReply.seq(), checkpoint);
+        checkpointCollector_.getCheckpoint(round_, snapshotReply.seq(), checkpoint);
 
         if (!log_->applySnapshotModifyLog(snapshotReply.seq(), checkpoint, snapshotReply.snapshot())) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
@@ -915,7 +914,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
-        checkpointCollector_.cleanStaleCollectors(snapshotReply.seq(), instance_);
+        checkpointCollector_.cleanStaleCollectors(snapshotReply.seq(), round_);
 
         // Resend replies after modifying log
         for (int seq = log_->getStableCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
@@ -928,7 +927,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             reply.set_replica_id(replicaId_);
             reply.set_result(entry.result);
             reply.set_seq(seq);
-            reply.set_instance(instance_);
+            reply.set_round(round_);
             reply.set_digest(entry.digest);
 
             VLOG(1) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest).substr(56)
@@ -953,8 +952,8 @@ void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeou
         return;
     }
 
-    if (msg.instance() != instance_) {
-        LOG(WARNING) << "Received repair trigger for instance " << msg.instance() << " != " << instance_;
+    if (msg.round() != round_) {
+        LOG(WARNING) << "Received repair trigger for round " << msg.round() << " != " << round_;
         return;
     }
 
@@ -970,7 +969,7 @@ void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTime
         return;
     }
 
-    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for instance " << msg.instance();
+    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for round " << msg.round();
 
     uint32_t repId = msg.replica_id();
 
@@ -979,7 +978,7 @@ void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTime
 
     dombft::proto::RepairTimeoutProof proof;
     for (auto &[repId, msg] : repairReplicaTimeouts_) {
-        if (msg.instance() != instance_)
+        if (msg.round() != round_)
             continue;
 
         (*proof.add_timeouts()) = msg;
@@ -987,7 +986,7 @@ void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTime
     }
 
     if (proof.timeouts_size() == f_ + 1) {
-        LOG(INFO) << "Gathered timeout proof for instance " << instance_ << ", starting repair and broadcasting!";
+        LOG(INFO) << "Gathered timeout proof for round " << round_ << ", starting repair and broadcasting!";
         broadcastToReplicas(proof, REPAIR_TIMEOUT_PROOF);
         startRepair();
     }
@@ -1003,8 +1002,8 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
     }
 
     // Proof is verified by verify thread
-    if (msg.instance() < instance_) {
-        LOG(INFO) << "Received repair trigger proof for previous instance " << msg.instance() << " < " << instance_;
+    if (msg.round() < round_) {
+        LOG(INFO) << "Received repair trigger proof for previous round " << msg.round() << " < " << round_;
         return;
     }
 
@@ -1020,13 +1019,13 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
 {
     // Ignore repeated repair triggers
     if (repair_) {
-        VLOG(5) << "Received timeout proof after I already started repair for instance " << instance_;
+        VLOG(5) << "Received timeout proof after I already started repair for round " << round_;
         return;
     }
 
     // Proof is verified by verify thread
-    if (msg.instance() < instance_) {
-        LOG(INFO) << "Received repair timeout proof for previous instance " << msg.instance() << " < " << instance_;
+    if (msg.round() < round_) {
+        LOG(INFO) << "Received repair timeout proof for previous round " << msg.round() << " < " << round_;
         return;
     }
 
@@ -1041,22 +1040,22 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
 void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
 {
     if ((msg.pbft_view() % replicaAddrs_.size()) != replicaId_) {
-        LOG(INFO) << "Received REPAIR_START for instance " << msg.instance() << " pbft_view " << msg.pbft_view()
+        LOG(INFO) << "Received REPAIR_START for round " << msg.round() << " pbft_view " << msg.pbft_view()
                   << " where I am not proposer";
         return;
     }
 
     uint32_t repId = msg.replica_id();
-    uint32_t repInstance = msg.instance();
-    if (msg.instance() < instance_) {
-        LOG(INFO) << "Received REPAIR_START for instance " << msg.instance() << " from replica " << repId
-                  << " while own is " << instance_;
+    uint32_t repRound = msg.round();
+    if (msg.round() < round_) {
+        LOG(INFO) << "Received REPAIR_START for round " << msg.round() << " from replica " << repId << " while own is "
+                  << round_;
         return;
     }
 
-    // A corner case where (older instance + pbft_view) targets the same primary and overwrite the newer ones
-    if (repairHistorys_.count(repId) && repairHistorys_[repId].instance() >= repInstance) {
-        LOG(INFO) << "Received REPAIR_START for instance " << repInstance << " pbft_view " << msg.pbft_view()
+    // A corner case where (older round + pbft_view) targets the same primary and overwrite the newer ones
+    if (repairHistorys_.count(repId) && repairHistorys_[repId].round() >= repRound) {
+        LOG(INFO) << "Received REPAIR_START for round " << repRound << " pbft_view " << msg.pbft_view()
                   << " from replica " << repId << " which is outdated";
         return;
     }
@@ -1069,13 +1068,13 @@ void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
         return;
     }
 
-    // First check if we have 2f + 1 repair start messages for the same instance
+    // First check if we have 2f + 1 repair start messages for the same round
     auto numStartMsgs = std::count_if(repairHistorys_.begin(), repairHistorys_.end(), [&](auto &startMsg) {
-        return startMsg.second.instance() == repInstance;
+        return startMsg.second.round() == repRound;
     });
 
     if (numStartMsgs == 2 * f_ + 1) {
-        doPrePreparePhase(repInstance);
+        doPrePreparePhase(repRound);
     }
 }
 
@@ -1085,10 +1084,10 @@ void Replica::checkTimeouts()
 
     if (repairTimeoutStart_ != 0 && now - repairTimeoutStart_ > repairTimeout_) {
         repairTimeoutStart_ = 0;
-        LOG(WARNING) << "repairStartTimer for instance=" << instance_ << " timed out! Sending timeout message!";
+        LOG(WARNING) << "repairStartTimer for round=" << round_ << " timed out! Sending timeout message!";
 
         RepairReplicaTimeout msg;
-        msg.set_instance(instance_);
+        msg.set_round(round_);
         msg.set_replica_id(replicaId_);
 
         broadcastToReplicas(msg, MessageType::REPAIR_REPLICA_TIMEOUT);
@@ -1100,7 +1099,7 @@ void Replica::checkTimeouts()
         repairViewStart_ = now;
         // TODO increment view change here if neeeded
 
-        LOG(WARNING) << "Repair for instance=" << instance_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
+        LOG(WARNING) << "Repair for round=" << round_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
         pbftViewChanges_.clear();
         pbftViewChangeSigs_.clear();
         this->startViewChange();
@@ -1115,7 +1114,7 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_seq(targetSeq);
     snapshotRequest.set_last_checkpoint_seq(log_->getStableCheckpoint().seq);
-    snapshotRequest.set_instance(instance_);
+    snapshotRequest.set_round(round_);
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
     LOG(INFO) << "Requesting state snapshot for seq " << targetSeq << " from replica " << replicaId;
 }
@@ -1172,8 +1171,8 @@ bool Replica::verifyCert(const Cert &cert)
         const std::string &sig = cert.signatures()[i];
         uint32_t replicaId = reply.replica_id();
 
-        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
-                        reply.client_seq(), reply.digest(),   reply.result()};
+        ReplyKey key = {reply.seq(),        reply.round(),  reply.client_id(),
+                        reply.client_seq(), reply.digest(), reply.result()};
         matchingReplies[key].insert(replicaId);
 
         std::string serializedReply = reply.SerializeAsString();
@@ -1211,7 +1210,7 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
         return false;
     }
 
-    uint32_t instance = proof.instance();
+    uint32_t round = proof.round();
 
     // check if the replies are matching and no duplicate replies from same replica
     std::map<ReplyKey, std::unordered_set<uint32_t>> matchingReplies;
@@ -1221,13 +1220,13 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
         const std::string &sig = proof.signatures()[i];
         uint32_t replicaId = reply.replica_id();
 
-        if (instance != reply.instance()) {
-            LOG(INFO) << "Proof has replies from different instances!";
+        if (round != reply.round()) {
+            LOG(INFO) << "Proof has replies from different rounds!";
             return false;
         }
 
-        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
-                        reply.client_seq(), reply.digest(),   reply.result()};
+        ReplyKey key = {reply.seq(),        reply.round(),  reply.client_id(),
+                        reply.client_seq(), reply.digest(), reply.result()};
 
         matchingReplies[key].insert(replicaId);
         std::string serializedReply = proof.replies(i).SerializeAsString();
@@ -1281,8 +1280,8 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
             return false;
         }
 
-        if (proof.instance() != timeout.instance()) {
-            LOG(INFO) << "Proof has replies from different instances!";
+        if (proof.round() != timeout.round()) {
+            LOG(INFO) << "Proof has replies from different rounds!";
             return false;
         }
 
@@ -1326,7 +1325,7 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
     const auto &prepares = viewChangeMsg.prepares();
     const auto &sigs = viewChangeMsg.prepare_sigs();
 
-    if (prepares.empty() && viewChangeMsg.instance() == UINT32_MAX) {
+    if (prepares.empty() && viewChangeMsg.round() == UINT32_MAX) {
         LOG(INFO) << "View Change with no previous agreed prepares";
         return true;
     }
@@ -1340,16 +1339,16 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
             LOG(INFO) << "Failed to verify replica signature in view change!";
             return false;
         }
-        insts.emplace(prepares[i].instance());
+        insts.emplace(prepares[i].round());
         proposal_digests.emplace(prepares[i].proposal_digest());
     }
     if (insts.size() != 1 || proposal_digests.size() != 1) {
         LOG(INFO) << "View Change with inconsistent prepares and proposals from replica " << viewChangeMsg.replica_id()
-                  << " instance=" << viewChangeMsg.instance() << " pbf_view=" << viewChangeMsg.pbft_view();
+                  << " round=" << viewChangeMsg.round() << " pbf_view=" << viewChangeMsg.pbft_view();
         return false;
     }
-    if (insts.find(viewChangeMsg.instance()) == insts.end()) {
-        LOG(INFO) << "View Change with different instance";
+    if (insts.find(viewChangeMsg.round()) == insts.end()) {
+        LOG(INFO) << "View Change with different round";
         return false;
     }
     const RepairProposal &proposal = viewChangeMsg.proposal();
@@ -1366,17 +1365,17 @@ void Replica::startRepair()
 {
     assert(!repair_);
     repair_ = true;
-    LOG(INFO) << "Starting repair on instance " << instance_;
+    LOG(INFO) << "Starting repair on round " << round_;
 
     // Start repair timer to change primary if timeout
     repairViewStart_ = GetMicrosecondTimestamp();
 
     VLOG(1) << "PERF event=repair_start replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
-            << " instance=" << instance_ << " pbft_view=" << pbftView_;
+            << " round=" << round_ << " pbft_view=" << pbftView_;
 
     // Extract log into start repair message
     RepairStart repairStartMsg;
-    repairStartMsg.set_instance(instance_);
+    repairStartMsg.set_round(round_);
     repairStartMsg.set_replica_id(replicaId_);
     repairStartMsg.set_pbft_view(pbftView_);
     log_->toProto(repairStartMsg);
@@ -1384,7 +1383,7 @@ void Replica::startRepair()
     uint32_t primaryId = getPrimary();
     LOG(INFO) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
     sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
-    LOG(INFO) << "DUMP start repair instance=" << instance_ << " " << *log_;
+    LOG(INFO) << "DUMP start repair round=" << round_ << " " << *log_;
 }
 
 void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
@@ -1394,7 +1393,7 @@ void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
     reply.set_client_id(entry.client_id);
     reply.set_client_seq(entry.client_seq);
     reply.set_replica_id(replicaId_);
-    reply.set_instance(instance_);
+    reply.set_round(round_);
     reply.set_result(entry.result);
     reply.set_seq(entry.seq);
     reply.set_digest(entry.digest);
@@ -1405,7 +1404,7 @@ void Replica::sendRepairSummaryToClients()
     RepairSummary summary;
     std::set<int> clients;
 
-    summary.set_instance(instance_);
+    summary.set_round(round_);
     summary.set_replica_id(replicaId_);
     summary.set_pbft_view(pbftView_);
 
@@ -1429,7 +1428,7 @@ void Replica::sendRepairSummaryToClients()
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
     // TODO make this only send to clients that need it
-    LOG(INFO) << "Sending repair summary for instance=" << instance_;
+    LOG(INFO) << "Sending repair summary for round=" << round_;
     for (auto &addr : clientAddrs_) {
         endpoint_->SendPreparedMsgTo(addr);
     }
@@ -1437,13 +1436,13 @@ void Replica::sendRepairSummaryToClients()
 
 void Replica::finishRepair()
 {
-    VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
-            << " instance=" << instance_ << " pbft_view=" << pbftView_;
+    VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq() << " round=" << round_
+            << " pbft_view=" << pbftView_;
 
-    LOG(INFO) << "DUMP finish repair instance=" << instance_ << " " << *log_;
+    LOG(INFO) << "DUMP finish repair round=" << round_ << " " << *log_;
 
-    instance_++;
-    LOG(INFO) << "Instance updated to " << instance_ << " and pbft_view to " << pbftView_;
+    round_++;
+    LOG(INFO) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
 
     if (viewChange_) {
         viewChangeInst_ += viewChangeFreq_;
@@ -1480,16 +1479,16 @@ void Replica::finishRepair()
 void Replica::tryFinishRepair()
 {
     assert(repairProposal_.has_value());
-    if (repairProposal_.value().instance() == instance_ - 1) {
-        // This happens if the repair instance is already committed on the current replica, but other replicas
+    if (repairProposal_.value().round() == round_ - 1) {
+        // This happens if the repair round is already committed on the current replica, but other replicas
         // initiated a view change.
         assert(viewChange_);
-        LOG(INFO) << "Repair on instance " << instance_ - 1 << " already committed on current replica, skipping";
+        LOG(INFO) << "Repair on round " << round_ - 1 << " already committed on current replica, skipping";
         return;
     }
 
     RepairProposal &proposal = repairProposal_.value();
-    instance_ = proposal.instance();
+    round_ = proposal.round();
     // Reset timer
     repairViewStart_ = 0;
 
@@ -1526,16 +1525,16 @@ LogSuffix &Replica::getRepairLogSuffix()
 {
     // This is just to cache the processing of the repairProposal
     // TODO make sure this works during view change as well.
-    if (!repairProposalLogSuffix_.has_value() || repairProposalLogSuffix_.value().instance != instance_) {
+    if (!repairProposalLogSuffix_.has_value() || repairProposalLogSuffix_.value().round != round_) {
         repairProposalLogSuffix_ = LogSuffix();
         repairProposalLogSuffix_->replicaId = replicaId_;
-        repairProposalLogSuffix_->instance = instance_;
+        repairProposalLogSuffix_->round = round_;
         getLogSuffixFromProposal(repairProposal_.value(), repairProposalLogSuffix_.value());
     }
     return repairProposalLogSuffix_.value();
 }
 
-void Replica::doPrePreparePhase(uint32_t instance)
+void Replica::doPrePreparePhase(uint32_t round)
 {
     if (!isPrimary()) {
         LOG(ERROR) << "Attempted to doPrePrepare from non-primary replica!";
@@ -1545,14 +1544,14 @@ void Replica::doPrePreparePhase(uint32_t instance)
 
     PBFTPrePrepare prePrepare;
     prePrepare.set_primary_id(replicaId_);
-    prePrepare.set_instance(instance);
+    prePrepare.set_round(round);
     prePrepare.set_pbft_view(pbftView_);
     // Piggyback the repair proposal
     RepairProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
-    proposal->set_instance(instance);
+    proposal->set_round(round);
     for (auto &startMsg : repairHistorys_) {
-        if (startMsg.second.instance() != instance)
+        if (startMsg.second.round() != round)
             continue;
 
         *(proposal->add_logs()) = startMsg.second;
@@ -1565,10 +1564,10 @@ void Replica::doPrePreparePhase(uint32_t instance)
 
 void Replica::doPreparePhase()
 {
-    LOG(INFO) << "Prepare for instance=" << repairProposal_->instance() << " replicaId=" << replicaId_;
+    LOG(INFO) << "Prepare for round=" << repairProposal_->round() << " replicaId=" << replicaId_;
     PBFTPrepare prepare;
     prepare.set_replica_id(replicaId_);
-    prepare.set_instance(repairProposal_->instance());
+    prepare.set_round(repairProposal_->round());
     prepare.set_pbft_view(pbftView_);
     prepare.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
     broadcastToReplicas(prepare, PBFT_PREPARE);
@@ -1576,11 +1575,11 @@ void Replica::doPreparePhase()
 
 void Replica::doCommitPhase()
 {
-    uint32_t proposalInst = repairProposal_.value().instance();
-    LOG(INFO) << "PBFTCommit for instance=" << proposalInst << " replicaId=" << replicaId_;
+    uint32_t proposalInst = repairProposal_.value().round();
+    LOG(INFO) << "PBFTCommit for round=" << proposalInst << " replicaId=" << replicaId_;
     PBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
-    cmt.set_instance(proposalInst);
+    cmt.set_round(proposalInst);
     cmt.set_pbft_view(pbftView_);
     cmt.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
     if (viewChangeByCommit()) {
@@ -1594,13 +1593,12 @@ void Replica::doCommitPhase()
 
 void Replica::processPrePrepare(const PBFTPrePrepare &msg)
 {
-    if (msg.instance() < instance_) {
-        LOG(INFO) << "Received old repair preprepare from instance=" << msg.instance() << " own instance is "
-                  << instance_;
+    if (msg.round() < round_) {
+        LOG(INFO) << "Received old repair preprepare from round=" << msg.round() << " own round is " << round_;
         return;
     }
     if (msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received preprepare from replicaId=" << msg.primary_id() << " for instance=" << msg.instance()
+        LOG(INFO) << "Received preprepare from replicaId=" << msg.primary_id() << " for round=" << msg.round()
                   << " with different pbft_view=" << msg.pbft_view();
         return;
     }
@@ -1610,7 +1608,7 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
         return;
     }
 
-    LOG(INFO) << "PrePrepare RECEIVED for instance=" << msg.instance() << " from replicaId=" << msg.primary_id();
+    LOG(INFO) << "PrePrepare RECEIVED for round=" << msg.round() << " from replicaId=" << msg.primary_id();
     // accepts the proposal as long as it's from the primary
     repairProposal_ = msg.proposal();
     memcpy(proposalDigest_, msg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
@@ -1625,38 +1623,38 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
 
 void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
 {
-    uint32_t inInst = msg.instance();
+    uint32_t inInst = msg.round();
     if (msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for instance=" << inInst
+        LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for round=" << inInst
                   << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if (inInst < instance_ && viewPrepared_) {
-        LOG(INFO) << "Received old repair prepare from instance=" << inInst << " own instance is " << instance_;
+    if (inInst < round_ && viewPrepared_) {
+        LOG(INFO) << "Received old repair prepare from round=" << inInst << " own round is " << round_;
         return;
     }
 
-    if (repairPrepares_.count(msg.replica_id()) && repairPrepares_[msg.replica_id()].instance() > inInst &&
+    if (repairPrepares_.count(msg.replica_id()) && repairPrepares_[msg.replica_id()].round() > inInst &&
         repairPrepares_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
-        LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for instance=" << inInst;
+        LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for round=" << inInst;
         return;
     }
     repairPrepares_[msg.replica_id()] = msg;
     repairPrepareSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
-    LOG(INFO) << "Prepare RECEIVED for instance=" << inInst << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "Prepare RECEIVED for round=" << inInst << " from replicaId=" << msg.replica_id();
     // skip if already prepared for it
     // note: if viewPrepared_==false, then viewChange_==true
-    if (viewPrepared_ && preparedInstance_ == inInst) {
-        LOG(INFO) << "Already prepared for instance=" << inInst << " pbft_view=" << pbftView_;
+    if (viewPrepared_ && preparedRound_ == inInst) {
+        LOG(INFO) << "Already prepared for round=" << inInst << " pbft_view=" << pbftView_;
         return;
     }
-    if (!repairProposal_.has_value() || repairProposal_.value().instance() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().round() < inInst) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process prepare";
         return;
     }
     // Make sure the Prepare msgs are for the corresponding PrePrepare msg
     auto numMsgs = std::count_if(repairPrepares_.begin(), repairPrepares_.end(), [this](auto &curMsg) {
-        return curMsg.second.instance() == repairProposal_.value().instance() &&
+        return curMsg.second.round() == repairProposal_.value().round() &&
                memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
                curMsg.second.pbft_view() == pbftView_;
     });
@@ -1665,23 +1663,23 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return;
     }
     // Store PBFT states for potential view change
-    preparedInstance_ = repairProposal_.value().instance();
+    preparedRound_ = repairProposal_.value().round();
     viewPrepared_ = true;
     pbftState_.proposal = repairProposal_.value();
     memcpy(pbftState_.proposal_digest, proposalDigest_, SHA256_DIGEST_LENGTH);
     pbftState_.prepares.clear();
     for (const auto &[repId, prepare] : repairPrepares_) {
-        if (prepare.instance() == preparedInstance_) {
+        if (prepare.round() == preparedRound_) {
             pbftState_.prepares[repId] = prepare;
             pbftState_.prepareSigs[repId] = repairPrepareSigs_[repId];
         }
     }
-    LOG(INFO) << "Prepare received from 2f + 1 replicas, agreement reached for instance=" << preparedInstance_
+    LOG(INFO) << "Prepare received from 2f + 1 replicas, agreement reached for round=" << preparedRound_
               << " pbft_view=" << pbftView_;
 
     if (viewChangeByCommit()) {
         if (commitLocalInViewChange_) {
-            LOG(INFO) << "Commit message only send to itself to commit locally to advance to next instance";
+            LOG(INFO) << "Commit message only send to itself to commit locally to advance to next round";
             doCommitPhase();
         } else {
             LOG(INFO) << "Commit message held to cause timeout in commit phase for view change";
@@ -1693,36 +1691,36 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
 
 void Replica::processPBFTCommit(const PBFTCommit &msg)
 {
-    uint32_t inInst = msg.instance();
+    uint32_t inInst = msg.round();
     if (msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for instance=" << inInst
+        LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for round=" << inInst
                   << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if (inInst < instance_ && !viewChange_) {
-        LOG(INFO) << "Received old repair commit from instance=" << inInst << " own instance is " << instance_;
+    if (inInst < round_ && !viewChange_) {
+        LOG(INFO) << "Received old repair commit from round=" << inInst << " own round is " << round_;
         return;
     }
-    if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].instance() > inInst &&
+    if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].round() > inInst &&
         repairPBFTCommits_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
-        LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for instance=" << inInst;
+        LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for round=" << inInst;
         return;
     }
     repairPBFTCommits_[msg.replica_id()] = msg;
-    LOG(INFO) << "PBFTCommit RECEIVED for instance=" << inInst << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "PBFTCommit RECEIVED for round=" << inInst << " from replicaId=" << msg.replica_id();
 
-    if (!repairProposal_.has_value() || repairProposal_.value().instance() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().round() < inInst) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process commit";
         return;
     }
 
-    if (preparedInstance_ == UINT32_MAX || preparedInstance_ != inInst || !viewPrepared_) {
+    if (preparedRound_ == UINT32_MAX || preparedRound_ != inInst || !viewPrepared_) {
         LOG(INFO) << "Not prepared for it, skipping commit!";
         // TODO get the proposal from another replica...
         return;
     }
     auto numMsgs = std::count_if(repairPBFTCommits_.begin(), repairPBFTCommits_.end(), [this](auto &curMsg) {
-        return curMsg.second.instance() == preparedInstance_ &&
+        return curMsg.second.round() == preparedRound_ &&
                memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
                curMsg.second.pbft_view() == pbftView_;
     });
@@ -1740,16 +1738,16 @@ void Replica::startViewChange()
     viewChange_ = true;
     viewPrepared_ = false;
     VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
-            << " instance=" << instance_ << " pbft_view=" << pbftView_;
-    LOG(INFO) << "Starting ViewChange on instance " << instance_ << " pbft_view " << pbftView_;
+            << " round=" << round_ << " pbft_view=" << pbftView_;
+    LOG(INFO) << "Starting ViewChange on round " << round_ << " pbft_view " << pbftView_;
 
     PBFTViewChange viewChange;
     viewChange.set_replica_id(replicaId_);
-    viewChange.set_instance(preparedInstance_);
+    viewChange.set_round(preparedRound_);
     viewChange.set_pbft_view(pbftView_);
 
     // Add the latest quorum of prepares and sigs
-    if (preparedInstance_ != UINT32_MAX) {
+    if (preparedRound_ != UINT32_MAX) {
         for (const auto &[repId, prepare] : pbftState_.prepares) {
             *(viewChange.add_prepares()) = prepare;
             *(viewChange.add_prepare_sigs()) = pbftState_.prepareSigs[repId];
@@ -1763,7 +1761,7 @@ void Replica::startViewChange()
 
 void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> sig)
 {
-    // No instance checking as view change is not about instance
+    // No round checking as view change is not about round
     uint32_t inViewNum = msg.pbft_view();
     if (inViewNum < pbftView_) {
         LOG(INFO) << "Received outdated view change from pbft_view=" << inViewNum << " own pbft_view is " << pbftView_;
@@ -1808,25 +1806,25 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
         return;
     }
 
-    // primary search for the latest prepared instance
-    uint32_t maxInstance = UINT32_MAX;
-    // vc.instance can be UINT32_MAX if no prepares, which is fine
+    // primary search for the latest prepared round
+    uint32_t maxRound = UINT32_MAX;
+    // vc.round can be UINT32_MAX if no prepares, which is fine
     for (const auto &[_, vc] : pbftViewChanges_) {
         if (vc.pbft_view() != inViewNum) {
             continue;
         }
-        if (maxInstance == UINT32_MAX && vc.instance() < maxInstance) {
-            maxInstance = vc.instance();
-        } else if (maxInstance != UINT32_MAX && vc.instance() > maxInstance) {
-            maxInstance = vc.instance();
+        if (maxRound == UINT32_MAX && vc.round() < maxRound) {
+            maxRound = vc.round();
+        } else if (maxRound != UINT32_MAX && vc.round() > maxRound) {
+            maxRound = vc.round();
         }
     }
-    LOG(INFO) << "Found the latest prepared instance=" << maxInstance << " for pbft_view=" << inViewNum;
+    LOG(INFO) << "Found the latest prepared round=" << maxRound << " for pbft_view=" << inViewNum;
 
     PBFTNewView newView;
     newView.set_primary_id(replicaId_);
     newView.set_pbft_view(inViewNum);
-    newView.set_instance(maxInstance);
+    newView.set_round(maxRound);
 
     for (const auto &[repId, vc] : pbftViewChanges_) {
         newView.add_view_changes()->CopyFrom(vc);
@@ -1850,19 +1848,19 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
     PBFTViewChange maxVC;
     for (const auto &vc : viewChanges) {
         views[vc.pbft_view()]++;
-        if (vc.instance() > maxVC.instance()) {
+        if (vc.round() > maxVC.round()) {
             maxVC = vc;
         }
     }
-    if (maxVC.pbft_view() != msg.pbft_view() || maxVC.instance() != msg.instance()) {
-        LOG(INFO) << "Replica obtains a different choice of instance=" << maxVC.instance() << "," << msg.instance()
+    if (maxVC.pbft_view() != msg.pbft_view() || maxVC.round() != msg.round()) {
+        LOG(INFO) << "Replica obtains a different choice of round=" << maxVC.round() << "," << msg.round()
                   << " and pbft_view=" << maxVC.pbft_view() << ", " << msg.pbft_view();
     }
     if (views[maxVC.pbft_view()] < 2 * f_ + 1) {
         LOG(INFO) << "The view number " << maxVC.pbft_view() << " does not have a 2f + 1 quorum";
         return;
     }
-    LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared instance=" << msg.instance();
+    LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared round=" << msg.round();
     if (pbftView_ == msg.pbft_view() && viewPrepared_) {
         LOG(INFO) << "Already in the same view and prepared for it, skip the new view message";
         return;
@@ -1879,14 +1877,14 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
     }
 
     // TODO(Hao): test this corner case later
-    if (msg.instance() == UINT32_MAX) {
-        LOG(INFO) << "No previously prepared instance in new view, go back to normal state. EXIT FOR NOW";
-        // assert(msg.instance() != UINT32_MAX);
+    if (msg.round() == UINT32_MAX) {
+        LOG(INFO) << "No previously prepared round in new view, go back to normal state. EXIT FOR NOW";
+        // assert(msg.round() != UINT32_MAX);
         // return;
     }
     repairProposal_ = maxVC.proposal();
     memcpy(proposalDigest_, maxVC.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
-    // set view change param to true to bypass instance check.
+    // set view change param to true to bypass round check.
     doPreparePhase();
 }
 

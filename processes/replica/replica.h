@@ -52,7 +52,7 @@ private:
     std::unique_ptr<Endpoint> endpoint_;
 
     // Replica state
-    uint32_t instance_ = 1;
+    uint32_t round_ = 1;
     std::shared_ptr<Log> log_;
     std::shared_ptr<Application> app_;
     AppSnapshotStore appSnapshotStore_;
@@ -80,8 +80,8 @@ private:
 
     // State for PBFT
     bool viewChange_ = false;
-    uint32_t pbftView_ = 0;                    // view num
-    uint32_t preparedInstance_ = UINT32_MAX;   // Set to UINT32_MAX to indicate no prepared instance
+    uint32_t pbftView_ = 0;                 // view num
+    uint32_t preparedRound_ = UINT32_MAX;   // Set to UINT32_MAX to indicate no prepared round
     bool viewPrepared_ = true;
     PBFTState pbftState_;
 
@@ -100,7 +100,7 @@ private:
     // State for triggering view change
     uint32_t viewChangeFreq_;
     uint32_t viewChangeInst_;
-    bool commitLocalInViewChange_ = false;   // when prepared, if send to itself a commit to try to go to next instance
+    bool commitLocalInViewChange_ = false;   // when prepared, if send to itself a commit to try to go to next round
     uint32_t viewChangeNum_;
     uint32_t viewChangeCounter_ = 0;
     // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
@@ -144,10 +144,10 @@ private:
 
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
-    // TODO(Hao): test instance_== 0, seems problematic but a corner case
+    // TODO(Hao): test round_== 0, seems problematic but a corner case
     inline bool ifTriggerViewChange() const
     {
-        return !viewChange_ && instance_ != 0 && instance_ == viewChangeInst_ &&
+        return !viewChange_ && round_ != 0 && round_ == viewChangeInst_ &&
                (viewChangeNum_ == 0 || viewChangeCounter_ < viewChangeNum_);
     }
     inline bool viewChangeByPrepare() const { return ifTriggerViewChange() && !holdPrepareOrCommit_; }
@@ -157,7 +157,7 @@ private:
     inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
     uint32_t getPrimary() { return pbftView_ % replicaAddrs_.size(); }
     void startViewChange();
-    void doPrePreparePhase(uint32_t instance);
+    void doPrePreparePhase(uint32_t round);
     void doPreparePhase();
     void doCommitPhase();
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);

@@ -26,9 +26,9 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
 
-        VLOG(4) << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.instance();
+        VLOG(4) << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.round();
 
-        ReplyKeyTuple key = {reply.digest(), reply.instance(), reply.seq()};
+        ReplyKeyTuple key = {reply.digest(), reply.round(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
 
@@ -72,7 +72,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
     for (const auto &[replicaId, commit] : commits_) {
 
         CommitKeyTuple key = {
-            commit.log_digest(), commit.app_digest(), commit.instance(), commit.seq(), commit.client_record().digest(),
+            commit.log_digest(), commit.app_digest(), commit.round(), commit.seq(), commit.client_record().digest(),
         };
         matchingCommits[key].insert(replicaId);
 
@@ -103,10 +103,10 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
 
 bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
-    std::pair<uint32_t, uint32_t> key = {reply.instance(), reply.seq()};
+    std::pair<uint32_t, uint32_t> key = {reply.round(), reply.seq()};
 
     if (!replyCollectors_.contains(key)) {
-        replyCollectors_.emplace(key, ReplyCollector(replicaId_, f_, reply.instance(), reply.seq()));
+        replyCollectors_.emplace(key, ReplyCollector(replicaId_, f_, reply.round(), reply.seq()));
     }
 
     return replyCollectors_.at(key).addAndCheckReply(reply, sig);
@@ -114,36 +114,36 @@ bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, st
 
 bool CheckpointCollector::addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
-    std::pair<uint32_t, uint32_t> key = {commit.instance(), commit.seq()};
+    std::pair<uint32_t, uint32_t> key = {commit.round(), commit.seq()};
 
     if (!commitCollectors_.contains(key)) {
-        commitCollectors_.emplace(key, CommitCollector(f_, commit.instance(), commit.seq()));
+        commitCollectors_.emplace(key, CommitCollector(f_, commit.round(), commit.seq()));
     }
 
     return commitCollectors_.at(key).addAndCheckCommit(commit, sig);
 }
 
-void CheckpointCollector::getCert(uint32_t instance, uint32_t seq, dombft::proto::Cert &cert)
+void CheckpointCollector::getCert(uint32_t round, uint32_t seq, dombft::proto::Cert &cert)
 {
 
-    std::pair<uint32_t, uint32_t> key = {instance, seq};
+    std::pair<uint32_t, uint32_t> key = {round, seq};
 
     assert(replyCollectors_.contains(key));
     replyCollectors_.at(key).getCert(cert);
 }
 
-void CheckpointCollector::getCommitToUse(uint32_t instance, uint32_t seq, dombft::proto::Commit &commit)
+void CheckpointCollector::getCommitToUse(uint32_t round, uint32_t seq, dombft::proto::Commit &commit)
 {
-    std::pair<uint32_t, uint32_t> key = {instance, seq};
+    std::pair<uint32_t, uint32_t> key = {round, seq};
 
     assert(commitCollectors_.contains(key));
     assert(commitCollectors_.at(key).commitToUse_.has_value());
     commit = commitCollectors_.at(key).commitToUse_.value();
 }
 
-void CheckpointCollector::getCheckpoint(uint32_t instance, uint32_t seq, ::LogCheckpoint &checkpoint)
+void CheckpointCollector::getCheckpoint(uint32_t round, uint32_t seq, ::LogCheckpoint &checkpoint)
 {
-    std::pair<uint32_t, uint32_t> key = {instance, seq};
+    std::pair<uint32_t, uint32_t> key = {round, seq};
 
     assert(commitCollectors_.contains(key));
     commitCollectors_.at(key).getCheckpoint(checkpoint);
@@ -160,16 +160,16 @@ void CheckpointCollector::cacheState(
     }
 
     // TODO we can look at the current digest here to clean up any stale collectors
-    // However, since replica won't process messages from previous instances, it's also probably fine to not do this...
+    // However, since replica won't process messages from previous rounds, it's also probably fine to not do this...
     states_[seq] = {logDigest, clientRecord, std::move(snapshot)};
 }
 
-void CheckpointCollector::cleanStaleCollectors(uint32_t committedSeq, uint32_t committedInstance)
+void CheckpointCollector::cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound)
 {
     VLOG(1) << "Cleaning up any checkpoint state since checkpoint committed at seq=" << committedSeq
-            << " instance=" << committedInstance;
+            << " round=" << committedRound;
 
-    std::pair<uint32_t, uint32_t> key = {committedInstance, committedSeq};
+    std::pair<uint32_t, uint32_t> key = {committedRound, committedSeq};
 
     states_.erase(states_.begin(), --states_.upper_bound(committedSeq));
     replyCollectors_.erase(replyCollectors_.begin(), --replyCollectors_.upper_bound(key));

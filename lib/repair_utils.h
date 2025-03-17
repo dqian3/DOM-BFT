@@ -11,7 +11,7 @@
 struct LogSuffix {
     // For loging purposes
     uint32_t replicaId;
-    uint32_t instance;
+    uint32_t round;
 
     uint32_t checkpointReplica;
     const dombft::proto::LogCheckpoint *checkpoint;

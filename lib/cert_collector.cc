@@ -15,7 +15,7 @@ using namespace dombft::proto;
 CertCollector::CertCollector(int f)
     : f_(f)
     , maxMatchSize_(0)
-    , instance_(0)
+    , round_(0)
 {
 }
 
@@ -23,24 +23,24 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
 {
     int replicaId = reply.replica_id();
 
-    // Note we only record replies by replicaId, not by instance,
-    // This means if we get replies from earlier instances later from correct replicas,
+    // Note we only record replies by replicaId, not by round,
+    // This means if we get replies from earlier rounds later from correct replicas,
     // we may not be able to collect a certificate
     replies_[replicaId] = reply;
     signatures_[replicaId] = std::move(sig);
 
-    // If we receive f + 1 replies for a certain instance, that means a correct
-    // replica has advanced to that instance, and we would only be able to
-    // commit in that instance.
-    std::map<int, int> instanceCounts;
+    // If we receive f + 1 replies for a certain round, that means a correct
+    // replica has advanced to that round, and we would only be able to
+    // commit in that round.
+    std::map<int, int> roundCounts;
     for (const auto &[replicaId, reply] : replies_) {
-        instanceCounts[reply.instance()]++;
+        roundCounts[reply.round()]++;
 
-        if (instanceCounts[reply.instance()] >= f_ + 1) {
-            if (reply.instance() > instance_) {
-                instance_ = reply.instance();
+        if (roundCounts[reply.round()] >= f_ + 1) {
+            if (reply.round() > round_) {
+                round_ = reply.round();
                 cert_.reset();
-                VLOG(4) << "Increasing instance for cert collector to " << instance_;
+                VLOG(4) << "Increasing round for cert collector to " << round_;
             }
         }
     }
@@ -49,26 +49,26 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
     std::map<ReplyKey, std::set<int>> matchingReplies;
 
     for (const auto &[replicaId, reply] : replies_) {
-        if (reply.instance() != instance_) {
+        if (reply.round() != round_) {
             continue;
         }
 
-        ReplyKey key = {reply.seq(),        reply.instance(), reply.client_id(),
-                        reply.client_seq(), reply.digest(),   reply.result()};
+        ReplyKey key = {reply.seq(),        reply.round(),  reply.client_id(),
+                        reply.client_seq(), reply.digest(), reply.result()};
 
         matchingReplies[key].insert(replicaId);
 
         maxMatchSize_ = std::max(maxMatchSize_, matchingReplies[key].size());
         if (matchingReplies[key].size() >= 2 * f_ + 1) {
 
-            // Skip creating certificate if we already have a certificate with a higher instance
-            if (cert_.has_value() && cert_->instance() >= reply.instance()) {
+            // Skip creating certificate if we already have a certificate with a higher round
+            if (cert_.has_value() && cert_->round() >= reply.round()) {
                 continue;
             }
 
             cert_ = Cert();
             cert_->set_seq(std::get<0>(key));
-            cert_->set_instance(std::get<1>(key));
+            cert_->set_round(std::get<1>(key));
 
             for (auto repId : matchingReplies[key]) {
                 std::string sigStr(signatures_[repId].begin(), signatures_[repId].end());
@@ -82,12 +82,12 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
     if (VLOG_IS_ON(4)) {
 
         std::ostringstream oss;
-        oss << "instance=" << instance_ << "\n";
+        oss << "round=" << round_ << "\n";
 
         for (const auto &[replicaId, reply] : replies_) {
             dombft::apps::CounterResponse response;
             response.ParseFromString(reply.result());
-            oss << replicaId << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.instance()
+            oss << replicaId << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.round()
                 << " " << response.value() << "\n";
         }
 
@@ -113,7 +113,7 @@ uint32_t CertCollector::numReceived() const
 {
     uint32_t ret = 0;
     for (const auto &[replicaId, reply] : replies_) {
-        if (reply.instance() == instance_) {
+        if (reply.round() == round_) {
             ret++;
         }
     }

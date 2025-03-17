@@ -258,7 +258,7 @@ void DummyReplica::processMessagesThd()
                     reply.set_replica_id(replicaId_);
                     reply.set_client_id(protoMsg.client_id());
                     reply.set_client_seq(protoMsg.client_seq());
-                    reply.set_instance(0);
+                    reply.set_round(0);
                     reply.set_seq(protoMsg.seq());
                     reply.set_replica_id(replicaId_);
                     reply.set_digest(std::string(32, '\0'));
@@ -306,7 +306,7 @@ void DummyReplica::processMessagesThd()
                         RepairSummary summary;
                         std::set<int> clients;
 
-                        summary.set_instance(0);
+                        summary.set_round(0);
                         summary.set_replica_id(replicaId_);
 
                         CommittedReply reply;
@@ -340,7 +340,7 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
         reply.set_replica_id(replicaId_);
         reply.set_client_id(request.client_id());
         reply.set_client_seq(request.client_seq());
-        reply.set_instance(0);
+        reply.set_round(0);
         reply.set_seq(0);   // Set seq to 0 here so clients see consistent messages ...
         reply.set_replica_id(replicaId_);
         reply.set_digest(std::string(32, '\0'));

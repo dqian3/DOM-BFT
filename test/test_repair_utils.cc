@@ -63,7 +63,7 @@ struct TestLog {
 
     std::vector<TestLogEntry> entries;
 
-    uint32_t instanceNum = 5;
+    uint32_t roundNum = 5;
 };
 
 typedef std::vector<TestLog> TestHistory;
@@ -90,7 +90,7 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
         if (log->getNextSeq() - 1 == testLog.certSeq) {
             // TODO make this cert "real"
             dombft::proto::Cert cert;
-            cert.set_instance(testLog.instanceNum);
+            cert.set_round(testLog.roundNum);
             cert.set_seq(testLog.certSeq);
 
             auto &r = (*cert.add_replies());
@@ -115,7 +115,7 @@ std::unique_ptr<dombft::proto::RepairStart> suffixFromTestLog(const TestLog &tes
 
     ret.checkpoint = &logMsg->checkpoint();
     ret.replicaId = 5;
-    ret.instance = 5;
+    ret.round = 5;
 
     for (auto &e : logMsg->log_entries()) {
         ret.entries.push_back(&e);
@@ -130,7 +130,7 @@ std::unique_ptr<dombft::proto::RepairStart> suffixFromTestLog(const TestLog &tes
 std::unique_ptr<dombft::proto::RepairProposal> generateRepairProposal(int f, TestHistory &history)
 {
     std::unique_ptr<dombft::proto::RepairProposal> ret = std::make_unique<dombft::proto::RepairProposal>();
-    int instanceNum = 5;
+    int roundNum = 5;
 
     for (TestLog &t : history) {
         auto [log, app] = logFromTestLog(t);
@@ -143,8 +143,8 @@ std::unique_ptr<dombft::proto::RepairProposal> generateRepairProposal(int f, Tes
         ret->add_signatures("");
     }
 
-    ret->set_instance(instanceNum);
-    ret->set_replica_id(instanceNum % (3 * f + 1));
+    ret->set_round(roundNum);
+    ret->set_replica_id(roundNum % (3 * f + 1));
 
     return ret;
 }

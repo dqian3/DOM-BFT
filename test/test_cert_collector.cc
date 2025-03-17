@@ -14,7 +14,7 @@ TEST(CertCollectorTest, CollectCertF1)
 
     Reply replyBase;
     replyBase.set_client_id(1);
-    replyBase.set_instance(0);
+    replyBase.set_round(0);
     replyBase.set_client_seq(5);
     replyBase.set_digest("abc");
     replyBase.set_seq(10);
@@ -36,7 +36,7 @@ TEST(CertCollectorTest, CollectCertF10)
 
     Reply replyBase;
     replyBase.set_client_id(1);
-    replyBase.set_instance(0);
+    replyBase.set_round(0);
     replyBase.set_client_seq(5);
     replyBase.set_digest("abc");
     replyBase.set_seq(10);
@@ -58,7 +58,7 @@ TEST(CertCollectorTest, CollectProof)
 
     Reply replyBase;
     replyBase.set_client_id(1);
-    replyBase.set_instance(0);
+    replyBase.set_round(0);
     replyBase.set_client_seq(5);
     replyBase.set_digest("abc");
     replyBase.set_seq(10);
@@ -76,14 +76,14 @@ TEST(CertCollectorTest, CollectProof)
     ASSERT_EQ(collector.numReceived(), 2 * f + 1);
 }
 
-TEST(CertCollectorTest, InstanceChange)
+TEST(CertCollectorTest, RoundChange)
 {
     uint32_t f = 1;
     CertCollector collector(1);
 
     Reply replyBase;
     replyBase.set_client_id(1);
-    replyBase.set_instance(0);
+    replyBase.set_round(0);
     replyBase.set_client_seq(5);
     replyBase.set_digest("abc");
     replyBase.set_seq(10);
@@ -100,7 +100,7 @@ TEST(CertCollectorTest, InstanceChange)
     for (int i = 0; i < f + 1; i++) {
         Reply reply = replyBase;
         reply.set_replica_id(i);
-        reply.set_instance(1);
+        reply.set_round(1);
 
         if (i == f + 1) {
             EXPECT_EQ(collector.insertReply(reply, {}), f + 1);
