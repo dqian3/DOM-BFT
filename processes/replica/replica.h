@@ -66,6 +66,11 @@ private:
     bool repairTimeoutSent_ = false;
     uint64_t repairTimeoutStart_ = 0;
     uint64_t repairViewStart_ = 0;
+
+    // The sequence of the last request received and processed in the previous round
+    // We do not retry and aborted requests before this point after repair (see getAbortedRequests in repair_utils.cc)
+    // TODO refactor this to be more clean./
+    uint64_t curRoundStartSeq_ = 0;
     std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> repairQueuedReqs_;
 
     std::map<uint32_t, dombft::proto::RepairReplicaTimeout> repairReplicaTimeouts_;
@@ -138,7 +143,7 @@ private:
     // Repair Helpers
     void startRepair();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void finishRepair();
+    void finishRepair(const std::vector<::ClientRequest> &abortedReqs);
     void tryFinishRepair();
     void sendRepairSummaryToClients();
     LogSuffix &getRepairLogSuffix();

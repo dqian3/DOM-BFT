@@ -170,11 +170,15 @@ void Client::fillRequestData(ClientRequest &request)
 {
     std::string reqData = trafficGen_->generateAppRequest();
 
+    PaddedRequestData data;
+
+    data.set_req_data(reqData);
+
     if (reqData.size() < requestSize_) {
-        request.set_padding(std::string(requestSize_ - reqData.size(), '\0'));
+        data.set_padding(std::string(requestSize_ - reqData.size(), '\0'));
     }
 
-    request.set_req_data(reqData);
+    request.set_req_data(data.SerializeAsString());
 }
 
 void Client::submitRequest()
