@@ -155,34 +155,39 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     return true;
 }
 
-void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot)
+std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
-    ::LogCheckpoint checkpoint(*logSuffix.checkpoint);
+    // Save any client requests that we are aborting, in case we need to re-execute them
+    std::vector<ClientRequest> ret;
+    std::set<RequestId> keptReqs;
 
-    if (!log->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshot)) {
-        // TODO handle this case properly
-        LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
-        throw std::runtime_error("Snapshot digest mismatch");
+    for (const dombft::proto::LogEntry *entry : logSuffix.entries) {
+        keptReqs.insert({entry->client_id(), entry->client_seq()});
     }
 
-    applySuffixAfterCheckpoint(logSuffix, log);
+    for (uint32_t seq = logSuffix.checkpoint->seq() + 1; seq < log->getNextSeq(); seq++) {
+        const LogEntry &entry = log->getEntry(seq);
+        RequestId key = {entry.client_id, entry.client_seq};
+
+        if (!keptReqs.contains(key)) {
+            ClientRequest req;
+            req.clientId = entry.client_id;
+            req.clientSeq = entry.client_seq;
+            req.requestData = entry.request;
+
+            ret.push_back(req);
+        }
+    }
+    return ret;
 }
 
-void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log)
+void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
-
+    // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
               << " stable checkpoint seq=" << log->getStableCheckpoint().seq;
-    const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
+    assert(logSuffix.checkpoint->seq() == log->getStableCheckpoint().seq);
 
-    // *This should only be called when current checkpoint is consistent with repair checkpoint
-    assert(checkpoint->seq() == log->getStableCheckpoint().seq);
-    applySuffixAfterCheckpoint(logSuffix, log);
-}
-
-void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log)
-{
-    // Step2. Find the spot to start applying the suffix
     // First sequence to apply is right after checkpoint
     uint32_t seq = logSuffix.checkpoint->seq() + 1;
     uint32_t idx = 0;

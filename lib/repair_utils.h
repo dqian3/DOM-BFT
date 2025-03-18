@@ -25,12 +25,16 @@ struct PBFTState {
     std::map<uint32_t, std::string> prepareSigs;
 };
 
+struct ClientRequest {
+    uint32_t clientId;
+    uint32_t clientSeq;
+    std::string requestData;
+};
+
 bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposal, LogSuffix &logSuffix);
 
-void applySuffixWithSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log, const std::string &snapshot);
+std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log);
 
-void applySuffixWithoutSnapshot(LogSuffix &logSuffix, std::shared_ptr<Log> log);
-
-void applySuffixAfterCheckpoint(LogSuffix &logSuffix, std::shared_ptr<Log> log);
+void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log);
 
 #endif

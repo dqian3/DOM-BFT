@@ -894,9 +894,18 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
         LogSuffix &logSuffix = getRepairLogSuffix();
         // TODO make sure this isn't outdated...
+        ::LogCheckpoint checkpoint(*logSuffix.checkpoint);
 
-        applySuffixWithSnapshot(logSuffix, log_, snapshotReply.snapshot());
+        if (!log_->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshotReply.snapshot())) {
+            // TODO handle this case properly by retrying on another replica
+            LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
+            throw std::runtime_error("Snapshot digest mismatch");
+        }
+
+        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_);
+        applySuffix(logSuffix, log_);
         appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
+        finishRepair(abortedRequests);
 
     } else {
         // Apply snapshot from checkpoint and reorder my log
@@ -907,7 +916,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         if (!log_->applySnapshotModifyLog(snapshotReply.seq(), checkpoint, snapshotReply.snapshot())) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
-            // TODO handle this better
+            // TODO handle this better by requesting from another replica..
             throw std::runtime_error("Snapshot digest mismatch");
         }
         appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
@@ -1006,7 +1015,8 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
         return;
     }
 
-    LOG(INFO) << "Repair trigger has a proof, starting repair!";
+    LOG(INFO) << "Repair trigger for round " << msg.round() << " client_id=" << msg.client_id()
+              << " cseq=" << msg.client_seq() << " has a proof, starting repair!";
 
     // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
     // if we already are in fallback.
@@ -1300,7 +1310,7 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
 
 bool Replica::verifyRepairLog(const RepairStart &log)
 {
-    if (!verifyCert(log.cert())) {
+    if (log.has_cert() && !verifyCert(log.cert())) {
         return false;
     }
 
@@ -1429,6 +1439,8 @@ void Replica::startRepair()
     // TODO rather than include actual client requests here, only include digest
     log_->toProto(repairStartMsg);
 
+    // TODO could add requests in DOM queue here to decrease average latency.
+
     uint32_t primaryId = getPrimary();
     LOG(INFO) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
     sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
@@ -1483,7 +1495,7 @@ void Replica::sendRepairSummaryToClients()
     }
 }
 
-void Replica::finishRepair()
+void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 {
     VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq() << " round=" << round_
             << " pbft_view=" << pbftView_;
@@ -1556,8 +1568,9 @@ void Replica::tryFinishRepair()
                       << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq << ", applying checkpoint before repair";
             log_->setStableCheckpoint(*checkpoint);
 
-            applySuffixWithoutSnapshot(logSuffix, log_);
-            finishRepair();
+            std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_);
+            applySuffix(logSuffix, log_);
+            finishRepair(abortedRequests);
         } else {
             LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq()
                       << " is inconsistent with my log, snapshot will be fetched from replicaId=";
@@ -1565,8 +1578,9 @@ void Replica::tryFinishRepair()
         }
 
     } else {
-        applySuffixWithoutSnapshot(logSuffix, log_);
-        finishRepair();
+        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_);
+        applySuffix(logSuffix, log_);
+        finishRepair(abortedRequests);
     }
 }
 

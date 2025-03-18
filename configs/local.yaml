@@ -53,8 +53,8 @@ replica:
   port: 34000
   app: "counter"
   keysDir: "keys/replica"
-  repairViewTimeout: 4000000
-  repairTimeout: 50000
+  repairViewTimeout: 5000000
+  repairTimeout: 1000000
   numVerifyThreads: 1
   numSendThreads: 2
   checkpointInterval: 100

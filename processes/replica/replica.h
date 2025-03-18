@@ -138,7 +138,7 @@ private:
     // Repair Helpers
     void startRepair();
     void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
-    void finishRepair();
+    void finishRepair(const std::vector<::ClientRequest> &abortedReqs);
     void tryFinishRepair();
     void sendRepairSummaryToClients();
     LogSuffix &getRepairLogSuffix();
