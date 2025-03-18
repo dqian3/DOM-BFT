@@ -29,11 +29,12 @@ struct ClientRequest {
     uint32_t clientId;
     uint32_t clientSeq;
     std::string requestData;
+    std::string padding;
 };
 
 bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposal, LogSuffix &logSuffix);
 
-std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log);
+std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log, uint32_t startSeq);
 
 void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log);
 

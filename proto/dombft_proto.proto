@@ -1,17 +1,20 @@
 syntax = "proto3";
 package dombft.proto;
 
+
+message PaddedRequestData {
+    bytes req_data = 1;
+    bytes padding = 2;
+}
+
 message ClientRequest {
     uint32 client_id = 1;
     uint32 client_seq = 2;
-    uint32 round = 3;
-    uint32 pbft_view = 4;
 
     uint64 send_time = 5;
     bool is_write = 6;
 
     bytes req_data = 7;
-    bytes padding = 8;
 }
 
 message DOMRequest {

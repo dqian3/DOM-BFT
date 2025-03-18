@@ -902,7 +902,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             throw std::runtime_error("Snapshot digest mismatch");
         }
 
-        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_);
+        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
         applySuffix(logSuffix, log_);
         appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
         finishRepair(abortedRequests);
@@ -1530,6 +1530,23 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     replyFromLogEntry(reply, seq);
     broadcastToReplicas(reply, MessageType::REPLY);
 
+    // Reapply any requests that were aborted in previous round
+    // NOTE, this is actually allow a single byzantine client to prevent a replica from ever entering fast path...
+
+    for (auto &req : abortedReqs) {
+        ClientRequest clientReq;
+        clientReq.set_client_id(req.clientId);
+        clientReq.set_client_seq(req.clientSeq);
+        clientReq.set_req_data(req.requestData);
+
+        VLOG(5) << "Processing aborted request client_id=" << req.clientId << " client_seq=" << req.clientSeq;
+
+        processClientRequest(clientReq);
+    }
+
+    curRoundStartSeq_ = log_->getNextSeq();
+
+    // Retry any requests
     for (auto &[_, req] : repairQueuedReqs_) {
         VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
         processClientRequest(req);
@@ -1568,7 +1585,7 @@ void Replica::tryFinishRepair()
                       << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq << ", applying checkpoint before repair";
             log_->setStableCheckpoint(*checkpoint);
 
-            std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_);
+            std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
             applySuffix(logSuffix, log_);
             finishRepair(abortedRequests);
         } else {
@@ -1578,7 +1595,7 @@ void Replica::tryFinishRepair()
         }
 
     } else {
-        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_);
+        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
         applySuffix(logSuffix, log_);
         finishRepair(abortedRequests);
     }

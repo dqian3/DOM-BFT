@@ -36,6 +36,12 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 
     log.emplace_back(nextSeq_, c_id, c_seq, req, prevDigest);
 
+    dombft::proto::PaddedRequestData reqData;
+    if (!reqData.ParseFromString(req)) {
+        LOG(ERROR) << "Failed to parse request data!";
+        return false;
+    }
+
     res = app_->execute(req, nextSeq_);
     if (res.empty()) {
         LOG(WARNING) << "Application failed to execute request!";

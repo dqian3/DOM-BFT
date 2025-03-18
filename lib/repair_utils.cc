@@ -155,7 +155,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     return true;
 }
 
-std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log)
+std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log, uint32_t startSeq)
 {
     // Save any client requests that we are aborting, in case we need to re-execute them
     std::vector<ClientRequest> ret;
@@ -165,7 +165,8 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
         keptReqs.insert({entry->client_id(), entry->client_seq()});
     }
 
-    for (uint32_t seq = logSuffix.checkpoint->seq() + 1; seq < log->getNextSeq(); seq++) {
+    startSeq = std::max(startSeq, log->getStableCheckpoint().seq + 1);
+    for (uint32_t seq = startSeq; seq < log->getNextSeq(); seq++) {
         const LogEntry &entry = log->getEntry(seq);
         RequestId key = {entry.client_id, entry.client_seq};
 
