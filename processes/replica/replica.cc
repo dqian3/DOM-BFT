@@ -359,9 +359,8 @@ void Replica::verifyMessagesThd()
                 LOG(INFO) << "Failed to verify repair proposal!";
                 continue;
             }
-            byte tmpDigest[SHA256_DIGEST_LENGTH];
-            getProposalDigest(tmpDigest, proposal);
-            if (memcmp(tmpDigest, PBFTPrePrepareMsg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH) != 0) {
+
+            if (getProposalDigest(proposal) != PBFTPrePrepareMsg.proposal_digest()) {
                 LOG(INFO) << "Proposal digest does not match!";
                 continue;
             }
@@ -1332,6 +1331,10 @@ bool Replica::verifyRepairLog(const RepairStart &log)
         }
     }
 
+    for (auto &entry : log.log_entries()) {
+        // TODO verify log entries
+    }
+
     return true;
 }
 
@@ -1342,8 +1345,6 @@ bool Replica::verifyRepairProposal(const RepairProposal &proposal)
         logSigs.emplace_back((byte *) sig.data(), sig.length());
     }
     uint32_t ind = 0;
-
-    uint32_t numVerified = 0;
 
     for (auto &log : proposal.logs()) {
         std::string logStr = log.SerializeAsString();
@@ -1424,6 +1425,8 @@ void Replica::startRepair()
     repairStartMsg.set_round(round_);
     repairStartMsg.set_replica_id(replicaId_);
     repairStartMsg.set_pbft_view(pbftView_);
+
+    // TODO rather than include actual client requests here, only include digest
     log_->toProto(repairStartMsg);
 
     uint32_t primaryId = getPrimary();
@@ -1603,8 +1606,9 @@ void Replica::doPrePreparePhase(uint32_t round)
         *(proposal->add_logs()) = startMsg.second;
         *(proposal->add_signatures()) = repairHistorySigs_[startMsg.first];
     }
-    getProposalDigest(proposalDigest_, *proposal);
-    prePrepare.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
+
+    proposalDigest_ = getProposalDigest(prePrepare.proposal());
+    prePrepare.set_proposal_digest(proposalDigest_);
     broadcastToReplicas(prePrepare, PBFT_PREPREPARE);
 }
 
@@ -1615,7 +1619,7 @@ void Replica::doPreparePhase()
     prepare.set_replica_id(replicaId_);
     prepare.set_round(repairProposal_->round());
     prepare.set_pbft_view(pbftView_);
-    prepare.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
+    prepare.set_proposal_digest(proposalDigest_);
     broadcastToReplicas(prepare, PBFT_PREPARE);
 }
 
@@ -1627,7 +1631,7 @@ void Replica::doCommitPhase()
     cmt.set_replica_id(replicaId_);
     cmt.set_round(proposalInst);
     cmt.set_pbft_view(pbftView_);
-    cmt.set_proposal_digest(proposalDigest_, SHA256_DIGEST_LENGTH);
+    cmt.set_proposal_digest(proposalDigest_);
     if (viewChangeByCommit()) {
         if (commitLocalInViewChange_)
             sendMsgToDst(cmt, PBFT_COMMIT, replicaAddrs_[replicaId_]);
@@ -1657,7 +1661,7 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
     LOG(INFO) << "PrePrepare RECEIVED for round=" << msg.round() << " from replicaId=" << msg.primary_id();
     // accepts the proposal as long as it's from the primary
     repairProposal_ = msg.proposal();
-    memcpy(proposalDigest_, msg.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
+    proposalDigest_ = msg.proposal_digest();
 
     if (viewChangeByPrepare()) {
         holdPrepareOrCommit_ = !holdPrepareOrCommit_;
@@ -1701,8 +1705,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     // Make sure the Prepare msgs are for the corresponding PrePrepare msg
     auto numMsgs = std::count_if(repairPrepares_.begin(), repairPrepares_.end(), [this](auto &curMsg) {
         return curMsg.second.round() == repairProposal_.value().round() &&
-               memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
-               curMsg.second.pbft_view() == pbftView_;
+               curMsg.second.proposal_digest() == proposalDigest_ && curMsg.second.pbft_view() == pbftView_;
     });
     if (numMsgs < 2 * f_ + 1) {
         LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for 2f + 1 to proceed";
@@ -1712,7 +1715,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     preparedRound_ = repairProposal_.value().round();
     viewPrepared_ = true;
     pbftState_.proposal = repairProposal_.value();
-    memcpy(pbftState_.proposal_digest, proposalDigest_, SHA256_DIGEST_LENGTH);
+    pbftState_.proposalDigest = proposalDigest_;
     pbftState_.prepares.clear();
     for (const auto &[repId, prepare] : repairPrepares_) {
         if (prepare.round() == preparedRound_) {
@@ -1766,8 +1769,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         return;
     }
     auto numMsgs = std::count_if(repairPBFTCommits_.begin(), repairPBFTCommits_.end(), [this](auto &curMsg) {
-        return curMsg.second.round() == preparedRound_ &&
-               memcmp(curMsg.second.proposal_digest().c_str(), proposalDigest_, SHA256_DIGEST_LENGTH) == 0 &&
+        return curMsg.second.round() == preparedRound_ && curMsg.second.proposal_digest() == proposalDigest_ &&
                curMsg.second.pbft_view() == pbftView_;
     });
     if (numMsgs < 2 * f_ + 1) {
@@ -1798,7 +1800,7 @@ void Replica::startViewChange()
             *(viewChange.add_prepares()) = prepare;
             *(viewChange.add_prepare_sigs()) = pbftState_.prepareSigs[repId];
         }
-        viewChange.set_proposal_digest(pbftState_.proposal_digest, SHA256_DIGEST_LENGTH);
+        viewChange.set_proposal_digest(pbftState_.proposalDigest);
         viewChange.mutable_proposal()->CopyFrom(pbftState_.proposal);
     }
 
@@ -1929,14 +1931,15 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
         // return;
     }
     repairProposal_ = maxVC.proposal();
-    memcpy(proposalDigest_, maxVC.proposal_digest().c_str(), SHA256_DIGEST_LENGTH);
+    proposalDigest_ = maxVC.proposal_digest();
     // set view change param to true to bypass round check.
     doPreparePhase();
 }
 
-void Replica::getProposalDigest(byte *digest, const RepairProposal &proposal)
+std::string Replica::getProposalDigest(const RepairProposal &proposal)
 {
     // use signatures as digest, since signatures are can function as the the digest of each proposal
+    byte digestBuf[SHA256_DIGEST_LENGTH];
     std::string digestStr;
     for (const auto &sig : proposal.signatures()) {
         digestStr += sig;
@@ -1944,7 +1947,9 @@ void Replica::getProposalDigest(byte *digest, const RepairProposal &proposal)
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, digestStr.c_str(), digestStr.size());
-    SHA256_Final(digest, &ctx);
+    SHA256_Final(digestBuf, &ctx);
+
+    return std::string((char *) digestBuf, SHA256_DIGEST_LENGTH);
 }
 
 }   // namespace dombft

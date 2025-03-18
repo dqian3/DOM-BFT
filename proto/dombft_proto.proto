@@ -121,9 +121,8 @@ message LogEntry
 
     bytes digest = 7;
 
-    // TODO is this needed?
+    // TODO remove this and add mechanism for replicas to fetch missing entries after fallback (as part of snapshot request maybe)
     bytes request = 8;
-    bytes result = 9;
 }
 
 message ClientSequence
@@ -197,7 +196,7 @@ message PBFTPrePrepare
 {
     uint32 round = 1;
     uint32 primary_id = 2;
-    uint32 pbft_view= 3;
+    uint32 pbft_view = 3;
 
     RepairProposal proposal = 4;
     bytes proposal_digest = 5;
@@ -207,7 +206,7 @@ message PBFTPrepare
 {
     uint32 round = 1;
     uint32 replica_id = 2;
-    uint32 pbft_view= 3;
+    uint32 pbft_view = 3;
     bytes proposal_digest = 4;
 }
 
@@ -215,21 +214,42 @@ message PBFTCommit
 {
     uint32 round = 1;
     uint32 replica_id = 2;
-    uint32 pbft_view= 3;
+    uint32 pbft_view = 3;
     bytes proposal_digest = 4;
 }
+
+
+message PBFTDone
+{
+    uint32 round = 1;
+    uint32 replica_id = 2;
+    uint32 pbft_view = 3;
+    bytes proposal_digest = 4;
+
+    repeated PBFTCommit commits = 5;
+    repeated bytes commit_sigs = 6;
+}
+
 
 message PBFTViewChange
 {
     uint32 round = 1;
     uint32 replica_id = 2;
-    uint32 pbft_view= 3;
+    uint32 pbft_view = 3;
     repeated  PBFTPrepare prepares = 4;
     repeated  bytes prepare_sigs = 5;
     // we add the "request" for simplicity though PBFT use fetching when the request is missing
     RepairProposal proposal = 6;
     bytes proposal_digest = 7;
 }
+
+message PBFTViewChangeNotif
+{
+    uint32 round = 1;
+    uint32 replica_id = 2;
+    uint32 pbft_view = 3;
+}
+
 
 message PBFTNewView
 {

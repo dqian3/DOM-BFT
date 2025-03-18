@@ -20,7 +20,7 @@ struct LogSuffix {
 
 struct PBFTState {
     dombft::proto::RepairProposal proposal;
-    byte proposal_digest[SHA256_DIGEST_LENGTH];
+    std::string proposalDigest;
     std::map<uint32_t, dombft::proto::PBFTPrepare> prepares;
     std::map<uint32_t, std::string> prepareSigs;
 };

@@ -73,7 +73,7 @@ private:
 
     // repair proposal is the current PBFT request
     std::optional<dombft::proto::RepairProposal> repairProposal_;
-    byte proposalDigest_[SHA256_DIGEST_LENGTH];
+    std::string proposalDigest_;
     std::map<uint32_t, dombft::proto::RepairStart> repairHistorys_;
     std::map<uint32_t, std::string> repairHistorySigs_;
     std::optional<LogSuffix> repairProposalLogSuffix_;
@@ -166,7 +166,7 @@ private:
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg);
     void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
     void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
-    void getProposalDigest(byte *digest, const dombft::proto::RepairProposal &proposal);
+    std::string getProposalDigest(const dombft::proto::RepairProposal &proposal);
 
     // sending helpers
     // note even though these are templates, we can define them in the cpp file because they are private

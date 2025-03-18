@@ -60,7 +60,6 @@ void LogEntry::toProto(dombft::proto::LogEntry &msg) const
     msg.set_client_seq(client_seq);
     msg.set_digest(digest);
     msg.set_request(request);
-    msg.set_result(result);
 }
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)

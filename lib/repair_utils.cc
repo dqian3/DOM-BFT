@@ -2,6 +2,35 @@
 
 #include "utils.h"
 
+typedef std::pair<uint32_t, uint32_t> RequestId;
+typedef std::map<RequestId, const dombft::proto::LogEntry *> ClientReqs;
+
+ClientReqs getValidClientRequests(const dombft::proto::RepairProposal &repairProposal)
+{
+    uint32_t f = repairProposal.logs().size() / 2;
+
+    // Compute all client requests in the proposal, so we can add them to the log suffix deterministically
+    ClientReqs ret;
+
+    std::map<RequestId, std::map<std::string, uint32_t>> requestCounts;
+
+    for (int i = 0; i < repairProposal.logs().size(); i++) {
+        auto &log = repairProposal.logs()[i];
+
+        for (const dombft::proto::LogEntry &entry : log.log_entries()) {
+            std::pair<uint32_t, uint32_t> key = {entry.client_id(), entry.client_seq()};
+
+            requestCounts[key][entry.digest()]++;
+
+            if (requestCounts[key][entry.digest()] >= f + 1) {
+                ret[key] = &entry;
+            }
+        }
+    }
+
+    return ret;
+}
+
 bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposal, LogSuffix &logSuffix)
 {
     LOG(INFO) << "Start getLogSuffixFromProposal";
@@ -104,29 +133,21 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
         logSuffix.entries.push_back(&entry);
     }
 
-    // Compute all client requests and which ones are already in suffix
-    // and add rest of client requests in deterministic order lexicographically by (client_id, client_seq)
+    ClientReqs remainingClientReqs = getValidClientRequests(repairProposal);
 
-    std::map<uint32_t, std::map<uint32_t, const dombft::proto::LogEntry *>> remainingClientReqs;
-
-    for (int i = 0; i < repairProposal.logs().size(); i++) {
-        auto &log = repairProposal.logs()[i];
-        // TODO verify each checkpoint
-        for (const dombft::proto::LogEntry &entry : log.log_entries()) {
-            remainingClientReqs[entry.client_id()][entry.client_seq()] = &entry;
-        }
-    }
     // Remove all requests already in the log suffix
     for (const auto &entry : logSuffix.entries) {
-        remainingClientReqs[entry->client_id()].erase(entry->client_seq());
+        remainingClientReqs.erase({entry->client_id(), entry->client_seq()});
     }
 
+    // Note if a client equivocates, then we just use whichever request this function gives us,
+    // since it is deterministic. Instead we just take whichever has at least f + 1 matching digests
+
     uint32_t finalLogSeq = logToUseSeq;
-    for (auto &[c_id, reqs] : remainingClientReqs) {
-        for (auto &[c_seq, entry] : reqs) {
-            logSuffix.entries.push_back(entry);
-            finalLogSeq++;
-        }
+    for (auto &[key, val] : remainingClientReqs) {
+        const dombft::proto::LogEntry *entry = val;
+        logSuffix.entries.push_back(entry);
+        finalLogSeq++;
     }
 
     VLOG(4) << "Rest of client requestes added from seq=" << logToUseSeq << " to seq=" << finalLogSeq;
