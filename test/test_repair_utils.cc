@@ -315,7 +315,7 @@ TEST_F(LoggingFixture, Cert)
     hist.push_back(curLog);
     // Logs with cert
     hist.push_back({10, "aaaa", 13, {{1, 3}, {2, 3}, {3, 3}}});
-    TestLog expectedLog{10, "aaaa", 0, {{1, 3}, {2, 3}, {3, 3}, {1, 2}}};
+    TestLog expectedLog{10, "aaaa", 0, {{1, 3}, {2, 3}, {3, 3}}};
 
     auto proposal = generateRepairProposal(1, hist);
 
