@@ -197,7 +197,7 @@ def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
 
 
 @task
-def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
+def run_rates(c, config_file="../configs/remote-prod.yaml",
                v=5,
                prot="dombft",
 ):

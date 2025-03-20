@@ -255,7 +255,7 @@ TEST_F(LoggingFixture, ApplyLogSuffix)
     std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
     EXPECT_CALL(*mockApp, abort(12)).WillOnce(Return(true));
 
-    applySuffixWithoutSnapshot(suffix, log);
+    applySuffix(suffix, log);
 
     assertLogEq(*log, newLog);
 }
@@ -275,7 +275,7 @@ TEST_F(LoggingFixture, ApplyReplicaAhead)
     auto ret = suffixFromTestLog(newLog, suffix);
 
     LOG(INFO) << "Before apply: " << *log;
-    applySuffixWithoutSnapshot(suffix, log);
+    applySuffix(suffix, log);
     LOG(INFO) << "After apply: " << *log;
     assertLogEq(*log, newLog);
 }
@@ -294,7 +294,7 @@ TEST_F(LoggingFixture, ApplyReplicaInserted)
     LogSuffix suffix;
     auto ret = suffixFromTestLog(newLog, suffix);
 
-    applySuffixWithoutSnapshot(suffix, log);
+    applySuffix(suffix, log);
     assertLogEq(*log, newLog);
 }
 
@@ -327,7 +327,7 @@ TEST_F(LoggingFixture, Cert)
     std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
     EXPECT_CALL(*mockApp, abort(11)).WillOnce(Return(true));
 
-    applySuffixWithoutSnapshot(suffix, log);
+    applySuffix(suffix, log);
     assertLogEq(*log, expectedLog);
 }
 
@@ -356,7 +356,7 @@ TEST_F(LoggingFixture, Cert2)
     std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
     EXPECT_CALL(*mockApp, abort(13)).WillOnce(Return(true));
 
-    applySuffixWithoutSnapshot(suffix, log);
+    applySuffix(suffix, log);
     assertLogEq(*log, expectedLog);
 }
 
@@ -380,7 +380,7 @@ TEST_F(LoggingFixture, Catchup)
     // MockApplication *mockApp = static_cast<MockApplication *>(behindLogApp.get());
     // EXPECT_CALL(*mockApp, applySnapshot(_)).Times(AtLeast(1));
 
-    // applySuffixWithoutSnapshot(suffix, behindLog);
+    // applySuffix(suffix, behindLog);
 
     // TestLog expectedLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}};
     // assertLogEq(*behindLog, expectedLog);
@@ -410,7 +410,7 @@ TEST_F(LoggingFixture, CheckpointAhead)
     // // Apply to Log
     // auto [aheadLog, app] = logFromTestLog(ahead);
     // LOG(INFO) << "Before apply: " << *aheadLog;
-    // applySuffixWithoutSnapshot(suffix, aheadLog);
+    // applySuffix(suffix, aheadLog);
     // LOG(INFO) << "After apply: " << *aheadLog;
 
     // // Generate protocol log

@@ -62,7 +62,7 @@ for seq in counts:
     if counts[seq] > 1:
         print(f"Sequence {seq} has different commits!")
         print(list(
-            f"c_id={x['client_id']} c_seq={x['client_seq']} path={x['path']} instance={x['instance']}" 
+            f"c_id={x['client_id']} c_seq={x['client_seq']} path={x['path']}" 
            for x in filter(lambda x: x["seq"] == seq, commits)
         ))
 
