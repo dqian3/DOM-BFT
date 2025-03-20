@@ -40,8 +40,8 @@ def get_all_ext_ips(config, ext_ip_map):
     return ips 
 
 
-def get_address_resolver(config_file):
-    ext_ip_map = get_gcloud_ext_ips(config_file)
+def get_address_resolver(context):
+    ext_ip_map = get_gcloud_ext_ips(context)
     return lambda ip: ext_ip_map[ip]
 
 @task
@@ -78,27 +78,27 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
 @task
 def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False):
     config_file = os.path.abspath(config_file)
-    resolve = get_address_resolver(config_file)
+    resolve = get_address_resolver(c)
     remote.setup_clockwork(c, config_file=config_file, resolve=resolve, install=install)
 
 
 @task
 def build(c, config_file="../configs/remote-prod.yaml", setup=False):
     config_file = os.path.abspath(config_file)
-    resolve = get_address_resolver(config_file)
+    resolve = get_address_resolver(c)
     remote.build(c, config_file=config_file, resolve=resolve, setup=setup)
 
 
 @task
 def copy_keys(c, config_file="../configs/remote-prod.yaml"):
     ext_ips = get_gcloud_ext_ips(c)
-    resolve = get_address_resolver(config_file)
+    resolve = get_address_resolver(c)
     remote.copy_keys(c, ext_ips, config_file, resolve=resolve)
 
 @task
 def copy_bin(c, config_file="../configs/remote-prod.yaml"):
     ext_ips = get_gcloud_ext_ips(c)
-    resolve = get_address_resolver(config_file)
+    resolve = get_address_resolver(c)
     remote.copy_keys(c, ext_ips, config_file, resolve=resolve)
 
 
@@ -114,7 +114,7 @@ def get_gcloud_process_ips(c, filter):
 
 
 @task
-def gcloud_create_prod(c, config_template="../configs/remote-prod.yaml"):
+def create_prod(c, config_template="../configs/remote-prod.yaml"):
     # This is probably better, but can't be across zones:
     # https://cloud.google.com/compute/docs/instances/multiple/create-in-bulk
 
@@ -124,7 +124,7 @@ gcloud compute instances create {} \
     --zone={} \
     --machine-type=t2d-standard-16 \
     --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
-    --create-disk=auto-delete=yes,boot=yes,device-name=prod-replica1,image=projects/debian-cloud/global/images/debian-12-bookworm-v20240709,mode=rw,size=20,type=projects/mythic-veld-419517/zones/us-west1-c/diskTypes/pd-ssd 
+    --create-disk=auto-delete=yes,boot=yes,device-name=prod-replica1,image=projects/debian-cloud/global/images/debian-12-bookworm-v20240709,mode=rw,size=10,type=pd-balanced 
 """
 
     zones = ["us-west1-c", "us-west4-c", "us-east1-c", "us-east4-c"]
@@ -136,27 +136,22 @@ gcloud compute instances create {} \
 
 
     n = len(config["replica"]["ips"])
-    n_proxies = len(config["proxy"]["ips"])
     n_clients = len(config["client"]["ips"])
 
     for i in range(n):
         zone = zones[i % len(zones)]
-        c.run(create_vm_template.format(f"prod-replica{i}", zone))
-
-    for i in range(n_proxies):
-        zone = zones[i % len(zones)]
-        c.run(create_vm_template.format(f"prod-proxy{i}", zone))
+        c.run(create_vm_template.format(f"replica{i}", zone))
     
 
     for i in range(n_clients):
         zone = zones[i % len(zones)]
-        c.run(create_vm_template.format(f"prod-client{i}", zone))
+        c.run(create_vm_template.format(f"client{i}", zone))
 
 
-    config["replica"]["ips"] = get_gcloud_process_ips(c, "prod-replica")
-    config["receiver"]["ips"] = get_gcloud_process_ips(c, "prod-replica")
-    config["proxy"]["ips"] = get_gcloud_process_ips(c, "prod-proxy")
-    config["client"]["ips"] = get_gcloud_process_ips(c, "prod-client")
+    config["replica"]["ips"] = get_gcloud_process_ips(c, "replica")
+    config["receiver"]["ips"] = get_gcloud_process_ips(c, "replica")
+    config["proxy"]["ips"] = get_gcloud_process_ips(c, "client")
+    config["client"]["ips"] = get_gcloud_process_ips(c, "client")
 
     filename, ext = os.path.splitext(config_template)
     yaml.dump(config, open(filename + "-prod" + ext, "w"))
@@ -208,7 +203,7 @@ def gcloud_run_rates(c, config_file="../configs/remote-prod.yaml",
                v=5,
                prot="dombft",
 ):
-    resolve = get_address_resolver(config_file)
+    resolve = get_address_resolver(c)
     remote.run_rate_exp(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
     vm(c, config_file=config_file, stop=True)
 
@@ -232,7 +227,7 @@ def run(
     max_view_change = 0,
 ):
     # Wrapper around remote run to convert ips
-    resolve = get_address_resolver(config_file)
+    resolve = get_address_resolver(c)
     remote.run(c, config_file, resolve=resolve, prot=prot, v=v, dom_logs=dom_logs, profile=profile,
                slow_path_freq=slow_path_freq, normal_path_freq=normal_path_freq, view_change_freq=view_change_freq,
                drop_checkpoint_freq=drop_checkpoint_freq, commit_local_in_view_change=commit_local_in_view_change,
@@ -244,5 +239,5 @@ def run(
 def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml", 
                     poisson=False, ignore_deadlines=False, duration=20, rate=100,
                     local_log=False):
-    resolve = get_address_resolver(config_file)
+    resolve = get_address_resolver(c)
     remote.reorder_exp(c, config_file, resolve=resolve, poisson=poisson, ignore_deadlines=ignore_deadlines, duration=duration, rate=rate, local_log=local_log)
