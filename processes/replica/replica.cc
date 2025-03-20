@@ -417,8 +417,7 @@ void Replica::verifyMessagesThd()
             bool success = true;
             for (int i = 0; i < viewChanges.size(); i++) {
                 if (!sigProvider_.verify(
-                        (byte *) viewChanges[i].SerializeAsString().c_str(), viewChanges[i].ByteSizeLong(),
-                        (byte *) sigs[i].c_str(), sigs[i].size(), "replica", viewChanges[i].replica_id()
+                        viewChanges[i].SerializeAsString(), sigs[i], "replica", viewChanges[i].replica_id()
                     )) {
                     LOG(INFO) << "Failed to verify replica signature in new view!";
                     success = false;
@@ -1809,6 +1808,8 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
     LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
     tryFinishRepair();
 }
+
+void Replica::processRepairDone(const RepairDone &msg) {}
 
 void Replica::startViewChange()
 {

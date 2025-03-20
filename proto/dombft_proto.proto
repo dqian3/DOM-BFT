@@ -222,7 +222,7 @@ message PBFTCommit
 }
 
 
-message PBFTDone
+message RepairDone 
 {
     uint32 round = 1;
     uint32 replica_id = 2;
