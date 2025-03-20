@@ -187,10 +187,10 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
               << " stable checkpoint seq=" << log->getStableCheckpoint().seq;
-    assert(logSuffix.checkpoint->seq() == log->getStableCheckpoint().seq);
+    assert(logSuffix.checkpoint->seq() <= log->getStableCheckpoint().seq);
 
     // First sequence to apply is right after checkpoint
-    uint32_t seq = logSuffix.checkpoint->seq() + 1;
+    uint32_t seq = std::max(logSuffix.checkpoint->seq(), log->getStableCheckpoint().seq) + 1;
     uint32_t idx = 0;
 
     // Reset the client record to the one in the checkpoint so we can rebuild it
@@ -200,6 +200,11 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     // 2 Skip the entries that are already in the log (consistent)
     for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
+
+        if (seq <= log->getStableCheckpoint().seq) {
+            seq++;
+            continue;
+        }
 
         // 2.2 If inconsistency is detected, abort own entries after the last consistent entry
         if (log->getDigest(seq) != entry->digest()) {

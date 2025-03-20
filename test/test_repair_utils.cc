@@ -83,7 +83,10 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
 
-        if (!log->addEntry(e.c_id, e.c_seq, e.req, res)) {
+        dombft::proto::PaddedRequestData reqData;
+        reqData.set_req_data(e.req);
+
+        if (!log->addEntry(e.c_id, e.c_seq, reqData.SerializeAsString(), res)) {
             LOG(WARNING) << "Could not add entry in logFromTestLog c_id=" << e.c_id << " c_seq=" << e.c_seq;
         }
 
