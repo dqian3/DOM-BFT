@@ -42,7 +42,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
         return false;
     }
 
-    res = app_->execute(req, nextSeq_);
+    res = app_->execute(reqData.req_data(), nextSeq_);
     if (res.empty()) {
         LOG(WARNING) << "Application failed to execute request!";
     }
@@ -146,6 +146,8 @@ bool Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, 
         std::string temp;   // result gets stored here, but we don't need it
         addEntry(entry.client_id, entry.client_seq, entry.request, temp);
     }
+
+    return true;
 }
 
 uint32_t Log::getNextSeq() const { return nextSeq_; }

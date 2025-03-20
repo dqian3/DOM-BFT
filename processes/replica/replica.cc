@@ -332,7 +332,7 @@ void Replica::verifyMessagesThd()
         else if (hdr->msgType == REPAIR_START) {
             RepairStart repairStartMsg;
             if (!repairStartMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse RepairStart message";
+                LOG(ERROR) << "Unable to parse REPAIR_START message";
                 continue;
             }
 
@@ -342,7 +342,24 @@ void Replica::verifyMessagesThd()
             }
 
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == PBFT_PREPREPARE) {
+        }
+
+        else if (hdr->msgType == REPAIR_DONE) {
+            RepairDone repairDoneMsg;
+            if (!repairDoneMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_DONE message";
+                continue;
+            }
+
+            if (!verifyRepairDone(repairDoneMsg)) {
+                LOG(INFO) << "Failed to verify REPAIR_DONE message from " << repairDoneMsg.replica_id();
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == PBFT_PREPREPARE) {
             PBFTPrePrepare PBFTPrePrepareMsg;
             if (!PBFTPrePrepareMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse PBFTPrePrepare message";
@@ -417,8 +434,7 @@ void Replica::verifyMessagesThd()
             bool success = true;
             for (int i = 0; i < viewChanges.size(); i++) {
                 if (!sigProvider_.verify(
-                        (byte *) viewChanges[i].SerializeAsString().c_str(), viewChanges[i].ByteSizeLong(),
-                        (byte *) sigs[i].c_str(), sigs[i].size(), "replica", viewChanges[i].replica_id()
+                        viewChanges[i].SerializeAsString(), sigs[i], "replica", viewChanges[i].replica_id()
                     )) {
                     LOG(INFO) << "Failed to verify replica signature in new view!";
                     success = false;
@@ -589,10 +605,21 @@ void Replica::processMessagesThd()
             RepairStart msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_TRIGGER message";
+                LOG(ERROR) << "Unable to parse REPAIR_START message";
                 return;
             }
             processRepairStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+
+        if (hdr->msgType == REPAIR_DONE) {
+            RepairDone msg;
+
+            if (!msg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse REPAIR_DONE message";
+                return;
+            }
+
+            processRepairDone(msg);
         }
 
         if (hdr->msgType == PBFT_PREPREPARE) {
@@ -1416,6 +1443,59 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
     return true;
 }
 
+bool Replica::verifyRepairDone(const RepairDone &done)
+{
+    if (done.commits().size() != 2 * f_ + 1) {
+        LOG(WARNING) << "Number of commits is " << done.commits().size() << ", which is smaller than 2f + 1, f=" << f_;
+        return false;
+    }
+
+    if (done.commits().size() != done.commit_sigs().size()) {
+        LOG(WARNING) << "Number of commits " << done.commits().size() << " is not equal to number of signatures "
+                     << done.commit_sigs().size();
+        return false;
+    }
+
+    // Make sure no replica is repeated
+    std::set<uint32_t> replicaIds;
+
+    // Verify each signature in the done message and check that it matches given fields
+    for (int i = 0; i < done.commits().size(); i++) {
+        const PBFTCommit &commit = done.commits()[i];
+        const std::string &sig = done.commit_sigs()[i];
+
+        if (replicaIds.contains(done.replica_id())) {
+            LOG(WARNING) << "RepairDone message contains multiple of the same replica " << done.replica_id();
+            return false;
+        }
+        replicaIds.insert(done.replica_id());
+
+        if (done.round() != commit.round()) {
+
+            LOG(WARNING) << "Repair done rounds do not match! " << done.round() << " != " << commit.round();
+
+            return false;
+        }
+
+        if (done.proposal_digest() != commit.proposal_digest()) {
+
+            LOG(WARNING) << "Repair done digests do not match!" << digest_to_hex(done.proposal_digest())
+                         << " != " << digest_to_hex(commit.proposal_digest());
+
+            return false;
+        }
+
+        // Note do not check view, since we accept RepairDone messages in a valid view
+
+        if (!sigProvider_.verify(commit.SerializeAsString(), sig, "replica", commit.replica_id())) {
+            LOG(WARNING) << "Failed to verify replica signature in repair done!";
+            return false;
+        }
+    }
+
+    return true;
+}
+
 // ============== Repair ==============
 
 void Replica::startRepair()
@@ -1510,6 +1590,17 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         viewChange_ = false;
         viewChangeCounter_ += 1;
     }
+
+    RepairDone done;
+    done.set_replica_id(replicaId_);
+    done.set_round(round_ - 1);   // For previous round
+    done.set_proposal_digest(proposalDigest_);
+    for (const auto &[repId, commit] : repairPBFTCommits_) {
+        *(done.add_commits()) = commit;
+        done.add_commit_sigs(repairCommitSigs_[repId]);
+    }
+
+    broadcastToReplicas(done, MessageType::REPAIR_DONE);
 
     repair_ = false;
     repairProposal_.reset();
@@ -1808,6 +1899,16 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
     }
     LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
     tryFinishRepair();
+}
+
+void Replica::processRepairDone(const RepairDone &msg)
+{
+    if (msg.round() == round_ && repair_) {
+        LOG(ERROR) << "Processing RepairDone for round=" << round_ << " not implemented!";
+    }
+
+    VLOG(4) << "Received REPAIR_DONE from replicaId=" << msg.replica_id() << " for round=" << msg.round();
+    // TODO finish implementing allowing replica to catch up with a RepairDone
 }
 
 void Replica::startViewChange()

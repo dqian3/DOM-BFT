@@ -124,3 +124,10 @@ bool SignatureProvider::verify(MessageHeader *hdr, const std::string &pubKeyType
     byte *data = (byte *) (hdr + 1);
     return verify(data, hdr->msgLen, data + hdr->msgLen, hdr->sigLen, pubKeyType, pubKeyId);
 }
+
+bool SignatureProvider::verify(
+    const std::string &data, const std::string &sig, const std::string &pubKeyType, int pubKeyId
+)
+{
+    return verify((byte *) data.c_str(), data.size(), (byte *) sig.c_str(), sig.size(), pubKeyType, pubKeyId);
+}
