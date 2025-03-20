@@ -178,6 +178,7 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
         ret.delta += r.idx + ":" + r.key + ":" + r.value + ":" + std::to_string(r.type) + ",";
     }
     ret.fromIdxDelta = committedIdx;
+    ret.digest = std::string(digest, digest + SHA256_DIGEST_LENGTH);
 
     return ret;
 }

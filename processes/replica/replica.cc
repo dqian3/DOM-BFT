@@ -815,6 +815,9 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         std::string logDigest = log_->getDigest(rSeq);
         std::string appDigest = checkpointCollector_.getCachedState(rSeq).snapshot.digest;
 
+        VLOG(3) << "Sending COMMIT for seq=" << rSeq << " logDigest=" << digest_to_hex(logDigest)
+                << " appDigest=" << digest_to_hex(appDigest);
+
         uint32_t round = round_;
         // Broadcast commit Message
         dombft::proto::Commit commit;
@@ -833,7 +836,9 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
     uint32_t seq = commit.seq();
-    VLOG(3) << "Processing COMMIT from replica " << commit.replica_id() << " for seq " << seq;
+    VLOG(3) << "Processing COMMIT from replica " << commit.replica_id() << " for seq " << seq
+            << " round=" << commit.round() << " digest=" << digest_to_hex(commit.log_digest())
+            << " app_digest=" << digest_to_hex(commit.app_digest());
     if (commit.round() < round_) {
         VLOG(4) << "Checkpoint commit round outdated, skipping";
         return;
