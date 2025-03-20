@@ -226,7 +226,6 @@ message RepairDone
 {
     uint32 round = 1;
     uint32 replica_id = 2;
-    uint32 pbft_view = 3;
     bytes proposal_digest = 4;
 
     repeated PBFTCommit commits = 5;

@@ -93,6 +93,7 @@ private:
     std::map<uint32_t, dombft::proto::PBFTPrepare> repairPrepares_;
     std::map<uint32_t, std::string> repairPrepareSigs_;
     std::map<uint32_t, dombft::proto::PBFTCommit> repairPBFTCommits_;
+    std::map<uint32_t, std::string> repairCommitSigs_;
     std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
     std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
@@ -130,6 +131,7 @@ private:
     void processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg);
 
     void processRepairStart(const dombft::proto::RepairStart &msg, std::span<byte> sig);
+    void processRepairDone(const dombft::proto::RepairDone &msg);
 
     void checkTimeouts();
 
@@ -139,6 +141,7 @@ private:
     bool verifyRepairLog(const dombft::proto::RepairStart &log);
     bool verifyRepairProposal(const dombft::proto::RepairProposal &proposal);
     bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
+    bool verifyRepairDone(const dombft::proto::RepairDone &done);
 
     // Repair Helpers
     void startRepair();
