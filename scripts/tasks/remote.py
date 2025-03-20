@@ -435,8 +435,10 @@ def copy(c, file, config_file="../configs/remote-prod.yaml"):
 @task
 def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False, resolve=lambda x: x):
     _, receivers, proxies, _ = get_process_ips(config_file, resolve)
+    _, receivers_int, proxies_int, _ = get_process_ips(config_file, resolve=lambda x: x)
 
     addrs = receivers + proxies
+    addrs_int = receivers_int + proxies_int
 
     # Only need to do this on proxies and receivers
     group = ThreadingGroup(*addrs)
@@ -449,11 +451,12 @@ def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False,
         ttcs_template = ttcs_file.read()
 
     ip = addrs[0]
-    ttcs_config = ttcs_template.format(ip, ip, 10, "false")
+    ip_int = addrs_int[0]
+    ttcs_config = ttcs_template.format(ip_int, ip_int, 10, "false")
     Connection(ip).run(f"echo '{ttcs_config}' | sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
 
-    for ip in addrs[1:]:
-        ttcs_config = ttcs_template.format(ip, ip, 1, "true")
+    for ip, ip_int in zip(addrs[1:], addrs_int[1:]):
+        ttcs_config = ttcs_template.format(ip_int, ip_int, 1, "true")
         Connection(ip).run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
 
     group.run("sudo systemctl stop ntp", warn=True)

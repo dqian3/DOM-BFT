@@ -91,15 +91,13 @@ def build(c, config_file="../configs/remote-prod.yaml", setup=False):
 
 @task
 def copy_keys(c, config_file="../configs/remote-prod.yaml"):
-    ext_ips = get_gcloud_ext_ips(c)
     resolve = get_address_resolver(c)
-    remote.copy_keys(c, ext_ips, config_file, resolve=resolve)
+    remote.copy_keys(c, config_file, resolve=resolve)
 
 @task
-def copy_bin(c, config_file="../configs/remote-prod.yaml"):
-    ext_ips = get_gcloud_ext_ips(c)
+def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False):
     resolve = get_address_resolver(c)
-    remote.copy_keys(c, ext_ips, config_file, resolve=resolve)
+    remote.copy_bin(c, config_file, upload_once=upload_once, resolve=resolve)
 
 
 def get_gcloud_process_ips(c, filter):
