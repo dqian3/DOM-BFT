@@ -20,9 +20,9 @@ ClientReqs getValidClientRequests(const dombft::proto::RepairProposal &repairPro
         for (const dombft::proto::LogEntry &entry : log.log_entries()) {
             std::pair<uint32_t, uint32_t> key = {entry.client_id(), entry.client_seq()};
 
-            requestCounts[key][entry.digest()]++;
+            requestCounts[key][entry.request()]++;
 
-            if (requestCounts[key][entry.digest()] >= f + 1) {
+            if (requestCounts[key][entry.request()] >= f + 1) {
                 ret[key] = &entry;
             }
         }
