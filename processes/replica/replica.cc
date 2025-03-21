@@ -1138,7 +1138,7 @@ void Replica::checkTimeouts()
 
     if (repairViewStart_ != 0 && now - repairViewStart_ > repairViewTimeout_) {
         repairViewStart_ = now;
-        // TODO increment view change here if neeeded
+        // TODO VC timer should be cancelled and restarted after receiving 2f + 1 VC messages
 
         LOG(WARNING) << "Repair for round=" << round_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
         pbftViewChanges_.clear();
@@ -1913,11 +1913,13 @@ void Replica::processRepairDone(const RepairDone &msg)
     }
 
     VLOG(4) << "Received REPAIR_DONE from replicaId=" << msg.replica_id() << " for round=" << msg.round();
-    // TODO finish implementing allowing replica to catch up with a RepairDone
+    // TODO  finish implementing allowing replica to catch up with a RepairDone
 }
 
 void Replica::startViewChange()
 {
+    // TODO VC: If view change was already true, double timeout here
+
     pbftView_++;
     repair_ = true;
     viewChange_ = true;
@@ -1979,6 +1981,8 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
 
     repairViewStart_ = GetMicrosecondTimestamp();   // reset view change timeout (1) above
 
+    // TODO VC: should do this if there are f + 1 VC messages here.
+    // They also don't need to necessarily be in the same view
     if (inViewNum > pbftView_) {
         LOG(INFO) << "Majority has a larger view number, starting a new view change for the major view";
         pbftView_ = inViewNum - 1;   // will add 1 back in startViewChange
