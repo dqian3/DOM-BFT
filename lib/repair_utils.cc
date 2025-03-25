@@ -35,6 +35,14 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 {
     LOG(INFO) << "Start getLogSuffixFromProposal";
 
+    if (VLOG_IS_ON(4)) {
+        std::string replicaIds;
+        for (auto &log : repairProposal.logs()) {
+            replicaIds += std::to_string(log.replica_id()) + " ";
+        }
+        VLOG(4) << "Replica ids in repairProposal: " << replicaIds;
+    }
+
     uint32_t f = repairProposal.logs().size() / 2;
 
     // TODO verify messages so this isn't unsafe
@@ -138,6 +146,13 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     // Remove all requests already in the log suffix
     for (const auto &entry : logSuffix.entries) {
         remainingClientReqs.erase({entry->client_id(), entry->client_seq()});
+    }
+
+    if (VLOG_IS_ON(4)) {
+        VLOG(4) << "Remaining client requests:";
+        for (auto &[key, val] : remainingClientReqs) {
+            VLOG(4) << "\tc_id=" << key.first << " c_seq=" << key.second;
+        }
     }
 
     // Note if a client equivocates, then we just use whichever request this function gives us,

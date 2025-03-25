@@ -145,7 +145,6 @@ private:
 
     // Repair Helpers
     void startRepair();
-    void replyFromLogEntry(dombft::proto::Reply &reply, uint32_t seq);
     void finishRepair(const std::vector<::ClientRequest> &abortedReqs);
     void tryFinishRepair();
     void sendRepairSummaryToClients();
@@ -171,7 +170,7 @@ private:
     void doCommitPhase();
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
     void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
-    void processPBFTCommit(const dombft::proto::PBFTCommit &msg);
+    void processPBFTCommit(const dombft::proto::PBFTCommit &msg, std::span<byte> sig);
     void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
     void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
     std::string getProposalDigest(const dombft::proto::RepairProposal &proposal);

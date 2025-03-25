@@ -26,7 +26,7 @@
 class Log {
 
 private:
-    std::deque<LogEntry> log;
+    std::deque<LogEntry> log_;
     uint32_t nextSeq_;
     LogCheckpoint stableCheckpoint_;
 

@@ -652,7 +652,7 @@ void Replica::processMessagesThd()
                 return;
             }
 
-            processPBFTCommit(msg);
+            processPBFTCommit(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
         if (hdr->msgType == PBFT_VIEWCHANGE) {
@@ -782,8 +782,8 @@ void Replica::processCert(const Cert &cert)
     reply.set_client_seq(r.client_seq());
     reply.set_seq(r.seq());
 
-    VLOG(3) << "Sending cert ack for " << reply.client_id() << ", " << reply.client_seq() << " to "
-            << clientAddrs_[reply.client_id()].ip();
+    VLOG(3) << "Sending cert ack for seq=" << r.seq() << " c_id=" << reply.client_id() << " cseq=" << reply.client_seq()
+            << " to " << clientAddrs_[reply.client_id()].ip();
 
     sendMsgToDst(reply, MessageType::CERT_REPLY, clientAddrs_[reply.client_id()]);
 }
@@ -970,7 +970,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             reply.set_round(round_);
             reply.set_digest(entry.digest);
 
-            VLOG(1) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest).substr(56)
+            VLOG(1) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest)
                     << " c_id=" << entry.client_id << " c_seq=" << entry.client_seq;
 
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
@@ -981,8 +981,8 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig)
 {
     if (repair_) {
-        LOG(WARNING) << "Received repair trigger during a repair from client " << msg.client_id()
-                     << " for cseq=" << msg.client_seq();
+        VLOG(7) << "Received repair trigger during a repair from client " << msg.client_id()
+                << " for cseq=" << msg.client_seq();
         return;
     }
 
@@ -1469,11 +1469,11 @@ bool Replica::verifyRepairDone(const RepairDone &done)
         const PBFTCommit &commit = done.commits()[i];
         const std::string &sig = done.commit_sigs()[i];
 
-        if (replicaIds.contains(done.replica_id())) {
+        if (replicaIds.contains(commit.replica_id())) {
             LOG(WARNING) << "RepairDone message contains multiple of the same replica " << done.replica_id();
             return false;
         }
-        replicaIds.insert(done.replica_id());
+        replicaIds.insert(commit.replica_id());
 
         if (done.round() != commit.round()) {
 
@@ -1493,7 +1493,7 @@ bool Replica::verifyRepairDone(const RepairDone &done)
         // Note do not check view, since we accept RepairDone messages in a valid view
 
         if (!sigProvider_.verify(commit.SerializeAsString(), sig, "replica", commit.replica_id())) {
-            LOG(WARNING) << "Failed to verify replica signature in repair done!";
+            LOG(WARNING) << "Failed to verify replica signature from " << commit.replica_id() << " in repair done!";
             return false;
         }
     }
@@ -1530,19 +1530,6 @@ void Replica::startRepair()
     LOG(INFO) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
     sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
     LOG(INFO) << "DUMP start repair round=" << round_ << " " << *log_;
-}
-
-void Replica::replyFromLogEntry(Reply &reply, uint32_t seq)
-{
-    const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
-
-    reply.set_client_id(entry.client_id);
-    reply.set_client_seq(entry.client_seq);
-    reply.set_replica_id(replicaId_);
-    reply.set_round(round_);
-    reply.set_result(entry.result);
-    reply.set_seq(entry.seq);
-    reply.set_digest(entry.digest);
 }
 
 void Replica::sendRepairSummaryToClients()
@@ -1622,9 +1609,21 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
     checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->takeSnapshot());
 
-    Reply reply;
-    replyFromLogEntry(reply, seq);
-    broadcastToReplicas(reply, MessageType::REPLY);
+    if (seq <= log_->getStableCheckpoint().seq) {
+        LOG(ERROR) << "Repair finished, but no new checkpoint to commit?";
+    } else {
+        Reply reply;
+        const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
+
+        reply.set_client_id(entry.client_id);
+        reply.set_client_seq(entry.client_seq);
+        reply.set_replica_id(replicaId_);
+        reply.set_round(round_);
+        reply.set_result(entry.result);
+        reply.set_seq(entry.seq);
+        reply.set_digest(entry.digest);
+        broadcastToReplicas(reply, MessageType::REPLY);
+    }
 
     // Reapply any requests that were aborted in previous round
     // NOTE, this is actually allow a single byzantine client to prevent a replica from ever entering fast path...
@@ -1865,7 +1864,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     doCommitPhase();
 }
 
-void Replica::processPBFTCommit(const PBFTCommit &msg)
+void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
 {
     uint32_t inInst = msg.round();
     if (msg.pbft_view() != pbftView_) {
@@ -1883,6 +1882,8 @@ void Replica::processPBFTCommit(const PBFTCommit &msg)
         return;
     }
     repairPBFTCommits_[msg.replica_id()] = msg;
+    repairCommitSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
+
     LOG(INFO) << "PBFTCommit RECEIVED for round=" << inInst << " from replicaId=" << msg.replica_id();
 
     if (!repairProposal_.has_value() || repairProposal_.value().round() < inInst) {

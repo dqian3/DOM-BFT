@@ -68,6 +68,8 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
     client_handles = []
     other_handles = []
 
+    f = n_replicas // 3
+
     # TODO verbosity
     with c.cd(".."):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
