@@ -12,26 +12,26 @@ def genkeys(c, config_file, algorithm="ED25519", keysize=2048):
 
     # Parse config to get dirs and number of processes for each
     with open(config_file) as cfg_file:
-        config = yaml.load(config_file, Loader=yaml.Loader)
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     # number of keys we need to generate
     num_processes = {}
     # dir that keys should be put in for each process
     dirs = {}
 
-    for process in config:
-        if process == "transport" or process == "app":
+    for p in config:
+        if "ips" not in config[p]:
             continue
         
-        pconfig = config[process]
-        num_processes[process] = len(pconfig["ips"])
-        dirs[process] = pconfig["keysDir"]
+        pconfig = config[p]
+        num_processes[p] = len(pconfig["ips"])
+        dirs[p] = pconfig["keysDir"]
 
     for process in dirs:
         key_dir = dirs[process]
         nkeys = num_processes[process]
 
-        c.run(["mkdir", "-p", key_dir])
+        c.run("mkdir -p " + key_dir)
 
         print(f"Generating {nkeys} keys for {process}")
         for i in range(nkeys):
@@ -39,10 +39,10 @@ def genkeys(c, config_file, algorithm="ED25519", keysize=2048):
             print(key_path)
 
             if algorithm == "RSA":
-                c.run(["openssl", "genrsa", "-outform", "der", "-out", key_path + ".der", str(keysize)])
+                c.run(f"openssl genrsa -outform der -out {key_path}.der {str(keysize)}")
             elif algorithm == "ED25519":
-                c.run(["openssl",  "genpkey",  "-outform", "der",  "-algorithm",  "ed25519", "-out", key_path + ".der"])
-            c.run(["openssl", "pkey",  "-outform", "der", "-in", key_path + ".der", "-pubout", "-out", key_path + ".pub"])
+                c.run(f"openssl genpkey -outform der -algorithm ed25519 -out {key_path}.der")
+            c.run(f"openssl pkey -outform der -in {key_path}.der -pubout -out {key_path}.pub")
 
 
 @task

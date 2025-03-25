@@ -137,7 +137,7 @@ void Proxy::RecvMeasurementsTd()
             context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
         }
 
-        latencyBound_.store(context.getCappedMaxOWD() * 1.5);
+        latencyBound_.store(context.getCappedMaxOWD() * 1.2);
         VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
                 << " rtt=" << now - reply.send_time() << " now=" << now << "\nLatency bound is set to be "
                 << latencyBound_.load();
