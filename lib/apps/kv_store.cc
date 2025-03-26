@@ -201,14 +201,14 @@ std::string KVStoreClient::randomString(std::string::size_type length)
 std::string KVStoreClient::generateAppRequest()
 {
     // TODO(Hao): test with set only for now.
-    KVRequest *req = new KVRequest();
-    req->set_key(randomString(keyLen));
-    req->set_value(randomString(valLen));
-    req->set_msg_type(KVRequestType::SET);
+    KVRequest req;
+    req.set_key(randomString(keyLen));
+    req.set_value(randomString(valLen));
+    req.set_msg_type(KVRequestType::SET);
     // TODO(Hao): make it more random, now KV always have same length
     keyLen = (keyLen + 1) > KEY_MAX_LENGTH ? KEY_MIN_LENGTH : (keyLen + 1);
     valLen = (valLen + 1) > VALUE_MAX_LENGTH ? VALUE_MIN_LENGTH : (valLen + 1);
-    LOG(INFO) << "Generated request: " << req->key() << " " << req->value();
+    LOG(INFO) << "Generated request: " << req.key() << " " << req.value();
 
-    return req->SerializeAsString();
+    return req.SerializeAsString();
 }
