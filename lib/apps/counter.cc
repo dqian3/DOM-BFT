@@ -40,10 +40,12 @@ bool Counter::commit(uint32_t idx)
 {
     LOG(INFO) << "Committing counter value at idx: " << idx;
 
-    values.erase(values.begin(), values.lower_bound(idx));
+    auto it = values.lower_bound(idx);
 
-    committedIdx = idx;
-    committedValue = counter;
+    committedIdx = it->first;
+    committedValue = it->second;
+
+    values.erase(values.begin(), it);
 
     return true;
 }
