@@ -132,8 +132,8 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
 
 std::string CounterClient::generateAppRequest()
 {
-    CounterRequest *request = new CounterRequest();
-    request->set_op(CounterOperation::INCREMENT);
+    CounterRequest request;
+    request.set_op(CounterOperation::INCREMENT);
 
-    return request->SerializeAsString();
+    return request.SerializeAsString();
 }

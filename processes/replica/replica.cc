@@ -853,7 +853,6 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     // use the majority agreed commit message if exists
     if (checkpointCollector_.addAndCheckCommit(commit, sig)) {
         // TODO we can update our round in case commit.round() > round_
-        assert(round_ == commit.round());
         if (round_ > commit.round()) {
             LOG(WARNING) << "Dropping checkpoint for old round " << commit.round() << " current round is " << round_;
             return;
@@ -871,8 +870,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         }
         uint32_t seq = commitToUse.seq();
 
-        LOG(INFO) << "Trying to commit seq=" << seq << " commit_digest=" << digest_to_hex(commitToUse.log_digest())
-                  << " log_digest=" << digest_to_hex(log_->getDigest(seq));
+        LOG(INFO) << "Trying to commit seq=" << seq << " commit_digest=" << digest_to_hex(commitToUse.log_digest());
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != commitToUse.log_digest()) {
             LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";

@@ -19,7 +19,7 @@ std::string digest_to_hex(const std::string &digest)
     for (size_t i = 0; i < digest.length(); i++) {
         // We have to cast to byte first to ensure it isn't interpreted as a sign char
         // then to a int to ensure it is printed as a number instead of a char...
-        hexStream << std::setw(2) << static_cast<int>(static_cast<byte>(digest.c_str()[i]));
+        hexStream << std::setw(2) << static_cast<int>(static_cast<byte>(digest[i]));
     }
     std::string ret = hexStream.str();
 

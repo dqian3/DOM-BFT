@@ -275,7 +275,6 @@ message SnapshotReply {
     uint32 round = 1;
     uint32 seq = 2;
     uint32 replica_id = 3;
-    uint32 pbft_view = 4;
     bytes snapshot = 5;
 }
 
