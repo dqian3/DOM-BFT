@@ -100,6 +100,8 @@ bool Counter::applyDelta(const std::string &snap, const std::string &digest) { r
 bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
 {
     // get the element seperated by ,
+
+    VLOG(1) << "Applying snapshot " << snap;
     std::string version_str = snap.substr(0, snap.find(','));
     std::string value_str = snap.substr(snap.find(',') + 1);
     committed_state.version = std::stoull(version_str);

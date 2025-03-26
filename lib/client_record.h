@@ -23,7 +23,7 @@ struct ClientSequence {
 
 class ClientRecord {
 private:
-    std::map<uint32_t, ClientSequence> sequences;
+    std::map<uint32_t, ::ClientSequence> sequences;
 
 public:
     ClientRecord() = default;

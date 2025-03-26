@@ -169,13 +169,17 @@ void CheckpointCollector::cleanStaleCollectors(uint32_t committedSeq, uint32_t c
     VLOG(1) << "Cleaning up any checkpoint state since checkpoint committed at seq=" << committedSeq
             << " round=" << committedRound;
 
-    if (states_.empty()) {
-        return;
-    }
-
     std::pair<uint32_t, uint32_t> key = {committedRound, committedSeq};
 
-    states_.erase(states_.begin(), --states_.upper_bound(committedSeq));
-    replyCollectors_.erase(replyCollectors_.begin(), --replyCollectors_.upper_bound(key));
-    commitCollectors_.erase(commitCollectors_.begin(), --commitCollectors_.upper_bound(key));
+    if (states_.lower_bound(committedSeq) != states_.end()) {
+        states_.erase(states_.begin(), --states_.lower_bound(committedSeq));
+    }
+
+    if (replyCollectors_.lower_bound(key) != replyCollectors_.end()) {
+        replyCollectors_.erase(replyCollectors_.begin(), --replyCollectors_.upper_bound(key));
+    }
+
+    if (commitCollectors_.lower_bound(key) != commitCollectors_.end()) {
+        commitCollectors_.erase(commitCollectors_.begin(), --commitCollectors_.upper_bound(key));
+    }
 }

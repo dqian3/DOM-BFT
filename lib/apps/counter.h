@@ -36,7 +36,7 @@ public:
     bool applyDelta(const std::string &delta, const std::string &digest) override;
     bool applySnapshot(const std::string &snapshot, const std::string &digest) override;
 
-    AppSnapshot takeSnapshot() override;
+    ::AppSnapshot takeSnapshot() override;
 
 private:
     int counter;

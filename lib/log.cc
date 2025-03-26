@@ -47,10 +47,10 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     if (res.empty()) {
         LOG(WARNING) << "Application failed to execute request!";
     }
-    log_[nextSeq_ % log_.size()].result = res;
+    log_.back().result = res;
 
     VLOG(4) << "Adding new entry at seq=" << nextSeq_ << " c_id=" << c_id << " c_seq=" << c_seq
-            << " digest=" << digest_to_hex(log_[nextSeq_ % log_.size()].digest);
+            << " digest=" << digest_to_hex(log_.back().digest);
 
     nextSeq_++;
     return true;
