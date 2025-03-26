@@ -8,3 +8,5 @@ void AppSnapshotStore::addSnapshot(std::string &&snapshot, uint32_t idx)
 }
 
 std::string AppSnapshotStore::getSnapshot() { return stableSnapshot_; }
+
+uint32_t AppSnapshotStore::getSnapshotIdx() { return stableSnapshotIdx_; }

@@ -27,8 +27,9 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     }
 
     if (nextSeq_ - 1 == stableCheckpoint_.seq) {
-        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_;
         prevDigest = stableCheckpoint_.logDigest;
+        VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_
+                << " prevDigest=" << digest_to_hex(prevDigest);
     } else {
         assert(!log_.empty());
         prevDigest = log_.back().digest;
@@ -65,7 +66,7 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
     auto entry = getEntry(seq);   // will not be nullptr because range is checked above
     const dombft::proto::Reply &r = cert.replies()[0];
 
-    if (r.client_id() != entry.client_id || r.client_seq() != entry.client_seq) {
+    if (r.client_id() != entry.client_id || r.client_seq() != entry.client_seq || r.digest() != entry.digest) {
         VLOG(5) << "Fail adding cert because mismatching request!";
         return false;
     }
@@ -111,7 +112,7 @@ bool Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const s
     clientRecord = checkpoint.clientRecord_;
     nextSeq_ = seq + 1;
     latestCertSeq_ = 0;
-    latestCert_ = std::nullopt;
+    latestCert_.reset();
     log_.clear();
 
     return app_->applySnapshot(snapshot, checkpoint.appDigest);
@@ -165,6 +166,10 @@ const std::string &Log::getDigest() const
 
 const std::string &Log::getDigest(uint32_t seq) const
 {
+    if (seq == stableCheckpoint_.seq) {
+        return stableCheckpoint_.logDigest;
+    }
+
     if (!inRange(seq)) {
         throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
@@ -177,7 +182,7 @@ const std::string &Log::getDigest(uint32_t seq) const
 const LogEntry &Log::getEntry(uint32_t seq)
 {
     if (!inRange(seq)) {
-        throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
+        throw std::runtime_error("Tried to get entry of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
     uint32_t offset = log_[0].seq;
 

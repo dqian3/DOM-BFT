@@ -76,19 +76,11 @@ bool Counter::abort(uint32_t abort_idx)
         return false;
     }
 
-    if (abort_idx > version_hist.back().version) {
-        LOG(WARNING
-        ) << "Requested abort index is greater than the last version in history. No requests will be aborted";
-        return true;
-    } else if (abort_idx < version_hist.front().version) {
-        version_hist.erase(version_hist.begin(), version_hist.end());
-    } else {
-        auto it = std::find_if(version_hist.begin(), version_hist.end(), [abort_idx](const VersionedValue &v) {
-            return v.version < abort_idx;
-        });
-        if (it != version_hist.end()) {
-            // Erase all entries from the point found + 1 to the end entries from the point found to the end
-            version_hist.erase(it + 1, version_hist.end());
+    for (auto it = version_hist.begin(); it != version_hist.end();) {
+        if (it->version >= abort_idx) {
+            it = version_hist.erase(it);
+        } else {
+            ++it;
         }
     }
 

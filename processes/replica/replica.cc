@@ -710,7 +710,8 @@ void Replica::processClientRequest(const ClientRequest &request)
     uint32_t seq;
 
     if (!log_->addEntry(clientId, clientSeq, request.req_data(), result)) {
-        LOG(ERROR) << "Request dropped since already added (but not committed)!";
+        LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
+                     << " is added into log, but not committed, dropping!";
         return;
     }
 
@@ -782,8 +783,8 @@ void Replica::processCert(const Cert &cert)
     reply.set_client_seq(r.client_seq());
     reply.set_seq(r.seq());
 
-    VLOG(3) << "Sending cert ack for seq=" << r.seq() << " c_id=" << reply.client_id() << " cseq=" << reply.client_seq()
-            << " to " << clientAddrs_[reply.client_id()].ip();
+    VLOG(3) << "Sending cert ack for seq=" << r.seq() << " c_id=" << reply.client_id()
+            << " cseq=" << reply.client_seq();
 
     sendMsgToDst(reply, MessageType::CERT_REPLY, clientAddrs_[reply.client_id()]);
 }
@@ -862,7 +863,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         }
         uint32_t seq = commitToUse.seq();
 
-        LOG(INFO) << "Trying to commit seq=" << seq;
+        LOG(INFO) << "Trying to commit seq=" << seq << " commit_digest=" << digest_to_hex(commitToUse.log_digest())
+                  << " log_digest=" << digest_to_hex(log_->getDigest(seq));
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != commitToUse.log_digest()) {
             LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";
@@ -875,6 +877,9 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             log_->setStableCheckpoint(checkpoint);
             // TODO move this and use delta information...
             appSnapshotStore_.addSnapshot(std::string(checkpointCollector_.getCachedState(seq).snapshot.snapshot), seq);
+
+            VLOG(1) << "PERF checkpoint seq=" << seq << " log_digest=" << digest_to_hex(commitToUse.log_digest())
+                    << " app_digest=" << digest_to_hex(commitToUse.app_digest());
 
             // if there is overlapping and later checkpoint commits first, skip earlier ones
             checkpointCollector_.cleanStaleCollectors(seq, round_);
@@ -905,6 +910,8 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     snapshotReply.set_replica_id(replicaId_);
     snapshotReply.set_pbft_view(pbftView_);
     snapshotReply.set_snapshot(appSnapshotStore_.getSnapshot());
+
+    assert(appSnapshotStore_.getSnapshotIdx() == log_->getStableCheckpoint().seq);
 
     sendMsgToDst(snapshotReply, MessageType::SNAPSHOT_REPLY, replicaAddrs_[request.replica_id()]);
 }
@@ -1049,6 +1056,18 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 
     LOG(INFO) << "Repair trigger for round " << msg.round() << " client_id=" << msg.client_id()
               << " cseq=" << msg.client_seq() << " has a proof, starting repair!";
+
+    // Print out proof
+
+    std::ostringstream oss;
+    oss << "round=" << round_ << "\n";
+    for (int i = 0; i < msg.replies().size(); i++) {
+        const auto &reply = msg.replies(i);
+        oss << reply.replica_id() << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.round()
+            << "\n";
+    }
+
+    LOG(INFO) << "Repair proof:\n" << oss.str();
 
     // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
     // if we already are in fallback.
@@ -1541,7 +1560,7 @@ void Replica::sendRepairSummaryToClients()
     summary.set_replica_id(replicaId_);
     summary.set_pbft_view(pbftView_);
 
-    uint32_t seq = log_->getStableCheckpoint().seq;
+    uint32_t seq = log_->getStableCheckpoint().seq + 1;
     for (; seq < log_->getNextSeq(); seq++) {
         const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
         CommittedReply reply;
@@ -1573,6 +1592,8 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
             << " pbft_view=" << pbftView_;
 
     LOG(INFO) << "DUMP finish repair round=" << round_ << " " << *log_;
+    LOG(INFO) << "Current client record" << log_->getClientRecord();
+    LOG(INFO) << "Checkpoint client record" << log_->getStableCheckpoint().clientRecord_;
 
     round_++;
     LOG(INFO) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
@@ -1625,6 +1646,9 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         broadcastToReplicas(reply, MessageType::REPLY);
     }
 
+    // Send repair summary to clients to allow commits in the slow path..
+    sendRepairSummaryToClients();
+
     // Reapply any requests that were aborted in previous round
     // NOTE, this is actually allow a single byzantine client to prevent a replica from ever entering fast path...
 
@@ -1647,6 +1671,8 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         processClientRequest(req);
     }
     repairQueuedReqs_.clear();
+
+    LOG(INFO) << "DUMP post repair round=" << round_ - 1 << " " << *log_;
 }
 
 void Replica::tryFinishRepair()

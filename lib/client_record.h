@@ -40,6 +40,10 @@ public:
     // Computes the number of records in referenceRecord that are misssing in this record
     // Does not check for extra records in this record
     int numMissing(const ClientRecord &referenceRecord) const;
+
+    friend std::ostream &operator<<(std::ostream &out, const ClientRecord &record);
 };
+
+std::ostream &operator<<(std::ostream &out, const ClientRecord &record);
 
 #endif   // DOM_BFT_CLIENT_RECORD_H

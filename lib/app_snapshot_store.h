@@ -14,6 +14,7 @@ public:
     // void addSnapshotWithDelta(AppSnapshot &&snapshot, uint32_t idx);
 
     std::string getSnapshot();
+    uint32_t getSnapshotIdx();
     // std::string getDeltasFromIdx(uint32_t fromIdx);
 
 private:

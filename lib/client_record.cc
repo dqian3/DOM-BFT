@@ -112,3 +112,17 @@ int ClientRecord::numMissing(const ClientRecord &referenceRecord) const
     }
     return ret;
 }
+
+// Output to stream
+std::ostream &operator<<(std::ostream &out, const ClientRecord &record)
+{
+    out << "ClientRecord: ";
+    for (const auto &[id, sequence] : record.sequences) {
+        out << "\tClient " << id << " lastSeq=" << sequence.lastSeq_ << " missedSeqs=[";
+        for (uint32_t s : sequence.missedSeqs_) {
+            out << s << ", ";
+        }
+        out << "]\n";
+    }
+    return out;
+}

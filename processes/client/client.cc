@@ -377,7 +377,7 @@ void Client::checkTimeouts()
             }
         }
 
-        if (reqState.triggerSent && now - reqState.triggerSendTime > slowPathTimeout_) {
+        if (reqState.triggerSent && now - reqState.triggerSendTime > requestTimeout_) {
             // This is expected to happen when the replicas are making progress without the client's request
             LOG(INFO) << "Client repair on request " << clientSeq << " timed out again, retrying request through DOM";
             ClientRequest &req = reqState.request;
