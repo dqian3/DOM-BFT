@@ -886,7 +886,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             // TODO move this and use delta information...
             appSnapshotStore_.addSnapshot(std::string(checkpointCollector_.getCachedState(seq).snapshot.snapshot), seq);
 
-            VLOG(1) << "PERF checkpoint seq=" << seq << " log_digest=" << digest_to_hex(commitToUse.log_digest())
+            VLOG(1) << "PERF event=checkpoint_end seq=" << seq
+                    << " log_digest=" << digest_to_hex(commitToUse.log_digest())
                     << " app_digest=" << digest_to_hex(commitToUse.app_digest());
 
             // if there is overlapping and later checkpoint commits first, skip earlier ones
@@ -916,8 +917,10 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     snapshotReply.set_round(round_);
     snapshotReply.set_seq(log_->getStableCheckpoint().seq);
     snapshotReply.set_replica_id(replicaId_);
-    snapshotReply.set_pbft_view(pbftView_);
     snapshotReply.set_snapshot(appSnapshotStore_.getSnapshot());
+
+    VLOG(3) << "Sending SNAPSHOT_REPLY for seq=" << snapshotReply.seq() << " round=" << snapshotReply.round()
+            << " snapshot size=" << snapshotReply.snapshot().size() << " idx=" << appSnapshotStore_.getSnapshotIdx();
 
     assert(appSnapshotStore_.getSnapshotIdx() == log_->getStableCheckpoint().seq);
 
@@ -1636,11 +1639,11 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
     uint32_t seq = log_->getNextSeq() - 1;
 
-    checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->takeSnapshot());
-
     if (seq <= log_->getStableCheckpoint().seq) {
         LOG(ERROR) << "Repair finished, but no new checkpoint to commit?";
     } else {
+        checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->takeSnapshot());
+
         Reply reply;
         const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
 

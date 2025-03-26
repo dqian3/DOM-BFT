@@ -114,9 +114,15 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
 ::AppSnapshot Counter::takeSnapshot()
 {
     ::AppSnapshot ret;
-    ret.idx = version_hist.empty() ? committed_state.version : version_hist.back().version;
+    uint32_t idx, snapshot;
+    if (version_hist.empty()) {
+        ret.snapshot = std::to_string(committed_state.version) + "," + std::to_string(committed_state.value);
+        ret.idx = committed_state.version;
+    } else {
+        ret.snapshot = std::to_string(version_hist.back().version) + "," + std::to_string(version_hist.back().value);
+        ret.idx = version_hist.back().version;
+    }
 
-    ret.snapshot = std::to_string(committed_state.version) + "," + std::to_string(committed_state.value);
     ret.digest = ret.snapshot;
     ret.delta = ret.snapshot;
     ret.fromIdxDelta = committed_state.version;
