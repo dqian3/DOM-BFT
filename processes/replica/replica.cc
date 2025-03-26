@@ -854,6 +854,14 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     if (checkpointCollector_.addAndCheckCommit(commit, sig)) {
         // TODO we can update our round in case commit.round() > round_
         assert(round_ == commit.round());
+        if (round_ > commit.round()) {
+            LOG(WARNING) << "Dropping checkpoint for old round " << commit.round() << " current round is " << round_;
+            return;
+        } else if (round_ < commit.round()) {
+            LOG(WARNING) << "Ignoring commit for future round " << commit.round() << " current round is " << round_;
+            return;
+        }
+
         dombft::proto::Commit commitToUse;
         checkpointCollector_.getCommitToUse(commit.round(), seq, commitToUse);
 
