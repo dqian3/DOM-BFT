@@ -33,8 +33,6 @@ struct LogEntry {
     LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &request, const std::string &prev_digest);
     ~LogEntry();
 
-    void updateDigest(const byte *prev_digest);
-
     // Serialization
     void toProto(dombft::proto::LogEntry &msg) const;
     friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);

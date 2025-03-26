@@ -152,7 +152,7 @@ void CheckpointCollector::getCheckpoint(uint32_t round, uint32_t seq, ::LogCheck
 const CheckpointState &CheckpointCollector::getCachedState(uint32_t seq) { return states_.at(seq); }
 
 void CheckpointCollector::cacheState(
-    uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, AppSnapshot &&snapshot
+    uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, const AppSnapshot &snapshot
 )
 {
     if (states_.contains(seq)) {
@@ -161,7 +161,7 @@ void CheckpointCollector::cacheState(
 
     // TODO we can look at the current digest here to clean up any stale collectors
     // However, since replica won't process messages from previous rounds, it's also probably fine to not do this...
-    states_[seq] = {logDigest, clientRecord, std::move(snapshot)};
+    states_[seq] = {logDigest, clientRecord, snapshot};
 }
 
 void CheckpointCollector::cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound)

@@ -932,7 +932,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         return;
     }
     if (snapshotReply.seq() <= log_->getStableCheckpoint().seq) {
-        VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping";
+        VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
         return;
     }
     LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "

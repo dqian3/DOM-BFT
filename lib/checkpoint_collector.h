@@ -99,8 +99,9 @@ public:
 
     const CheckpointState &getCachedState(uint32_t seq);
 
-    void
-    cacheState(uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, AppSnapshot &&snapshot);
+    void cacheState(
+        uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, const AppSnapshot &snapshot
+    );
 
     void cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound);
 };

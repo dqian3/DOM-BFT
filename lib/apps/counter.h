@@ -21,8 +21,8 @@ class Counter : public Application {
 public:
     Counter()
         : counter(0)
-        , committed_state(0, 0)
-        , version_hist()
+        , committedValue(0)
+        , committedIdx(0)
     {
     }
 
@@ -40,9 +40,9 @@ public:
 
 private:
     int counter;
-    VersionedValue committed_state;
 
-    std::vector<VersionedValue> version_hist;
+    int committedValue;
+    int committedIdx;
 };
 
 class CounterClient : public ApplicationClient {

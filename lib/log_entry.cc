@@ -34,23 +34,6 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string 
     digest = std::string(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
 }
 
-void LogEntry::updateDigest(const byte *prev_digest)
-{
-    byte digest_bytes[SHA256_DIGEST_LENGTH];
-
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-
-    SHA256_Update(&ctx, &seq, sizeof(seq));
-    SHA256_Update(&ctx, &client_id, sizeof(client_id));
-    SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
-    SHA256_Update(&ctx, prev_digest, SHA256_DIGEST_LENGTH);
-    SHA256_Update(&ctx, request.c_str(), request.length());
-    SHA256_Final(digest_bytes, &ctx);
-
-    digest = std::string(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
-}
-
 LogEntry::~LogEntry() {}
 
 void LogEntry::toProto(dombft::proto::LogEntry &msg) const
