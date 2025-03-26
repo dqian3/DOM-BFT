@@ -9,14 +9,6 @@
 
 #include <vector>
 
-#define INT_SIZE_IN_BYTES (sizeof(int))
-
-typedef struct VersionedValue {
-    uint64_t version;
-    int value;
-
-} VersionedValue;
-
 class Counter : public Application {
 public:
     Counter()
@@ -40,6 +32,8 @@ public:
 
 private:
     int counter;
+
+    std::map<uint64_t, uint64_t> values;
 
     int committedValue;
     int committedIdx;

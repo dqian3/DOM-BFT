@@ -1,18 +1,6 @@
 syntax = "proto3";
 package dombft.apps;
 
-// ===================== Snapshot Logic =====================
-message AppSnapshot {
-    bool is_delta = 1;
-    
-    // Snapshots can consist of multiple deltas
-    repeated uint32 delta_from_idx = 2;
-    repeated bytes delta = 3;
-
-    bytes snapshot = 4;
-}
-
-
 // ===================== KV Store =====================
 enum KVRequestType {
     GET = 0;

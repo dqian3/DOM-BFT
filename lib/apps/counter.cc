@@ -30,6 +30,7 @@ std::string Counter::execute(const std::string &serialized_request, uint32_t exe
         exit(1);
     }
 
+    values[execute_idx] = counter;
     response.set_value(counter);
 
     return response.SerializeAsString();
@@ -39,6 +40,8 @@ bool Counter::commit(uint32_t idx)
 {
     LOG(INFO) << "Committing counter value at idx: " << idx;
 
+    values.erase(values.begin(), values.lower_bound(idx));
+
     committedIdx = idx;
     committedValue = counter;
 
@@ -47,7 +50,13 @@ bool Counter::commit(uint32_t idx)
 
 bool Counter::abort(uint32_t idx)
 {
-    counter = idx;
+    values.erase(values.lower_bound(idx), values.end());
+
+    if (values.empty()) {
+        counter = committedValue;
+    } else {
+        counter = values.rbegin()->second;
+    }
 
     return true;
 }
@@ -66,6 +75,7 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
     committedValue = std::stoi(valueStr);
 
     counter = committedValue;
+    values.clear();
 
     LOG(INFO) << "Applying snapshot with value " << counter << " and index " << committedIdx;
     return true;
@@ -75,15 +85,19 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
 {
     ::AppSnapshot ret;
 
-    ret.fromIdxDelta = 0;
-    ret.idx = 0;
-
-    ret.snapshot = std::to_string(counter) + "," + std::to_string(counter);
-    ret.idx = counter;
+    if (values.empty()) {
+        ret.idx = committedIdx;
+        ret.snapshot = std::to_string(committedIdx) + "," + std::to_string(committedValue);
+    } else {
+        auto lastEntry = values.rbegin();
+        ret.idx = lastEntry->first;
+        ret.snapshot = std::to_string(lastEntry->first) + "," + std::to_string(lastEntry->second);
+    }
+    VLOG(1) << "Creating snapshot: '" << ret.snapshot << "'";
 
     ret.digest = ret.snapshot;
     ret.delta = ret.snapshot;
-    ret.fromIdxDelta = counter;
+    ret.fromIdxDelta = committedIdx;
 
     return ret;
 }
