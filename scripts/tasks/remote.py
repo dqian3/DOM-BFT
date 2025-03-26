@@ -424,9 +424,11 @@ def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, set
 
 @task
 def cmd(c, cmd, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
-    print(get_all_ips(config_file, resolve))
+    
+    ips = set(get_all_ips(config_file, resolve))
+    print(ips)
 
-    group = ThreadingGroup(*get_all_ips(config_file, resolve))
+    group = ThreadingGroup(*ips)
     group.run(cmd)
 
 
