@@ -283,7 +283,7 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
 #             Multiple experiment tasks
 #=================================================
 @task
-def run_rate_exp(c, config_file="../configs/remote-prod.yaml",
+def run_rates(c, config_file="../configs/remote-prod.yaml",
             resolve=lambda x: x,
             v=5,
             prot="dombft",

@@ -62,7 +62,7 @@ private:
 
     // State for repair
     bool repair_ = false;
-
+    bool repairSnapshotRequested_ = false;
     bool repairTimeoutSent_ = false;
     uint64_t repairTimeoutStart_ = 0;
     uint64_t repairViewStart_ = 0;

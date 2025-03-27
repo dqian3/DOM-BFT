@@ -202,7 +202,7 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
                prot="dombft",
 ):
     resolve = get_address_resolver(c)
-    remote.run_rate_exp(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
+    remote.run_rates(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
     vm(c, config_file=config_file, stop=True)
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs

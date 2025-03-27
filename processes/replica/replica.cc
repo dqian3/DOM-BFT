@@ -939,6 +939,11 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
               << snapshotReply.seq();
 
     if (repair_) {
+        if (!repairSnapshotRequested_) {
+            LOG(ERROR) << "Received snapshot reply during repair due to previous checkpoint, ignoring... !";
+            return;
+        }
+
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
         LogSuffix &logSuffix = getRepairLogSuffix();
         // TODO make sure this isn't outdated...
@@ -949,6 +954,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
             throw std::runtime_error("Snapshot digest mismatch");
         }
+
+        // Got the snapshot
+        repairSnapshotRequested_ = false;
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
         applySuffix(logSuffix, log_);
@@ -1721,6 +1729,8 @@ void Replica::tryFinishRepair()
         } else {
             LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq()
                       << " is inconsistent with my log, snapshot will be fetched from replicaId=";
+
+            repairSnapshotRequested_ = true;
             sendSnapshotRequest(logSuffix.checkpointReplica, checkpoint->seq());
         }
 
