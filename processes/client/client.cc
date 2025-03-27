@@ -607,8 +607,13 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
         // Request is committed, so we can clean up state!
         // TODO check we have a consistent set of application replies!
 
-        VLOG(1) << "PERF event=commit path=slow client_id=" << clientId_ << " client_seq=" << cseq
-                << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime;
+        if (reply.is_repair()) {
+            VLOG(1) << "PERF event=commit path=slow client_id=" << clientId_ << " client_seq=" << cseq
+                    << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime;
+        } else {
+            VLOG(1) << "PERF event=commit path=missed client_id=" << clientId_ << " client_seq=" << cseq
+                    << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime;
+        }
 
         lastSlowPath_ = cseq;
         commitRequest(cseq);

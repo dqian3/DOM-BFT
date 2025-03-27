@@ -699,6 +699,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         reply.set_replica_id(replicaId_);
         reply.set_client_id(clientId);
         reply.set_client_seq(clientSeq);
+        reply.set_is_repair(false);
 
         LOG(ERROR) << "TODO Cache for client results not implemented, sending blank result!";
 
@@ -1589,6 +1590,7 @@ void Replica::sendRepairSummaryToClients()
         reply.set_client_seq(entry.client_seq);
         reply.set_seq(entry.seq);
         reply.set_result(entry.result);
+        reply.set_is_repair(true);
 
         (*summary.add_replies()) = reply;
     }
