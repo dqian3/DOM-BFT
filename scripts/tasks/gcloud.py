@@ -232,6 +232,14 @@ def run(
                max_view_change=max_view_change)
 
 
+@task
+def logs(c,  config_file="../configs/remote-prod.yaml", resolve=lambda x: x,):
+    # ips of each process 
+    resolve = get_address_resolver(c)
+    remote.logs(c, config_file=config_file, resolve=resolve)
+
+
+
 
 @task
 def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml", 

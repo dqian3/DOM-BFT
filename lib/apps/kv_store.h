@@ -25,8 +25,8 @@ class KVStore : public Application {
 
 private:
     std::vector<KVStoreRequest> requests;
-    std::map<std::string, std::string> data;
-    std::map<std::string, std::string> committedData;
+    std::unordered_map<std::string, std::string> data;
+    std::unordered_map<std::string, std::string> committedData;
     uint32_t committedIdx;
 
 public:

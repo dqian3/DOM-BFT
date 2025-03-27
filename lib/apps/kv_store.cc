@@ -55,13 +55,12 @@ std::string KVStore::execute(const std::string &serialized_request, uint32_t exe
     return ret;
 }
 
-bool KVStore::commit(uint32_t commit_idx)
+bool KVStore::commit(uint32_t idx)
 {
-    LOG(INFO) << "Committing counter value at idx: " << commit_idx;
-    // update committed_data_digest alone the way
+    LOG(INFO) << "Committing kv store at idx: " << idx;
 
     uint32_t i = 0;
-    for (uint32_t i = 0; i < requests.size() && requests[i].idx <= commit_idx; i++) {
+    for (i = 0; i < requests.size() && requests[i].idx <= idx; i++) {
         // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
         KVStoreRequest &r = requests[i];
         if (r.type == KVRequestType::SET) {
@@ -69,13 +68,13 @@ bool KVStore::commit(uint32_t commit_idx)
         } else if (r.type == KVRequestType::DELETE) {
             committedData.erase(r.key);
         }
-        i++;
     }
     // remove committed requests
     requests.erase(requests.begin(), requests.begin() + i);
-    committedIdx = commit_idx;
+    committedIdx = idx;
 
-    LOG(INFO) << "Committed at idx: " << commit_idx << " committed_data size: " << committedData.size();
+    LOG(INFO) << "Committed at idx: " << idx << " committed_data size: " << committedData.size()
+              << " requests size: " << requests.size();
     return true;
 }
 
@@ -133,7 +132,7 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     }
 
     try {
-        std::map<std::string, std::string> new_data;
+        std::unordered_map<std::string, std::string> new_data;
 
         std::istringstream iss(snapshot);
         std::string kv;
@@ -179,6 +178,8 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     }
     ret.fromIdxDelta = committedIdx;
     ret.digest = std::string(digest, digest + SHA256_DIGEST_LENGTH);
+
+    VLOG(1) << "Size of data: " << data.size() << " size of requests: " << requests.size();
 
     return ret;
 }

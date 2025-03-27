@@ -185,6 +185,8 @@ message CommittedReply
     uint32 client_seq = 3;
     uint32 seq = 4;
     bytes result = 5;
+
+    bool is_repair = 6;
 }
 
 message RepairSummary

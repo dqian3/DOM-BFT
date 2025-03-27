@@ -24,29 +24,28 @@ client:
   - 10.150.0.12
   - 10.182.0.13
 
-  - 10.138.0.15
-  - 10.142.0.14
-  - 10.150.0.12
-  - 10.182.0.13
+  # - 10.138.0.15
+  # - 10.142.0.14
+  # - 10.150.0.12
+  # - 10.182.0.13
 
-  - 10.138.0.15
-  - 10.142.0.14
-  - 10.150.0.12
-  - 10.182.0.13
+  # - 10.138.0.15
+  # - 10.142.0.14
+  # - 10.150.0.12
+  # - 10.182.0.13
 
   keysDir: keys/client
-  maxInFlight: 25
   port: 33000
   runtimeSeconds: 60
   
   sendMode: maxInFlight
-  maxInFlight: 100
+  maxInFlight: 25
   sendRate: 300
   requestSize: 512
 
   normalPathTimeout: 200000
-  slowPathTimeout: 1000000
-  requestTimeout: 1000000     # 1 s
+  slowPathTimeout:  1000000   # 1 s
+  requestTimeout:   5000000    # 5 s
 
 proxy:
   forwardPort: 31000
@@ -55,6 +54,12 @@ proxy:
   - 10.142.0.14
   - 10.150.0.12
   - 10.182.0.13
+
+  # - 10.138.0.15
+  # - 10.142.0.14
+  # - 10.150.0.12
+  # - 10.182.0.13
+
   keysDir: keys/proxy
   maxOwd: 100000
   measurementPort: 32000
@@ -85,4 +90,4 @@ replica:
   numVerifyThreads: 6
   port: 34000
 
-  checkpointInterval: 2000
+  checkpointInterval: 10000
