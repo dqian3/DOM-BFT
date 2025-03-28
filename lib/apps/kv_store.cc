@@ -1,9 +1,25 @@
 #include "kv_store.h"
 
+#include "zipfian.h"
+
 #include <random>
 #include <sstream>
 
 using namespace dombft::apps;
+
+KVStore::KVStore(uint32_t numKeys)
+    : committedIdx(0)
+{
+    int width = std::to_string(numKeys - 1).length();
+    for (uint32_t i = 0; i < numKeys; i++) {
+        data[std::to_string(i)] = "";
+        committedData[std::to_string(i)] = "";
+    }
+
+    uint64_t now = GetMicrosecondTimestamp();
+    ::AppSnapshot snapshot = takeSnapshot();
+    LOG(INFO) << "Snapshot of KVStores with " << numKeys << " keys took " << GetMicrosecondTimestamp() - now << " us";
+}
 
 KVStore::~KVStore() {}
 
@@ -173,32 +189,29 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     return ret;
 }
 
-std::string KVStoreClient::randomString(std::string::size_type length)
+KVStoreClient::KVStoreClient(uint32_t numKeys)
+    : keyDist_(numKeys)
 {
-    static auto &chrs = "0123456789"
-                        "abcdefghijklmnopqrstuvwxyz"
-                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    thread_local static std::mt19937 rg{std::random_device{}()};
-    thread_local static std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
-    std::string s;
-    s.reserve(length);
-    while (length--)
-        s += chrs[pick(rg)];
-    return s;
+    LOG(INFO) << "KVStore numKeys=" << numKeys << "\tskewFactor=" << SKEW_FACTOR;
+    std::default_random_engine generator(GetMicrosecondTimestamp());
+    zipfian_int_distribution<uint32_t> zipfianDistribution(0, numKeys, SKEW_FACTOR);
+    for (uint32_t i = 0; i < keyDist_.size(); i++) {
+        keyDist_[i] = zipfianDistribution(generator);
+    }
 }
 
 std::string KVStoreClient::generateAppRequest()
 {
-    // TODO(Hao): test with set only for now.
-    KVRequest req;
-    req.set_key(randomString(keyLen));
-    req.set_value(randomString(valLen));
-    req.set_msg_type(KVRequestType::SET);
-    // TODO(Hao): make it more random, now KV always have same length
-    keyLen = (keyLen + 1) > KEY_MAX_LENGTH ? KEY_MIN_LENGTH : (keyLen + 1);
-    valLen = (valLen + 1) > VALUE_MAX_LENGTH ? VALUE_MIN_LENGTH : (valLen + 1);
-    LOG(INFO) << "Generated request: " << req.key() << " " << req.value();
+    static uint64_t num = 0;
 
+    // TODO only create writes for now, if we implement some sort of read optimization,
+    // we can change this.
+    KVRequest req;
+    req.set_key(std::to_string(keyDist_[num % keyDist_.size()]));
+    req.set_value(std::to_string(num));
+    num++;
+
+    req.set_msg_type(KVRequestType::SET);
+    LOG(INFO) << "Generated request: " << req.key() << " " << req.value();
     return req.SerializeAsString();
 }

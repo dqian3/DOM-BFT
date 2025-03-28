@@ -75,6 +75,7 @@ Replica::Replica(
     if (config.app == AppType::COUNTER) {
         app_ = std::make_shared<Counter>();
     } else if (config.app == AppType::KV_STORE) {
+        // TODO make keysize configurable
         app_ = std::make_shared<KVStore>();
     } else {
         LOG(ERROR) << "Unrecognized App Type";
