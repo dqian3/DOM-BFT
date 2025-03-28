@@ -63,8 +63,6 @@ bool Counter::abort(uint32_t idx)
     return true;
 }
 
-bool Counter::applyDelta(const std::string &snap, const std::string &digest) { return applySnapshot(snap, digest); }
-
 bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
 {
     // get the element seperated by ,
@@ -98,9 +96,6 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
     VLOG(1) << "Creating snapshot: '" << ret.snapshot << "'";
 
     ret.digest = ret.snapshot;
-    ret.delta = ret.snapshot;
-    ret.fromIdxDelta = committedIdx;
-
     return ret;
 }
 

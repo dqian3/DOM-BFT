@@ -17,9 +17,6 @@ struct AppSnapshot {
 
     std::string snapshot;
     std::string digest;
-
-    std::string delta;
-    uint32_t fromIdxDelta;
 };
 
 class Application {
@@ -36,8 +33,6 @@ public:
     virtual bool abort(uint32_t abort_idx) = 0;
 
     virtual bool applySnapshot(const std::string &snapshot, const std::string &digest) = 0;
-    virtual bool applyDelta(const std::string &delta, const std::string &digest) = 0;
-
     virtual AppSnapshot takeSnapshot() = 0;
 };
 

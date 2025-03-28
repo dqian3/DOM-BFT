@@ -13,6 +13,8 @@ struct LogCheckpoint {
     uint32_t seq = 0;
     // TODO shared ptr here so we don't duplicate it from certs.
     std::string logDigest;
+
+    std::string appSnapshotSeq;
     std::string appDigest;
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;

@@ -5,6 +5,7 @@
 #include "lib/utils.h"
 #include "proto/dombft_apps.pb.h"
 
+#include <iomanip>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -30,7 +31,16 @@ private:
     uint32_t committedIdx;
 
 public:
-    ~KVStore();
+    KVStore(uint32_t numKeys)
+        : committedIdx(0)
+    {
+        int width = std::to_string(numKeys - 1).length();
+        for (uint32_t i = 0; i < numKeys; i++) {
+            std::stringstream ss;
+            ss << std::setfill('0') << std::setw(width) << i;
+            data[ss.str()] = "";
+        }
+    }
 
     std::string execute(const std::string &serialized_request, uint32_t execute_idx) override;
 
@@ -38,7 +48,6 @@ public:
     bool abort(uint32_t abort_idx) override;
 
     bool applySnapshot(const std::string &snapshot, const std::string &digest) override;
-    bool applyDelta(const std::string &delta, const std::string &digest) override;
 
     AppSnapshot takeSnapshot() override;
 };

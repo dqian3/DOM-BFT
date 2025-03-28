@@ -110,11 +110,6 @@ bool KVStore::abort(uint32_t abort_idx)
     return true;
 }
 
-bool KVStore::applyDelta(const std::string &delta, const std::string &digest)
-{
-    throw std::runtime_error("Delta not implemented yet for KVStore");
-}
-
 bool KVStore::applySnapshot(const std::string &snapshot, const std::string &digest)
 {
     byte computedDigest[SHA256_DIGEST_LENGTH];
@@ -172,12 +167,6 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, ret.snapshot.c_str(), ret.snapshot.size());
     SHA256_Final(digest, &ctx);
-
-    for (auto &r : requests) {
-        ret.delta += r.idx + ":" + r.key + ":" + r.value + ":" + std::to_string(r.type) + ",";
-    }
-    ret.fromIdxDelta = committedIdx;
-    ret.digest = std::string(digest, digest + SHA256_DIGEST_LENGTH);
 
     VLOG(1) << "Size of data: " << data.size() << " size of requests: " << requests.size();
 
