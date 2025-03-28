@@ -17,11 +17,11 @@ KVStore::KVStore(uint32_t numKeys)
     }
 
     uint64_t now = GetMicrosecondTimestamp();
-    ::AppSnapshot snapshot = takeSnapshot();
+    ::AppSnapshot snapshot = getLatestSnapshot();
     LOG(INFO) << "Snapshot of KVStore with " << numKeys << " keys took " << GetMicrosecondTimestamp() - now << " us";
 }
 
-KVStore::~KVStore() {}
+KVStore::~KVStore() { snapshotThread_.join(); }
 
 std::string KVStore::execute(const std::string &serialized_request, uint32_t execute_idx)
 {
@@ -76,26 +76,79 @@ bool KVStore::commit(uint32_t idx)
     LOG(INFO) << "Committing kv store at idx: " << idx;
 
     uint32_t i = 0;
-    for (i = 0; i < requests.size() && requests[i].idx <= idx; i++) {
-        // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
-        KVStoreRequest &r = requests[i];
-        if (r.type == KVRequestType::SET) {
-            committedData[r.key] = r.value;
-        } else if (r.type == KVRequestType::DELETE) {
-            committedData.erase(r.key);
+
+    {
+        std::unique_lock<std::shared_mutex> lock(committedDataMutex_);
+
+        if (!lock.try_lock()) {
+            LOG(INFO) << "Failed to acquire lock in KVStore::commit for idx " << idx
+                      << " skipping! (Snapshot in progress)";
+            return false;
         }
+
+        for (i = 0; i < requests.size() && requests[i].idx <= idx; i++) {
+            // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
+            KVStoreRequest &r = requests[i];
+            if (r.type == KVRequestType::SET) {
+                committedData[r.key] = r.value;
+            } else if (r.type == KVRequestType::DELETE) {
+                committedData.erase(r.key);
+            }
+        }
+
+        committedIdx = idx;
     }
+
     // remove committed requests
     requests.erase(requests.begin(), requests.begin() + i);
-    committedIdx = idx;
 
     LOG(INFO) << "Committed at idx: " << idx << " committed_data size: " << committedData.size()
               << " requests size: " << requests.size();
+
+    if (snapshotThread_.joinable()) {
+        snapshotThread_.join();
+    }
+
+    snapshotThread_ = std::thread([this, idx]() {
+        ::AppSnapshot ret;
+
+        uint32_t idx = committedIdx;
+        std::string snapshot;
+        std::string digest;
+
+        // TODO this only works if key/value data does not have ":" or ","
+        // we should use a better serialization format
+        {
+            std::shared_lock<std::shared_mutex> lock(committedDataMutex_);
+            for (auto &kv : committedData) {
+                snapshot += kv.first + ":" + kv.second + ",";
+            }
+        }
+
+        // TODO use cryptopp instead
+        byte digestBytes[SHA256_DIGEST_LENGTH];
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
+        SHA256_Final(digestBytes, &ctx);
+
+        digest = std::string(digestBytes, digestBytes + SHA256_DIGEST_LENGTH);
+
+        {
+            std::lock_guard<std::mutex> lock(snapshotMutex_);
+
+            snapshot_.snapshot = snapshot;
+            snapshot_.digest = digest;
+            snapshot_.idx = idx;
+        }
+    });
+
     return true;
 }
 
 bool KVStore::abort(uint32_t abort_idx)
 {
+
     LOG(INFO) << "Aborting operations starting from idx=" << abort_idx;
     if (abort_idx <= committedIdx) {
         LOG(WARNING) << "Abort index is less than committed request with index " << requests.front().idx
@@ -107,15 +160,23 @@ bool KVStore::abort(uint32_t abort_idx)
                      << ". Nothing will happen.";
         return true;
     }
-    // reapply committed data and ops before abort_idx
-    data = committedData;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(committedDataMutex_);
+
+        lock.lock();
+
+        // reapply committed data and ops before abort_idx
+        data = committedData;
+    }
+
     uint32_t i = 0;
     for (auto &r : requests) {
         if (r.idx >= abort_idx) {
             requests.erase(requests.begin() + i, requests.end());
             break;
         }
-        // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
+
         if (r.type == KVRequestType::SET) {
             data[r.key] = r.value;
         } else if (r.type == KVRequestType::DELETE) {
@@ -126,8 +187,10 @@ bool KVStore::abort(uint32_t abort_idx)
     return true;
 }
 
-bool KVStore::applySnapshot(const std::string &snapshot, const std::string &digest)
+bool KVStore::applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx)
 {
+    std::scoped_lock lock(committedDataMutex_, snapshotMutex_);
+
     byte computedDigest[SHA256_DIGEST_LENGTH];
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
@@ -143,7 +206,7 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     }
 
     try {
-        std::unordered_map<std::string, std::string> new_data;
+        std::unordered_map<std::string, std::string> newData;
 
         std::istringstream iss(snapshot);
         std::string kv;
@@ -152,12 +215,16 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
             std::string key, value;
             std::getline(kvss, key, ':');
             std::getline(kvss, value, ':');
-            new_data[key] = value;
+            newData[key] = value;
         }
 
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
 
-        std::swap(data, new_data);
+        std::swap(data, newData);
+        committedData = data;
+        committedIdx = idx;
+        snapshot_ = {idx, snapshot, digest};
+
     } catch (std::exception &e) {
         LOG(ERROR) << "Failed to parse snapshot: " << e.what();
         return false;
@@ -166,27 +233,12 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     return true;
 }
 
-::AppSnapshot KVStore::takeSnapshot()
+::AppSnapshot KVStore::getLatestSnapshot()
 {
+    std::lock_guard<std::mutex> lock(snapshotMutex_);
     ::AppSnapshot ret;
-    ret.idx = requests.empty() ? committedIdx : requests.back().idx;
 
-    // TODO this only works if key/value data does not have ":" or ","
-    // we should use a better serialization format
-    for (auto &kv : data) {
-        ret.snapshot += kv.first + ":" + kv.second + ",";
-    }
-
-    // TODO use cryptopp instead
-    byte digest[SHA256_DIGEST_LENGTH];
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, ret.snapshot.c_str(), ret.snapshot.size());
-    SHA256_Final(digest, &ctx);
-
-    ret.digest = std::string(digest, digest + SHA256_DIGEST_LENGTH);
-
-    VLOG(1) << "Size of data: " << data.size() << " size of requests: " << requests.size();
+    // TODO copying this is not ideal
 
     return ret;
 }

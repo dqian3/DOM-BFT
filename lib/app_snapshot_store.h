@@ -15,7 +15,6 @@ public:
 
     std::string getSnapshot();
     uint32_t getSnapshotIdx();
-    // std::string getDeltasFromIdx(uint32_t fromIdx);
 
 private:
     // Corresponds to stable checkpoint

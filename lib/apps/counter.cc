@@ -63,7 +63,7 @@ bool Counter::abort(uint32_t idx)
     return true;
 }
 
-bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
+bool Counter::applySnapshot(const std::string &snap, const std::string &digest, uint32_t idx)
 {
     // get the element seperated by ,
 
@@ -74,6 +74,8 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
     committedIdx = std::stoull(idxStr);
     committedValue = std::stoi(valueStr);
 
+    assert(committedIdx == idx);
+
     counter = committedValue;
     values.clear();
 
@@ -81,7 +83,7 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
     return true;
 }
 
-::AppSnapshot Counter::takeSnapshot()
+::AppSnapshot Counter::getLatestSnapshot()
 {
     ::AppSnapshot ret;
 

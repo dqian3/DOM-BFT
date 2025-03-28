@@ -25,9 +25,9 @@ public:
     bool commit(uint32_t commit_idx) override;
     bool abort(uint32_t abort_idx) override;
 
-    bool applySnapshot(const std::string &snapshot, const std::string &digest) override;
+    bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
 
-    ::AppSnapshot takeSnapshot() override;
+    ::AppSnapshot getLatestSnapshot() override;
 
 private:
     int counter;

@@ -115,13 +115,13 @@ bool Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const s
     latestCert_.reset();
     log_.clear();
 
-    return app_->applySnapshot(snapshot, checkpoint.appDigest);
+    return app_->applySnapshot(snapshot, checkpoint.appDigest, seq);
 }
 
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
 bool Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
 {
-    if (!app_->applySnapshot(snapshot, checkpoint.appDigest)) {
+    if (!app_->applySnapshot(snapshot, checkpoint.appDigest, seq)) {
         return false;
     }
 

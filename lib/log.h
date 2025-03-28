@@ -29,6 +29,7 @@ private:
     std::deque<LogEntry> log_;
     uint32_t nextSeq_;
     LogCheckpoint stableCheckpoint_;
+    LogCheckpoint committedCheckpoint_;
 
     // The log also keeps track of client records, and will de-deduplicate requests
     ClientRecord clientRecord;

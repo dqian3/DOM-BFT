@@ -10,9 +10,12 @@
 #include <string>
 #include <unordered_map>
 
+#include <mutex>
+#include <shared_mutex>
+
 // THese should prboably be in a config file, but they don't actually affect our protocol
 // so I was lazy and put them here...
-#define NUM_KEYS    1000000
+#define NUM_KEYS    500000
 #define SKEW_FACTOR 0.9
 
 struct KVStoreRequest {
@@ -30,6 +33,13 @@ private:
     std::unordered_map<std::string, std::string> committedData;
     uint32_t committedIdx;
 
+    ::AppSnapshot snapshot_;
+
+    std::mutex snapshotMutex_;
+    std::shared_mutex committedDataMutex_;
+
+    std::thread snapshotThread_;
+
 public:
     KVStore(uint32_t numKeys = NUM_KEYS);
 
@@ -40,9 +50,9 @@ public:
     bool commit(uint32_t idx) override;
     bool abort(uint32_t idx) override;
 
-    bool applySnapshot(const std::string &snapshot, const std::string &digest) override;
+    bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
 
-    AppSnapshot takeSnapshot() override;
+    ::AppSnapshot getLatestSnapshot() override;
 };
 
 class KVStoreClient : public ApplicationClient {
