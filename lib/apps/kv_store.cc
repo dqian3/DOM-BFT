@@ -18,7 +18,7 @@ KVStore::KVStore(uint32_t numKeys)
 
     uint64_t now = GetMicrosecondTimestamp();
     ::AppSnapshot snapshot = takeSnapshot();
-    LOG(INFO) << "Snapshot of KVStores with " << numKeys << " keys took " << GetMicrosecondTimestamp() - now << " us";
+    LOG(INFO) << "Snapshot of KVStore with " << numKeys << " keys took " << GetMicrosecondTimestamp() - now << " us";
 }
 
 KVStore::~KVStore() {}
@@ -183,6 +183,8 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, ret.snapshot.c_str(), ret.snapshot.size());
     SHA256_Final(digest, &ctx);
+
+    ret.digest = std::string(digest, digest + SHA256_DIGEST_LENGTH);
 
     VLOG(1) << "Size of data: " << data.size() << " size of requests: " << requests.size();
 
