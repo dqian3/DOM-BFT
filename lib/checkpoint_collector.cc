@@ -92,7 +92,7 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
 
     checkpoint.seq = seq_;
     checkpoint.logDigest = commitToUse_->log_digest();
-    checkpoint.appDigest = commitToUse_->app_digest();
+    checkpoint.stableAppDigest = commitToUse_->app_digest();
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
     for (uint32_t replicaId : matchedReplicas_) {

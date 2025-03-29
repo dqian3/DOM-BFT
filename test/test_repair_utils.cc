@@ -74,11 +74,11 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
     std::shared_ptr<MockApplication> app = std::make_shared<MockApplication>();
     std::shared_ptr<Log> log = std::make_shared<Log>(app);
 
-    log->getStableCheckpoint().seq = testLog.startSeq;
+    log->getCheckpoint().seq = testLog.startSeq;
     log->abort(testLog.startSeq + 1);
 
     // Zero digest because provided TestLog.digest might be smaller
-    log->getStableCheckpoint().logDigest = testLog.logDigest.c_str();
+    log->getCheckpoint().logDigest = testLog.logDigest.c_str();
 
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
@@ -181,7 +181,7 @@ void assertLogEq(Log &log, const TestLog &expected)
     uint32_t startSeq = expected.startSeq;
 
     // Size of suffixes are the same
-    ASSERT_EQ(expected.entries.size(), log.getNextSeq() - log.getStableCheckpoint().seq - 1);
+    ASSERT_EQ(expected.entries.size(), log.getNextSeq() - log.getCheckpoint().seq - 1);
 
     int n = expected.entries.size();
     for (int i = 0; i < n; i++) {

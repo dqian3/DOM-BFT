@@ -15,10 +15,6 @@ KVStore::KVStore(uint32_t numKeys)
         data[std::to_string(i)] = "";
         committedData[std::to_string(i)] = "";
     }
-
-    uint64_t now = GetMicrosecondTimestamp();
-    ::AppSnapshot snapshot = getLatestSnapshot();
-    LOG(INFO) << "Snapshot of KVStore with " << numKeys << " keys took " << GetMicrosecondTimestamp() - now << " us";
 }
 
 KVStore::~KVStore() { snapshotThread_.join(); }
@@ -109,8 +105,12 @@ bool KVStore::commit(uint32_t idx)
         snapshotThread_.join();
     }
 
+    // TODO: minor race condition here if commit again before the snapshot thread is able to acquire lock
+    // Won't worry about this for now...
     snapshotThread_ = std::thread([this, idx]() {
-        ::AppSnapshot ret;
+        AppSnapshot ret;
+
+        uint64_t now = GetMicrosecondTimestamp();
 
         uint32_t idx = committedIdx;
         std::string snapshot;
@@ -125,7 +125,6 @@ bool KVStore::commit(uint32_t idx)
             }
         }
 
-        // TODO use cryptopp instead
         byte digestBytes[SHA256_DIGEST_LENGTH];
         SHA256_CTX ctx;
         SHA256_Init(&ctx);
@@ -137,10 +136,12 @@ bool KVStore::commit(uint32_t idx)
         {
             std::lock_guard<std::mutex> lock(snapshotMutex_);
 
-            snapshot_.snapshot = snapshot;
+            snapshot_.snapshot = std::make_shared<std::string>(snapshot);
             snapshot_.digest = digest;
-            snapshot_.idx = idx;
+            snapshot_.seq = idx;
         }
+
+        LOG(INFO) << "Snapshot of KVStore took " << (GetMicrosecondTimestamp() - now) / 1000 << " ms";
     });
 
     return true;
@@ -163,7 +164,6 @@ bool KVStore::abort(uint32_t abort_idx)
 
     {
         std::shared_lock<std::shared_mutex> lock(committedDataMutex_);
-
         lock.lock();
 
         // reapply committed data and ops before abort_idx
@@ -189,6 +189,8 @@ bool KVStore::abort(uint32_t abort_idx)
 
 bool KVStore::applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx)
 {
+    // Acquire both locks here
+    // TODO, could maybe be a bit more fine grained here
     std::scoped_lock lock(committedDataMutex_, snapshotMutex_);
 
     byte computedDigest[SHA256_DIGEST_LENGTH];
@@ -233,12 +235,12 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     return true;
 }
 
-::AppSnapshot KVStore::getLatestSnapshot()
+AppSnapshot KVStore::getLatestSnapshot()
 {
     std::lock_guard<std::mutex> lock(snapshotMutex_);
-    ::AppSnapshot ret;
 
-    // TODO copying this is not ideal
+    // TODO copying this is not ideal since it is pretty large.
+    AppSnapshot ret = snapshot_;
 
     return ret;
 }

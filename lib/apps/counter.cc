@@ -83,21 +83,23 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest, 
     return true;
 }
 
-::AppSnapshot Counter::getLatestSnapshot()
+AppSnapshot Counter::getLatestSnapshot()
 {
-    ::AppSnapshot ret;
+    AppSnapshot ret;
 
     if (values.empty()) {
-        ret.idx = committedIdx;
-        ret.snapshot = std::to_string(committedIdx) + "," + std::to_string(committedValue);
+        ret.seq = committedIdx;
+        ret.snapshot =
+            std::make_shared<std::string>(std::to_string(committedIdx) + "," + std::to_string(committedValue));
     } else {
         auto lastEntry = values.rbegin();
-        ret.idx = lastEntry->first;
-        ret.snapshot = std::to_string(lastEntry->first) + "," + std::to_string(lastEntry->second);
+        ret.seq = lastEntry->first;
+        ret.snapshot =
+            std::make_shared<std::string>(std::to_string(lastEntry->first) + "," + std::to_string(lastEntry->second));
     }
     VLOG(1) << "Creating snapshot: '" << ret.snapshot << "'";
 
-    ret.digest = ret.snapshot;
+    ret.digest = *ret.snapshot;
     return ret;
 }
 

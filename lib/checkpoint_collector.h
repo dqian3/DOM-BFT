@@ -68,6 +68,7 @@ struct CheckpointState {
     std::string logDigest;
     ::ClientRecord clientRecord_;
 
+    /// TODO make this a shared ptr or something, we handle a lot of copies of this
     AppSnapshot snapshot;
 };
 

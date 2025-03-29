@@ -10,12 +10,14 @@
 
 struct LogCheckpoint {
 
-    uint32_t seq = 0;
-    // TODO shared ptr here so we don't duplicate it from certs.
-    std::string logDigest;
+    // The sequence number of the last committed entry and digest after applying that entry
+    uint32_t committedSeq = 0;
+    std::string committedLogDigest;
 
-    std::string appSnapshotSeq;
-    std::string appDigest;
+    // State of stable entry, anything before this is truncated
+    uint32_t stableSeq = 0;
+    std::string stableLogDigest;
+    std::string stableAppDigest;
 
     std::map<uint32_t, dombft::proto::Commit> commitMessages;
     std::map<uint32_t, std::string> signatures;

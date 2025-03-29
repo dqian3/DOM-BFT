@@ -33,7 +33,7 @@ private:
     std::unordered_map<std::string, std::string> committedData;
     uint32_t committedIdx;
 
-    ::AppSnapshot snapshot_;
+    AppSnapshot snapshot_;
 
     std::mutex snapshotMutex_;
     std::shared_mutex committedDataMutex_;
@@ -52,7 +52,7 @@ public:
 
     bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
 
-    ::AppSnapshot getLatestSnapshot() override;
+    AppSnapshot getLatestSnapshot() override;
 };
 
 class KVStoreClient : public ApplicationClient {

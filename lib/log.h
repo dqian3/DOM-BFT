@@ -28,8 +28,7 @@ class Log {
 private:
     std::deque<LogEntry> log_;
     uint32_t nextSeq_;
-    LogCheckpoint stableCheckpoint_;
-    LogCheckpoint committedCheckpoint_;
+    LogCheckpoint checkpoint_;
 
     // The log also keeps track of client records, and will de-deduplicate requests
     ClientRecord clientRecord;
@@ -53,7 +52,7 @@ public:
     void abort(uint32_t seq);
 
     // Given a sequence number, commit the log and remove previous state, and save new checkpoint
-    void setStableCheckpoint(const LogCheckpoint &checkpoint);
+    void setCheckpoint(const LogCheckpoint &checkpoint);
 
     // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
     bool resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
@@ -64,7 +63,7 @@ public:
     const std::string &getDigest() const;
     const std::string &getDigest(uint32_t seq) const;
     const LogEntry &getEntry(uint32_t seq);
-    LogCheckpoint &getStableCheckpoint();
+    LogCheckpoint &getCheckpoint();
 
     ClientRecord &getClientRecord();
 

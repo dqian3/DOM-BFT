@@ -73,10 +73,14 @@ message CertReply {
 message Commit {
     uint32 replica_id = 1;
     uint32 round = 2;
-    uint32 seq = 3;
 
-    bytes log_digest = 5;
-    bytes app_digest = 6;
+    uint32 committed_seq = 3;
+    bytes committed_log_digest = 4;
+
+
+    uint32 stable_seq = 5;
+    bytes stable_log_digest = 6;
+    bytes stable_app_digest = 7;
 
     ClientRecord client_record = 8;
 }
@@ -145,12 +149,15 @@ message ClientRecord
 
 message LogCheckpoint
 {
-    uint32 seq = 1;
-    bytes app_digest = 2;
-    bytes log_digest = 3;
+    uint32 committed_seq = 1;
+    bytes committed_log_digest = 2;
 
-    repeated Commit commits   = 5;
-    repeated bytes signatures = 6;
+    uint32 stable_seq = 3;
+    bytes stable_log_digest = 4;
+    bytes stable_app_digest = 5;
+
+    repeated Commit commits   = 6;
+    repeated bytes signatures = 7;
 
     ClientRecord client_record = 8;
 }
@@ -277,7 +284,10 @@ message SnapshotReply {
     uint32 round = 1;
     uint32 seq = 2;
     uint32 replica_id = 3;
-    bytes snapshot = 5;
+
+    repeated LogEntry log_entries = 4; 
+
+    optional bytes snapshot = 5;
 }
 
 message DummyProtocolMessage

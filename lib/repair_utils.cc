@@ -180,7 +180,7 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
         keptReqs.insert({entry->client_id(), entry->client_seq()});
     }
 
-    startSeq = std::max(startSeq, log->getStableCheckpoint().seq + 1);
+    startSeq = std::max(startSeq, log->getCheckpoint().seq + 1);
     for (uint32_t seq = startSeq; seq < log->getNextSeq(); seq++) {
         const LogEntry &entry = log->getEntry(seq);
         RequestId key = {entry.client_id, entry.client_seq};
@@ -201,22 +201,22 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
-              << " stable checkpoint seq=" << log->getStableCheckpoint().seq;
-    assert(logSuffix.checkpoint->seq() <= log->getStableCheckpoint().seq);
+              << " stable checkpoint seq=" << log->getCheckpoint().seq;
+    assert(logSuffix.checkpoint->seq() <= log->getCheckpoint().seq);
 
     // First sequence to apply is right after checkpoint
-    uint32_t seq = std::max(logSuffix.checkpoint->seq(), log->getStableCheckpoint().seq) + 1;
+    uint32_t seq = std::max(logSuffix.checkpoint->seq(), log->getCheckpoint().seq) + 1;
     uint32_t idx = 0;
 
     // Reset the client record to the one in the checkpoint so we can rebuild it
-    log->getClientRecord() = log->getStableCheckpoint().clientRecord_;
+    log->getClientRecord() = log->getCheckpoint().clientRecord_;
 
     LOG(INFO) << "Start applySuffixAfterCheckpoint";
     // 2 Skip the entries that are already in the log (consistent)
     for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
-        if (seq <= log->getStableCheckpoint().seq) {
+        if (seq <= log->getCheckpoint().seq) {
             seq++;
             continue;
         }
