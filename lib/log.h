@@ -54,10 +54,17 @@ public:
     // Given a sequence number, commit the log and remove previous state, and save new checkpoint
     void setCheckpoint(const LogCheckpoint &checkpoint);
 
+    // TODO take proto snapshot instead? Need some encoding of the snapshot that includes entries.
     // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-    bool resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
+    bool resetToSnapshot(
+        dombft::proto::SnapshotReply &snapshotReply, const std::string &expectedLogDigest,
+        const std::string expectedAppDigest
+    );
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-    bool applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
+    bool applySnapshotModifyLog(
+        dombft::proto::SnapshotReply &snapshotReply, const std::string &expectedLogDigest,
+        const std::string expectedAppDigest
+    );
 
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;

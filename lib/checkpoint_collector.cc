@@ -90,9 +90,12 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
     // Only valid to get checkpoint if we have colllected enough commits
     assert(commitToUse_.has_value());
 
-    checkpoint.seq = seq_;
-    checkpoint.logDigest = commitToUse_->log_digest();
-    checkpoint.stableAppDigest = commitToUse_->app_digest();
+    checkpoint.committedSeq = seq_;
+    checkpoint.committedLogDigest = commitToUse_->commited_log_digest();
+
+    checkpoint.stableSeq = seq_;
+    checkpoint.stableLogDigest = commitToUse_->stable_log_digest();
+    checkpoint.stableAppDigest = commitToUse_->stable_app_digest();
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
     for (uint32_t replicaId : matchedReplicas_) {

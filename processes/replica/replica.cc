@@ -829,10 +829,10 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         commit.set_round(round);
 
         commit.set_committed_seq(rSeq);
-        commit.set_committed_digest(logDigest);
+        commit.set_committed_log_digest(logDigest);
 
         commit.set_stable_seq(snapshot.seq);
-        commit.set_log_digest(log_->getDigest(snapshot.seq));
+        commit.set_stable_log_digest(log_->getDigest(snapshot.seq));
         commit.set_stable_app_digest(snapshot.digest);
 
         checkpointCollector_.getCachedState(rSeq).clientRecord_.toProto(*commit.mutable_client_record());
@@ -934,7 +934,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
         snapshotReply.set_snapshot(appSnapshotStore_.getSnapshot());
     }
 
-    for (uint32_t seq = std::min(request.last_checkpoint_seq(), log->getCheckpoint().stableSeq) + 1;
+    for (uint32_t seq = std::min(request.last_checkpoint_seq(), log_->getCheckpoint().stableSeq) + 1;
          seq <= log_->getCheckpoint().committedSeq; seq++) {
         auto &entry = log_->getEntry(seq);
 
@@ -955,7 +955,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         VLOG(4) << "Snapshot reply round outdated, skipping";
         return;
     }
-    if (snapshotReply.seq() <= log_->getCheckpoint().seq) {
+    if (snapshotReply.seq() <= log_->getCheckpoint().committedSeq) {
         VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
         return;
     }
@@ -970,8 +970,13 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
         LogSuffix &logSuffix = getRepairLogSuffix();
+
+        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
+
         // TODO make sure this isn't outdated...
         ::LogCheckpoint checkpoint(*logSuffix.checkpoint);
+
+        assert(checkpoint.committedSeq == snapshotReply.seq());
 
         if (!log_->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshotReply.snapshot())) {
             // TODO handle this case properly by retrying on another replica
@@ -982,7 +987,6 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // Got the snapshot
         repairSnapshotRequested_ = false;
 
-        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
         applySuffix(logSuffix, log_);
         appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
         finishRepair(abortedRequests);
@@ -1005,7 +1009,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         checkpointCollector_.cleanStaleCollectors(snapshotReply.seq(), round_);
 
         // Resend replies after modifying log
-        for (int seq = log_->getCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
+        for (int seq = log_->getCheckpoint().committedSeq + 1; seq < log_->getNextSeq(); seq++) {
             auto &entry = log_->getEntry(seq);
 
             Reply reply;
@@ -1214,7 +1218,7 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
     SnapshotRequest snapshotRequest;
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_seq(targetSeq);
-    snapshotRequest.set_last_checkpoint_seq(log_->getCheckpoint().seq);
+    snapshotRequest.set_last_checkpoint_seq(log_->getCheckpoint().committedSeq);
     snapshotRequest.set_round(round_);
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
     LOG(INFO) << "Requesting state snapshot for seq " << targetSeq << " from replica " << replicaId;
@@ -1601,7 +1605,7 @@ void Replica::sendRepairSummaryToClients()
     summary.set_replica_id(replicaId_);
     summary.set_pbft_view(pbftView_);
 
-    uint32_t seq = log_->getCheckpoint().seq + 1;
+    uint32_t seq = log_->getCheckpoint().committedSeq + 1;
     for (; seq < log_->getNextSeq(); seq++) {
         const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
         CommittedReply reply;
@@ -1739,26 +1743,26 @@ void Replica::tryFinishRepair()
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
 
     ::LogCheckpoint &myCheckpoint = log_->getCheckpoint();   // bad namespace
-    if (checkpoint->seq() > myCheckpoint.seq) {
+    if (checkpoint->committed_seq_() > myCheckpoint.committedSeq) {
         // If our log is consistent, we can just use the checkpoint, otherwise
         // we need to request a snapshot from the replica that has the checkpoint
 
-        if (checkpoint->log_digest() == log_->getDigest(checkpoint->seq())) {
-            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq()
-                      << " is ahead of myCheckpoint.seq=" << myCheckpoint.seq << ", applying checkpoint before repair";
+        if (checkpoint->committed_log_digest() == log_->getDigest(checkpoint->committed_seq())) {
+            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq()
+                      << " is ahead of myCheckpoint.seq=" << myCheckpoint.committedSeq
+                      << " but matches, applying checkpoint before repair";
             log_->setCheckpoint(*checkpoint);
 
             std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
             applySuffix(logSuffix, log_);
             finishRepair(abortedRequests);
         } else {
-            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq()
+            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq()
                       << " is inconsistent with my log, snapshot will be fetched from replicaId=";
 
             repairSnapshotRequested_ = true;
-            sendSnapshotRequest(logSuffix.checkpointReplica, checkpoint->seq());
+            sendSnapshotRequest(logSuffix.checkpointReplica, checkpoint->committed_seq());
         }
-
     } else {
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
         applySuffix(logSuffix, log_);

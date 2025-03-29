@@ -24,6 +24,8 @@ struct LogCheckpoint {
 
     ClientRecord clientRecord_;
 
+    std::shared_ptr<std::string> snapshot;
+
     LogCheckpoint() = default;
     LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto);
     LogCheckpoint(const LogCheckpoint &other);
