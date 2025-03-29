@@ -108,44 +108,61 @@ void Log::setCheckpoint(const LogCheckpoint &checkpoint)
 }
 
 // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-bool Log::resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 {
+    LogCheckpoint checkpoint(snapshotReply.checkpoint());
+
+    // Try applying app snapshot if needed
+    if (snapshotReply.has_app_snapshot()) {
+        if (!app_->applySnapshot(snapshotReply.app_snapshot(), checkpoint.stableAppDigest, checkpoint.stableSeq)) {
+            return false;
+        }
+    }
+
     checkpoint_ = checkpoint;
     clientRecord = checkpoint.clientRecord_;
-    nextSeq_ = seq + 1;
+    nextSeq_ = checkpoint.stableSeq + 1;
     latestCertSeq_ = 0;
     latestCert_.reset();
     log_.clear();
 
-    return app_->applySnapshot(snapshot, checkpoint.stableAppDigest, seq);
+    // Apply LogEntries in snapshotReply
+    std::string res;
+
+    for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
+        if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
+            return false;
+        }
+    }
+
+    if (getDigest() != checkpoint.committed_log_digest()) {
+        // TODO, handle this case properly by resetting log state and requesting from another replica
+        throw std::runtime_error("Snapshot digest mismatch!");
+        return false;
+    }
+
+    return true;
 }
 
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-bool Log::applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot)
+bool Log::applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotReply)
 {
-    if (!app_->applySnapshot(snapshot, checkpoint.stableAppDigest, seq)) {
-        return false;
-    }
+    LogCheckpoint checkpoint(snapshotReply.checkpoint());
 
     // Number of missing entries in my log.
     uint32_t numMissing = clientRecord.numMissing(checkpoint.clientRecord_);
 
-    // TODO fix Remove all log entries before the checkpoint, but keep the last numMissing entries
+    // TODO this will fail if snapshotReply is invalid!
+    // Remove all log entries before the checkpoint, but keep the last numMissing entries
     while (!log_.empty() && log_[0].seq <= checkpoint.committedSeq - numMissing) {
         log_.pop_front();
     }
 
-    clientRecord = checkpoint.clientRecord_;
-    latestCert_.reset();
-    latestCertSeq_ = 0;
-    checkpoint_ = checkpoint;
-
     // Requests we want to try reapplying
     // Note this clears the current log
     std::deque<LogEntry> toReapply(log_);
-    log_.clear();
 
-    nextSeq_ = checkpoint.stableSeq + 1;
+    resetToSnapshot(snapshotReply);
 
     // Reapply the rest of the entries in the log
     for (LogEntry &entry : toReapply) {

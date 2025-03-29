@@ -2,7 +2,6 @@
 
 #include "lib/common.h"
 
-#include "lib/app_snapshot_store.h"
 #include "lib/application.h"
 #include "lib/checkpoint_collector.h"
 #include "lib/log.h"

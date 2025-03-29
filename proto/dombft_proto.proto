@@ -287,7 +287,7 @@ message SnapshotReply {
 
     repeated LogEntry log_entries = 4; 
 
-    optional bytes snapshot = 5;
+    optional bytes app_snapshot = 5;
 }
 
 message DummyProtocolMessage

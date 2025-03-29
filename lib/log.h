@@ -56,15 +56,9 @@ public:
 
     // TODO take proto snapshot instead? Need some encoding of the snapshot that includes entries.
     // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-    bool resetToSnapshot(
-        dombft::proto::SnapshotReply &snapshotReply, const std::string &expectedLogDigest,
-        const std::string expectedAppDigest
-    );
+    bool resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply);
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-    bool applySnapshotModifyLog(
-        dombft::proto::SnapshotReply &snapshotReply, const std::string &expectedLogDigest,
-        const std::string expectedAppDigest
-    );
+    bool applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotReply);
 
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;
