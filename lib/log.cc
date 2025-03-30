@@ -186,6 +186,8 @@ const std::string &Log::getDigest(uint32_t seq) const
     }
 
     if (!inRange(seq)) {
+        LOG(ERROR) << "Tried to get digest of seq=" << seq << " but seq is out of range nextSeq=" << nextSeq_
+                   << " stableSeq=" << checkpoint_.stableSeq;
         throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
 

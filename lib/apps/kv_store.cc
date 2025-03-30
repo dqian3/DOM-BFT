@@ -74,15 +74,12 @@ bool KVStore::commit(uint32_t idx)
     uint32_t i = 0;
 
     {
+        LOG(INFO) << "Getting lock on committedData: " << idx;
+
         std::unique_lock<std::shared_mutex> lock(committedDataMutex_);
 
-        if (!lock.try_lock()) {
-            LOG(INFO) << "Failed to acquire lock in KVStore::commit for idx " << idx << " overlapping snapshot rounds!";
-            throw std::runtime_error("Failed to acquire lock in KVStore::commit for idx " + std::to_string(idx));
-        }
-
+        VLOG(6) << "Copying requests into committedData";
         for (i = 0; i < requests.size() && requests[i].idx <= idx; i++) {
-            // TODO(Hao): can be optimized by using a set to keep track of keys as later ops can override earlier ops
             KVStoreRequest &r = requests[i];
             if (r.type == KVRequestType::SET) {
                 committedData[r.key] = r.value;
@@ -90,6 +87,7 @@ bool KVStore::commit(uint32_t idx)
                 committedData.erase(r.key);
             }
         }
+        VLOG(6) << "Done copying requests into committedData";
 
         committedIdx = idx;
     }
@@ -108,6 +106,7 @@ bool KVStore::commit(uint32_t idx)
     // Won't worry about this for now...
     snapshotThread_ = std::thread([this, idx]() {
         AppSnapshot ret;
+        VLOG(6) << "Starting snapshot of KVStore";
 
         uint64_t now = GetMicrosecondTimestamp();
 
@@ -123,6 +122,7 @@ bool KVStore::commit(uint32_t idx)
                 snapshot += kv.first + ":" + kv.second + ",";
             }
         }
+        VLOG(6) << "Snapshot of KVStore done copying committed data";
 
         byte digestBytes[SHA256_DIGEST_LENGTH];
         SHA256_CTX ctx;
@@ -140,7 +140,7 @@ bool KVStore::commit(uint32_t idx)
             snapshot_.seq = idx;
         }
 
-        LOG(INFO) << "Snapshot of KVStore took " << (GetMicrosecondTimestamp() - now) / 1000 << " ms";
+        VLOG(6) << "Snapshot of KVStore took " << (GetMicrosecondTimestamp() - now) / 1000 << " ms";
     });
 
     return true;
@@ -163,7 +163,6 @@ bool KVStore::abort(uint32_t abort_idx)
 
     {
         std::shared_lock<std::shared_mutex> lock(committedDataMutex_);
-        lock.lock();
 
         // reapply committed data and ops before abort_idx
         data = committedData;

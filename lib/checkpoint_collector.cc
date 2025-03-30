@@ -94,7 +94,7 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
     checkpoint.committedSeq = seq_;
     checkpoint.committedLogDigest = commitToUse_->committed_log_digest();
 
-    checkpoint.stableSeq = seq_;
+    checkpoint.stableSeq = commitToUse_->stable_seq();
     checkpoint.stableLogDigest = commitToUse_->stable_log_digest();
     checkpoint.stableAppDigest = commitToUse_->stable_app_digest();
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());

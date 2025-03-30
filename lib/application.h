@@ -13,7 +13,7 @@
 enum class AppType { KV_STORE, COUNTER };
 
 struct AppSnapshot {
-    uint32_t seq;
+    uint32_t seq = 0;
 
     std::shared_ptr<std::string> snapshot;
     std::string digest;
