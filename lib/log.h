@@ -31,7 +31,7 @@ private:
     LogCheckpoint checkpoint_;
 
     // The log also keeps track of client records, and will de-deduplicate requests
-    ClientRecord clientRecord;
+    ClientRecord clientRecord_;
 
     // The log shares ownership of the application with the replica
     std::shared_ptr<Application> app_;

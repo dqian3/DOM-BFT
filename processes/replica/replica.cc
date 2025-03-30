@@ -960,14 +960,14 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
         return;
     }
-    LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
-              << snapshotReply.seq();
-
     if (repair_) {
         if (!repairSnapshotRequested_) {
             LOG(ERROR) << "Received snapshot reply during repair due to previous checkpoint, ignoring... !";
             return;
         }
+
+        LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
+                  << snapshotReply.seq() << " and repair round " << round_;
 
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
         LogSuffix &logSuffix = getRepairLogSuffix();
@@ -989,6 +989,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
     } else {
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
+
+        LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
+                  << snapshotReply.seq() << " checkpoint";
 
         ::LogCheckpoint checkpoint;
         checkpointCollector_.getCheckpoint(round_, snapshotReply.seq(), checkpoint);

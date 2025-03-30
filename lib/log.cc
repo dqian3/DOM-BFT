@@ -21,7 +21,7 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
     std::string prevDigest;
 
     // TODO check duplicates
-    if (!clientRecord.update(c_id, c_seq)) {
+    if (!clientRecord_.update(c_id, c_seq)) {
         VLOG(4) << "Duplicate request detected by the log! c_id=" << c_id << " c_seq=" << c_seq;
         return false;
     }
@@ -110,29 +110,47 @@ void Log::setCheckpoint(const LogCheckpoint &checkpoint)
 // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
 bool Log::resetToSnapshot(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply)
 {
-
     // Try applying app snapshot if needed
     if (snapshotReply.has_app_snapshot()) {
         if (!app_->applySnapshot(snapshotReply.app_snapshot(), checkpoint.stableAppDigest, checkpoint.stableSeq)) {
             return false;
         }
+
+        VLOG(2) << "Applying application snapshot for seq " << checkpoint.stableSeq;
+
+        log_.clear();
+        nextSeq_ = checkpoint.stableSeq + 1;
+
+    } else {
+        assert(snapshotReply.log_entries().size() > 0);
+
+        // Remove all log entries up to the first entry in the snapshot
+        uint32_t seq = snapshotReply.log_entries(0).seq();
+        abort(seq);
     }
 
     checkpoint_ = checkpoint;
-    clientRecord = checkpoint.clientRecord_;
-    nextSeq_ = checkpoint.stableSeq + 1;
     latestCertSeq_ = 0;
     latestCert_.reset();
-    log_.clear();
+
+    // TODO hack here to just clear client records and reset it afterwards
+    clientRecord_ = ClientRecord();
 
     // Apply LogEntries in snapshotReply
     std::string res;
-
     for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
         if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
+            LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
             return false;
         }
     }
+
+    // TODO end of above mentioned hack.
+    clientRecord_ = checkpoint.clientRecord_;
+
+    VLOG(4) << "Checkpoint for seq " << checkpoint.committedSeq
+            << " log digest after applying snapshot: " << digest_to_hex(getDigest())
+            << " expected digest: " << digest_to_hex(checkpoint.committedLogDigest);
 
     if (getDigest() != checkpoint.committedLogDigest) {
         // TODO, handle this case properly by resetting log state and requesting from another replica
@@ -147,18 +165,21 @@ bool Log::resetToSnapshot(const LogCheckpoint &checkpoint, const dombft::proto::
 bool Log::applySnapshotModifyLog(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply)
 {
     // Number of missing entries in my log.
-    uint32_t numMissing = clientRecord.numMissing(checkpoint.clientRecord_);
+    uint32_t numMissing = clientRecord_.numMissing(checkpoint.clientRecord_);
 
     // TODO this will fail if snapshotReply is invalid!
-    // Remove all log entries before the checkpoint, but keep the last numMissing entries
-    while (!log_.empty() && log_[0].seq <= checkpoint.committedSeq - numMissing) {
-        log_.pop_front();
+    // Requests we want to try reapplying
+    std::deque<LogEntry> toReapply;
+
+    for (uint32_t i = 0; i < log_.size(); i++) {
+        if (log_[i].seq > checkpoint.committedSeq - numMissing) {
+            toReapply.push_back(log_[i]);
+        }
     }
 
-    // Requests we want to try reapplying
-    std::deque<LogEntry> toReapply(log_);
-
-    resetToSnapshot(checkpoint, snapshotReply);
+    if (!resetToSnapshot(checkpoint, snapshotReply)) {
+        return false;
+    }
 
     // Reapply the rest of the entries in the log
     for (LogEntry &entry : toReapply) {
@@ -209,7 +230,7 @@ const LogEntry &Log::getEntry(uint32_t seq)
 
 LogCheckpoint &Log::getCheckpoint() { return checkpoint_; }
 
-ClientRecord &Log::getClientRecord() { return clientRecord; }
+ClientRecord &Log::getClientRecord() { return clientRecord_; }
 
 void Log::toProto(dombft::proto::RepairStart &msg)
 {
