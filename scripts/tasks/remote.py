@@ -398,6 +398,9 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, re
         clients.put("../bazel-bin/processes/client/dombft_client")
         print("Copied client")
 
+        group.run("chmod +w dombft_*", warn=True)
+
+
 
 
 

@@ -738,7 +738,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         // Save a digest of the application state and also save a snapshot
 
         VLOG(2) << "PERF event=checkpoint_start seq=" << seq;
-        checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->getLatestSnapshot());
+        checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->getSnapshot());
 
         // TODO remove execution result from Reply
         broadcastToReplicas(reply, MessageType::REPLY);
@@ -1674,7 +1674,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     if (seq <= log_->getCheckpoint().committedSeq) {
         LOG(ERROR) << "Repair finished, but no new checkpoint to commit?";
     } else {
-        checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->getLatestSnapshot());
+        checkpointCollector_.cacheState(seq, log_->getDigest(seq), log_->getClientRecord(), app_->getSnapshot());
 
         Reply reply;
         const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace

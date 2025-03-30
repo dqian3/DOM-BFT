@@ -83,7 +83,7 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest, 
     return true;
 }
 
-AppSnapshot Counter::getLatestSnapshot()
+AppSnapshot Counter::getSnapshot()
 {
     AppSnapshot ret;
 

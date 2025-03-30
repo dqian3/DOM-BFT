@@ -52,7 +52,7 @@ public:
 
     bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
 
-    AppSnapshot getLatestSnapshot() override;
+    AppSnapshot getSnapshot() override;
 };
 
 class KVStoreClient : public ApplicationClient {

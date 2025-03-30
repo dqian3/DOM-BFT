@@ -233,7 +233,7 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     return true;
 }
 
-AppSnapshot KVStore::getLatestSnapshot()
+AppSnapshot KVStore::getSnapshot()
 {
     std::lock_guard<std::mutex> lock(snapshotMutex_);
 

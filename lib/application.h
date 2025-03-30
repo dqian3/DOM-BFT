@@ -33,7 +33,8 @@ public:
     virtual bool abort(uint32_t abort_idx) = 0;
 
     virtual bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) = 0;
-    virtual AppSnapshot getLatestSnapshot() = 0;
+
+    virtual AppSnapshot getSnapshot() = 0;
 };
 
 class ApplicationClient {
