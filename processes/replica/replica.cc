@@ -894,6 +894,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             if (commitToUse.stable_seq() > log_->getCheckpoint().stableSeq) {
                 LOG(INFO) << "Writing new snapshot to store!";
             }
+            checkpoint.snapshot = checkpointCollector_.getCachedState(seq).snapshot.snapshot;
             log_->setCheckpoint(checkpoint);
 
             VLOG(1) << "PERF event=checkpoint_end seq=" << seq
@@ -931,11 +932,14 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 
     if (request.last_checkpoint_seq() < myCheckpoint.stableSeq) {
         VLOG(1) << "Snapshot request too far back, sending application snapshot!";
+
+        assert(myCheckpoint.snapshot != nullptr);
+
         snapshotReply.set_app_snapshot(*myCheckpoint.snapshot);
     }
 
     // Adding requests not included in snapshot up to my committed_seq
-    for (uint32_t seq = std::min(request.last_checkpoint_seq(), log_->getCheckpoint().stableSeq) + 1;
+    for (uint32_t seq = std::max(request.last_checkpoint_seq(), log_->getCheckpoint().stableSeq) + 1;
          seq <= log_->getCheckpoint().committedSeq; seq++) {
         auto &entry = log_->getEntry(seq);
 

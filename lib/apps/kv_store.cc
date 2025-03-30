@@ -266,6 +266,6 @@ std::string KVStoreClient::generateAppRequest()
     num++;
 
     req.set_msg_type(KVRequestType::SET);
-    LOG(INFO) << "Generated request: " << req.key() << " " << req.value();
+    VLOG(6) << "Generated request: " << req.key() << " " << req.value();
     return req.SerializeAsString();
 }

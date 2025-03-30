@@ -109,3 +109,4 @@ replica:
   numVerifyThreads: 6
   port: 34000
   checkpointInterval: 2000
+  snapshotInterval: 10000

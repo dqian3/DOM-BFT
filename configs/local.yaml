@@ -1,6 +1,6 @@
 transport: nng 
 
-app: kv_store 
+app: counter 
 
 client:
   ips: 
@@ -57,7 +57,7 @@ replica:
   repairTimeout: 1000000
   numVerifyThreads: 1
   numSendThreads: 2
-  checkpointInterval: 100
+  checkpointInterval: 500
   snapshotInterval: 1000
 
 

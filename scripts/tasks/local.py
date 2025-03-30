@@ -70,6 +70,8 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
 
     f = n_replicas // 3
 
+    c.run("rm logs/*", warn=True)
+
     # TODO verbosity
     with c.cd(".."):
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)

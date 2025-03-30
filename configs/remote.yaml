@@ -68,4 +68,4 @@ replica:
   numSendThreads: 4
 
   checkpointInterval: 2000
-
+  snapshotInterval: 10000
