@@ -891,12 +891,10 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         } else {
             ::LogCheckpoint checkpoint;
             checkpointCollector_.getCheckpoint(commit.round(), seq, checkpoint);
-            log_->setCheckpoint(checkpoint);
-            // TODO move this and use delta information...
-            if (commitToUse.stable_seq() > appSnapshotStore_.getSnapshotSeq()) {
+            if (commitToUse.stable_seq() > log_->getCheckpoint().stableSeq) {
                 LOG(INFO) << "Writing new snapshot to store!";
-                appSnapshotStore_.addSnapshot(checkpointCollector_.getCachedState(seq).snapshot.snapshot, seq);
             }
+            log_->setCheckpoint(checkpoint);
 
             VLOG(1) << "PERF event=checkpoint_end seq=" << seq
                     << " log_digest=" << digest_to_hex(commitToUse.committed_log_digest());
@@ -929,11 +927,14 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     snapshotReply.set_seq(log_->getCheckpoint().committedSeq);
     snapshotReply.set_replica_id(replicaId_);
 
-    if (request.last_checkpoint_seq() < log_->getCheckpoint().stableSeq) {
+    const ::LogCheckpoint &myCheckpoint = log_->getCheckpoint();
+
+    if (request.last_checkpoint_seq() < myCheckpoint.stableSeq) {
         VLOG(1) << "Snapshot request too far back, sending application snapshot!";
-        snapshotReply.set_snapshot(appSnapshotStore_.getSnapshot());
+        snapshotReply.set_app_snapshot(*myCheckpoint.snapshot);
     }
 
+    // Adding requests not included in snapshot up to my committed_seq
     for (uint32_t seq = std::min(request.last_checkpoint_seq(), log_->getCheckpoint().stableSeq) + 1;
          seq <= log_->getCheckpoint().committedSeq; seq++) {
         auto &entry = log_->getEntry(seq);
@@ -944,7 +945,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     }
 
     VLOG(3) << "Sending SNAPSHOT_REPLY for seq=" << snapshotReply.seq() << " round=" << snapshotReply.round()
-            << " snapshot size=" << snapshotReply.snapshot().size() << " idx=" << appSnapshotStore_.getSnapshotSeq();
+            << " snapshot size=" << snapshotReply.app_snapshot().size() << " idx=" << myCheckpoint.stableSeq;
 
     sendMsgToDst(snapshotReply, MessageType::SNAPSHOT_REPLY, replicaAddrs_[request.replica_id()]);
 }
@@ -973,12 +974,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
 
-        // TODO make sure this isn't outdated...
-        ::LogCheckpoint checkpoint(*logSuffix.checkpoint);
-
-        assert(checkpoint.committedSeq == snapshotReply.seq());
-
-        if (!log_->resetToSnapshot(logSuffix.checkpoint->seq(), checkpoint, snapshotReply.snapshot())) {
+        if (!log_->resetToSnapshot(LogCheckpoint(*logSuffix.checkpoint), snapshotReply)) {
             // TODO handle this case properly by retrying on another replica
             LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
             throw std::runtime_error("Snapshot digest mismatch");
@@ -988,7 +984,6 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         repairSnapshotRequested_ = false;
 
         applySuffix(logSuffix, log_);
-        appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
         finishRepair(abortedRequests);
 
     } else {
@@ -998,12 +993,11 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         ::LogCheckpoint checkpoint;
         checkpointCollector_.getCheckpoint(round_, snapshotReply.seq(), checkpoint);
 
-        if (!log_->applySnapshotModifyLog(snapshotReply.seq(), checkpoint, snapshotReply.snapshot())) {
+        if (!log_->applySnapshotModifyLog(checkpoint, snapshotReply)) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
             // TODO handle this better by requesting from another replica..
             throw std::runtime_error("Snapshot digest mismatch");
         }
-        appSnapshotStore_.addSnapshot(std::string(snapshotReply.snapshot()), snapshotReply.seq());
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
         checkpointCollector_.cleanStaleCollectors(snapshotReply.seq(), round_);
@@ -1743,7 +1737,7 @@ void Replica::tryFinishRepair()
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
 
     ::LogCheckpoint &myCheckpoint = log_->getCheckpoint();   // bad namespace
-    if (checkpoint->committed_seq_() > myCheckpoint.committedSeq) {
+    if (checkpoint->committed_seq() > myCheckpoint.committedSeq) {
         // If our log is consistent, we can just use the checkpoint, otherwise
         // we need to request a snapshot from the replica that has the checkpoint
 

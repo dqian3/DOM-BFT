@@ -37,7 +37,7 @@ struct ReplyCollector {
     void getCert(dombft::proto::Cert &cert);
 };
 
-typedef std::tuple<std::string, std::string, uint32_t, uint32_t, std::string> CommitKeyTuple;
+typedef std::tuple<uint32_t, uint32_t, std::string, uint32_t, std::string, std::string> CommitKeyTuple;
 
 struct CommitCollector {
     uint32_t f_;

@@ -108,9 +108,8 @@ void Log::setCheckpoint(const LogCheckpoint &checkpoint)
 }
 
 // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
+bool Log::resetToSnapshot(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply)
 {
-    LogCheckpoint checkpoint(snapshotReply.checkpoint());
 
     // Try applying app snapshot if needed
     if (snapshotReply.has_app_snapshot()) {
@@ -135,7 +134,7 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
         }
     }
 
-    if (getDigest() != checkpoint.committed_log_digest()) {
+    if (getDigest() != checkpoint.committedLogDigest) {
         // TODO, handle this case properly by resetting log state and requesting from another replica
         throw std::runtime_error("Snapshot digest mismatch!");
         return false;
@@ -145,10 +144,8 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 }
 
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-bool Log::applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotReply)
+bool Log::applySnapshotModifyLog(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply)
 {
-    LogCheckpoint checkpoint(snapshotReply.checkpoint());
-
     // Number of missing entries in my log.
     uint32_t numMissing = clientRecord.numMissing(checkpoint.clientRecord_);
 
@@ -159,10 +156,9 @@ bool Log::applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotRep
     }
 
     // Requests we want to try reapplying
-    // Note this clears the current log
     std::deque<LogEntry> toReapply(log_);
 
-    resetToSnapshot(snapshotReply);
+    resetToSnapshot(checkpoint, snapshotReply);
 
     // Reapply the rest of the entries in the log
     for (LogEntry &entry : toReapply) {

@@ -72,7 +72,8 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
     for (const auto &[replicaId, commit] : commits_) {
 
         CommitKeyTuple key = {
-            commit.log_digest(), commit.app_digest(), commit.round(), commit.seq(), commit.client_record().digest(),
+            commit.round(),      commit.committed_seq(),     commit.committed_log_digest(),
+            commit.stable_seq(), commit.stable_app_digest(), commit.client_record().digest(),
         };
         matchingCommits[key].insert(replicaId);
 
@@ -91,7 +92,7 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
     assert(commitToUse_.has_value());
 
     checkpoint.committedSeq = seq_;
-    checkpoint.committedLogDigest = commitToUse_->commited_log_digest();
+    checkpoint.committedLogDigest = commitToUse_->committed_log_digest();
 
     checkpoint.stableSeq = seq_;
     checkpoint.stableLogDigest = commitToUse_->stable_log_digest();
@@ -117,10 +118,10 @@ bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, st
 
 bool CheckpointCollector::addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
-    std::pair<uint32_t, uint32_t> key = {commit.round(), commit.seq()};
+    std::pair<uint32_t, uint32_t> key = {commit.round(), commit.committed_seq()};
 
     if (!commitCollectors_.contains(key)) {
-        commitCollectors_.emplace(key, CommitCollector(f_, commit.round(), commit.seq()));
+        commitCollectors_.emplace(key, CommitCollector(f_, commit.round(), commit.committed_seq()));
     }
 
     return commitCollectors_.at(key).addAndCheckCommit(commit, sig);

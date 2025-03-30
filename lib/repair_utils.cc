@@ -50,14 +50,14 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     // First find highest checkpoint
     for (auto &log : repairProposal.logs()) {
-        if (log.checkpoint().seq() >= maxCheckpointSeq) {
+        if (log.checkpoint().committed_seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
             logSuffix.checkpointReplica = log.replica_id();
-            maxCheckpointSeq = log.checkpoint().seq();
+            maxCheckpointSeq = log.checkpoint().committed_seq();
         }
     }
 
-    VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->seq();
+    VLOG(4) << "Highest checkpoint is for seq=" << logSuffix.checkpoint->committed_seq();
 
     // Find highest sequence with a cert
     // Idx of log we will use to match our logs to the repair agreed upon logs (up to cert)
@@ -73,7 +73,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
         const dombft::proto::RepairStart &repairLog = repairProposal.logs()[i];
 
         // Already included in checkpoint
-        if (!repairLog.has_cert() || repairLog.cert().seq() <= logSuffix.checkpoint->seq())
+        if (!repairLog.has_cert() || repairLog.cert().seq() <= logSuffix.checkpoint->committed_seq())
             continue;
 
         if (repairLog.cert().seq() > maxCertSeq) {
@@ -180,7 +180,7 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
         keptReqs.insert({entry->client_id(), entry->client_seq()});
     }
 
-    startSeq = std::max(startSeq, log->getCheckpoint().seq + 1);
+    startSeq = std::max(startSeq, log->getCheckpoint().committedSeq + 1);
     for (uint32_t seq = startSeq; seq < log->getNextSeq(); seq++) {
         const LogEntry &entry = log->getEntry(seq);
         RequestId key = {entry.client_id, entry.client_seq};
@@ -200,12 +200,12 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
 void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
-    LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
-              << " stable checkpoint seq=" << log->getCheckpoint().seq;
-    assert(logSuffix.checkpoint->seq() <= log->getCheckpoint().seq);
+    LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->committed_seq()
+              << " my checkpoint seq=" << log->getCheckpoint().committedSeq;
+    assert(logSuffix.checkpoint->committed_seq() <= log->getCheckpoint().committedSeq);
 
     // First sequence to apply is right after checkpoint
-    uint32_t seq = std::max(logSuffix.checkpoint->seq(), log->getCheckpoint().seq) + 1;
+    uint32_t seq = std::max(logSuffix.checkpoint->committed_seq(), log->getCheckpoint().committedSeq) + 1;
     uint32_t idx = 0;
 
     // Reset the client record to the one in the checkpoint so we can rebuild it
@@ -216,7 +216,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
-        if (seq <= log->getCheckpoint().seq) {
+        if (seq <= log->getCheckpoint().committedSeq) {
             seq++;
             continue;
         }

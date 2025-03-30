@@ -54,7 +54,6 @@ private:
     uint32_t round_ = 1;
     std::shared_ptr<Log> log_;
     std::shared_ptr<Application> app_;
-    AppSnapshotStore appSnapshotStore_;
 
     // State for commit/checkpoint protocol
     CheckpointCollector checkpointCollector_;

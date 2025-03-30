@@ -77,9 +77,8 @@ bool KVStore::commit(uint32_t idx)
         std::unique_lock<std::shared_mutex> lock(committedDataMutex_);
 
         if (!lock.try_lock()) {
-            LOG(INFO) << "Failed to acquire lock in KVStore::commit for idx " << idx
-                      << " skipping! (Snapshot in progress)";
-            return false;
+            LOG(INFO) << "Failed to acquire lock in KVStore::commit for idx " << idx << " overlapping snapshot rounds!";
+            throw std::runtime_error("Failed to acquire lock in KVStore::commit for idx " + std::to_string(idx));
         }
 
         for (i = 0; i < requests.size() && requests[i].idx <= idx; i++) {
@@ -225,7 +224,7 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
         std::swap(data, newData);
         committedData = data;
         committedIdx = idx;
-        snapshot_ = {idx, snapshot, digest};
+        snapshot_ = {idx, std::make_shared<std::string>(snapshot), digest};
 
     } catch (std::exception &e) {
         LOG(ERROR) << "Failed to parse snapshot: " << e.what();

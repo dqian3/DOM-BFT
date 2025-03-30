@@ -57,5 +57,8 @@ replica:
   repairTimeout: 1000000
   numVerifyThreads: 1
   numSendThreads: 2
-  checkpointInterval: 150
+  checkpointInterval: 100
+  snapshotInterval: 1000
+
+
 

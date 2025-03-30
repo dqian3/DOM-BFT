@@ -62,8 +62,8 @@ replica:
   - "10.128.0.9"
   port: 34000
   keysDir: "keys/replica"
-  repairViewTimeout: 10000000
-  repairTimeout: 5000000
+  repairViewTimeout: 2000000
+  repairTimeout: 500000
   numVerifyThreads: 2
   numSendThreads: 4
 
