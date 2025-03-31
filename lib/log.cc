@@ -65,7 +65,7 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
         return false;
     }
 
-    if (seq < checkpoint_.stableSeq) {
+    if (seq <= checkpoint_.stableSeq) {
         VLOG(5) << "Sequence for cert seq=" << seq << " has already been committed, checking client record";
         if (!clientRecord_.contains(r.client_id(), r.client_seq())) {
             VLOG(3) << "Fail adding cert because committed client record does not contain c_id=" << r.client_id()
