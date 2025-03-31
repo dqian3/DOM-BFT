@@ -95,8 +95,8 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
     for (uint32_t replicaId : matchedReplicas_) {
-        checkpoint.commitMessages[replicaId] = commits_[replicaId];
-        checkpoint.signatures[replicaId] = sigs_[replicaId];
+        checkpoint.commits[replicaId] = commits_[replicaId];
+        checkpoint.commitSigs[replicaId] = sigs_[replicaId];
     }
 }
 
@@ -170,10 +170,11 @@ bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool 
     assert(created);
 
     std::pair<uint32_t, uint32_t> cleanupKey = {round, 0};
-    if (collectors_.lower_bound(cleanupKey) != collectors_.begin()) {
-        VLOG(3) << "Cleaning up any checkpoint state from rounds prior to round=" << round;
-        collectors_.erase(collectors_.begin(), collectors_.lower_bound(cleanupKey));
-    }
+    // if (collectors_.lower_bound(cleanupKey) != collectors_.begin()) {
+    //     VLOG(3) << "Cleaning up any checkpoint state from rounds prior to round=" << round;
+
+    //     collectors_.erase(collectors_.begin(), collectors_.lower_bound(cleanupKey));
+    // }
 
     return true;
 }

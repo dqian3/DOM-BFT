@@ -858,7 +858,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 void Replica::processSnapshot(const AppSnapshot &snapshot, uint32_t round)
 {
     if (!checkpointCollectors_.hasCollector(round, snapshot.seq)) {
-        VLOG(4) << "Checkpoint collector does not exist for round=" << round_ << " seq = " << snapshot.seq
+        VLOG(4) << "Checkpoint collector does not exist for round=" << round << " seq = " << snapshot.seq
                 << " which means this was either committed or aborted, skipping saving of snapshot";
         return;
     }
@@ -939,7 +939,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";
             // TODO choose a random replica from those that have this
 
-            uint32_t replicaId = checkpoint.commitMessages[0].replica_id();
+            uint32_t replicaId = checkpoint.commits[0].replica_id();
             sendSnapshotRequest(replicaId, checkpoint.committedSeq);
 
         } else if (!coll.needsSnapshot() || checkpoint.snapshot != nullptr) {
@@ -1506,7 +1506,7 @@ bool Replica::verifyRepairLog(const RepairStart &log)
     }
 
     const LogCheckpoint &checkpoint = log.checkpoint();
-    if (checkpoint.commits().size() != 2 * f_ + 1 && checkpoint.commits().size() != checkpoint.signatures().size()) {
+    if (checkpoint.commits().size() != 2 * f_ + 1 && checkpoint.commits().size() != checkpoint.commit_sigs().size()) {
         return false;
     }
 
@@ -1514,7 +1514,7 @@ bool Replica::verifyRepairLog(const RepairStart &log)
     std::set<uint32_t> replicaIds;
     for (int i = 0; i < checkpoint.commits().size(); i++) {
         const Commit &commit = checkpoint.commits()[i];
-        const std::string &sig = checkpoint.signatures()[i];
+        const std::string &sig = checkpoint.commit_sigs()[i];
         const std::string serializedCommit = commit.SerializeAsString();
 
         if (replicaIds.contains(commit.replica_id())) {
@@ -1758,12 +1758,6 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
     uint32_t lastStableSeq = repairProposalLogSuffix_->checkpoint->stable_seq();
 
-    repair_ = false;
-    repairProposal_.reset();
-    repairPrepares_.clear();
-    repairPBFTCommits_.clear();
-    repairProposalLogSuffix_.reset();
-
     // TODO: since the repair is PBFT, we can simply set the checkpoint here already using the PBFT messages as
     // proofs For the sake of implementation simplicity, we just trigger the usual checkpointing process However,
     // client requests are still safe, as even if the next repair is triggered before this checkpoint finishes, the
@@ -1774,8 +1768,72 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     if (seq <= log_->getCheckpoint().committedSeq) {
         LOG(ERROR) << "Repair finished, but no new checkpoint to commit?";
     } else {
-        startCheckpoint(seq - lastStableSeq > snapshotInterval_);
+
+        if (seq - lastStableSeq < snapshotInterval_) {
+
+            // Save a new checkpoint right away
+            ::LogCheckpoint newCheckpoint;
+            ::LogCheckpoint &curCheckpoint = log_->getCheckpoint();
+
+            newCheckpoint.stableAppDigest = curCheckpoint.stableAppDigest;
+            newCheckpoint.stableSeq = curCheckpoint.stableSeq;
+            newCheckpoint.snapshot = curCheckpoint.snapshot;
+
+            newCheckpoint.committedSeq = seq;
+            newCheckpoint.committedLogDigest = log_->getDigest(seq);
+
+            for (auto &[rId, c] : repairPBFTCommits_) {
+                newCheckpoint.repairCommits[rId] = c;
+                newCheckpoint.repairCommitSigs[rId] = repairCommitSigs_[rId];
+            }
+
+            newCheckpoint.clientRecord_ = log_->getClientRecord();
+
+            VLOG(1) << "PERF event=repair_checkpoint replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
+                    << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.committedLogDigest);
+
+            log_->setCheckpoint(newCheckpoint);
+
+        } else {
+            // TODO this is also a bit hacky...
+            // Create a checkpoint with a new stable app digest by doing a commit round!
+            VLOG(3) << "Starting new commit round for seq=" << seq
+                    << " to create a new application snapshot directly from commit!";
+
+            Commit commit;
+            commit.set_replica_id(replicaId_);
+            commit.set_round(round_);
+
+            commit.set_committed_seq(seq);
+            commit.set_committed_log_digest(log_->getDigest(seq));
+            commit.set_stable_log_digest(log_->getDigest(seq));
+
+            log_->getClientRecord().toProto(*commit.mutable_client_record());
+
+            checkpointCollectors_.initCollector(round_, seq, true);
+
+            uint32_t round = round_;
+            app_->takeSnapshot([&, round, commit](const AppSnapshot &snapshot) {
+                Commit c = commit;
+                c.set_stable_app_digest(snapshot.digest);
+                c.set_stable_seq(snapshot.seq);
+
+                VLOG(3) << "Snapshot taken for round=" << round << " seq=" << snapshot.seq
+                        << " digest=" << digest_to_hex(snapshot.digest);
+                // Commit own
+                broadcastToReplicas(c, MessageType::COMMIT);
+
+                // Queue to be processed by main thread
+                snapshotQueue_.enqueue({round, snapshot});
+            });
+        }
     }
+
+    repair_ = false;
+    repairProposal_.reset();
+    repairPrepares_.clear();
+    repairPBFTCommits_.clear();
+    repairProposalLogSuffix_.reset();
 
     // Send repair summary to clients to allow commits in the slow path..
     sendRepairSummaryToClients();

@@ -11,8 +11,13 @@ LogCheckpoint::LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto
     stableLogDigest = checkpointProto.stable_log_digest();
 
     for (int i = 0; i < checkpointProto.commits_size(); i++) {
-        commitMessages[checkpointProto.commits(i).replica_id()] = checkpointProto.commits(i);
-        signatures[checkpointProto.commits(i).replica_id()] = checkpointProto.signatures(i);
+        commits[checkpointProto.commits(i).replica_id()] = checkpointProto.commits(i);
+        commitSigs[checkpointProto.commits(i).replica_id()] = checkpointProto.commit_sigs(i);
+    }
+
+    for (int i = 0; i < checkpointProto.repair_commits_size(); i++) {
+        repairCommits[checkpointProto.repair_commits(i).replica_id()] = checkpointProto.repair_commits(i);
+        repairCommitSigs[checkpointProto.repair_commits(i).replica_id()] = checkpointProto.repair_commit_sigs(i);
     }
 
     clientRecord_ = ClientRecord(checkpointProto.client_record());
@@ -24,8 +29,10 @@ LogCheckpoint::LogCheckpoint(const LogCheckpoint &other)
     , stableSeq(other.stableSeq)
     , stableLogDigest(other.stableLogDigest)
     , stableAppDigest(other.stableAppDigest)
-    , commitMessages(other.commitMessages)
-    , signatures(other.signatures)
+    , commits(other.commits)
+    , commitSigs(other.commitSigs)
+    , repairCommits(other.repairCommits)
+    , repairCommitSigs(other.repairCommitSigs)
 
 {
 }
@@ -39,9 +46,14 @@ void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto)
         checkpointProto.set_stable_log_digest(stableLogDigest);
         checkpointProto.set_committed_log_digest(committedLogDigest);
 
-        for (auto x : commitMessages) {
+        for (auto x : commits) {
             (*checkpointProto.add_commits()) = x.second;
-            checkpointProto.add_signatures(signatures[x.first]);
+            checkpointProto.add_commit_sigs(commitSigs[x.first]);
+        }
+
+        for (auto x : repairCommits) {
+            (*checkpointProto.add_repair_commits()) = x.second;
+            checkpointProto.add_repair_commit_sigs(commitSigs[x.first]);
         }
 
     } else {

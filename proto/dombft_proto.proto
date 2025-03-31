@@ -77,7 +77,6 @@ message Commit {
     uint32 committed_seq = 3;
     bytes committed_log_digest = 4;
 
-
     uint32 stable_seq = 5;
     bytes stable_log_digest = 6;
     bytes stable_app_digest = 7;
@@ -157,9 +156,12 @@ message LogCheckpoint
     bytes stable_app_digest = 5;
 
     repeated Commit commits   = 6;
-    repeated bytes signatures = 7;
+    repeated bytes commit_sigs = 7;
 
-    ClientRecord client_record = 8;
+    repeated PBFTCommit repair_commits = 8;
+    repeated bytes repair_commit_sigs = 9;
+
+    ClientRecord client_record = 10;
 }
 
 

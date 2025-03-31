@@ -19,8 +19,11 @@ struct LogCheckpoint {
     std::string stableLogDigest;
     std::string stableAppDigest;
 
-    std::map<uint32_t, dombft::proto::Commit> commitMessages;
-    std::map<uint32_t, std::string> signatures;
+    std::map<uint32_t, dombft::proto::Commit> commits;
+    std::map<uint32_t, std::string> commitSigs;
+
+    std::map<uint32_t, dombft::proto::PBFTCommit> repairCommits;
+    std::map<uint32_t, std::string> repairCommitSigs;
 
     ClientRecord clientRecord_;
 
