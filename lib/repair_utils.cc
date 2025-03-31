@@ -167,6 +167,15 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     VLOG(4) << "Rest of client requestes added from seq=" << logToUseSeq << " to seq=" << finalLogSeq;
 
+    VLOG(4) << "Calculating digest for log suffix";
+    // Calculate digest
+    std::string prevDigest = logSuffix.checkpoint->committed_log_digest();
+    for (const dombft::proto::LogEntry *e : logSuffix.entries) {
+        ::LogEntry entry(e->seq(), e->client_id(), e->client_seq(), e->request(), prevDigest);
+        prevDigest = entry.digest;
+    }
+    logSuffix.logDigest = prevDigest;
+
     return true;
 }
 

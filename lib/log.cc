@@ -111,15 +111,20 @@ void Log::abort(uint32_t seq)
 }
 
 // Given a sequence number, commit the request and remove previous state, and save new checkpoint
-void Log::setCheckpoint(const LogCheckpoint &checkpoint)
+void Log::setCheckpoint(const LogCheckpoint &newCheckpoint)
 {
-    checkpoint_ = checkpoint;
+    assert(newCheckpoint.stableSeq >= checkpoint_.stableSeq && newCheckpoint.committedSeq >= checkpoint_.committedSeq);
+
+    checkpoint_ = newCheckpoint;
+
+    VLOG(3) << "Log committing through seq " << newCheckpoint.committedSeq << " truncating through seq "
+            << newCheckpoint.stableSeq;
 
     // Truncate log up to the checkpoint stable sequence
-    log_.erase(log_.begin(), log_.begin() + (checkpoint.stableSeq - log_[0].seq + 1));
+    log_.erase(log_.begin(), log_.begin() + (newCheckpoint.stableSeq - log_[0].seq + 1));
 
     // Commit app up to commitedSeq (potentially triggering a snapshot)
-    app_->commit(checkpoint.committedSeq);
+    app_->commit(newCheckpoint.committedSeq);
 }
 
 // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
@@ -274,6 +279,10 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     out << "CHECKPOINT " << l.checkpoint_.committedSeq << ": " << digest_to_hex(l.checkpoint_.committedLogDigest)
         << " | ";
     for (const LogEntry &entry : l.log_) {
+        if (entry.seq <= l.checkpoint_.committedSeq) {
+            continue;
+        }
+
         out << entry;
     }
     return out;

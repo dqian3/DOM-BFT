@@ -220,6 +220,7 @@ message PBFTPrepare
     uint32 replica_id = 2;
     uint32 pbft_view = 3;
     bytes proposal_digest = 4;
+    bytes log_digest = 5;
 }
 
 message PBFTCommit
@@ -228,6 +229,8 @@ message PBFTCommit
     uint32 replica_id = 2;
     uint32 pbft_view = 3;
     bytes proposal_digest = 4;
+    
+    bytes log_digest = 5;
 }
 
 

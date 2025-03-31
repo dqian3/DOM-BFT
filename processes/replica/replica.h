@@ -43,7 +43,8 @@ private:
     // Control flow/endpoint objects
     BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;
     BlockingConcurrentQueue<std::vector<byte>> processQueue_;
-    BlockingConcurrentQueue<AppSnapshot> snapshotQueue_;
+    // integer is round number
+    BlockingConcurrentQueue<std::pair<uint32_t, AppSnapshot>> snapshotQueue_;
     ThreadPool sendThreadpool_;
 
     bool running_;
@@ -129,7 +130,7 @@ private:
     // Checkpointing
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
-    void processSnapshot(const AppSnapshot &snapshot);
+    void processSnapshot(const AppSnapshot &snapshot, uint32_t round);
 
     void startCheckpoint(bool createSnapshot);
 

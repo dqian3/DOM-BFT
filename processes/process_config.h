@@ -178,7 +178,7 @@ struct ProcessConfig {
             replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");
 
             replicaCheckpointInterval = parseField<int>(replicaNode, "checkpointInterval");
-            replicaSnapshotInterval = parseField<int>(replicaNode, "snapshotInterval");
+            replicaSnapshotInterval = parseField<int>(replicaNode, "snapshotInterval", replicaCheckpointInterval);
 
             if (replicaSnapshotInterval % replicaCheckpointInterval != 0) {
                 throw ConfigParseException("Snapshot interval must be a multiple of checkpoint interval");
