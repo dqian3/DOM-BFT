@@ -97,7 +97,7 @@ AppSnapshot Counter::getSnapshot()
         ret.snapshot =
             std::make_shared<std::string>(std::to_string(lastEntry->first) + "," + std::to_string(lastEntry->second));
     }
-    VLOG(1) << "Creating snapshot: '" << ret.snapshot << "'";
+    VLOG(1) << "Creating snapshot: '" << *ret.snapshot << "'";
 
     ret.digest = *ret.snapshot;
     return ret;
