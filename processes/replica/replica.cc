@@ -950,7 +950,9 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             log_->setCheckpoint(checkpoint);
 
             VLOG(1) << "PERF event=checkpoint_end seq=" << seq
-                    << " log_digest=" << digest_to_hex(checkpoint.committedLogDigest);
+                    << " log_digest=" << digest_to_hex(checkpoint.committedLogDigest)
+                    << " stable_seq=" << checkpoint.stableSeq
+                    << " stable_app_digest=" << digest_to_hex(checkpoint.stableAppDigest);
 
             // if there is overlapping and later checkpoint commits first, skip earlier ones
             checkpointCollectors_.cleanStaleCollectors(seq, commit.round());
@@ -1789,7 +1791,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             newCheckpoint.clientRecord_ = log_->getClientRecord();
 
-            VLOG(1) << "PERF event=repair_checkpoint replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
+            VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
                     << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.committedLogDigest);
 
             log_->setCheckpoint(newCheckpoint);

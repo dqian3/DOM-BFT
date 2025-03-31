@@ -127,7 +127,7 @@ def run(
     group = ThreadingGroup(*replicas, *receivers, *proxies, *clients)
 
     # Kill previous runs
-    group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+    group.run("killall dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
 
     # Give replicas the config file
     group.put(config_file)
@@ -164,9 +164,9 @@ def run(
             crashed_arg = ''
 
 
-        arun = arun_on(ip, f"replica{id}.log", profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
-        other_handles.append(hdl)
+        # arun = arun_on(ip, f"replica{id}.log", profile=profile)
+        # hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        # other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
@@ -406,7 +406,7 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, re
 
 @task
 def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, setup=False):
-    group = ThreadingGroup(*get_all_ips(config_file, resolve))
+    group = ThreadingGroup(*set(get_all_ips(config_file, resolve)))
     group.put(config_file)
 
     if setup:
@@ -416,7 +416,7 @@ def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, set
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git pull --rebase && git checkout kv_store_complete && bazel build //processes/...")
+    group.run("cd DOM-BFT && git checkout kvstore_snapshot2 && bazel build //processes/...")
 
     group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")

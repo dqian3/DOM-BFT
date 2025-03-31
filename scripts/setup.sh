@@ -6,7 +6,8 @@ apt-get update && apt-get install -y \
     libboost-all-dev \
     libssl-dev \
     git \
-    build-essential
+    build-essential \
+    htop
 
 curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg \
     && mv bazel.gpg /etc/apt/trusted.gpg.d/ \

@@ -148,7 +148,7 @@ void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint)
     commitCollector.getCheckpoint(checkpoint);
 
     if (needsSnapshot_) {
-        checkpoint.snapshot = snapshot_->snapshot;
+        checkpoint.snapshot = snapshot_.has_value() ? snapshot_->snapshot : nullptr;
     }
 }
 
