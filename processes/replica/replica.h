@@ -132,7 +132,6 @@ private:
     void processSnapshot(const AppSnapshot &snapshot);
 
     void startCheckpoint(bool createSnapshot);
-    void sendCommit(uint32_t seq);
 
     // State Transfer
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);

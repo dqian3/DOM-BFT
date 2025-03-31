@@ -83,7 +83,7 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest, 
     return true;
 }
 
-bool Counter::takeSnapshot(SnapshotCallback cb)
+void Counter::takeSnapshot(SnapshotCallback cb)
 {
 
     if (values.empty()) {
@@ -102,7 +102,6 @@ bool Counter::takeSnapshot(SnapshotCallback cb)
     snapshot.digest = *snapshot.snapshot;
 
     cb(snapshot);
-    return true;
 };
 
 std::string CounterClient::generateAppRequest()

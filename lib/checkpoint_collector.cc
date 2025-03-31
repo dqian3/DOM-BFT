@@ -26,7 +26,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         uint32_t replicaId = entry.first;
         const Reply &reply = entry.second;
 
-        VLOG(4) << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.round();
+        VLOG(4) << replicaId << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " " << reply.round();
 
         ReplyKeyTuple key = {reply.digest(), reply.round(), reply.seq()};
 
@@ -49,15 +49,8 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
     return false;
 }
 
-void ReplyCollector::getCert(dombft::proto::Cert &cert)
-{
-    assert(cert_.has_value());
-    cert = cert_.value();
-}
-
 bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span<byte> sig)
 {
-
     // verify the record is not tampered by a malicious replica
     if (::ClientRecord(commitMsg.client_record()).digest() != commitMsg.client_record().digest()) {
         VLOG(5) << "Client records from commit msg from replica " << commitMsg.replica_id()
@@ -76,6 +69,8 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
             commit.stable_seq(), commit.stable_app_digest(), commit.client_record().digest(),
         };
         matchingCommits[key].insert(replicaId);
+
+        VLOG(4) << replicaId << " " << digest_to_hex(commit.committed_log_digest()) << " " << commit.committed_seq();
 
         if (matchingCommits[key].size() >= 2 * f_ + 1) {
             matchedReplicas_ = matchingCommits[key];
@@ -131,7 +126,8 @@ void CheckpointCollector::getOwnCommit(dombft::proto::Commit &commit)
 
     commit.set_committed_seq(seq_);
     commit.set_committed_log_digest(logDigest_.value());
-    commit.set_client_record(clientRecord_.value().toProto());
+
+    clientRecord_.value().toProto(*commit.mutable_client_record());
 
     if (needsSnapshot_) {
         commit.set_stable_seq(snapshot_->seq);
@@ -144,14 +140,7 @@ void CheckpointCollector::getOwnCommit(dombft::proto::Commit &commit)
 
 bool CheckpointCollector::addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
-    return addAndCheckCommit(commit, sig);
-}
-
-void CheckpointCollector::getCert(dombft::proto::Cert &cert) { replyCollector.getCert(cert); }
-
-void CheckpointCollector::getQuorumCommit(dombft::proto::Commit &commit)
-{
-    commit = commitCollector.commitToUse_.value();
+    return commitCollector.addAndCheckCommit(commit, sig);
 }
 
 void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint)
@@ -177,7 +166,8 @@ bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool 
         return false;
     }
 
-    collectors_[key] = CheckpointCollector(replicaId_, f_, round, seq, needsSnapshot);
+    auto [_, created] = collectors_.try_emplace(key, replicaId_, f_, round, seq, needsSnapshot);
+    assert(created);
 
     std::pair<uint32_t, uint32_t> cleanupKey = {round, 0};
     if (collectors_.lower_bound(cleanupKey) != collectors_.begin()) {

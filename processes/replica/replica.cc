@@ -744,8 +744,6 @@ void Replica::processClientRequest(const ClientRequest &request)
         // Save a digest of the application state and also save a snapshot
 
         startCheckpoint(true);
-        // TODO remove execution result from Reply
-        broadcastToReplicas(reply, MessageType::REPLY);
     }
 }
 
@@ -822,7 +820,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     CheckpointCollector &coll = checkpointCollectors_.at(round_, rSeq);
 
     if (coll.commitReady()) {
-        VLOG(4) << "COMMIT already sent for seq=" << rSeq << " round=" << round_ << "ignorning";
+        VLOG(4) << "COMMIT already sent for seq=" << rSeq << " round=" << round_ << " ignoring";
         return;
     }
 
@@ -834,8 +832,6 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         log_->addCert(rSeq, cert);
 
         if (coll.commitReady()) {
-            sendCommit(rSeq);
-
             Commit commit;
             coll.getOwnCommit(commit);
 
@@ -854,10 +850,13 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 void Replica::processSnapshot(const AppSnapshot &snapshot)
 {
     if (!checkpointCollectors_.hasCollector(round_, snapshot.seq)) {
-        VLOG(4) << "Checkpoint collector does not exist for round=" << round_ << " seq = " << snapshot.seq < < < <
-            ", which means this was either commmitted or aborted, skipping saving of snapshot";
+        VLOG(4) << "Checkpoint collector does not exist for round=" << round_ << " seq = " << snapshot.seq
+                << " which means this was either committed or aborted, skipping saving of snapshot";
         return;
     }
+
+    VLOG(4) << "Processing snapshot for seq=" << snapshot.seq << " round=" << round_;
+
     CheckpointCollector &coll = checkpointCollectors_.at(round_, snapshot.seq);
     coll.addOwnSnapshot(snapshot);
 
@@ -917,25 +916,27 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             LOG(INFO) << "Dropping checkpoint seq=" << seq;
             return;
         }
-        uint32_t seq = checkpoint.committed_seq();
+        uint32_t seq = checkpoint.committedSeq;
 
         LOG(INFO) << "Trying to commit seq=" << seq
-                  << " commit_digest=" << digest_to_hex(checkpoint.committed_log_digest());
+                  << " commit_digest=" << digest_to_hex(checkpoint.committedLogDigest);
 
-        if (seq >= log_->getNextSeq() || log_->getDigest(seq) != checkpoint.committed_log_digest()) {
+        if (seq >= log_->getNextSeq() || log_->getDigest(seq) != checkpoint.committedLogDigest) {
             LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";
             // TODO choose a random replica from those that have this
-            sendSnapshotRequest(commitToUse.replica_id(), commitToUse.committed_seq());
 
-        } else if (checkpoint.hasOwnSnapshot()) {
-            if (checkpoint.stable_seq() > log_->getCheckpoint().stableSeq) {
+            uint32_t replicaId = checkpoint.commitMessages[0].replica_id();
+            sendSnapshotRequest(replicaId, checkpoint.committedSeq);
+
+        } else if (!coll.needsSnapshot() || checkpoint.snapshot != nullptr) {
+            if (checkpoint.stableSeq > log_->getCheckpoint().stableSeq) {
                 LOG(INFO) << "Writing new snapshot to store!";
             }
 
             log_->setCheckpoint(checkpoint);
 
             VLOG(1) << "PERF event=checkpoint_end seq=" << seq
-                    << " log_digest=" << digest_to_hex(commitToUse.committed_log_digest());
+                    << " log_digest=" << digest_to_hex(checkpoint.committedLogDigest);
 
             // if there is overlapping and later checkpoint commits first, skip earlier ones
             checkpointCollectors_.cleanStaleCollectors(seq, round_);
@@ -1071,7 +1072,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                   << snapshotReply.seq() << " checkpoint";
 
         ::LogCheckpoint checkpoint;
-        checkpointCollectors_.getCheckpoint(round_, snapshotReply.seq(), checkpoint);
+
+        assert(checkpointCollectors_.hasCollector(round_, snapshotReply.seq()));
+        checkpointCollectors_.at(round_, snapshotReply.seq()).getCheckpoint(checkpoint);
 
         if (!log_->applySnapshotModifyLog(checkpoint, snapshotReply)) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";

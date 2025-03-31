@@ -73,7 +73,7 @@ class CheckpointCollector {
 
     bool needsSnapshot_ = false;
     std::optional<AppSnapshot> snapshot_;
-    std::optional<ClientRecord> clientRecord_;
+    std::optional<::ClientRecord> clientRecord_;
     std::optional<std::string> logDigest_;
 
     // Messages
@@ -91,6 +91,8 @@ public:
         , commitCollector(f, round, seq)
     {
     }
+
+    bool needsSnapshot() { return needsSnapshot_; }
 
     // Add a reply to the collector and check if we have enough replies to form a cert
     // Can call getCert once addAndCheckReply returns true
@@ -112,11 +114,11 @@ public:
     void getOwnCommit(dombft::proto::Commit &commit);
 
     // Add a reply to the collector and check if we have enough replies to form a cert
-    // Can call getQuorumCommit/getCheckpoint once addAndCheckCommit returns true
+    // Can call getCheckpoint once addAndCheckCommit returns true
     bool addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig);
-    bool hasQuorumCommit() { return commitCollector.commitToUse_.has_value(); }
-    void getQuorumCommit(dombft::proto::Commit &commit);
 
+    // Note checkpoint will only have snapshot field set to valid pointer if we have
+    // the pointer from our own log
     void getCheckpoint(::LogCheckpoint &checkpoint);
 };
 
@@ -142,6 +144,6 @@ public:
     CheckpointCollector &at(uint32_t round, uint32_t seq);
 
     void cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound);
-}
+};
 
 #endif   // DOM_BFT_CHECKPOINT_H

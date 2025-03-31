@@ -127,16 +127,6 @@ bool KVStore::abort(uint32_t abort_idx)
         dataIdx = committedIdx;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(snapshotMutex_);
-
-        if (snapshot_.seq >= abort_idx) {
-            snapshot_.snapshot = nullptr;
-            snapshot_.digest = "";
-            snapshot_.seq = 0;
-        }
-    }
-
     uint32_t i = 0;
     for (auto &r : requests) {
         if (r.idx >= abort_idx) {
@@ -158,7 +148,7 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
 {
     // Acquire both locks here
     // TODO, could maybe be a bit more fine grained here
-    std::scoped_lock lock(committedDataMutex_, snapshotMutex_);
+    std::unique_lock lock(committedDataMutex_);
 
     byte computedDigest[SHA256_DIGEST_LENGTH];
     SHA256_CTX ctx;
@@ -254,7 +244,6 @@ void KVStore::takeSnapshot(SnapshotCallback callback)
 
         digest = std::string(digestBytes, digestBytes + SHA256_DIGEST_LENGTH);
 
-        AppSnapshot ret;
         ret.snapshot = std::make_shared<std::string>(snapshot);
         ret.digest = digest;
         ret.seq = idx;
