@@ -25,9 +25,8 @@ public:
     bool commit(uint32_t commit_idx) override;
     bool abort(uint32_t abort_idx) override;
 
+    void takeSnapshot(SnapshotCallback cb) override;
     bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
-
-    AppSnapshot getSnapshot() override;
 
 private:
     int counter;
@@ -36,6 +35,8 @@ private:
 
     int committedValue;
     int committedIdx;
+
+    AppSnapshot snapshot;
 };
 
 class CounterClient : public ApplicationClient {

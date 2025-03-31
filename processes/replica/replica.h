@@ -31,6 +31,7 @@ private:
     std::vector<Address> clientAddrs_;
     uint32_t f_;
     uint32_t checkpointInterval_;
+    uint32_t snapshotInterval_;
     uint32_t numVerifyThreads_;
 
     uint64_t repairTimeout_;
@@ -42,6 +43,7 @@ private:
     // Control flow/endpoint objects
     BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;
     BlockingConcurrentQueue<std::vector<byte>> processQueue_;
+    BlockingConcurrentQueue<AppSnapshot> snapshotQueue_;
     ThreadPool sendThreadpool_;
 
     bool running_;
@@ -56,7 +58,7 @@ private:
     std::shared_ptr<Application> app_;
 
     // State for commit/checkpoint protocol
-    CheckpointCollector checkpointCollector_;
+    CheckpointCollectorStore checkpointCollectors_;
 
     // State for repair
     bool repair_ = false;
@@ -110,28 +112,48 @@ private:
     // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
     bool holdPrepareOrCommit_ = false;
 
+    // Boilerplate for handling/verifying messages
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
     void verifyMessagesThd();
     void processMessagesThd();
 
+    void checkTimeouts();
+
+    // ========== Processing messages ===========
+
+    // Fast path/normal path
     void processClientRequest(const dombft::proto::ClientRequest &request);
     void processCert(const dombft::proto::Cert &cert);
+
+    // Checkpointing
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
+    void processSnapshot(const AppSnapshot &snapshot);
+
+    void startCheckpoint(bool createSnapshot);
+    void sendCommit(uint32_t seq);
+
+    // State Transfer
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
 
-    // Starting repair
+    // Starting Repair
     void processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig);
     void processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig);
     void processRepairReplyProof(const dombft::proto::RepairReplyProof &msg);
     void processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg);
 
+    // Repair
     void processRepairStart(const dombft::proto::RepairStart &msg, std::span<byte> sig);
-    void processRepairDone(const dombft::proto::RepairDone &msg);
+    void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
+    void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
+    void processPBFTCommit(const dombft::proto::PBFTCommit &msg, std::span<byte> sig);
 
-    void checkTimeouts();
+    // Internal View Change
+    void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
+    void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
+    void processRepairDone(const dombft::proto::RepairDone &msg);
 
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyRepairReplyProof(const dombft::proto::RepairReplyProof &proof);
@@ -159,18 +181,13 @@ private:
     inline bool viewChangeByPrepare() const { return ifTriggerViewChange() && !holdPrepareOrCommit_; }
     inline bool viewChangeByCommit() const { return ifTriggerViewChange() && holdPrepareOrCommit_; }
 
-    // repair PBFT
+    // More Repair Helpers
     inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
     uint32_t getPrimary() { return pbftView_ % replicaAddrs_.size(); }
     void startViewChange();
     void doPrePreparePhase(uint32_t round);
     void doPreparePhase();
     void doCommitPhase();
-    void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
-    void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
-    void processPBFTCommit(const dombft::proto::PBFTCommit &msg, std::span<byte> sig);
-    void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
-    void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
     std::string getProposalDigest(const dombft::proto::RepairProposal &proposal);
 
     // sending helpers

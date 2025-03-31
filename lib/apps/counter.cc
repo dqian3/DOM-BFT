@@ -83,25 +83,27 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest, 
     return true;
 }
 
-AppSnapshot Counter::getSnapshot()
+bool Counter::takeSnapshot(SnapshotCallback cb)
 {
-    AppSnapshot ret;
 
     if (values.empty()) {
-        ret.seq = committedIdx;
-        ret.snapshot =
+        snapshot.seq = committedIdx;
+        snapshot.snapshot =
             std::make_shared<std::string>(std::to_string(committedIdx) + "," + std::to_string(committedValue));
     } else {
         auto lastEntry = values.rbegin();
-        ret.seq = lastEntry->first;
-        ret.snapshot =
+        snapshot.seq = lastEntry->first;
+        snapshot.snapshot =
             std::make_shared<std::string>(std::to_string(lastEntry->first) + "," + std::to_string(lastEntry->second));
     }
-    VLOG(1) << "Creating snapshot: '" << *ret.snapshot << "'";
 
-    ret.digest = *ret.snapshot;
-    return ret;
-}
+    VLOG(1) << "Creating snapshot: '" << *snapshot.snapshot << "'";
+
+    snapshot.digest = *snapshot.snapshot;
+
+    cb(snapshot);
+    return true;
+};
 
 std::string CounterClient::generateAppRequest()
 {

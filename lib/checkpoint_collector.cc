@@ -107,75 +107,109 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
 
 bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
-    std::pair<uint32_t, uint32_t> key = {reply.round(), reply.seq()};
+    return replyCollector.addAndCheckReply(reply, sig);
+}
 
-    if (!replyCollectors_.contains(key)) {
-        replyCollectors_.emplace(key, ReplyCollector(replicaId_, f_, reply.round(), reply.seq()));
+void CheckpointCollector::addOwnSnapshot(const AppSnapshot &snapshot) { snapshot_ = snapshot; }
+
+void CheckpointCollector::addOwnState(const std::string &logDigest, const ::ClientRecord &clientRecord)
+{
+    clientRecord_ = clientRecord;
+    logDigest_ = logDigest;
+}
+
+bool CheckpointCollector::commitReady()
+{
+    return replyCollector.cert_.has_value() && (!needsSnapshot_ || snapshot_.has_value()) &&
+           clientRecord_.has_value() && logDigest_.has_value();
+}
+
+void CheckpointCollector::getOwnCommit(dombft::proto::Commit &commit)
+{
+    commit.set_replica_id(replicaId_);
+    commit.set_round(round_);
+
+    commit.set_committed_seq(seq_);
+    commit.set_committed_log_digest(logDigest_.value());
+    commit.set_client_record(clientRecord_.value().toProto());
+
+    if (needsSnapshot_) {
+        commit.set_stable_seq(snapshot_->seq);
+        commit.set_stable_log_digest(logDigest_.value());
+        commit.set_stable_app_digest(snapshot_->digest);
+    } else {
+        // TODO, this needs to be filled separately...
     }
-
-    return replyCollectors_.at(key).addAndCheckReply(reply, sig);
 }
 
 bool CheckpointCollector::addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig)
 {
-    std::pair<uint32_t, uint32_t> key = {commit.round(), commit.committed_seq()};
+    return addAndCheckCommit(commit, sig);
+}
 
-    if (!commitCollectors_.contains(key)) {
-        commitCollectors_.emplace(key, CommitCollector(f_, commit.round(), commit.committed_seq()));
+void CheckpointCollector::getCert(dombft::proto::Cert &cert) { replyCollector.getCert(cert); }
+
+void CheckpointCollector::getQuorumCommit(dombft::proto::Commit &commit)
+{
+    commit = commitCollector.commitToUse_.value();
+}
+
+void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint)
+{
+    commitCollector.getCheckpoint(checkpoint);
+
+    if (needsSnapshot_) {
+        checkpoint.snapshot = snapshot_->snapshot;
+    }
+}
+
+// ================= CheckpointCollectorStore =================
+
+bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool needsSnapshot)
+{
+    std::pair<uint32_t, uint32_t> key = {round, seq};
+    std::pair<uint32_t, uint32_t> committedKey = {committedRound_, committedSeq_};
+
+    if (key < committedKey) {
+        LOG(WARNING) << "Attempting to create collector for seq=" << seq << " round=" << round
+                     << " which is before the last committed checkpoint seq=" << committedSeq_
+                     << " round=" << committedRound_;
+        return false;
     }
 
-    return commitCollectors_.at(key).addAndCheckCommit(commit, sig);
-}
+    collectors_[key] = CheckpointCollector(replicaId_, f_, round, seq, needsSnapshot);
 
-void CheckpointCollector::getCert(uint32_t round, uint32_t seq, dombft::proto::Cert &cert)
-{
-
-    std::pair<uint32_t, uint32_t> key = {round, seq};
-
-    assert(replyCollectors_.contains(key));
-    replyCollectors_.at(key).getCert(cert);
-}
-
-void CheckpointCollector::getCommitToUse(uint32_t round, uint32_t seq, dombft::proto::Commit &commit)
-{
-    std::pair<uint32_t, uint32_t> key = {round, seq};
-
-    assert(commitCollectors_.contains(key));
-    assert(commitCollectors_.at(key).commitToUse_.has_value());
-    commit = commitCollectors_.at(key).commitToUse_.value();
-}
-
-void CheckpointCollector::getCheckpoint(uint32_t round, uint32_t seq, ::LogCheckpoint &checkpoint)
-{
-    std::pair<uint32_t, uint32_t> key = {round, seq};
-
-    assert(commitCollectors_.contains(key));
-    commitCollectors_.at(key).getCheckpoint(checkpoint);
-}
-
-const CheckpointState &CheckpointCollector::getCachedState(uint32_t seq) { return states_.at(seq); }
-
-void CheckpointCollector::cacheState(
-    uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, const AppSnapshot &snapshot
-)
-{
-    if (states_.contains(seq)) {
-        VLOG(4) << "Overwriting existing checkpoint state for seq=" << seq;
+    std::pair<uint32_t, uint32_t> cleanupKey = {round, 0};
+    if (collectors_.lower_bound(cleanupKey) != collectors_.begin()) {
+        VLOG(3) << "Cleaning up any checkpoint state from rounds prior to round=" << round;
+        collectors_.erase(collectors_.begin(), collectors_.lower_bound(cleanupKey));
     }
 
-    // TODO we can look at the current digest here to clean up any stale collectors
-    // However, since replica won't process messages from previous rounds, it's also probably fine to not do this...
-    states_[seq] = {logDigest, clientRecord, snapshot};
+    return true;
 }
 
-void CheckpointCollector::cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound)
+bool CheckpointCollectorStore::hasCollector(uint32_t round, uint32_t seq)
 {
-    VLOG(1) << "Cleaning up any checkpoint state since checkpoint committed at seq=" << committedSeq
-            << " round=" << committedRound;
+    std::pair<uint32_t, uint32_t> key = {round, seq};
+    return collectors_.contains(key);
+}
 
+CheckpointCollector &CheckpointCollectorStore::at(uint32_t round, uint32_t seq)
+{
+    std::pair<uint32_t, uint32_t> key = {round, seq};
+    return collectors_.at(key);
+}
+
+void CheckpointCollectorStore::cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound)
+{
     std::pair<uint32_t, uint32_t> key = {committedRound, committedSeq};
 
-    states_.erase(states_.begin(), states_.lower_bound(committedSeq));
-    replyCollectors_.erase(replyCollectors_.begin(), replyCollectors_.lower_bound(key));
-    commitCollectors_.erase(commitCollectors_.begin(), commitCollectors_.lower_bound(key));
+    committedRound_ = committedRound;
+    committedSeq_ = committedSeq;
+
+    if (collectors_.lower_bound(key) != collectors_.begin()) {
+        VLOG(3) << "Cleaning up any checkpoint state since checkpoint committed at seq=" << committedSeq
+                << " round=" << committedRound;
+        collectors_.erase(collectors_.begin(), collectors_.lower_bound(key));
+    }
 }

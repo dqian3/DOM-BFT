@@ -31,11 +31,9 @@ private:
     std::vector<KVStoreRequest> requests;
     std::unordered_map<std::string, std::string> data;
     std::unordered_map<std::string, std::string> committedData;
+    uint32_t dataIdx;
     uint32_t committedIdx;
 
-    AppSnapshot snapshot_;
-
-    std::mutex snapshotMutex_;
     std::shared_mutex committedDataMutex_;
 
     std::thread snapshotThread_;
@@ -50,9 +48,9 @@ public:
     bool commit(uint32_t idx) override;
     bool abort(uint32_t idx) override;
 
-    bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
+    void takeSnapshot(SnapshotCallback cb) override;
 
-    AppSnapshot getSnapshot() override;
+    bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
 };
 
 class KVStoreClient : public ApplicationClient {

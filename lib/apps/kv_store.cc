@@ -19,10 +19,10 @@ KVStore::KVStore(uint32_t numKeys)
 
 KVStore::~KVStore() { snapshotThread_.join(); }
 
-std::string KVStore::execute(const std::string &serialized_request, uint32_t execute_idx)
+std::string KVStore::execute(const std::string &serializedRequest, uint32_t executeIdx)
 {
     KVRequest req;
-    if (!req.ParseFromString(serialized_request)) {
+    if (!req.ParseFromString(serializedRequest)) {
         LOG(ERROR) << "Failed to parse KVRequest";
         return "";
     }
@@ -58,11 +58,14 @@ std::string KVStore::execute(const std::string &serialized_request, uint32_t exe
         return "";
     }
 
+    assert(executeIdx > dataIdx);
+    dataIdx = executeIdx;
+
     std::string ret;
     if (!response.SerializeToString(&ret)) {
         throw std::runtime_error("Failed to serialize CounterResponse message.");
     }
-    requests.push_back({execute_idx, key, value, type});
+    requests.push_back({executeIdx, key, value, type});
 
     return ret;
 }
@@ -98,51 +101,6 @@ bool KVStore::commit(uint32_t idx)
     LOG(INFO) << "Committed at idx: " << idx << " committed_data size: " << committedData.size()
               << " requests size: " << requests.size();
 
-    if (snapshotThread_.joinable()) {
-        snapshotThread_.join();
-    }
-
-    // TODO: minor race condition here if commit again before the snapshot thread is able to acquire lock
-    // Won't worry about this for now...
-    snapshotThread_ = std::thread([this, idx]() {
-        AppSnapshot ret;
-        VLOG(6) << "Starting snapshot of KVStore";
-
-        uint64_t now = GetMicrosecondTimestamp();
-
-        uint32_t idx = committedIdx;
-        std::string snapshot;
-        std::string digest;
-
-        // TODO this only works if key/value data does not have ":" or ","
-        // we should use a better serialization format
-        {
-            std::shared_lock<std::shared_mutex> lock(committedDataMutex_);
-            for (auto &kv : committedData) {
-                snapshot += kv.first + ":" + kv.second + ",";
-            }
-        }
-        VLOG(6) << "Snapshot of KVStore done copying committed data";
-
-        byte digestBytes[SHA256_DIGEST_LENGTH];
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
-        SHA256_Final(digestBytes, &ctx);
-
-        digest = std::string(digestBytes, digestBytes + SHA256_DIGEST_LENGTH);
-
-        {
-            std::lock_guard<std::mutex> lock(snapshotMutex_);
-
-            snapshot_.snapshot = std::make_shared<std::string>(snapshot);
-            snapshot_.digest = digest;
-            snapshot_.seq = idx;
-        }
-
-        VLOG(6) << "Snapshot of KVStore took " << (GetMicrosecondTimestamp() - now) / 1000 << " ms";
-    });
-
     return true;
 }
 
@@ -166,6 +124,17 @@ bool KVStore::abort(uint32_t abort_idx)
 
         // reapply committed data and ops before abort_idx
         data = committedData;
+        dataIdx = committedIdx;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(snapshotMutex_);
+
+        if (snapshot_.seq >= abort_idx) {
+            snapshot_.snapshot = nullptr;
+            snapshot_.digest = "";
+            snapshot_.seq = 0;
+        }
     }
 
     uint32_t i = 0;
@@ -221,9 +190,10 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
         LOG(INFO) << "Applied snapshot, data size: " << data.size();
 
         std::swap(data, newData);
+        dataIdx = idx;
+
         committedData = data;
         committedIdx = idx;
-        snapshot_ = {idx, std::make_shared<std::string>(snapshot), digest};
 
     } catch (std::exception &e) {
         LOG(ERROR) << "Failed to parse snapshot: " << e.what();
@@ -233,14 +203,66 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     return true;
 }
 
-AppSnapshot KVStore::getSnapshot()
+void KVStore::takeSnapshot(SnapshotCallback callback)
 {
-    std::lock_guard<std::mutex> lock(snapshotMutex_);
+    // Only a single snapshot thread can run at a time
+    if (snapshotThread_.joinable()) {
+        snapshotThread_.join();
+    }
 
-    // TODO copying this is not ideal since it is pretty large.
-    AppSnapshot ret = snapshot_;
+    // Only part we do on main calling thread is copying the uncommitted data we want to snapshot
+    std::vector<KVStoreRequest> requestsCopy = requests;
+    uint32_t idx = dataIdx;
 
-    return ret;
+    // TODO: minor race condition here if commit again before the snapshot thread is able to acquire lock
+    // Won't worry about this for now...
+    snapshotThread_ = std::thread([this, requestsCopy, idx, callback]() {
+        AppSnapshot ret;
+        VLOG(6) << "Starting snapshot of KVStore";
+
+        uint64_t now = GetMicrosecondTimestamp();
+
+        std::string snapshot;
+        std::string digest;
+        std::unordered_map<std::string, std::string> snapshotData;
+
+        // TODO this only works if key/value data does not have ":" or ","
+        // we should use a better serialization format
+        {
+            std::shared_lock<std::shared_mutex> lock(committedDataMutex_);
+            snapshotData = committedData;
+        }
+        VLOG(6) << "Snapshot of KVStore done copying committed data";
+
+        for (auto &req : requestsCopy) {
+            if (req.type == KVRequestType::SET) {
+                snapshotData[req.key] = req.value;
+            } else if (req.type == KVRequestType::DELETE) {
+                snapshotData.erase(req.key);
+            }
+        }
+
+        for (auto &kv : committedData) {
+            snapshot += kv.first + ":" + kv.second + ",";
+        }
+
+        byte digestBytes[SHA256_DIGEST_LENGTH];
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
+        SHA256_Final(digestBytes, &ctx);
+
+        digest = std::string(digestBytes, digestBytes + SHA256_DIGEST_LENGTH);
+
+        AppSnapshot ret;
+        ret.snapshot = std::make_shared<std::string>(snapshot);
+        ret.digest = digest;
+        ret.seq = idx;
+
+        VLOG(6) << "Snapshot of KVStore took " << (GetMicrosecondTimestamp() - now) / 1000 << " ms";
+
+        callback(ret);
+    });
 }
 
 KVStoreClient::KVStoreClient(uint32_t numKeys)

@@ -19,6 +19,8 @@ struct AppSnapshot {
     std::string digest;
 };
 
+typedef std::function<void(const AppSnapshot &)> SnapshotCallback;
+
 class Application {
 
 public:
@@ -34,7 +36,8 @@ public:
 
     virtual bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) = 0;
 
-    virtual AppSnapshot getSnapshot() = 0;
+    // By default can just do nothing
+    virtual void takeSnapshot(SnapshotCallback cb) {};
 };
 
 class ApplicationClient {

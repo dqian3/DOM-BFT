@@ -25,7 +25,7 @@ struct ReplyCollector {
     std::map<uint32_t, std::string> replySigs_;
     std::optional<dombft::proto::Cert> cert_;
 
-    ReplyCollector(uint32_t replicaId, uint32_t f, uint32_t seq, uint32_t round)
+    ReplyCollector(uint32_t replicaId, uint32_t f, uint32_t round, uint32_t seq)
         : replicaId_(replicaId)
         , f_(f)
         , round_(round)
@@ -62,49 +62,86 @@ struct CommitCollector {
     void getCheckpoint(::LogCheckpoint &checkpoint);
 };
 
-// Cached state of the log (snapshot, client record, digest) that the replica may need to
-// finish checkpointing
-struct CheckpointState {
-    std::string logDigest;
-    ::ClientRecord clientRecord_;
+class CheckpointCollector {
+    // We only need our own latests state, so don't index by round
 
-    /// TODO make this a shared ptr or something, we handle a lot of copies of this
-    AppSnapshot snapshot;
+    uint32_t replicaId_;
+    uint32_t f_;
+
+    uint32_t round_;
+    uint32_t seq_;
+
+    bool needsSnapshot_ = false;
+    std::optional<AppSnapshot> snapshot_;
+    std::optional<ClientRecord> clientRecord_;
+    std::optional<std::string> logDigest_;
+
+    // Messages
+    ReplyCollector replyCollector;
+    CommitCollector commitCollector;
+
+public:
+    explicit CheckpointCollector(uint32_t replicaId, uint32_t f, uint32_t round, uint32_t seq, bool needsSnapshot)
+        : replicaId_(replicaId)
+        , f_(f)
+        , round_(round)
+        , seq_(seq)
+        , needsSnapshot_(needsSnapshot)
+        , replyCollector(replicaId, f, round, seq)
+        , commitCollector(f, round, seq)
+    {
+    }
+
+    // Add a reply to the collector and check if we have enough replies to form a cert
+    // Can call getCert once addAndCheckReply returns true
+    bool addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig);
+    bool hasCert() { return replyCollector.cert_.has_value(); }
+    void getCert(dombft::proto::Cert &cert) { cert = replyCollector.cert_.value(); }
+
+    // If during a checkpoint round, we took a snapshot of our own state (optional)
+    // It is needed for new commit messages if hasAppSnapshot is true, since we need to update
+    // the commit messages
+    void addOwnSnapshot(const AppSnapshot &snapshot);
+    bool hasOwnSnapshot() { return snapshot_.has_value(); }
+
+    void addOwnState(const std::string &logDigest, const ::ClientRecord &clientRecord);
+    bool hasOwnState() { return clientRecord_.has_value() && logDigest_.has_value(); }
+
+    // Commit phase is ready once we have a cert and own own state/snapshot
+    bool commitReady();
+    void getOwnCommit(dombft::proto::Commit &commit);
+
+    // Add a reply to the collector and check if we have enough replies to form a cert
+    // Can call getQuorumCommit/getCheckpoint once addAndCheckCommit returns true
+    bool addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig);
+    bool hasQuorumCommit() { return commitCollector.commitToUse_.has_value(); }
+    void getQuorumCommit(dombft::proto::Commit &commit);
+
+    void getCheckpoint(::LogCheckpoint &checkpoint);
 };
 
-class CheckpointCollector {
-    // Each collector is indexed by (round, key)
-    std::map<std::pair<uint32_t, uint32_t>, ReplyCollector> replyCollectors_;
-    std::map<std::pair<uint32_t, uint32_t>, CommitCollector> commitCollectors_;
+class CheckpointCollectorStore {
+    std::map<std::pair<uint32_t, uint32_t>, CheckpointCollector> collectors_;
 
-    // We only need our own latests state, so don't index by round
-    std::map<uint32_t, CheckpointState> states_;
+    uint32_t committedSeq_ = 0;
+    uint32_t committedRound_ = 0;
 
     uint32_t replicaId_;
     uint32_t f_;
 
 public:
-    explicit CheckpointCollector(uint32_t replicaId, uint32_t f)
+    explicit CheckpointCollectorStore(uint32_t replicaId, uint32_t f)
         : replicaId_(replicaId)
         , f_(f)
     {
     }
 
-    bool addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig);
-    bool addAndCheckCommit(const dombft::proto::Commit &commit, std::span<byte> sig);
+    bool initCollector(uint32_t round, uint32_t seq, bool needsSnapshot);
+    bool hasCollector(uint32_t round, uint32_t seq);
 
-    void getCert(uint32_t round, uint32_t seq, dombft::proto::Cert &cert);
-
-    void getCommitToUse(uint32_t round, uint32_t seq, dombft::proto::Commit &commit);
-    void getCheckpoint(uint32_t round, uint32_t seq, ::LogCheckpoint &checkpoint);
-
-    const CheckpointState &getCachedState(uint32_t seq);
-
-    void cacheState(
-        uint32_t seq, const std::string &logDigest, const ::ClientRecord &clientRecord, const AppSnapshot &snapshot
-    );
+    CheckpointCollector &at(uint32_t round, uint32_t seq);
 
     void cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound);
-};
+}
 
 #endif   // DOM_BFT_CHECKPOINT_H
