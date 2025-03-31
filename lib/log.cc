@@ -58,20 +58,35 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
 
 bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 {
-    if (!inRange(seq)) {
-        VLOG(5) << "Fail adding cert because out of range!";
+    const dombft::proto::Reply &r = cert.replies()[0];
+
+    if (seq > nextSeq_) {
+        VLOG(3) << "Fail adding cert because seq=" << seq << " is greater than nextSeq=" << nextSeq_;
         return false;
+    }
+
+    if (seq < checkpoint_.stableSeq) {
+        VLOG(5) << "Sequence for cert seq=" << seq << " has already been committed, checking client record";
+        if (!clientRecord_.contains(r.client_id(), r.client_seq())) {
+            VLOG(3) << "Fail adding cert because committed client record does not contain c_id=" << r.client_id()
+                    << " c_seq=" << r.client_seq();
+            return false;
+        } else {
+            // If this request has been committed in a checkpoint and has a valid cert, it must be committed!
+            // We could send some COMMITTED_REPLY instead, but this works as well, and prevents the case where
+            // some replicas might send a COMMITTED_REPLY and others a CERT_ACK
+            return true;
+        }
     }
 
     auto entry = getEntry(seq);   // will not be nullptr because range is checked above
-    const dombft::proto::Reply &r = cert.replies()[0];
 
     if (r.client_id() != entry.client_id || r.client_seq() != entry.client_seq || r.digest() != entry.digest) {
-        VLOG(5) << "Fail adding cert because mismatching request!";
+        VLOG(3) << "Fail adding cert because mismatching request!";
         return false;
     }
 
-    // instead of adding the cert to the list of certs, directly updating the latest cert.
+    // instead of adding the cert to the list of certs, directly update the latest cert.
     if (!latestCert_.has_value() || cert.seq() > latestCert_->seq()) {
         latestCert_ = cert;
         latestCertSeq_ = seq;
