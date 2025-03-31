@@ -54,10 +54,10 @@ public:
     // Given a sequence number, commit the log and remove previous state, and save new checkpoint
     void setCheckpoint(const LogCheckpoint &checkpoint);
 
-    // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-    bool resetToSnapshot(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply);
+    // Given a snapshot of the app state reset log entirely to that state
+    bool resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply);
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-    bool applySnapshotModifyLog(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply);
+    bool applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotReply);
 
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;

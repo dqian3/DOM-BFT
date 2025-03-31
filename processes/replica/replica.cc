@@ -244,6 +244,11 @@ void Replica::verifyMessagesThd()
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
+            if (!verifyCheckpoint(reply.checkpoint())) {
+                LOG(INFO) << "Failed to verify checkpoint from replica " << reply.replica_id() << " in SNAPSHOT_REPLY!";
+                continue;
+            }
+
             processQueue_.enqueue(msg);
         }
 #if !USE_PROXY
@@ -796,6 +801,12 @@ void Replica::processCert(const Cert &cert)
 void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
     uint32_t rSeq = reply.seq();
+
+    if (repair_) {
+        VLOG(2) << "Ignoring reply for seq=" << rSeq << " from " << reply.replica_id() << " due to ongoing repair";
+        return;
+    }
+
     if (reply.round() < round_) {
         VLOG(4) << "Checkpoint reply seq=" << rSeq << " round outdated, skipping";
         return;
@@ -1023,6 +1034,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     snapshotReply.set_replica_id(replicaId_);
 
     const ::LogCheckpoint &myCheckpoint = log_->getCheckpoint();
+    myCheckpoint.toProto(*snapshotReply.mutable_checkpoint());
 
     if (request.last_checkpoint_seq() < myCheckpoint.stableSeq) {
         VLOG(1) << "Snapshot request too far back, sending application snapshot!";
@@ -1072,10 +1084,14 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
 
-        if (!log_->resetToSnapshot(LogCheckpoint(*logSuffix.checkpoint), snapshotReply)) {
+        if (!log_->resetToSnapshot(snapshotReply)) {
             // TODO handle this case properly by retrying on another replica
             LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
             throw std::runtime_error("Snapshot digest mismatch");
+        }
+
+        if (snapshotReply.checkpoint().committed_seq() > logSuffix.checkpoint->committed_seq()) {
+            VLOG(3) << "Warning, received future checkpoint and applying it before finishRepair!";
         }
 
         // Got the snapshot
@@ -1096,7 +1112,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         assert(checkpointCollectors_.hasCollector(round_, snapshotReply.seq()));
         checkpointCollectors_.at(round_, snapshotReply.seq()).getCheckpoint(checkpoint);
 
-        if (!log_->applySnapshotModifyLog(checkpoint, snapshotReply)) {
+        if (!log_->applySnapshotModifyLog(snapshotReply)) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
             // TODO handle this better by requesting from another replica..
             throw std::runtime_error("Snapshot digest mismatch");
@@ -1501,14 +1517,13 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
     return true;
 }
 
-bool Replica::verifyRepairLog(const RepairStart &log)
+bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
 {
-    if (log.has_cert() && !verifyCert(log.cert())) {
+    if (checkpoint.commits().size() != checkpoint.commit_sigs().size()) {
         return false;
     }
 
-    const LogCheckpoint &checkpoint = log.checkpoint();
-    if (checkpoint.commits().size() != 2 * f_ + 1 && checkpoint.commits().size() != checkpoint.commit_sigs().size()) {
+    if (!(checkpoint.commits().size() != 2 * f_ + 1 || checkpoint.repair_commits().size() != 2 * f_ + 1)) {
         return false;
     }
 
@@ -1533,6 +1548,39 @@ bool Replica::verifyRepairLog(const RepairStart &log)
             return false;
         }
     }
+
+    // TODO this could be optimized by checking equality to our own or other existing checkpoints
+    replicaIds.clear();
+    for (int i = 0; i < checkpoint.repair_commits().size(); i++) {
+        const PBFTCommit &commit = checkpoint.repair_commits()[i];
+        const std::string &sig = checkpoint.repair_commit_sigs()[i];
+        const std::string serializedCommit = commit.SerializeAsString();
+
+        if (replicaIds.contains(commit.replica_id())) {
+            LOG(INFO) << "Checkpoint repair commits contains multiple of the same replica!";
+            return false;
+        }
+        replicaIds.insert(commit.replica_id());
+
+        if (!sigProvider_.verify(
+                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
+                commit.replica_id()
+            )) {
+            LOG(INFO) << "Failed to verify replica signature in repair log checkpoint!";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool Replica::verifyRepairLog(const RepairStart &log)
+{
+    if (log.has_cert() && !verifyCert(log.cert())) {
+        return false;
+    }
+
+    verifyCheckpoint(log.checkpoint());
 
     for (auto &entry : log.log_entries()) {
         // TODO verify log entries
@@ -1902,11 +1950,12 @@ void Replica::tryFinishRepair()
             applySuffix(logSuffix, log_);
             finishRepair(abortedRequests);
         } else {
-            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq()
-                      << " is inconsistent with my log, snapshot will be fetched from replicaId=";
+            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq() << " is inconsistent with my log";
 
+            if (!repairSnapshotRequested_) {
+                sendSnapshotRequest(logSuffix.checkpointReplica, checkpoint->committed_seq());
+            }
             repairSnapshotRequested_ = true;
-            sendSnapshotRequest(logSuffix.checkpointReplica, checkpoint->committed_seq());
         }
     } else {
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);

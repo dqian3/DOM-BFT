@@ -128,8 +128,10 @@ void Log::setCheckpoint(const LogCheckpoint &newCheckpoint)
 }
 
 // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-bool Log::resetToSnapshot(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply)
+bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 {
+    LogCheckpoint checkpoint(snapshotReply.checkpoint());
+
     // Try applying app snapshot if needed
     if (snapshotReply.has_app_snapshot()) {
         if (!app_->applySnapshot(snapshotReply.app_snapshot(), checkpoint.stableAppDigest, checkpoint.stableSeq)) {
@@ -182,8 +184,10 @@ bool Log::resetToSnapshot(const LogCheckpoint &checkpoint, const dombft::proto::
 }
 
 // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-bool Log::applySnapshotModifyLog(const LogCheckpoint &checkpoint, const dombft::proto::SnapshotReply &snapshotReply)
+bool Log::applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotReply)
 {
+    LogCheckpoint checkpoint(snapshotReply.checkpoint());
+
     // Number of missing entries in my log.
     uint32_t numMissing = clientRecord_.numMissing(checkpoint.clientRecord_);
 
@@ -197,7 +201,7 @@ bool Log::applySnapshotModifyLog(const LogCheckpoint &checkpoint, const dombft::
         }
     }
 
-    if (!resetToSnapshot(checkpoint, snapshotReply)) {
+    if (!resetToSnapshot(snapshotReply)) {
         return false;
     }
 

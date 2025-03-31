@@ -33,7 +33,7 @@ struct LogCheckpoint {
     LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto);
     LogCheckpoint(const LogCheckpoint &other);
 
-    void toProto(dombft::proto::LogCheckpoint &checkpointProto);
+    void toProto(dombft::proto::LogCheckpoint &checkpointProto) const;
 };
 
 #endif   // LOG_CHECKPOINT_H

@@ -37,7 +37,7 @@ LogCheckpoint::LogCheckpoint(const LogCheckpoint &other)
 {
 }
 
-void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto)
+void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto) const
 {
     if (committedSeq > 0) {
         checkpointProto.set_committed_seq(committedSeq);
@@ -48,12 +48,12 @@ void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto)
 
         for (auto x : commits) {
             (*checkpointProto.add_commits()) = x.second;
-            checkpointProto.add_commit_sigs(commitSigs[x.first]);
+            checkpointProto.add_commit_sigs(commitSigs.at(x.first));
         }
 
         for (auto x : repairCommits) {
             (*checkpointProto.add_repair_commits()) = x.second;
-            checkpointProto.add_repair_commit_sigs(commitSigs[x.first]);
+            checkpointProto.add_repair_commit_sigs(commitSigs.at(x.first));
         }
 
     } else {
