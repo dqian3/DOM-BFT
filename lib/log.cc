@@ -60,7 +60,7 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 {
     const dombft::proto::Reply &r = cert.replies()[0];
 
-    if (seq > nextSeq_) {
+    if (seq >= nextSeq_) {
         VLOG(3) << "Fail adding cert because seq=" << seq << " is greater than nextSeq=" << nextSeq_;
         return false;
     }
