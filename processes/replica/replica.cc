@@ -24,6 +24,7 @@ Replica::Replica(
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , repairTimeout_(config.replicaRepairTimeout)
     , repairViewTimeout_(config.replicaRepairViewTimeout)
+    , repairViewTimeoutFactor_(0)
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
     , round_(1)
@@ -855,10 +856,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     // use the majority agreed commit message if exists
     if (checkpointCollector_.addAndCheckCommit(commit, sig)) {
         // TODO we can update our round in case commit.round() > round_
-        if (round_ > commit.round()) {
-            LOG(WARNING) << "Dropping checkpoint for old round " << commit.round() << " current round is " << round_;
-            return;
-        } else if (round_ < commit.round()) {
+        if (round_ < commit.round()) {
             LOG(WARNING) << "Ignoring commit for future round " << commit.round() << " current round is " << round_;
             return;
         }
@@ -875,7 +873,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         LOG(INFO) << "Trying to commit seq=" << seq << " commit_digest=" << digest_to_hex(commitToUse.log_digest());
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != commitToUse.log_digest()) {
-            LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";
+            LOG(INFO) << "My log digest does not match the commit message digest, requesting snapshot...";
             // TODO choose a random replica from those that have this
             sendSnapshotRequest(commitToUse.replica_id(), commitToUse.seq());
 
@@ -1022,14 +1020,14 @@ void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeou
         LOG(WARNING) << "Received repair trigger for round " << msg.round() << " != " << round_;
         return;
     }
-
+    // start the timer
     LOG(INFO) << "Received repair trigger from client_id=" << msg.client_id() << " for cseq=" << msg.client_seq();
     repairTimeoutStart_ = GetMicrosecondTimestamp();
 }
 
 void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig)
 {
-    // Note assume msg is verfied here
+    // Note assume msg is verified here
     if (repair_) {
         VLOG(4) << "Received repair replica timeout during a repair from replica " << msg.replica_id();
         return;
@@ -1088,9 +1086,9 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 
     LOG(INFO) << "Repair proof:\n" << oss.str();
 
-    // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
-    // if we already are in fallback.
-    broadcastToReplicas(msg, REPAIR_REPLY_PROOF);
+    // skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
+    //  if we already are in fallback.
+    broadcastToReplicasExceptSelf(msg, REPAIR_REPLY_PROOF);
     startRepair();
 }
 
@@ -1175,8 +1173,8 @@ void Replica::checkTimeouts()
     now = GetMicrosecondTimestamp();
 
     if (repairViewStart_ != 0 && now - repairViewStart_ > repairViewTimeout_) {
-        repairViewStart_ = now;
-        // TODO VC timer should be cancelled and restarted after receiving 2f + 1 VC messages
+        // VC timer should be cancelled and restarted after receiving 2f + 1 VC messages (pbft 4.5.2)
+        repairViewStart_ = 0;
 
         LOG(WARNING) << "Repair for round=" << round_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
         pbftViewChanges_.clear();
@@ -1222,6 +1220,22 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         for (const Address &addr : replicaAddrs_) {
+            endpoint_->SendPreparedMsgTo(addr, hdr);
+        }
+    });
+}
+
+template <typename T> void Replica::broadcastToReplicasExceptSelf(const T &msg, MessageType type)
+{
+    if (crashed_) {
+        return;
+    }
+    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        auto selfAddr = replicaAddrs_[replicaId_];
+        for (const Address &addr : replicaAddrs_) {
+            if (selfAddr==addr) continue;
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
     });
@@ -1622,6 +1636,8 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         viewChangeInst_ += viewChangeFreq_;
         viewChange_ = false;
         viewChangeCounter_ += 1;
+        while(repairViewTimeout_--) repairViewTimeout_/=2;
+        repairViewStart_ = 0;
     }
 
     RepairDone done;
@@ -1967,8 +1983,6 @@ void Replica::processRepairDone(const RepairDone &msg)
 
 void Replica::startViewChange()
 {
-    // TODO VC: If view change was already true, double timeout here
-
     pbftView_++;
     repair_ = true;
     viewChange_ = true;
@@ -2015,28 +2029,40 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
 
     LOG(INFO) << "ViewChange RECEIVED for pbft_view=" << inViewNum << " from replicaId=" << msg.replica_id();
 
-    auto numMsgs = std::count_if(pbftViewChanges_.begin(), pbftViewChanges_.end(), [this, inViewNum](auto &curMsg) {
-        return curMsg.second.pbft_view() == inViewNum;
-    });
-
-    if (numMsgs != 2 * f_ + 1) {
-        return;
-    }
-    LOG(INFO) << "ViewChange for view " << inViewNum << " received from 2f + 1 replicas!";
 
     // non-primary replicas collect view change msgs for
     // 1. delaying timer setting for better liveness (avoid frequent view changes)
     // 2. check if the majority has a larger view# and start view change if so (avoid starting view change too late)
 
-    repairViewStart_ = GetMicrosecondTimestamp();   // reset view change timeout (1) above
+    auto numMsgsEq = std::count_if(pbftViewChanges_.begin(), pbftViewChanges_.end(), [this, inViewNum](auto &curMsg) {
+        return curMsg.second.pbft_view() == inViewNum;
+    });
 
-    // TODO VC: should do this if there are f + 1 VC messages here.
-    // They also don't need to necessarily be in the same view
-    if (inViewNum > pbftView_) {
-        LOG(INFO) << "Majority has a larger view number, starting a new view change for the major view";
-        pbftView_ = inViewNum - 1;   // will add 1 back in startViewChange
+    //  if a replica receives a set of f+1 VC msg for views greater than its,
+    //   sends a VC msg for the smallest view in the set, even if its timer has not expired; for (2)
+    auto numMsgsGt = std::count_if(pbftViewChanges_.begin(), pbftViewChanges_.end(), [this, inViewNum](auto &curMsg) {
+        return curMsg.second.pbft_view() > pbftView_;
+    });
+
+    if (numMsgsGt == f_+1) {
+        uint32_t minView = UINT32_MAX;
+        for(const auto& curMsg: pbftViewChanges_){
+            if (curMsg.second.pbft_view()<=pbftView_) continue;
+            minView = std::min(minView,curMsg.second.pbft_view());
+        }
+        pbftView_ = minView - 1;   // will add 1 back in startViewChange
+        LOG(INFO) << "f+1 are in larger view numbers, starting a new view change for min view "<<minView;
+        repairViewStart_ = 0;
         startViewChange();
+        return;
     }
+
+    if (numMsgsEq != 2 * f_ + 1) {
+        return;
+    }
+    LOG(INFO) << "ViewChange for view " << inViewNum << " received from 2f + 1 replicas!";
+    if(repairViewTimeoutFactor_++) repairViewTimeout_*=2;
+    repairViewStart_ = GetMicrosecondTimestamp();   // reset view change timeout for (1)
 
     if (!isPrimary()) {
         pbftViewChanges_.clear();

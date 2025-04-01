@@ -36,6 +36,7 @@ private:
 
     uint64_t repairTimeout_;
     uint64_t repairViewTimeout_;
+    uint32_t repairViewTimeoutFactor_; // multiplicative increase factor
 
     // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
@@ -181,6 +182,7 @@ private:
     void sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
+    template <typename T> void broadcastToReplicasExceptSelf(const T &msg, MessageType type);
 
 public:
     Replica(
