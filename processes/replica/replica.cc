@@ -1045,8 +1045,8 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     }
 
     // Adding requests not included in snapshot up to my committed_seq
-    for (uint32_t seq = std::max(request.last_checkpoint_seq(), log_->getCheckpoint().stableSeq) + 1;
-         seq <= log_->getCheckpoint().committedSeq; seq++) {
+    uint32_t startSeq = std::max(request.last_checkpoint_seq(), log_->getCheckpoint().stableSeq) + 1;
+    for (uint32_t seq = startSeq; seq <= log_->getCheckpoint().committedSeq; seq++) {
         auto &entry = log_->getEntry(seq);
 
         dombft::proto::LogEntry entryProto;
@@ -1054,8 +1054,9 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
         (*snapshotReply.add_log_entries()) = entryProto;
     }
 
-    VLOG(3) << "Sending SNAPSHOT_REPLY for seq=" << snapshotReply.seq() << " round=" << snapshotReply.round()
-            << " snapshot size=" << snapshotReply.app_snapshot().size() << " idx=" << myCheckpoint.stableSeq;
+    VLOG(3) << "Sending SNAPSHOT_REPLY to " << request.replica_id() << " round=" << snapshotReply.round() << " from "
+            << startSeq << " to " << log_->getCheckpoint().committedSeq
+            << " (app snapshot=" << snapshotReply.has_app_snapshot() << ") stable_seq=" << myCheckpoint.stableSeq;
 
     sendMsgToDst(snapshotReply, MessageType::SNAPSHOT_REPLY, replicaAddrs_[request.replica_id()]);
 }
@@ -1077,7 +1078,11 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         }
 
         LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
-                  << snapshotReply.seq() << " and repair round " << round_;
+                  << snapshotReply.seq() << " and repair round " << round_
+                  << (snapshotReply.has_app_snapshot() ? " with app snapshot" : " without app snapshot")
+                  << " and log from "
+                  << (snapshotReply.log_entries().size() > 0 ? snapshotReply.log_entries(0).seq()
+                                                             : snapshotReply.checkpoint().stable_seq());
 
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
         LogSuffix &logSuffix = getRepairLogSuffix();
@@ -2187,9 +2192,8 @@ void Replica::processRepairDone(const RepairDone &msg)
 {
     if (msg.round() == round_ && repair_) {
         LOG(ERROR) << "Processing RepairDone for round=" << round_ << " not implemented!";
+        return;
     }
-
-    VLOG(4) << "Received REPAIR_DONE from replicaId=" << msg.replica_id() << " for round=" << msg.round();
     // TODO  finish implementing allowing replica to catch up with a RepairDone
 }
 

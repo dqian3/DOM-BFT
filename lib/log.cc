@@ -113,8 +113,15 @@ void Log::abort(uint32_t seq)
 // Given a sequence number, commit the request and remove previous state, and save new checkpoint
 void Log::setCheckpoint(const LogCheckpoint &newCheckpoint)
 {
-    assert(newCheckpoint.stableSeq >= checkpoint_.stableSeq && newCheckpoint.committedSeq >= checkpoint_.committedSeq);
+    assert(newCheckpoint.committedSeq >= checkpoint_.committedSeq);
 
+    if (newCheckpoint.stableSeq < checkpoint_.stableSeq) {
+
+        // TODO we should take this or make this impossible.
+        LOG(ERROR) << "New checkpoint stableSeq=" << newCheckpoint.stableSeq
+                   << " is less than current checkpoint stableSeq=" << checkpoint_.stableSeq << " ignoring!";
+        return;
+    }
     checkpoint_ = newCheckpoint;
 
     VLOG(3) << "Log committing through seq " << newCheckpoint.committedSeq << " truncating through seq "
