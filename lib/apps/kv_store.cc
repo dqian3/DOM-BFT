@@ -232,7 +232,7 @@ void KVStore::takeSnapshot(SnapshotCallback callback)
             }
         }
 
-        for (auto &kv : committedData) {
+        for (auto &kv : snapshotData) {
             snapshot += kv.first + ":" + kv.second + ",";
         }
 

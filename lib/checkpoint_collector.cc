@@ -33,7 +33,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         matchingReplies[key].insert(replicaId);
 
         // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= 2 * f_ + 1) {
+        if (matchingReplies[key].size() >= 2 * f_ + 1 && matchingReplies[key].contains(replicaId_)) {
             cert_ = Cert();
             cert_->set_seq(std::get<2>(key));
 

@@ -30,10 +30,6 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
         prevDigest = checkpoint_.stableLogDigest;
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_
                 << " prevDigest=" << digest_to_hex(prevDigest);
-    } else if (nextSeq_ - 1 == checkpoint_.committedSeq) {
-
-        // Note, this is a corner case, where
-        prevDigest = checkpoint_.committedLogDigest;
     } else {
         assert(!log_.empty());
         prevDigest = log_.back().digest;
@@ -90,6 +86,7 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
         return false;
     }
 
+    VLOG(3) << "Added Cert for seq=" << seq << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
     // instead of adding the cert to the list of certs, directly update the latest cert.
     if (!latestCert_.has_value() || cert.seq() > latestCert_->seq()) {
         latestCert_ = cert;
@@ -147,7 +144,7 @@ void Log::setCheckpoint(const LogCheckpoint &newCheckpoint)
         log_.erase(log_.begin(), log_.begin() + stableIdx);
     }
 
-    // Commit app up to commitedSeq (potentially triggering a snapshot)
+    // Commit app up to commitedSeq
     app_->commit(newCheckpoint.committedSeq);
 }
 
@@ -167,32 +164,63 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
         log_.clear();
         nextSeq_ = checkpoint.stableSeq + 1;
 
+        // 1. When we reset to a app snapshot, our log is completely empty, so we need to set the checkpoint here
+        // so it can be used as a previous digest.
+        checkpoint_ = checkpoint;
+
+        // TODO duplicate code here is bad...
+        // TODO hack here to just clear client records and reset it afterwards
+        clientRecord_ = ClientRecord();
+
+        // Apply LogEntries in snapshotReply
+        std::string res;
+        for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
+
+            if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
+                LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
+                return false;
+            }
+        }
+
+        // TODO end of above mentioned hack.
+        clientRecord_ = checkpoint.clientRecord_;
+
     } else {
         assert(snapshotReply.log_entries().size() > 0);
 
         // Remove all log entries up to the first entry in the snapshot
         uint32_t seq = snapshotReply.log_entries(0).seq();
         abort(std::max(seq, checkpoint_.committedSeq + 1));
-    }
 
-    checkpoint_ = checkpoint;
-    latestCertSeq_ = 0;
-    latestCert_.reset();
+        // TODO hack here to just clear client records and reset it afterwards
+        clientRecord_ = ClientRecord();
 
-    // TODO hack here to just clear client records and reset it afterwards
-    clientRecord_ = ClientRecord();
+        // Apply LogEntries in snapshotReply
+        std::string res;
+        for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
+            if (entry.seq() <= checkpoint_.committedSeq) {
+                // We may have a later checkpoint, can ignore extra messages
+                continue;
+            }
 
-    // Apply LogEntries in snapshotReply
-    std::string res;
-    for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
-        if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
-            LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
-            return false;
+            if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
+                LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
+                return false;
+            }
+        }
+
+        // TODO end of above mentioned hack.
+        clientRecord_ = checkpoint.clientRecord_;
+
+        // 2. However, if we are not resetting to a app snapshot, we have some log entries, that we might need to
+        // retain, so we need to set the checkpoint later, and also skip (if (entry.seq() < checkpoint.commitedSeq))
+        if (checkpoint_.stableSeq > checkpoint.stableSeq) {
+            LOG(WARNING) << "New checkpoint stableSeq=" << checkpoint.stableSeq
+                         << " is less than current checkpoint stableSeq=" << checkpoint_.stableSeq;
+        } else {
+            checkpoint_ = checkpoint;
         }
     }
-
-    // TODO end of above mentioned hack.
-    clientRecord_ = checkpoint.clientRecord_;
 
     VLOG(4) << "Checkpoint for seq " << checkpoint.committedSeq
             << " log digest after applying snapshot: " << digest_to_hex(getDigest())
@@ -203,6 +231,9 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
         throw std::runtime_error("Snapshot digest mismatch!");
         return false;
     }
+
+    latestCertSeq_ = 0;
+    latestCert_.reset();
 
     return true;
 }
@@ -260,7 +291,7 @@ const std::string &Log::getDigest(uint32_t seq) const
         throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
 
-    int32_t offset = log_[0].seq;
+    uint32_t offset = log_[0].seq;
     assert(log_[seq - offset].seq == seq);
     return log_[seq - offset].digest;
 }
@@ -270,7 +301,7 @@ const LogEntry &Log::getEntry(uint32_t seq)
     if (!inRange(seq)) {
         throw std::runtime_error("Tried to get entry of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
-    int32_t offset = log_[0].seq;
+    uint32_t offset = log_[0].seq;
 
     assert(log_[seq - offset].seq == seq);
     return log_[seq - offset];

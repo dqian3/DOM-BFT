@@ -94,6 +94,9 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
+        if (entry.seq() <= logSuffix.checkpoint->committed_seq())
+            continue;
+
         if (entry.seq() > maxCertSeq)
             break;
 
@@ -217,7 +220,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     );
 
     // First sequence to apply is right after checkpoint
-    uint32_t seq = std::max(logSuffix.checkpoint->committed_seq(), log->getCheckpoint().committedSeq) + 1;
+    uint32_t seq = logSuffix.checkpoint->committed_seq() + 1;
     uint32_t idx = 0;
 
     // Reset the client record to the one in the checkpoint so we can rebuild it
@@ -229,6 +232,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
         if (seq <= log->getCheckpoint().committedSeq) {
+            log->getClientRecord().update(entry->client_id(), entry->client_seq());
             seq++;
             continue;
         }

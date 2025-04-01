@@ -781,6 +781,11 @@ void Replica::processCert(const Cert &cert)
         return;
     }
 
+    if (repair_) {
+        VLOG(2) << "Cannot accept cert for seq=" << r.seq() << " from " << r.replica_id() << " due to ongoing repair";
+        return;
+    }
+
     if (!log_->addCert(cert.seq(), cert)) {
         VLOG(2) << "Failed to add cert for seq=" << r.seq() << " c_id=" << r.client_id() << " c_seq=" << r.client_seq();
         return;
@@ -840,7 +845,11 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 
         dombft::proto::Cert cert;
         coll.getCert(cert);
-        log_->addCert(rSeq, cert);
+
+        if (!log_->addCert(rSeq, cert)) {
+            VLOG(2) << "CHECKPOINT: Failed to add cert for seq=" << rSeq;
+            return;
+        }
 
         if (coll.commitReady()) {
             Commit commit;
@@ -941,8 +950,14 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             assert(!checkpoint.commits.empty());
             uint32_t replicaId = checkpoint.commits.begin()->first;
 
-            LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot from "
-                      << replicaId;
+            if (seq >= log_->getNextSeq()) {
+                LOG(INFO) << "My log is behind (nextSeq=" << log_->getNextSeq() << "), requesting snapshot from "
+                          << replicaId;
+            } else {
+                LOG(INFO) << "My log digest (" << digest_to_hex(log_->getDigest(seq))
+                          << ") does not match the commit message digest ("
+                          << digest_to_hex(checkpoint.committedLogDigest) << ") requesting snapshot from " << replicaId;
+            }
 
             sendSnapshotRequest(replicaId, checkpoint.committedSeq);
 
@@ -1048,9 +1063,8 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
         VLOG(1) << "Snapshot request too far back, sending application snapshot!";
 
         assert(myCheckpoint.snapshot != nullptr);
-        assert(myChe)
 
-            snapshotReply.set_app_snapshot(*myCheckpoint.snapshot);
+        snapshotReply.set_app_snapshot(*myCheckpoint.snapshot);
     }
 
     // Adding requests not included in snapshot up to my committed_seq
@@ -1126,11 +1140,6 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                   << snapshotReply.seq() << " with log from " << startSeq
                   << " stable_seq=" << snapshotReply.checkpoint().stable_seq()
                   << " has_app_snapshot=" << snapshotReply.has_app_snapshot();
-
-        ::LogCheckpoint checkpoint;
-
-        assert(checkpointCollectors_.hasCollector(round_, snapshotReply.seq()));
-        checkpointCollectors_.at(round_, snapshotReply.seq()).getCheckpoint(checkpoint);
 
         if (!log_->applySnapshotModifyLog(snapshotReply)) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
@@ -1354,7 +1363,7 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
     snapshotRequest.set_round(round_);
     snapshotRequest.set_last_checkpoint_seq(log_->getCheckpoint().committedSeq);
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
-    LOG(INFO) << "Sending SNAPSHOT_REQUEST for seq " << targetSeq << " from replica " << replicaId;
+    LOG(INFO) << "Sending SNAPSHOT_REQUEST for seq " << targetSeq << "  replica " << replicaId;
 }
 
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
@@ -1560,6 +1569,11 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         }
         replicaIds.insert(commit.replica_id());
 
+        if (commit.committed_log_digest() != checkpoint.committed_log_digest()) {
+            LOG(INFO) << "Checkpoint commit digest does not match!";
+            return false;
+        }
+
         if (!sigProvider_.verify(
                 (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
                 commit.replica_id()
@@ -1581,6 +1595,11 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
             return false;
         }
         replicaIds.insert(commit.replica_id());
+
+        if (commit.log_digest() != checkpoint.committed_log_digest()) {
+            LOG(INFO) << "Checkpoint commit digest does not match!";
+            return false;
+        }
 
         if (!sigProvider_.verify(
                 (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
@@ -1679,7 +1698,7 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
 
 bool Replica::verifyRepairDone(const RepairDone &done)
 {
-    if (done.commits().size() != 2 * f_ + 1) {
+    if (done.commits().size() <= 2 * f_ + 1) {
         LOG(WARNING) << "Number of commits is " << done.commits().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
     }
@@ -1892,11 +1911,13 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
                 VLOG(3) << "Snapshot taken for round=" << round << " seq=" << snapshot.seq
                         << " digest=" << digest_to_hex(snapshot.digest);
-                // Commit own
-                broadcastToReplicas(c, MessageType::COMMIT);
 
                 // Queue to be processed by main thread
+                // TODO this needs to happen first, otherwise the snapshot will be missed
                 snapshotQueue_.enqueue({round, snapshot});
+
+                // Commit own
+                broadcastToReplicas(c, MessageType::COMMIT);
             });
         }
     }
@@ -1966,7 +1987,9 @@ void Replica::tryFinishRepair()
             checkpoint->committed_log_digest() == log_->getDigest(checkpoint->committed_seq())) {
 
             // This could sometimes fail by trying to introduce a checkpoint with higher committed seq but lower stable
-            // seq! LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq()
+            // seq!
+
+            // LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq()
             //           << " is ahead of myCheckpoint.seq=" << myCheckpoint.committedSeq
             //           << " but matches, applying checkpoint before repair";
             // log_->setCheckpoint(*checkpoint);
