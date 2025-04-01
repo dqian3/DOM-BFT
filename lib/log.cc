@@ -172,7 +172,7 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
         stableCheckpoint_ = snapshotCp;
     }
 
-    abort(stableCheckpoint_.stableSeq + 1);
+    abort(committedCheckpoint_.committedSeq + 1);
 
     // TODO hack here to just clear client records and reset it afterwards
     // Abort shuold properly fix client records.
