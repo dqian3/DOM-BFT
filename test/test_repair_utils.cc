@@ -78,11 +78,12 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
     std::shared_ptr<Log> log = std::make_shared<Log>(app);
 
     log->getCommittedCheckpoint().seq = testLog.startSeq;
+    log->getStableCheckpoint().seq = testLog.startSeq;
 
     log->abort(testLog.startSeq + 1);
 
-    log->getCommittedCheckpoint().logDigest = testLog.logDigest.c_str();
-
+    log->getCommittedCheckpoint().logDigest = testLog.logDigest;
+    log->getStableCheckpoint().logDigest = testLog.logDigest;
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
 
