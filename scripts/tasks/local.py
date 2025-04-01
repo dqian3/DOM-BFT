@@ -70,10 +70,11 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
 
     f = n_replicas // 3
 
-    c.run("rm logs/*", warn=True)
 
     # TODO verbosity
     with c.cd(".."):
+        c.run("rm logs/*", warn=True)
+
         c.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True)
         c.run("mkdir -p logs")
         for id in range(n_replicas):
