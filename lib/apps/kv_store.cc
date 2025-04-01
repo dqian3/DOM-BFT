@@ -156,7 +156,7 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
     SHA256_Final(computedDigest, &ctx);
 
-    VLOG(4) << digest.size() << " " << digest_to_hex(digest);
+    VLOG(4) << digest_to_hex(digest);
     VLOG(4) << digest_to_hex(std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH));
 
     if (std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH) != digest) {

@@ -906,16 +906,6 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             << " stable_seq=" << commit.stable_seq()
             << " stable_app_digest=" << digest_to_hex(commit.stable_app_digest());
 
-    if (commit.round() < round_) {
-        // It is fine to process old COMMIT messages, once we have 2f + 1 we could make a valid checkpoint
-        VLOG(4) << "Checkpoint commit round outdated, still processing";
-        // return;
-    }
-    if (seq <= log_->getCheckpoint().committedSeq) {
-        VLOG(4) << "Seq " << seq << " is already committed, skipping";
-        return;
-    }
-
     if (!checkpointCollectors_.hasCollector(commit.round(), seq)) {
         VLOG(4) << "Checkpoint collector does not exist for seq=" << seq << " round=" << commit.round()
                 << " creating one now";
@@ -956,11 +946,24 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
             sendSnapshotRequest(replicaId, checkpoint.committedSeq);
 
-        } else if (!coll.needsSnapshot() || checkpoint.snapshot != nullptr) {
-            if (checkpoint.stableSeq > log_->getCheckpoint().stableSeq) {
-                LOG(INFO) << "Writing new snapshot to store!";
+        } else if (!coll.needsSnapshot()) {
+
+            if (checkpoint.stableSeq >= log_->getCheckpoint().stableSeq) {
+                checkpoint.snapshot = log_->getCheckpoint().snapshot;
+                log_->setCheckpoint(checkpoint);
+
+                VLOG(1) << "PERF event=checkpoint_end seq=" << seq
+                        << " log_digest=" << digest_to_hex(checkpoint.committedLogDigest)
+                        << " stable_seq=" << checkpoint.stableSeq
+                        << " stable_app_digest=" << digest_to_hex(checkpoint.stableAppDigest);
+            } else {
+                VLOG(3) << "CHECKPOINT: seq= " << seq << " aborted since stable seq is less than current stable seq";
             }
 
+        } else if (checkpoint.snapshot != nullptr) {
+            assert(checkpoint.stableSeq >= log_->getCheckpoint().stableSeq);
+
+            LOG(INFO) << "Writing new snapshot to store!";
             log_->setCheckpoint(checkpoint);
 
             VLOG(1) << "PERF event=checkpoint_end seq=" << seq
@@ -969,9 +972,9 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                     << " stable_app_digest=" << digest_to_hex(checkpoint.stableAppDigest);
 
             // if there is overlapping and later checkpoint commits first, skip earlier ones
-            checkpointCollectors_.cleanStaleCollectors(seq, commit.round());
+            checkpointCollectors_.cleanStaleCollectors(checkpoint.stableSeq, commit.round());
         } else {
-            VLOG(4) << "Quorum of commits match our log, but we do not have a snapshot yet!"
+            VLOG(4) << "CHECKPOINT: Quorum of commits match our log, but we do not have a snapshot yet!"
                     << " Will wait for our snapshot request to finish and then receive our own commit!";
         }
 
@@ -1011,7 +1014,7 @@ void Replica::startCheckpoint(bool createSnapshot)
     reply.set_seq(entry.seq);
     reply.set_digest(entry.digest);
 
-    VLOG(2) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round= " << round_
+    VLOG(2) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round=" << round_
             << " log_digest=" << digest_to_hex(log_->getDigest());
 
     broadcastToReplicas(reply, MessageType::REPLY);
@@ -1021,7 +1024,9 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 {
     uint32_t reqSeq = request.seq();
     uint32_t round = request.round();
-    VLOG(3) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq;
+    VLOG(3) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq
+            << " from sequnece " << request.last_checkpoint_seq();
+
     if (reqSeq > log_->getCheckpoint().committedSeq) {
         VLOG(4) << "Requested req " << reqSeq << " is ahead of current checkpoint, cannot provide snapshot";
         return;
@@ -1043,8 +1048,9 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
         VLOG(1) << "Snapshot request too far back, sending application snapshot!";
 
         assert(myCheckpoint.snapshot != nullptr);
+        assert(myChe)
 
-        snapshotReply.set_app_snapshot(*myCheckpoint.snapshot);
+            snapshotReply.set_app_snapshot(*myCheckpoint.snapshot);
     }
 
     // Adding requests not included in snapshot up to my committed_seq
@@ -1080,12 +1086,13 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             return;
         }
 
-        LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
-                  << snapshotReply.seq() << " and repair round " << round_
-                  << (snapshotReply.has_app_snapshot() ? " with app snapshot" : " without app snapshot")
-                  << " and log from "
-                  << (snapshotReply.log_entries().size() > 0 ? snapshotReply.log_entries(0).seq()
-                                                             : snapshotReply.checkpoint().stable_seq());
+        uint32_t startSeq = snapshotReply.log_entries().size() > 0 ? snapshotReply.log_entries(0).seq()
+                                                                   : snapshotReply.checkpoint().stable_seq();
+
+        LOG(INFO) << "Processing (during repair) SNAPSHOT_REPLY from replica " << snapshotReply.replica_id()
+                  << " for seq " << snapshotReply.seq() << " with log from " << startSeq
+                  << " stable_seq=" << snapshotReply.checkpoint().stable_seq()
+                  << " has_app_snapshot=" << snapshotReply.has_app_snapshot();
 
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
         LogSuffix &logSuffix = getRepairLogSuffix();
@@ -1112,8 +1119,13 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
 
+        uint32_t startSeq = snapshotReply.log_entries().size() > 0 ? snapshotReply.log_entries(0).seq()
+                                                                   : snapshotReply.checkpoint().stable_seq();
+
         LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
-                  << snapshotReply.seq() << " checkpoint";
+                  << snapshotReply.seq() << " with log from " << startSeq
+                  << " stable_seq=" << snapshotReply.checkpoint().stable_seq()
+                  << " has_app_snapshot=" << snapshotReply.has_app_snapshot();
 
         ::LogCheckpoint checkpoint;
 
@@ -1127,7 +1139,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         }
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
-        checkpointCollectors_.cleanStaleCollectors(snapshotReply.seq(), round_);
+        checkpointCollectors_.cleanStaleCollectors(snapshotReply.checkpoint().stable_seq(), round_);
 
         // Resend replies after modifying log
         for (int seq = log_->getCheckpoint().committedSeq + 1; seq < log_->getNextSeq(); seq++) {
@@ -1339,10 +1351,10 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
     SnapshotRequest snapshotRequest;
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_seq(targetSeq);
-    snapshotRequest.set_last_checkpoint_seq(log_->getCheckpoint().committedSeq);
     snapshotRequest.set_round(round_);
+    snapshotRequest.set_last_checkpoint_seq(log_->getCheckpoint().committedSeq);
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
-    LOG(INFO) << "Requesting state snapshot for seq " << targetSeq << " from replica " << replicaId;
+    LOG(INFO) << "Sending SNAPSHOT_REQUEST for seq " << targetSeq << " from replica " << replicaId;
 }
 
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
@@ -1848,7 +1860,9 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
             newCheckpoint.clientRecord_ = log_->getClientRecord();
 
             VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
-                    << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.committedLogDigest);
+                    << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.committedLogDigest)
+                    << " stable_seq=" << newCheckpoint.stableSeq
+                    << " stable_digest=" << digest_to_hex(newCheckpoint.stableAppDigest);
 
             log_->setCheckpoint(newCheckpoint);
 
@@ -1948,11 +1962,14 @@ void Replica::tryFinishRepair()
         // If our log is consistent, we can just use the checkpoint, otherwise
         // we need to request a snapshot from the replica that has the checkpoint
 
-        if (checkpoint->committed_log_digest() == log_->getDigest(checkpoint->committed_seq())) {
-            LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq()
-                      << " is ahead of myCheckpoint.seq=" << myCheckpoint.committedSeq
-                      << " but matches, applying checkpoint before repair";
-            log_->setCheckpoint(*checkpoint);
+        if (checkpoint->committed_seq() < log_->getNextSeq() &&
+            checkpoint->committed_log_digest() == log_->getDigest(checkpoint->committed_seq())) {
+
+            // This could sometimes fail by trying to introduce a checkpoint with higher committed seq but lower stable
+            // seq! LOG(INFO) << "Repair checkpoint seq=" << checkpoint->committed_seq()
+            //           << " is ahead of myCheckpoint.seq=" << myCheckpoint.committedSeq
+            //           << " but matches, applying checkpoint before repair";
+            // log_->setCheckpoint(*checkpoint);
 
             std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
             applySuffix(logSuffix, log_);

@@ -211,7 +211,10 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->committed_seq()
               << " my checkpoint seq=" << log->getCheckpoint().committedSeq;
-    assert(logSuffix.checkpoint->committed_seq() <= log->getCheckpoint().committedSeq);
+    assert(
+        logSuffix.checkpoint->committed_seq() <= log->getCheckpoint().committedSeq ||
+        log->getDigest(logSuffix.checkpoint->committed_seq()) == logSuffix.checkpoint->committed_log_digest()
+    );
 
     // First sequence to apply is right after checkpoint
     uint32_t seq = std::max(logSuffix.checkpoint->committed_seq(), log->getCheckpoint().committedSeq) + 1;

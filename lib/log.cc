@@ -30,6 +30,10 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
         prevDigest = checkpoint_.stableLogDigest;
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_
                 << " prevDigest=" << digest_to_hex(prevDigest);
+    } else if (nextSeq_ - 1 == checkpoint_.committedSeq) {
+
+        // Note, this is a corner case, where
+        prevDigest = checkpoint_.committedLogDigest;
     } else {
         assert(!log_.empty());
         prevDigest = log_.back().digest;
@@ -103,8 +107,17 @@ void Log::abort(uint32_t seq)
         return;
     }
 
-    // remove all entries from seq to the end
-    log_.erase(log_.begin() + (seq - log_[0].seq), log_.end());
+    if (seq <= checkpoint_.committedSeq) {
+        LOG(ERROR) << "Tried to abort seq=" << seq << " but seq is less than committedSeq=" << checkpoint_.committedSeq;
+        throw std::runtime_error("Tried to abort seq=" + std::to_string(seq) + " but seq is less than committedSeq.");
+    }
+
+    // If log is empty, we can't remove anything.
+    if (!log_.empty()) {
+        // remove all entries from seq to the end
+        assert(log_[0].seq == checkpoint_.stableSeq + 1);
+        log_.erase(log_.begin() + (seq - log_[0].seq), log_.end());
+    }
 
     app_->abort(seq);
     nextSeq_ = seq;
@@ -113,14 +126,14 @@ void Log::abort(uint32_t seq)
 // Given a sequence number, commit the request and remove previous state, and save new checkpoint
 void Log::setCheckpoint(const LogCheckpoint &newCheckpoint)
 {
-    assert(newCheckpoint.committedSeq >= checkpoint_.committedSeq);
+    assert(newCheckpoint.stableSeq >= checkpoint_.stableSeq);
 
-    if (newCheckpoint.stableSeq < checkpoint_.stableSeq) {
-
-        // TODO we should take this or make this impossible.
-        LOG(ERROR) << "New checkpoint stableSeq=" << newCheckpoint.stableSeq
-                   << " is less than current checkpoint stableSeq=" << checkpoint_.stableSeq << " ignoring!";
-        return;
+    if (newCheckpoint.committedSeq < checkpoint_.committedSeq) {
+        LOG(WARNING) << "New checkpoint: committedSeq=" << newCheckpoint.stableSeq
+                     << " stableSeq=" << newCheckpoint.stableSeq
+                     << " Current checkpoint committedSeq=" << checkpoint_.stableSeq
+                     << " stableSeq=" << checkpoint_.stableSeq
+                     << " reverting checkpoint in favor of checkpoint with higher stable seq!";
     }
     checkpoint_ = newCheckpoint;
 
@@ -128,7 +141,11 @@ void Log::setCheckpoint(const LogCheckpoint &newCheckpoint)
             << newCheckpoint.stableSeq;
 
     // Truncate log up to the checkpoint stable sequence
-    log_.erase(log_.begin(), log_.begin() + (newCheckpoint.stableSeq - log_[0].seq + 1));
+    if (!log_.empty()) {
+        int32_t stableIdx = newCheckpoint.stableSeq - log_[0].seq + 1;
+        assert(stableIdx >= 0);
+        log_.erase(log_.begin(), log_.begin() + stableIdx);
+    }
 
     // Commit app up to commitedSeq (potentially triggering a snapshot)
     app_->commit(newCheckpoint.committedSeq);
@@ -155,7 +172,7 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 
         // Remove all log entries up to the first entry in the snapshot
         uint32_t seq = snapshotReply.log_entries(0).seq();
-        abort(seq);
+        abort(std::max(seq, checkpoint_.committedSeq + 1));
     }
 
     checkpoint_ = checkpoint;
@@ -243,7 +260,7 @@ const std::string &Log::getDigest(uint32_t seq) const
         throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
 
-    uint32_t offset = log_[0].seq;
+    int32_t offset = log_[0].seq;
     assert(log_[seq - offset].seq == seq);
     return log_[seq - offset].digest;
 }
@@ -253,7 +270,7 @@ const LogEntry &Log::getEntry(uint32_t seq)
     if (!inRange(seq)) {
         throw std::runtime_error("Tried to get entry of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
-    uint32_t offset = log_[0].seq;
+    int32_t offset = log_[0].seq;
 
     assert(log_[seq - offset].seq == seq);
     return log_[seq - offset];
