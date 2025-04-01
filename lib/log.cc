@@ -153,6 +153,8 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 {
     LogCheckpoint checkpoint(snapshotReply.checkpoint());
 
+    uint32_t startSeq;
+
     // Try applying app snapshot if needed
     if (snapshotReply.has_snapshot()) {
         assert(snapshotReply.has_snapshot_checkpoint());
@@ -166,23 +168,29 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 
         log_.clear();
         nextSeq_ = snapshotCp.stableSeq + 1;
+        startSeq = nextSeq_;
 
         // 1. When we reset to a app snapshot, our log is completely empty, so we need to set the checkpoint here
         // so it can be used as a previous digest.
         stableCheckpoint_ = snapshotCp;
+
+        committedCheckpoint_ = checkpoint;
+
+    } else {
+        abort(committedCheckpoint_.committedSeq + 1);
+        startSeq = committedCheckpoint_.committedSeq + 1;
+
+        committedCheckpoint_ = checkpoint;
     }
 
-    abort(committedCheckpoint_.committedSeq + 1);
-
-    // TODO hack here to just clear client records and reset it afterwards
-    // Abort shuold properly fix client records.
+    // TODO hack here to just clear client records so these requests aren't counted as duplicates and reset it
+    // afterwards Instead, abort should properly fix client records.
     clientRecord_ = ClientRecord();
 
     // Apply LogEntries in snapshotReply
     std::string res;
     for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
-        if (entry.seq() <= committedCheckpoint_.committedSeq) {
-            // We may have a later checkpoint, can ignore extra messages
+        if (entry.seq() < startSeq) {
             continue;
         }
 
@@ -194,10 +202,6 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 
     // TODO end of above mentioned hack.
     clientRecord_ = checkpoint.clientRecord_;
-
-    if (checkpoint.committedSeq > committedCheckpoint_.committedSeq) {
-        committedCheckpoint_ = checkpoint;
-    }
 
     VLOG(4) << "Checkpoint for seq " << checkpoint.committedSeq
             << " log digest after applying snapshot: " << digest_to_hex(getDigest())
@@ -316,7 +320,7 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
     // starting from the oldest;
 
     out << "STABLE_CHECKPOINT= " << l.stableCheckpoint_.stableSeq << " "
-        << "COMMITCHECKPOINT=" << l.committedCheckpoint_.committedSeq << " | "
+        << "COMMIT_CHECKPOINT=" << l.committedCheckpoint_.committedSeq << " | "
         << digest_to_hex(l.committedCheckpoint_.committedLogDigest) << " | ";
     for (const LogEntry &entry : l.log_) {
         if (entry.seq <= l.committedCheckpoint_.committedSeq) {
