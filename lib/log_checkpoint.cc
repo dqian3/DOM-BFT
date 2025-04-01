@@ -53,7 +53,7 @@ void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto) const
 
         for (auto x : repairCommits) {
             (*checkpointProto.add_repair_commits()) = x.second;
-            checkpointProto.add_repair_commit_sigs(commitSigs.at(x.first));
+            checkpointProto.add_repair_commit_sigs(repairCommitSigs.at(x.first));
         }
 
     } else {

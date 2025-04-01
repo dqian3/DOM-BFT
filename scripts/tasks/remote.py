@@ -164,9 +164,9 @@ def run(
             crashed_arg = ''
 
 
-        # arun = arun_on(ip, f"replica{id}.log", profile=profile)
-        # hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
-        # other_handles.append(hdl)
+        arun = arun_on(ip, f"replica{id}.log", profile=profile)
+        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
