@@ -68,7 +68,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
     sigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
 
     std::map<CommitKeyTuple, std::set<uint32_t>> matchingCommits;
-    // Find a cert among a set of replies
+
     for (const auto &[replicaId, commit] : commits_) {
 
         CommitKeyTuple key = {
@@ -87,7 +87,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
 
 void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
 {
-    // Only valid to get checkpoint if we have colllected enough commits
+    // Only valid to get checkpoint if we have collected enough commits
     assert(commitToUse_.has_value());
 
     checkpoint.seq = seq_;
