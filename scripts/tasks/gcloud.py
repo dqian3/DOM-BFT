@@ -72,7 +72,7 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
         h.join()
     
     print(f"{'Stopped' if stop else 'Started'} all instances!")
-    time.sleep(3) # Give time for ssh daemons to start for other tasks
+    time.sleep(10) # Give time for ssh daemons to start for other tasks
 
 
 @task

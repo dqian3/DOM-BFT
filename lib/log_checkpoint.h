@@ -10,23 +10,27 @@
 
 struct LogCheckpoint {
 
+    // The sequence number of the last committed entry and digest after applying that entry
     uint32_t seq = 0;
-    // TODO shared ptr here so we don't duplicate it from certs.
     std::string logDigest;
 
-    std::string appSnapshotSeq;
     std::string appDigest;
 
-    std::map<uint32_t, dombft::proto::Commit> commitMessages;
-    std::map<uint32_t, std::string> signatures;
+    std::map<uint32_t, dombft::proto::Commit> commits;
+    std::map<uint32_t, std::string> commitSigs;
+
+    std::map<uint32_t, dombft::proto::PBFTCommit> repairCommits;
+    std::map<uint32_t, std::string> repairCommitSigs;
 
     ClientRecord clientRecord_;
+
+    std::shared_ptr<std::string> snapshot;
 
     LogCheckpoint() = default;
     LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto);
     LogCheckpoint(const LogCheckpoint &other);
 
-    void toProto(dombft::proto::LogCheckpoint &checkpointProto);
+    void toProto(dombft::proto::LogCheckpoint &checkpointProto) const;
 };
 
 #endif   // LOG_CHECKPOINT_H

@@ -125,8 +125,8 @@ cc_library(
 
 cc_library(
     name = "application",
-    hdrs = ["application.h", "app_snapshot_store.h"] + glob(["apps/*.h"]),
-    srcs = ["app_snapshot_store.cc"] + glob(["apps/*.cc"]),
+    hdrs = ["application.h"] + glob(["apps/*.h"]),
+    srcs = glob(["apps/*.cc"]),
     deps = [
         "//proto:dombft_apps_cc",
         ":common",

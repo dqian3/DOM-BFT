@@ -28,10 +28,11 @@ class Log {
 private:
     std::deque<LogEntry> log_;
     uint32_t nextSeq_;
-    LogCheckpoint stableCheckpoint_;
+    LogCheckpoint committedCheckpoint_;   // Checkpoint with highest commitedSeq
+    LogCheckpoint stableCheckpoint_;      // Checkpoint with highest snapshot/stable sequence
 
     // The log also keeps track of client records, and will de-deduplicate requests
-    ClientRecord clientRecord;
+    ClientRecord clientRecord_;
 
     // The log shares ownership of the application with the replica
     std::shared_ptr<Application> app_;
@@ -52,17 +53,19 @@ public:
     void abort(uint32_t seq);
 
     // Given a sequence number, commit the log and remove previous state, and save new checkpoint
-    void setStableCheckpoint(const LogCheckpoint &checkpoint);
+    void setCheckpoint(const LogCheckpoint &checkpoint);
 
-    // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
-    bool resetToSnapshot(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
+    // Given a snapshot of the app state reset log entirely to that state
+    bool resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply);
     // Given a snapshot of the state we want to try and match, change our checkpoint to match and reapply our logs
-    bool applySnapshotModifyLog(uint32_t seq, const LogCheckpoint &checkpoint, const std::string &snapshot);
+    bool applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotReply);
 
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;
     const std::string &getDigest(uint32_t seq) const;
     const LogEntry &getEntry(uint32_t seq);
+
+    LogCheckpoint &getCommittedCheckpoint();
     LogCheckpoint &getStableCheckpoint();
 
     ClientRecord &getClientRecord();

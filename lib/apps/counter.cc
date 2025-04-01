@@ -63,7 +63,7 @@ bool Counter::abort(uint32_t idx)
     return true;
 }
 
-bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
+bool Counter::applySnapshot(const std::string &snap, const std::string &digest, uint32_t idx)
 {
     // get the element seperated by ,
 
@@ -74,6 +74,8 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
     committedIdx = std::stoull(idxStr);
     committedValue = std::stoi(valueStr);
 
+    assert(committedIdx == idx);
+
     counter = committedValue;
     values.clear();
 
@@ -81,23 +83,26 @@ bool Counter::applySnapshot(const std::string &snap, const std::string &digest)
     return true;
 }
 
-::AppSnapshot Counter::takeSnapshot()
+void Counter::takeSnapshot(SnapshotCallback cb)
 {
-    ::AppSnapshot ret;
 
     if (values.empty()) {
-        ret.idx = committedIdx;
-        ret.snapshot = std::to_string(committedIdx) + "," + std::to_string(committedValue);
+        snapshot.seq = committedIdx;
+        snapshot.snapshot =
+            std::make_shared<std::string>(std::to_string(committedIdx) + "," + std::to_string(committedValue));
     } else {
         auto lastEntry = values.rbegin();
-        ret.idx = lastEntry->first;
-        ret.snapshot = std::to_string(lastEntry->first) + "," + std::to_string(lastEntry->second);
+        snapshot.seq = lastEntry->first;
+        snapshot.snapshot =
+            std::make_shared<std::string>(std::to_string(lastEntry->first) + "," + std::to_string(lastEntry->second));
     }
-    VLOG(1) << "Creating snapshot: '" << ret.snapshot << "'";
 
-    ret.digest = ret.snapshot;
-    return ret;
-}
+    VLOG(1) << "Creating snapshot: '" << *snapshot.snapshot << "'";
+
+    snapshot.digest = *snapshot.snapshot;
+
+    cb(snapshot);
+};
 
 std::string CounterClient::generateAppRequest()
 {

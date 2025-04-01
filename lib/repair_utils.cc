@@ -94,6 +94,9 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
+        if (entry.seq() <= logSuffix.checkpoint->seq())
+            continue;
+
         if (entry.seq() > maxCertSeq)
             break;
 
@@ -167,6 +170,15 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     VLOG(4) << "Rest of client requestes added from seq=" << logToUseSeq << " to seq=" << finalLogSeq;
 
+    VLOG(4) << "Calculating digest for log suffix";
+    // Calculate digest
+    std::string prevDigest = logSuffix.checkpoint->log_digest();
+    for (const dombft::proto::LogEntry *e : logSuffix.entries) {
+        ::LogEntry entry(e->seq(), e->client_id(), e->client_seq(), e->request(), prevDigest);
+        prevDigest = entry.digest;
+    }
+    logSuffix.logDigest = prevDigest;
+
     return true;
 }
 
@@ -180,7 +192,7 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
         keptReqs.insert({entry->client_id(), entry->client_seq()});
     }
 
-    startSeq = std::max(startSeq, log->getStableCheckpoint().seq + 1);
+    startSeq = std::max(startSeq, log->getCommittedCheckpoint().seq + 1);
     for (uint32_t seq = startSeq; seq < log->getNextSeq(); seq++) {
         const LogEntry &entry = log->getEntry(seq);
         RequestId key = {entry.client_id, entry.client_seq};
@@ -201,22 +213,27 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
-              << " stable checkpoint seq=" << log->getStableCheckpoint().seq;
-    assert(logSuffix.checkpoint->seq() <= log->getStableCheckpoint().seq);
+              << " my checkpoint seq=" << log->getCommittedCheckpoint().seq;
+    assert(
+        logSuffix.checkpoint->seq() <= log->getCommittedCheckpoint().seq ||
+        log->getDigest(logSuffix.checkpoint->seq()) == logSuffix.checkpoint->log_digest()
+
+    );
 
     // First sequence to apply is right after checkpoint
-    uint32_t seq = std::max(logSuffix.checkpoint->seq(), log->getStableCheckpoint().seq) + 1;
+    uint32_t seq = logSuffix.checkpoint->seq() + 1;
     uint32_t idx = 0;
 
-    // Reset the client record to the one in the checkpoint so we can rebuild it
-    log->getClientRecord() = log->getStableCheckpoint().clientRecord_;
+    // Reset the client record to the one in the suffix checkpoint so we can rebuild it
+    log->getClientRecord() = logSuffix.checkpoint->client_record();
 
     LOG(INFO) << "Start applySuffixAfterCheckpoint";
     // 2 Skip the entries that are already in the log (consistent)
     for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
-        if (seq <= log->getStableCheckpoint().seq) {
+        if (seq <= log->getCommittedCheckpoint().seq) {
+            log->getClientRecord().update(entry->client_id(), entry->client_seq());
             seq++;
             continue;
         }

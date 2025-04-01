@@ -37,15 +37,18 @@ public:
     MOCK_METHOD(std::string, execute, (const std::string &serialized_request, uint32_t execute_idx), (override));
     MOCK_METHOD(bool, commit, (uint32_t commit_idx), (override));
     MOCK_METHOD(bool, abort, (uint32_t abort_idx), (override));
-    MOCK_METHOD(bool, applySnapshot, (const std::string &snapshot, const std::string &digest), (override));
-    MOCK_METHOD(bool, applyDelta, (const std::string &delta, const std::string &digest), (override));
-    MOCK_METHOD(AppSnapshot, takeSnapshot, (), (override));
+    MOCK_METHOD(
+        bool, applySnapshot, (const std::string &snapshot, const std::string &digest, uint32_t seq), (override)
+    );
+    MOCK_METHOD(void, takeSnapshot, (SnapshotCallback cb), (override));
 
     MockApplication()
     {
         // Default behavior for methods to return true
         EXPECT_CALL(*this, execute(_, _)).WillRepeatedly(Return("res"));
     }
+
+    ~MockApplication() {}
 };
 
 //************************ Test case specification types ************************/
@@ -74,12 +77,13 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
     std::shared_ptr<MockApplication> app = std::make_shared<MockApplication>();
     std::shared_ptr<Log> log = std::make_shared<Log>(app);
 
+    log->getCommittedCheckpoint().seq = testLog.startSeq;
     log->getStableCheckpoint().seq = testLog.startSeq;
+
     log->abort(testLog.startSeq + 1);
 
-    // Zero digest because provided TestLog.digest might be smaller
-    log->getStableCheckpoint().logDigest = testLog.logDigest.c_str();
-
+    log->getCommittedCheckpoint().logDigest = testLog.logDigest;
+    log->getStableCheckpoint().logDigest = testLog.logDigest;
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
 
@@ -181,7 +185,7 @@ void assertLogEq(Log &log, const TestLog &expected)
     uint32_t startSeq = expected.startSeq;
 
     // Size of suffixes are the same
-    ASSERT_EQ(expected.entries.size(), log.getNextSeq() - log.getStableCheckpoint().seq - 1);
+    ASSERT_EQ(expected.entries.size(), log.getNextSeq() - log.getCommittedCheckpoint().seq - 1);
 
     int n = expected.entries.size();
     for (int i = 0; i < n; i++) {
@@ -257,6 +261,29 @@ TEST_F(LoggingFixture, ApplyLogSuffix)
 
     std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
     EXPECT_CALL(*mockApp, abort(12)).WillOnce(Return(true));
+
+    applySuffix(suffix, log);
+
+    assertLogEq(*log, newLog);
+}
+
+TEST_F(LoggingFixture, ApplyBehind)
+{
+    // Test
+    // TODO we would probably need to mock out verifaction of certs and stuff here
+    TestLog curLog{10, "aaaa", 0, {{1, 2}, {2, 2}}};
+    TestLog newLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}};
+
+    // Generate protocol log
+    auto [log, app] = logFromTestLog(curLog);
+
+    // Generate suffix for repair
+    LogSuffix suffix;
+    auto ret = suffixFromTestLog(newLog, suffix);
+
+    std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
+    // Aborting seq in future won't actually call app
+    // EXPECT_CALL(*mockApp, abort(13)).WillOnce(Return(true));
 
     applySuffix(suffix, log);
 

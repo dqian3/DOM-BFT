@@ -16,6 +16,8 @@ struct LogSuffix {
     uint32_t checkpointReplica;
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
+
+    std::string logDigest;
 };
 
 struct PBFTState {

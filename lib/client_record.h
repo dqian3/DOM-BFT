@@ -19,6 +19,8 @@ struct ClientSequence {
     uint32_t size() const;
 
     int numMissing(const ClientSequence &referenceSequence) const;
+
+    bool operator==(const ClientSequence &other) const;
 };
 
 class ClientRecord {
@@ -40,6 +42,8 @@ public:
     // Computes the number of records in referenceRecord that are misssing in this record
     // Does not check for extra records in this record
     int numMissing(const ClientRecord &referenceRecord) const;
+
+    bool operator==(const ClientRecord &other) const;
 
     friend std::ostream &operator<<(std::ostream &out, const ClientRecord &record);
 };

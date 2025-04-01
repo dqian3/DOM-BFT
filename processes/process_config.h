@@ -60,6 +60,7 @@ struct ProcessConfig {
     int replicaNumSendThreads;
     int replicaNumVerifyThreads;
     uint32_t replicaCheckpointInterval;
+    uint32_t replicaSnapshotInterval;
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -177,9 +178,14 @@ struct ProcessConfig {
             replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");
 
             replicaCheckpointInterval = parseField<int>(replicaNode, "checkpointInterval");
+            replicaSnapshotInterval = parseField<int>(replicaNode, "snapshotInterval", replicaCheckpointInterval);
+
+            if (replicaSnapshotInterval % replicaCheckpointInterval != 0) {
+                throw ConfigParseException("Snapshot interval must be a multiple of checkpoint interval");
+            }
 
         } catch (const ConfigParseException &e) {
-            throw ConfigParseException("Error parsing replica " + std::string(e.what()));
+            throw ConfigParseException("Error parsing replica config: " + std::string(e.what()));
         }
     }
 

@@ -40,6 +40,11 @@ int ClientSequence::numMissing(const ClientSequence &referenceSequence) const
     return ret;
 }
 
+bool ClientSequence::operator==(const ClientSequence &other) const
+{
+    return lastSeq_ == other.lastSeq_ && missedSeqs_ == other.missedSeqs_;
+}
+
 ClientRecord::ClientRecord(const dombft::proto::ClientRecord &recordProto)
 {
     for (const auto &sequence : recordProto.sequences()) {
@@ -112,6 +117,8 @@ int ClientRecord::numMissing(const ClientRecord &referenceRecord) const
     }
     return ret;
 }
+
+bool ClientRecord::operator==(const ClientRecord &other) const { return sequences == other.sequences; }
 
 // Output to stream
 std::ostream &operator<<(std::ostream &out, const ClientRecord &record)

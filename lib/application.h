@@ -13,11 +13,13 @@
 enum class AppType { KV_STORE, COUNTER };
 
 struct AppSnapshot {
-    uint32_t idx;
+    uint32_t seq = 0;
 
-    std::string snapshot;
+    std::shared_ptr<std::string> snapshot;
     std::string digest;
 };
+
+typedef std::function<void(const AppSnapshot &)> SnapshotCallback;
 
 class Application {
 
@@ -32,8 +34,10 @@ public:
     // Reset application state, so that any requests following and including abort_idx are rolled back
     virtual bool abort(uint32_t abort_idx) = 0;
 
-    virtual bool applySnapshot(const std::string &snapshot, const std::string &digest) = 0;
-    virtual AppSnapshot takeSnapshot() = 0;
+    virtual bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) = 0;
+
+    // By default can just do nothing
+    virtual void takeSnapshot(SnapshotCallback cb) {};
 };
 
 class ApplicationClient {

@@ -1,6 +1,6 @@
 transport: nng 
 
-app: "kv_store"
+app: "counter"
 
 client:
   ips:
@@ -39,7 +39,7 @@ client:
   runtimeSeconds: 60
   
   sendMode: maxInFlight
-  maxInFlight: 25
+  maxInFlight: 50
   sendRate: 300
   requestSize: 512
 
@@ -90,4 +90,5 @@ replica:
   numVerifyThreads: 6
   port: 34000
 
-  checkpointInterval: 10000
+  checkpointInterval: 5000
+  snapshotInterval: 10000

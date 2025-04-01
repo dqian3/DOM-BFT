@@ -57,8 +57,8 @@ void NngSendThread::run()
                     if (curMsg.size() + msgs[i].size() > NNG_BUFFER_SIZE) {
                         int ret = nng_send(t->sock_, curMsg.data(), curMsg.size(), 0);
                         if (ret != 0) {
-                            VLOG(1) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret
-                                    << ")";
+                            LOG(ERROR) << "\tSend to " << t->addr_ << " failed: " << nng_strerror(ret) << " (" << ret
+                                       << ")";
                             return;
                         }
 
