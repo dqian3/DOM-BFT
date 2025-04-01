@@ -1698,7 +1698,7 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
 
 bool Replica::verifyRepairDone(const RepairDone &done)
 {
-    if (done.commits().size() <= 2 * f_ + 1) {
+    if (done.commits().size() < 2 * f_ + 1) {
         LOG(WARNING) << "Number of commits is " << done.commits().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
     }
