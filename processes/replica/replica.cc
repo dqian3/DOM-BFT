@@ -833,9 +833,10 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
 
     if (!checkpointCollectors_.hasCollector(round_, rSeq)) {
-        VLOG(4) << "Checkpoint collector does not exist for seq=" << rSeq << " round=" << round_ << " creating one now";
+        VLOG(4) << "Checkpoint collector does not exist for seq=" << rSeq << " round=" << round_
+                << " creating one now ";
 
-        if (!checkpointCollectors_.initCollector(round_, rSeq, rSeq % snapshotInterval_)) {
+        if (!checkpointCollectors_.initCollector(round_, rSeq, rSeq % snapshotInterval_ == 0)) {
             return;
         }
     }
@@ -874,13 +875,13 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 
 void Replica::processSnapshot(const AppSnapshot &snapshot, uint32_t round)
 {
+    VLOG(4) << "CHECKPOINT Processing snapshot for seq=" << snapshot.seq << " round=" << round;
+
     if (!checkpointCollectors_.hasCollector(round, snapshot.seq)) {
         VLOG(4) << "CHECKPOINT Collector does not exist for round=" << round << " seq = " << snapshot.seq
                 << " which means this was either committed or skipped";
         return;
     }
-
-    VLOG(4) << "CHECKPOINT Processing snapshot for seq=" << snapshot.seq << " round=" << round;
 
     CheckpointCollector &coll = checkpointCollectors_.at(round, snapshot.seq);
     coll.addOwnSnapshot(snapshot);
@@ -907,7 +908,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     if (!checkpointCollectors_.hasCollector(commit.round(), seq)) {
         VLOG(4) << "Checkpoint collector does not exist for seq=" << seq << " round=" << commit.round()
                 << " creating one now";
-        if (!checkpointCollectors_.initCollector(commit.round(), seq, seq % snapshotInterval_)) {
+        if (!checkpointCollectors_.initCollector(commit.round(), seq, seq % snapshotInterval_ == 0)) {
             return;
         }
     }
@@ -1829,6 +1830,10 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
     broadcastToReplicas(done, MessageType::REPAIR_DONE);
 
+    // Send repair summary to clients to allow commits in the slow path..
+    // NOTE: there was a bug where this was after the checkpointing and so was empty
+    sendRepairSummaryToClients();
+
     uint32_t startSeq = getRepairLogSuffix().checkpoint->seq();
 
     // TODO: since the repair is PBFT, we can simply set the checkpoint here already using the PBFT messages as
@@ -1842,12 +1847,17 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         LOG(ERROR) << "Repair finished, but no new checkpoint to commit?";
     } else {
 
-        // Repair round crosses a snapshot interavl, we should also kick off
-        if (seq % snapshotInterval_ > startSeq % snapshotInterval_) {
+        // Repair round crosses a snapshot interavl, we should also kick off one
+        // The reason we need to do this is because if repair is continuously triggered,
+        // replicas may never be able to gather a cert before the next repair is triggered
+        if (seq / snapshotInterval_ > startSeq / snapshotInterval_) {
             // TODO this is also a bit hacky...
             // Create a checkpoint with a new stable app digest by doing a commit round!
             VLOG(3) << "Starting new commit round for seq=" << seq
                     << " to create a new application snapshot directly from commit!";
+
+            VLOG(2) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=1"
+                    << " round=" << round_ << " log_digest=" << digest_to_hex(log_->getDigest());
 
             Commit commit;
             commit.set_replica_id(replicaId_);
@@ -1902,9 +1912,6 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     repairPrepares_.clear();
     repairPBFTCommits_.clear();
     repairProposalLogSuffix_.reset();
-
-    // Send repair summary to clients to allow commits in the slow path..
-    sendRepairSummaryToClients();
 
     // Reapply any requests that were aborted in previous round
     // NOTE, this is actually allow a single byzantine client to prevent a replica from ever entering fast path...

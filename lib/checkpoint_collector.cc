@@ -152,7 +152,20 @@ void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
 bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool needsSnapshot)
 {
     std::pair<uint32_t, uint32_t> key = {round, seq};
-    std::pair<uint32_t, uint32_t> committedKey = {committedRound_, committedSeq_};
+
+    if (needsSnapshot) {
+        if (seq <= stableSeq_) {
+            VLOG(4) << "Skipping collector snapshot=true round=" << round << " seq=" << seq
+                    << " since it is already stable";
+            return false;
+        }
+    } else {
+        if (seq <= committedSeq_) {
+            VLOG(4) << "Skipping collector snapshot=false round=" << round << " seq=" << seq
+                    << " since it is already committed";
+            return false;
+        }
+    }
 
     auto [_, created] = collectors_.try_emplace(key, replicaId_, f_, round, seq, needsSnapshot);
     assert(created);
@@ -175,6 +188,9 @@ CheckpointCollector &CheckpointCollectorStore::at(uint32_t round, uint32_t seq)
 void CheckpointCollectorStore::cleanStaleCollectors(uint32_t stableSeq, uint32_t committedSeq)
 {
     assert(stableSeq <= committedSeq);
+
+    stableSeq_ = std::max(stableSeq_, stableSeq);
+    committedSeq_ = std::max(committedSeq_, committedSeq);
 
     for (auto it = collectors_.begin(); it != collectors_.end();) {
         const CheckpointCollector &coll = it->second;

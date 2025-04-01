@@ -125,8 +125,8 @@ class CheckpointCollectorStore {
     std::map<std::pair<uint32_t, uint32_t>, CheckpointCollector> collectors_;
     std::map<std::pair<uint32_t, uint32_t>, CheckpointCollector> snapshotCollectors_;
 
+    uint32_t stableSeq_ = 0;
     uint32_t committedSeq_ = 0;
-    uint32_t committedRound_ = 0;
 
     uint32_t replicaId_;
     uint32_t f_;

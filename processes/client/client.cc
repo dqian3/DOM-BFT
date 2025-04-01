@@ -625,6 +625,12 @@ void Client::handleRepairSummary(const dombft::proto::RepairSummary &summary, st
     VLOG(2) << "Received repair summary for round=" << summary.round() << " from replicaId=" << summary.replica_id();
 
     for (const CommittedReply &reply : summary.replies()) {
+        if (reply.client_id() != clientId_)
+            continue;
+
+        VLOG(4) << "Repair summary reply client_id=" << reply.client_id() << " client_seq=" << reply.client_seq()
+                << " seq=" << reply.seq() << " replica_id=" << reply.replica_id();
+
         handleCommittedReply(reply, sig);
     }
 }
