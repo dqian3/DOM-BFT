@@ -3,12 +3,9 @@
 
 LogCheckpoint::LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto)
 {
-    committedSeq = checkpointProto.committed_seq();
-    committedLogDigest = checkpointProto.committed_log_digest();
-
-    stableSeq = checkpointProto.stable_seq();
-    stableAppDigest = checkpointProto.stable_app_digest();
-    stableLogDigest = checkpointProto.stable_log_digest();
+    seq = checkpointProto.seq();
+    logDigest = checkpointProto.log_digest();
+    appDigest = checkpointProto.app_digest();
 
     for (int i = 0; i < checkpointProto.commits_size(); i++) {
         commits[checkpointProto.commits(i).replica_id()] = checkpointProto.commits(i);
@@ -24,11 +21,9 @@ LogCheckpoint::LogCheckpoint(const dombft::proto::LogCheckpoint &checkpointProto
 }
 
 LogCheckpoint::LogCheckpoint(const LogCheckpoint &other)
-    : committedSeq(other.committedSeq)
-    , committedLogDigest(other.committedLogDigest)
-    , stableSeq(other.stableSeq)
-    , stableLogDigest(other.stableLogDigest)
-    , stableAppDigest(other.stableAppDigest)
+    : seq(other.seq)
+    , logDigest(other.logDigest)
+    , appDigest(other.appDigest)
     , commits(other.commits)
     , commitSigs(other.commitSigs)
     , repairCommits(other.repairCommits)
@@ -39,12 +34,10 @@ LogCheckpoint::LogCheckpoint(const LogCheckpoint &other)
 
 void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto) const
 {
-    if (committedSeq > 0) {
-        checkpointProto.set_committed_seq(committedSeq);
-        checkpointProto.set_stable_seq(stableSeq);
-        checkpointProto.set_stable_app_digest(stableAppDigest);
-        checkpointProto.set_stable_log_digest(stableLogDigest);
-        checkpointProto.set_committed_log_digest(committedLogDigest);
+    if (seq > 0) {
+        checkpointProto.set_seq(seq);
+        checkpointProto.set_log_digest(logDigest);
+        checkpointProto.set_app_digest(appDigest);
 
         for (auto x : commits) {
             (*checkpointProto.add_commits()) = x.second;
@@ -57,11 +50,9 @@ void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto) const
         }
 
     } else {
-        checkpointProto.set_stable_seq(0);
-        checkpointProto.set_committed_seq(0);
-        checkpointProto.set_stable_app_digest("");
-        checkpointProto.set_stable_log_digest("");
-        checkpointProto.set_committed_log_digest("");
+        checkpointProto.set_seq(0);
+        checkpointProto.set_app_digest("");
+        checkpointProto.set_log_digest("");
     }
 
     clientRecord_.toProto(*checkpointProto.mutable_client_record());

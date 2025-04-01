@@ -65,12 +65,13 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
     for (const auto &[replicaId, commit] : commits_) {
 
         CommitKeyTuple key = {
-            commit.round(),      commit.committed_seq(),     commit.committed_log_digest(),
-            commit.stable_seq(), commit.stable_app_digest(), commit.client_record().digest(),
+            commit.round(), commit.seq(), commit.log_digest(), commit.app_digest(), commit.client_record().digest(),
         };
         matchingCommits[key].insert(replicaId);
 
-        VLOG(4) << replicaId << " " << digest_to_hex(commit.committed_log_digest()) << " " << commit.committed_seq();
+        VLOG(4) << replicaId << " " << digest_to_hex(commit.log_digest()) << " " << commit.seq() << " "
+
+                << digest_to_hex(commit.app_digest());
 
         if (matchingCommits[key].size() >= 2 * f_ + 1) {
             matchedReplicas_ = matchingCommits[key];
@@ -86,12 +87,9 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
     // Only valid to get checkpoint if we have colllected enough commits
     assert(commitToUse_.has_value());
 
-    checkpoint.committedSeq = seq_;
-    checkpoint.committedLogDigest = commitToUse_->committed_log_digest();
-
-    checkpoint.stableSeq = commitToUse_->stable_seq();
-    checkpoint.stableLogDigest = commitToUse_->stable_log_digest();
-    checkpoint.stableAppDigest = commitToUse_->stable_app_digest();
+    checkpoint.seq = seq_;
+    checkpoint.logDigest = commitToUse_->log_digest();
+    checkpoint.appDigest = commitToUse_->app_digest();
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
     for (uint32_t replicaId : matchedReplicas_) {
@@ -125,17 +123,13 @@ void CheckpointCollector::getOwnCommit(dombft::proto::Commit &commit) const
     commit.set_replica_id(replicaId_);
     commit.set_round(round_);
 
-    commit.set_committed_seq(seq_);
-    commit.set_committed_log_digest(logDigest_.value());
+    commit.set_seq(seq_);
+    commit.set_log_digest(logDigest_.value());
 
     clientRecord_.value().toProto(*commit.mutable_client_record());
 
     if (needsSnapshot_) {
-        commit.set_stable_seq(snapshot_->seq);
-        commit.set_stable_log_digest(logDigest_.value());
-        commit.set_stable_app_digest(snapshot_->digest);
-    } else {
-        // TODO, this needs to be filled separately...
+        commit.set_app_digest(snapshot_->digest);
     }
 }
 

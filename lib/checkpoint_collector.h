@@ -36,7 +36,7 @@ struct ReplyCollector {
     bool addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig);
 };
 
-typedef std::tuple<uint32_t, uint32_t, std::string, uint32_t, std::string, std::string> CommitKeyTuple;
+typedef std::tuple<uint32_t, uint32_t, std::string, std::string, std::string> CommitKeyTuple;
 
 struct CommitCollector {
     uint32_t f_;

@@ -11,13 +11,10 @@
 struct LogCheckpoint {
 
     // The sequence number of the last committed entry and digest after applying that entry
-    uint32_t committedSeq = 0;
-    std::string committedLogDigest;
+    uint32_t seq = 0;
+    std::string logDigest;
 
-    // State of stable entry, anything before this is truncated
-    uint32_t stableSeq = 0;
-    std::string stableLogDigest;
-    std::string stableAppDigest;
+    std::string appDigest;
 
     std::map<uint32_t, dombft::proto::Commit> commits;
     std::map<uint32_t, std::string> commitSigs;
