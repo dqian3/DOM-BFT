@@ -95,6 +95,7 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
     for (uint32_t replicaId : matchedReplicas_) {
+        VLOG(6) << "Adding replica commit " << replicaId << " to checkpoint";
         checkpoint.commits[replicaId] = commits_[replicaId];
         checkpoint.commitSigs[replicaId] = sigs_[replicaId];
     }

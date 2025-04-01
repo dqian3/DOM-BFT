@@ -947,10 +947,13 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                   << " commit_digest=" << digest_to_hex(checkpoint.committedLogDigest);
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != checkpoint.committedLogDigest) {
-            LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot...";
             // TODO choose a random replica from those that have this
+            assert(!checkpoint.commits.empty());
+            uint32_t replicaId = checkpoint.commits.begin()->first;
 
-            uint32_t replicaId = checkpoint.commits[0].replica_id();
+            LOG(INFO) << "My log digest does not match the commit message digest requesting snapshot from "
+                      << replicaId;
+
             sendSnapshotRequest(replicaId, checkpoint.committedSeq);
 
         } else if (!coll.needsSnapshot() || checkpoint.snapshot != nullptr) {
