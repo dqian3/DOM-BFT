@@ -249,6 +249,12 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
+            if (reply.has_snapshot_checkpoint() && !verifyCheckpoint(reply.snapshot_checkpoint())) {
+                LOG(INFO) << "Failed to verify snapshot checkpoint from replica " << reply.replica_id()
+                          << " in SNAPSHOT_REPLY!";
+                continue;
+            }
+
             processQueue_.enqueue(msg);
         }
 #if !USE_PROXY
@@ -703,7 +709,7 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     // 1. Check if client request has been executed in latest checkpoint (i.e. is committed), in which case
     // we should return a CommittedReply, and client only needs f + 1
-    if (log_->getCheckpoint().clientRecord_.contains(clientId, clientSeq)) {
+    if (log_->getCommittedCheckpoint().clientRecord_.contains(clientId, clientSeq)) {
         LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
                      << " has been committed in previous checkpoint/repair!, Sending committed reply";
 
@@ -818,7 +824,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
 
-    auto &checkpoint = log_->getCheckpoint();
+    auto &checkpoint = log_->getCommittedCheckpoint();
 
     if (rSeq <= checkpoint.committedSeq) {
         VLOG(4) << "Checkpoint reply with seq=" << rSeq << " is already committed, ignoring!"
@@ -856,7 +862,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
             coll.getOwnCommit(commit);
 
             if (!coll.needsSnapshot()) {
-                ::LogCheckpoint &curCheckpoint = log_->getCheckpoint();
+                ::LogCheckpoint &curCheckpoint = log_->getCommittedCheckpoint();
 
                 commit.set_stable_seq(curCheckpoint.stableSeq);
                 commit.set_stable_app_digest(curCheckpoint.stableAppDigest);
@@ -878,12 +884,12 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
 void Replica::processSnapshot(const AppSnapshot &snapshot, uint32_t round)
 {
     if (!checkpointCollectors_.hasCollector(round, snapshot.seq)) {
-        VLOG(4) << "Checkpoint collector does not exist for round=" << round << " seq = " << snapshot.seq
-                << " which means this was either committed or aborted, skipping saving of snapshot";
+        VLOG(4) << "CHECKPOINT Collector does not exist for round=" << round << " seq = " << snapshot.seq
+                << " which means this was either committed or skipped";
         return;
     }
 
-    VLOG(4) << "Processing snapshot for seq=" << snapshot.seq << " round=" << round;
+    VLOG(4) << "CHECKPOINT Processing snapshot for seq=" << snapshot.seq << " round=" << round;
 
     CheckpointCollector &coll = checkpointCollectors_.at(round, snapshot.seq);
     coll.addOwnSnapshot(snapshot);
@@ -893,13 +899,13 @@ void Replica::processSnapshot(const AppSnapshot &snapshot, uint32_t round)
         coll.getOwnCommit(commit);
 
         if (!coll.needsSnapshot()) {
-            ::LogCheckpoint &curCheckpoint = log_->getCheckpoint();
+            ::LogCheckpoint &curCheckpoint = log_->getCommittedCheckpoint();
 
             commit.set_stable_seq(curCheckpoint.stableSeq);
             commit.set_stable_app_digest(curCheckpoint.stableAppDigest);
             commit.set_stable_log_digest(curCheckpoint.stableLogDigest);
         }
-        VLOG(3) << "Sending own COMMIT seq=" << commit.committed_seq() << " round=" << commit.round()
+        VLOG(3) << "CHECKPOINT Sending own COMMIT seq=" << commit.committed_seq() << " round=" << commit.round()
                 << " digest=" << digest_to_hex(commit.committed_log_digest()) << " stable_seq=" << commit.stable_seq()
                 << " stable_app_digest=" << digest_to_hex(commit.stable_app_digest());
 
@@ -963,8 +969,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
         } else if (!coll.needsSnapshot()) {
 
-            if (checkpoint.stableSeq >= log_->getCheckpoint().stableSeq) {
-                checkpoint.snapshot = log_->getCheckpoint().snapshot;
+            if (checkpoint.stableSeq >= log_->getCommittedCheckpoint().stableSeq) {
+                checkpoint.snapshot = log_->getCommittedCheckpoint().snapshot;
                 log_->setCheckpoint(checkpoint);
 
                 VLOG(1) << "PERF event=checkpoint_end seq=" << seq
@@ -976,7 +982,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             }
 
         } else if (checkpoint.snapshot != nullptr) {
-            assert(checkpoint.stableSeq >= log_->getCheckpoint().stableSeq);
+            assert(checkpoint.stableSeq >= log_->getCommittedCheckpoint().stableSeq);
 
             LOG(INFO) << "Writing new snapshot to store!";
             log_->setCheckpoint(checkpoint);
@@ -987,7 +993,9 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                     << " stable_app_digest=" << digest_to_hex(checkpoint.stableAppDigest);
 
             // if there is overlapping and later checkpoint commits first, skip earlier ones
-            checkpointCollectors_.cleanStaleCollectors(checkpoint.stableSeq, commit.round());
+            checkpointCollectors_.cleanStaleCollectors(
+                log_->getStableCheckpoint().stableSeq, log_->getCommittedCheckpoint().committedSeq
+            );
         } else {
             VLOG(4) << "CHECKPOINT: Quorum of commits match our log, but we do not have a snapshot yet!"
                     << " Will wait for our snapshot request to finish and then receive our own commit!";
@@ -1042,7 +1050,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     VLOG(3) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq
             << " from sequnece " << request.last_checkpoint_seq();
 
-    if (reqSeq > log_->getCheckpoint().committedSeq) {
+    if (reqSeq > log_->getCommittedCheckpoint().committedSeq) {
         VLOG(4) << "Requested req " << reqSeq << " is ahead of current checkpoint, cannot provide snapshot";
         return;
     }
@@ -1053,23 +1061,25 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 
     SnapshotReply snapshotReply;
     snapshotReply.set_round(round_);
-    snapshotReply.set_seq(log_->getCheckpoint().committedSeq);
+    snapshotReply.set_seq(log_->getCommittedCheckpoint().committedSeq);
     snapshotReply.set_replica_id(replicaId_);
 
-    const ::LogCheckpoint &myCheckpoint = log_->getCheckpoint();
-    myCheckpoint.toProto(*snapshotReply.mutable_checkpoint());
+    const ::LogCheckpoint &committedCp = log_->getCommittedCheckpoint();
+    committedCp.toProto(*snapshotReply.mutable_checkpoint());
 
-    if (request.last_checkpoint_seq() < myCheckpoint.stableSeq) {
+    const ::LogCheckpoint &stableCp = log_->getCommittedCheckpoint();
+    if (request.last_checkpoint_seq() < stableCp.stableSeq) {
         VLOG(1) << "Snapshot request too far back, sending application snapshot!";
 
-        assert(myCheckpoint.snapshot != nullptr);
+        assert(stableCp.snapshot != nullptr);
 
-        snapshotReply.set_app_snapshot(*myCheckpoint.snapshot);
+        snapshotReply.set_snapshot(*stableCp.snapshot);
+        stableCp.toProto(*snapshotReply.mutable_snapshot_checkpoint());
     }
 
     // Adding requests not included in snapshot up to my committed_seq
-    uint32_t startSeq = std::max(request.last_checkpoint_seq(), log_->getCheckpoint().stableSeq) + 1;
-    for (uint32_t seq = startSeq; seq <= log_->getCheckpoint().committedSeq; seq++) {
+    uint32_t startSeq = std::max(request.last_checkpoint_seq(), stableCp.stableSeq) + 1;
+    for (uint32_t seq = startSeq; seq <= log_->getCommittedCheckpoint().committedSeq; seq++) {
         auto &entry = log_->getEntry(seq);
 
         dombft::proto::LogEntry entryProto;
@@ -1078,8 +1088,8 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
     }
 
     VLOG(3) << "Sending SNAPSHOT_REPLY to " << request.replica_id() << " round=" << snapshotReply.round() << " from "
-            << startSeq << " to " << log_->getCheckpoint().committedSeq
-            << " (app snapshot=" << snapshotReply.has_app_snapshot() << ") stable_seq=" << myCheckpoint.stableSeq;
+            << startSeq << " to " << log_->getCommittedCheckpoint().committedSeq
+            << " (app snapshot=" << snapshotReply.has_snapshot() << ") stable_seq=" << stableCp.stableSeq;
 
     sendMsgToDst(snapshotReply, MessageType::SNAPSHOT_REPLY, replicaAddrs_[request.replica_id()]);
 }
@@ -1090,7 +1100,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         VLOG(4) << "Snapshot reply round outdated, skipping";
         return;
     }
-    if (snapshotReply.seq() <= log_->getCheckpoint().committedSeq) {
+    if (snapshotReply.seq() <= log_->getCommittedCheckpoint().committedSeq) {
         VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
         return;
     }
@@ -1106,7 +1116,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         LOG(INFO) << "Processing (during repair) SNAPSHOT_REPLY from replica " << snapshotReply.replica_id()
                   << " for seq " << snapshotReply.seq() << " with log from " << startSeq
                   << " stable_seq=" << snapshotReply.checkpoint().stable_seq()
-                  << " has_app_snapshot=" << snapshotReply.has_app_snapshot();
+                  << " has_snapshot=" << snapshotReply.has_snapshot();
 
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
         LogSuffix &logSuffix = getRepairLogSuffix();
@@ -1139,7 +1149,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
                   << snapshotReply.seq() << " with log from " << startSeq
                   << " stable_seq=" << snapshotReply.checkpoint().stable_seq()
-                  << " has_app_snapshot=" << snapshotReply.has_app_snapshot();
+                  << " has_snapshot=" << snapshotReply.has_snapshot();
 
         if (!log_->applySnapshotModifyLog(snapshotReply)) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
@@ -1148,10 +1158,12 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         }
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
-        checkpointCollectors_.cleanStaleCollectors(snapshotReply.checkpoint().stable_seq(), round_);
+        checkpointCollectors_.cleanStaleCollectors(
+            log_->getStableCheckpoint().stableSeq, log_->getCommittedCheckpoint().committedSeq
+        );
 
         // Resend replies after modifying log
-        for (int seq = log_->getCheckpoint().committedSeq + 1; seq < log_->getNextSeq(); seq++) {
+        for (int seq = log_->getCommittedCheckpoint().committedSeq + 1; seq < log_->getNextSeq(); seq++) {
             auto &entry = log_->getEntry(seq);
 
             Reply reply;
@@ -1361,7 +1373,7 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_seq(targetSeq);
     snapshotRequest.set_round(round_);
-    snapshotRequest.set_last_checkpoint_seq(log_->getCheckpoint().committedSeq);
+    snapshotRequest.set_last_checkpoint_seq(log_->getCommittedCheckpoint().committedSeq);
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
     LOG(INFO) << "Sending SNAPSHOT_REQUEST for seq " << targetSeq << "  replica " << replicaId;
 }
@@ -1789,7 +1801,7 @@ void Replica::sendRepairSummaryToClients()
     summary.set_replica_id(replicaId_);
     summary.set_pbft_view(pbftView_);
 
-    uint32_t seq = log_->getCheckpoint().committedSeq + 1;
+    uint32_t seq = log_->getCommittedCheckpoint().committedSeq + 1;
     for (; seq < log_->getNextSeq(); seq++) {
         const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
         CommittedReply reply;
@@ -1823,7 +1835,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
     LOG(INFO) << "DUMP finish repair round=" << round_ << " " << *log_;
     LOG(INFO) << "Current client record" << log_->getClientRecord();
-    LOG(INFO) << "Checkpoint client record" << log_->getCheckpoint().clientRecord_;
+    LOG(INFO) << "Checkpoint client record" << log_->getCommittedCheckpoint().clientRecord_;
 
     round_++;
     LOG(INFO) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
@@ -1854,7 +1866,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
     uint32_t seq = log_->getNextSeq() - 1;
 
-    if (seq <= log_->getCheckpoint().committedSeq) {
+    if (seq <= log_->getCommittedCheckpoint().committedSeq) {
         LOG(ERROR) << "Repair finished, but no new checkpoint to commit?";
     } else {
 
@@ -1862,7 +1874,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             // Save a new checkpoint right away
             ::LogCheckpoint newCheckpoint;
-            ::LogCheckpoint &curCheckpoint = log_->getCheckpoint();
+            ::LogCheckpoint &curCheckpoint = log_->getCommittedCheckpoint();
 
             newCheckpoint.stableAppDigest = curCheckpoint.stableAppDigest;
             newCheckpoint.stableSeq = curCheckpoint.stableSeq;
@@ -1978,7 +1990,7 @@ void Replica::tryFinishRepair()
     // Check if own checkpoint seq is behind suffix checkpoint seq
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
 
-    ::LogCheckpoint &myCheckpoint = log_->getCheckpoint();   // bad namespace
+    ::LogCheckpoint &myCheckpoint = log_->getCommittedCheckpoint();   // bad namespace
     if (checkpoint->committed_seq() > myCheckpoint.committedSeq) {
         // If our log is consistent, we can just use the checkpoint, otherwise
         // we need to request a snapshot from the replica that has the checkpoint

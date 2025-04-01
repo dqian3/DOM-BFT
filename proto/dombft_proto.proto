@@ -291,9 +291,10 @@ message SnapshotReply {
     uint32 replica_id = 3;
 
     LogCheckpoint checkpoint = 4;
-
     repeated LogEntry log_entries = 5; 
-    optional bytes app_snapshot = 6;
+
+    optional LogCheckpoint snapshot_checkpoint = 7;
+    optional bytes snapshot = 8;
 }
 
 message DummyProtocolMessage

@@ -77,13 +77,13 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
     std::shared_ptr<MockApplication> app = std::make_shared<MockApplication>();
     std::shared_ptr<Log> log = std::make_shared<Log>(app);
 
-    log->getCheckpoint().committedSeq = testLog.startSeq;
-    log->getCheckpoint().stableSeq = testLog.startSeq;
+    log->getCommittedCheckpoint().committedSeq = testLog.startSeq;
+    log->getCommittedCheckpoint().stableSeq = testLog.startSeq;
 
     log->abort(testLog.startSeq + 1);
 
-    log->getCheckpoint().committedLogDigest = testLog.logDigest.c_str();
-    log->getCheckpoint().stableLogDigest = testLog.logDigest.c_str();
+    log->getCommittedCheckpoint().committedLogDigest = testLog.logDigest.c_str();
+    log->getCommittedCheckpoint().stableLogDigest = testLog.logDigest.c_str();
 
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
@@ -186,7 +186,7 @@ void assertLogEq(Log &log, const TestLog &expected)
     uint32_t startSeq = expected.startSeq;
 
     // Size of suffixes are the same
-    ASSERT_EQ(expected.entries.size(), log.getNextSeq() - log.getCheckpoint().committedSeq - 1);
+    ASSERT_EQ(expected.entries.size(), log.getNextSeq() - log.getCommittedCheckpoint().committedSeq - 1);
 
     int n = expected.entries.size();
     for (int i = 0; i < n; i++) {

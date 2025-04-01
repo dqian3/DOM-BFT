@@ -192,7 +192,7 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
         keptReqs.insert({entry->client_id(), entry->client_seq()});
     }
 
-    startSeq = std::max(startSeq, log->getCheckpoint().committedSeq + 1);
+    startSeq = std::max(startSeq, log->getCommittedCheckpoint().committedSeq + 1);
     for (uint32_t seq = startSeq; seq < log->getNextSeq(); seq++) {
         const LogEntry &entry = log->getEntry(seq);
         RequestId key = {entry.client_id, entry.client_seq};
@@ -213,9 +213,9 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->committed_seq()
-              << " my checkpoint seq=" << log->getCheckpoint().committedSeq;
+              << " my checkpoint seq=" << log->getCommittedCheckpoint().committedSeq;
     assert(
-        logSuffix.checkpoint->committed_seq() <= log->getCheckpoint().committedSeq ||
+        logSuffix.checkpoint->committed_seq() <= log->getCommittedCheckpoint().committedSeq ||
         log->getDigest(logSuffix.checkpoint->committed_seq()) == logSuffix.checkpoint->committed_log_digest()
     );
 
@@ -231,7 +231,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     for (; idx < logSuffix.entries.size() && seq < log->getNextSeq(); idx++) {
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
 
-        if (seq <= log->getCheckpoint().committedSeq) {
+        if (seq <= log->getCommittedCheckpoint().committedSeq) {
             log->getClientRecord().update(entry->client_id(), entry->client_seq());
             seq++;
             continue;

@@ -81,7 +81,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
     return false;
 }
 
-void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
+void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
 {
     // Only valid to get checkpoint if we have colllected enough commits
     assert(commitToUse_.has_value());
@@ -96,8 +96,8 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint)
 
     for (uint32_t replicaId : matchedReplicas_) {
         VLOG(6) << "Adding replica commit " << replicaId << " to checkpoint";
-        checkpoint.commits[replicaId] = commits_[replicaId];
-        checkpoint.commitSigs[replicaId] = sigs_[replicaId];
+        checkpoint.commits[replicaId] = commits_.at(replicaId);
+        checkpoint.commitSigs[replicaId] = sigs_.at(replicaId);
     }
 }
 
@@ -114,13 +114,13 @@ void CheckpointCollector::addOwnState(const std::string &logDigest, const ::Clie
     logDigest_ = logDigest;
 }
 
-bool CheckpointCollector::commitReady()
+bool CheckpointCollector::commitReady() const
 {
     return replyCollector.cert_.has_value() && (!needsSnapshot_ || snapshot_.has_value()) &&
            clientRecord_.has_value() && logDigest_.has_value();
 }
 
-void CheckpointCollector::getOwnCommit(dombft::proto::Commit &commit)
+void CheckpointCollector::getOwnCommit(dombft::proto::Commit &commit) const
 {
     commit.set_replica_id(replicaId_);
     commit.set_round(round_);
@@ -144,7 +144,7 @@ bool CheckpointCollector::addAndCheckCommit(const dombft::proto::Commit &commit,
     return commitCollector.addAndCheckCommit(commit, sig);
 }
 
-void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint)
+void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
 {
     commitCollector.getCheckpoint(checkpoint);
 
@@ -160,22 +160,8 @@ bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool 
     std::pair<uint32_t, uint32_t> key = {round, seq};
     std::pair<uint32_t, uint32_t> committedKey = {committedRound_, committedSeq_};
 
-    if (key < committedKey) {
-        LOG(WARNING) << "Attempting to create collector for seq=" << seq << " round=" << round
-                     << " which is before the last committed checkpoint seq=" << committedSeq_
-                     << " round=" << committedRound_;
-        return false;
-    }
-
     auto [_, created] = collectors_.try_emplace(key, replicaId_, f_, round, seq, needsSnapshot);
     assert(created);
-
-    std::pair<uint32_t, uint32_t> cleanupKey = {round, 0};
-    // if (collectors_.lower_bound(cleanupKey) != collectors_.begin()) {
-    //     VLOG(3) << "Cleaning up any checkpoint state from rounds prior to round=" << round;
-
-    //     collectors_.erase(collectors_.begin(), collectors_.lower_bound(cleanupKey));
-    // }
 
     return true;
 }
@@ -192,16 +178,29 @@ CheckpointCollector &CheckpointCollectorStore::at(uint32_t round, uint32_t seq)
     return collectors_.at(key);
 }
 
-void CheckpointCollectorStore::cleanStaleCollectors(uint32_t committedSeq, uint32_t committedRound)
+void CheckpointCollectorStore::cleanStaleCollectors(uint32_t stableSeq, uint32_t committedSeq)
 {
-    std::pair<uint32_t, uint32_t> key = {committedRound, committedSeq};
+    assert(stableSeq <= committedSeq);
 
-    committedRound_ = committedRound;
-    committedSeq_ = committedSeq;
+    for (auto it = collectors_.begin(); it != collectors_.end();) {
+        const CheckpointCollector &coll = it->second;
+        auto [round, seq] = it->first;
 
-    if (collectors_.lower_bound(key) != collectors_.begin()) {
-        VLOG(3) << "Cleaning up any checkpoint state since checkpoint committed at seq=" << committedSeq
-                << " round=" << committedRound;
-        collectors_.erase(collectors_.begin(), collectors_.lower_bound(key));
+        if (coll.needsSnapshot()) {
+            if (stableSeq >= seq) {
+                it = collectors_.erase(it);
+                VLOG(6) << "Cleaning up collector for round=" << round << " seq=" << seq;
+            } else {
+                ++it;
+            }
+        } else {
+            if (committedSeq >= seq) {
+                it = collectors_.erase(it);
+                VLOG(6) << "Cleaning up collector for round=" << round << " seq=" << seq;
+
+            } else {
+                ++it;
+            }
+        }
     }
 }

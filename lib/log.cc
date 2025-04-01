@@ -99,6 +99,7 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
 // Abort all requests starting from and including seq, as well as app state
 void Log::abort(uint32_t seq)
 {
+    // TODO this doesn't take care of client records, caller ends up being responsible
     if (seq >= nextSeq_) {
         nextSeq_ = seq;
         return;
@@ -153,22 +154,28 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
     LogCheckpoint checkpoint(snapshotReply.checkpoint());
 
     // Try applying app snapshot if needed
-    if (snapshotReply.has_app_snapshot()) {
-        if (!app_->applySnapshot(snapshotReply.app_snapshot(), checkpoint.stableAppDigest, checkpoint.stableSeq)) {
+    if (snapshotReply.has_snapshot()) {
+        assert(snapshotReply.has_snapshot_checkpoint());
+        LogCheckpoint snapshotCp(snapshotReply.snapshot_checkpoint());
+
+        if (!app_->applySnapshot(snapshotReply.snapshot(), snapshotCp.stableAppDigest, snapshotCp.stableSeq)) {
             return false;
         }
 
-        VLOG(2) << "Applying application snapshot for seq " << checkpoint.stableSeq;
+        VLOG(2) << "Applying application snapshot for seq " << snapshotCp.stableSeq;
 
         log_.clear();
-        nextSeq_ = checkpoint.stableSeq + 1;
+        nextSeq_ = snapshotCp.stableSeq + 1;
 
         // 1. When we reset to a app snapshot, our log is completely empty, so we need to set the checkpoint here
         // so it can be used as a previous digest.
-        stableCheckpoint_ = checkpoint;
+        stableCheckpoint_ = snapshotCp;
     }
 
+    abort(stableCheckpoint_.stableSeq + 1);
+
     // TODO hack here to just clear client records and reset it afterwards
+    // Abort shuold properly fix client records.
     clientRecord_ = ClientRecord();
 
     // Apply LogEntries in snapshotReply
@@ -277,7 +284,9 @@ const LogEntry &Log::getEntry(uint32_t seq)
     return log_[seq - offset];
 }
 
-LogCheckpoint &Log::getCheckpoint() { return committedCheckpoint_; }
+LogCheckpoint &Log::getStableCheckpoint() { return stableCheckpoint_; }
+
+LogCheckpoint &Log::getCommittedCheckpoint() { return committedCheckpoint_; }
 
 ClientRecord &Log::getClientRecord() { return clientRecord_; }
 

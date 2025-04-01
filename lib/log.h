@@ -64,15 +64,14 @@ public:
     const std::string &getDigest() const;
     const std::string &getDigest(uint32_t seq) const;
     const LogEntry &getEntry(uint32_t seq);
-    LogCheckpoint &getCheckpoint();
+
+    LogCheckpoint &getCommittedCheckpoint();
+    LogCheckpoint &getStableCheckpoint();
 
     ClientRecord &getClientRecord();
 
     // Get uncommitted suffix of the loh
     void toProto(dombft::proto::RepairStart &msg);
-
-    // for debugging
-    bool checkValidity();
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };
