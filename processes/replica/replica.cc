@@ -935,12 +935,17 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
         ::LogCheckpoint checkpoint;
         coll.getCheckpoint(checkpoint);
+        uint32_t seq = checkpoint.committedSeq;
 
         if (checkpointDropFreq_ && seq / checkpointInterval_ % checkpointDropFreq_ == 0) {
             LOG(INFO) << "Dropping checkpoint seq=" << seq;
             return;
         }
-        uint32_t seq = checkpoint.committedSeq;
+
+        if (seq <= log_->getCheckpoint().stableSeq) {
+            VLOG(4) << "Checkpoint seq=" << seq << " is outdated, ignorning!";
+            return;
+        }
 
         LOG(INFO) << "Trying to commit seq=" << seq
                   << " commit_digest=" << digest_to_hex(checkpoint.committedLogDigest);
