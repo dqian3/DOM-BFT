@@ -942,11 +942,6 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             return;
         }
 
-        if (seq <= log_->getCheckpoint().stableSeq) {
-            VLOG(4) << "Checkpoint seq=" << seq << " is outdated, ignorning!";
-            return;
-        }
-
         LOG(INFO) << "Trying to commit seq=" << seq
                   << " commit_digest=" << digest_to_hex(checkpoint.committedLogDigest);
 

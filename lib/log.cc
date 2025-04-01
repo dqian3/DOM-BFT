@@ -13,7 +13,7 @@ Log::Log(std::shared_ptr<Application> app)
 bool Log::inRange(uint32_t seq) const
 {
     // Note, log.empty() is implicitly checked by the first two conditions
-    return seq > checkpoint_.stableSeq && seq < nextSeq_ && !log_.empty();
+    return seq > stableCheckpoint_.stableSeq && seq < nextSeq_ && !log_.empty();
 }
 
 bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
@@ -26,8 +26,8 @@ bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::s
         return false;
     }
 
-    if (nextSeq_ - 1 == checkpoint_.stableSeq) {
-        prevDigest = checkpoint_.stableLogDigest;
+    if (nextSeq_ - 1 == stableCheckpoint_.stableSeq) {
+        prevDigest = stableCheckpoint_.stableLogDigest;
         VLOG(4) << "Using checkpoint digest as previous for seq=" << nextSeq_
                 << " prevDigest=" << digest_to_hex(prevDigest);
     } else {
@@ -65,9 +65,9 @@ bool Log::addCert(uint32_t seq, const dombft::proto::Cert &cert)
         return false;
     }
 
-    if (seq <= checkpoint_.stableSeq) {
+    if (seq <= committedCheckpoint_.committedSeq) {
         VLOG(5) << "Sequence for cert seq=" << seq << " has already been committed, checking client record";
-        if (!clientRecord_.contains(r.client_id(), r.client_seq())) {
+        if (!committedCheckpoint_.clientRecord_.contains(r.client_id(), r.client_seq())) {
             VLOG(3) << "Fail adding cert because committed client record does not contain c_id=" << r.client_id()
                     << " c_seq=" << r.client_seq();
             return false;
@@ -104,15 +104,16 @@ void Log::abort(uint32_t seq)
         return;
     }
 
-    if (seq <= checkpoint_.committedSeq) {
-        LOG(ERROR) << "Tried to abort seq=" << seq << " but seq is less than committedSeq=" << checkpoint_.committedSeq;
+    if (seq <= committedCheckpoint_.committedSeq) {
+        LOG(ERROR) << "Tried to abort seq=" << seq
+                   << " but seq is less than committedSeq=" << committedCheckpoint_.committedSeq;
         throw std::runtime_error("Tried to abort seq=" + std::to_string(seq) + " but seq is less than committedSeq.");
     }
 
     // If log is empty, we can't remove anything.
     if (!log_.empty()) {
         // remove all entries from seq to the end
-        assert(log_[0].seq == checkpoint_.stableSeq + 1);
+        assert(log_[0].seq == stableCheckpoint_.stableSeq + 1);
         log_.erase(log_.begin() + (seq - log_[0].seq), log_.end());
     }
 
@@ -123,29 +124,27 @@ void Log::abort(uint32_t seq)
 // Given a sequence number, commit the request and remove previous state, and save new checkpoint
 void Log::setCheckpoint(const LogCheckpoint &newCheckpoint)
 {
-    assert(newCheckpoint.stableSeq >= checkpoint_.stableSeq);
+    if (newCheckpoint.committedSeq > committedCheckpoint_.committedSeq) {
+        committedCheckpoint_ = newCheckpoint;
 
-    if (newCheckpoint.committedSeq < checkpoint_.committedSeq) {
-        LOG(WARNING) << "New checkpoint: committedSeq=" << newCheckpoint.stableSeq
-                     << " stableSeq=" << newCheckpoint.stableSeq
-                     << " Current checkpoint committedSeq=" << checkpoint_.stableSeq
-                     << " stableSeq=" << checkpoint_.stableSeq
-                     << " reverting checkpoint in favor of checkpoint with higher stable seq!";
-    }
-    checkpoint_ = newCheckpoint;
+        VLOG(3) << "Log committing through seq " << newCheckpoint.committedSeq;
 
-    VLOG(3) << "Log committing through seq " << newCheckpoint.committedSeq << " truncating through seq "
-            << newCheckpoint.stableSeq;
-
-    // Truncate log up to the checkpoint stable sequence
-    if (!log_.empty()) {
-        int32_t stableIdx = newCheckpoint.stableSeq - log_[0].seq + 1;
-        assert(stableIdx >= 0);
-        log_.erase(log_.begin(), log_.begin() + stableIdx);
+        // Commit app up to commitedSeq
+        app_->commit(newCheckpoint.committedSeq);
     }
 
-    // Commit app up to commitedSeq
-    app_->commit(newCheckpoint.committedSeq);
+    if (newCheckpoint.stableSeq > stableCheckpoint_.stableSeq) {
+        stableCheckpoint_ = newCheckpoint;
+
+        // Truncate log up to the checkpoint stable sequence
+        if (!log_.empty()) {
+            int32_t stableIdx = newCheckpoint.stableSeq - log_[0].seq + 1;
+            assert(stableIdx >= 0);
+            log_.erase(log_.begin(), log_.begin() + stableIdx);
+        }
+
+        VLOG(3) << "Log truncating through seq " << newCheckpoint.stableSeq;
+    }
 }
 
 // Given a snapshot of the app state and corresponding checkpoint, reset log entirely to that state
@@ -166,60 +165,31 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
 
         // 1. When we reset to a app snapshot, our log is completely empty, so we need to set the checkpoint here
         // so it can be used as a previous digest.
-        checkpoint_ = checkpoint;
+        stableCheckpoint_ = checkpoint;
+    }
 
-        // TODO duplicate code here is bad...
-        // TODO hack here to just clear client records and reset it afterwards
-        clientRecord_ = ClientRecord();
+    // TODO hack here to just clear client records and reset it afterwards
+    clientRecord_ = ClientRecord();
 
-        // Apply LogEntries in snapshotReply
-        std::string res;
-        for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
-
-            if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
-                LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
-                return false;
-            }
+    // Apply LogEntries in snapshotReply
+    std::string res;
+    for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
+        if (entry.seq() <= committedCheckpoint_.committedSeq) {
+            // We may have a later checkpoint, can ignore extra messages
+            continue;
         }
 
-        // TODO end of above mentioned hack.
-        clientRecord_ = checkpoint.clientRecord_;
-
-    } else {
-        assert(snapshotReply.log_entries().size() > 0);
-
-        // Remove all log entries up to the first entry in the snapshot
-        uint32_t seq = snapshotReply.log_entries(0).seq();
-        abort(std::max(seq, checkpoint_.committedSeq + 1));
-
-        // TODO hack here to just clear client records and reset it afterwards
-        clientRecord_ = ClientRecord();
-
-        // Apply LogEntries in snapshotReply
-        std::string res;
-        for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
-            if (entry.seq() <= checkpoint_.committedSeq) {
-                // We may have a later checkpoint, can ignore extra messages
-                continue;
-            }
-
-            if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
-                LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
-                return false;
-            }
+        if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
+            LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
+            return false;
         }
+    }
 
-        // TODO end of above mentioned hack.
-        clientRecord_ = checkpoint.clientRecord_;
+    // TODO end of above mentioned hack.
+    clientRecord_ = checkpoint.clientRecord_;
 
-        // 2. However, if we are not resetting to a app snapshot, we have some log entries, that we might need to
-        // retain, so we need to set the checkpoint later, and also skip (if (entry.seq() < checkpoint.commitedSeq))
-        if (checkpoint_.stableSeq > checkpoint.stableSeq) {
-            LOG(WARNING) << "New checkpoint stableSeq=" << checkpoint.stableSeq
-                         << " is less than current checkpoint stableSeq=" << checkpoint_.stableSeq;
-        } else {
-            checkpoint_ = checkpoint;
-        }
+    if (checkpoint.committedSeq > committedCheckpoint_.committedSeq) {
+        committedCheckpoint_ = checkpoint;
     }
 
     VLOG(4) << "Checkpoint for seq " << checkpoint.committedSeq
@@ -274,20 +244,20 @@ uint32_t Log::getNextSeq() const { return nextSeq_; }
 const std::string &Log::getDigest() const
 {
     if (log_.empty()) {
-        return checkpoint_.stableLogDigest;
+        return stableCheckpoint_.stableLogDigest;
     }
     return log_.back().digest;
 }
 
 const std::string &Log::getDigest(uint32_t seq) const
 {
-    if (seq == checkpoint_.stableSeq) {
-        return checkpoint_.stableLogDigest;
+    if (seq == stableCheckpoint_.stableSeq) {
+        return stableCheckpoint_.stableLogDigest;
     }
 
     if (!inRange(seq)) {
         LOG(ERROR) << "Tried to get digest of seq=" << seq << " but seq is out of range nextSeq=" << nextSeq_
-                   << " stableSeq=" << checkpoint_.stableSeq;
+                   << " stableSeq=" << committedCheckpoint_.stableSeq;
         throw std::runtime_error("Tried to get digest of seq=" + std::to_string(seq) + " but seq is out of range.");
     }
 
@@ -307,7 +277,7 @@ const LogEntry &Log::getEntry(uint32_t seq)
     return log_[seq - offset];
 }
 
-LogCheckpoint &Log::getCheckpoint() { return checkpoint_; }
+LogCheckpoint &Log::getCheckpoint() { return committedCheckpoint_; }
 
 ClientRecord &Log::getClientRecord() { return clientRecord_; }
 
@@ -315,10 +285,10 @@ void Log::toProto(dombft::proto::RepairStart &msg)
 {
     dombft::proto::LogCheckpoint *checkpointProto = msg.mutable_checkpoint();
 
-    checkpoint_.toProto(*checkpointProto);
+    committedCheckpoint_.toProto(*checkpointProto);
 
     for (const LogEntry &entry : log_) {
-        if (entry.seq <= checkpoint_.committedSeq) {
+        if (entry.seq <= committedCheckpoint_.committedSeq) {
             continue;
         }
 
@@ -335,10 +305,12 @@ std::ostream &operator<<(std::ostream &out, const Log &l)
 {
     // go from nextSeq - MAX_SPEC_HIST, which traverses the whole buffer
     // starting from the oldest;
-    out << "CHECKPOINT " << l.checkpoint_.committedSeq << ": " << digest_to_hex(l.checkpoint_.committedLogDigest)
-        << " | ";
+
+    out << "STABLE_CHECKPOINT= " << l.stableCheckpoint_.stableSeq << " "
+        << "COMMITCHECKPOINT=" << l.committedCheckpoint_.committedSeq << " | "
+        << digest_to_hex(l.committedCheckpoint_.committedLogDigest) << " | ";
     for (const LogEntry &entry : l.log_) {
-        if (entry.seq <= l.checkpoint_.committedSeq) {
+        if (entry.seq <= l.committedCheckpoint_.committedSeq) {
             continue;
         }
 

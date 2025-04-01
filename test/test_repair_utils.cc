@@ -268,6 +268,29 @@ TEST_F(LoggingFixture, ApplyLogSuffix)
     assertLogEq(*log, newLog);
 }
 
+TEST_F(LoggingFixture, ApplyBehind)
+{
+    // Test
+    // TODO we would probably need to mock out verifaction of certs and stuff here
+    TestLog curLog{10, "aaaa", 0, {{1, 2}, {2, 2}}};
+    TestLog newLog{10, "aaaa", 0, {{1, 2}, {2, 2}, {3, 2}}};
+
+    // Generate protocol log
+    auto [log, app] = logFromTestLog(curLog);
+
+    // Generate suffix for repair
+    LogSuffix suffix;
+    auto ret = suffixFromTestLog(newLog, suffix);
+
+    std::shared_ptr<MockApplication> mockApp = std::dynamic_pointer_cast<MockApplication>(app);
+    // Aborting seq in future won't actually call app
+    // EXPECT_CALL(*mockApp, abort(13)).WillOnce(Return(true));
+
+    applySuffix(suffix, log);
+
+    assertLogEq(*log, newLog);
+}
+
 TEST_F(LoggingFixture, ApplyReplicaAhead)
 {
     // Test

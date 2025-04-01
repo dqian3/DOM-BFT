@@ -223,8 +223,8 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     uint32_t seq = logSuffix.checkpoint->committed_seq() + 1;
     uint32_t idx = 0;
 
-    // Reset the client record to the one in the checkpoint so we can rebuild it
-    log->getClientRecord() = log->getCheckpoint().clientRecord_;
+    // Reset the client record to the one in the suffix checkpoint so we can rebuild it
+    log->getClientRecord() = logSuffix.checkpoint->client_record();
 
     LOG(INFO) << "Start applySuffixAfterCheckpoint";
     // 2 Skip the entries that are already in the log (consistent)

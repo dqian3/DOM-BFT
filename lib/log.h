@@ -28,7 +28,8 @@ class Log {
 private:
     std::deque<LogEntry> log_;
     uint32_t nextSeq_;
-    LogCheckpoint checkpoint_;
+    LogCheckpoint committedCheckpoint_;   // Checkpoint with highest commitedSeq
+    LogCheckpoint stableCheckpoint_;      // Checkpoint with highest snapshot/stable sequence
 
     // The log also keeps track of client records, and will de-deduplicate requests
     ClientRecord clientRecord_;
@@ -69,6 +70,9 @@ public:
 
     // Get uncommitted suffix of the loh
     void toProto(dombft::proto::RepairStart &msg);
+
+    // for debugging
+    bool checkValidity();
 
     friend std::ostream &operator<<(std::ostream &out, const Log &l);
 };

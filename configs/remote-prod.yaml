@@ -36,10 +36,10 @@ client:
 
   keysDir: keys/client
   port: 33000
-  runtimeSeconds: 120
+  runtimeSeconds: 60
   
   sendMode: maxInFlight
-  maxInFlight: 100
+  maxInFlight: 50
   sendRate: 300
   requestSize: 512
 
