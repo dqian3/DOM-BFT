@@ -84,6 +84,7 @@ std::pair<std::shared_ptr<Log>, std::shared_ptr<Application>> logFromTestLog(con
 
     log->getCommittedCheckpoint().logDigest = testLog.logDigest;
     log->getStableCheckpoint().logDigest = testLog.logDigest;
+
     for (const TestLogEntry &e : testLog.entries) {
         std::string res;
 

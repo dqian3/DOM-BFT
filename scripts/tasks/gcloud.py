@@ -44,6 +44,20 @@ def get_address_resolver(context):
     ext_ip_map = get_gcloud_ext_ips(context)
     return lambda ip: ext_ip_map[ip]
 
+
+@task
+def cmd(c, cmd, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
+    resolve = get_address_resolver(c)
+    remote.cmd(c, cmd, config_file=config_file, resolve=resolve)
+
+
+@task
+def copy(c, file, config_file="../configs/remote-prod.yaml"):
+    resolve = get_address_resolver(c)
+    remote.cmd(c, file, config_file=config_file, resolve=resolve)
+
+
+
 @task
 def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
     config_file = os.path.abspath(config_file)
@@ -198,11 +212,14 @@ def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
 
 @task
 def run_rates(c, config_file="../configs/remote-prod.yaml",
-               v=5,
-               prot="dombft",
+                v=5,
+                prot="dombft",
+                slow_path_freq=0,
+                normal_path_freq=0,
 ):
+    vm(c, config_file=config_file)
     resolve = get_address_resolver(c)
-    remote.run_rates(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
+    remote.run_rates(c, config_file=config_file, resolve=resolve, v=v, prot=prot, slow_path_freq=slow_path_freq, normal_path_freq=normal_path_freq)
     vm(c, config_file=config_file, stop=True)
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs

@@ -282,7 +282,7 @@ void DummyReplica::processMessagesThd()
                         protoMsg.set_phase(2);
                         protoMsg.set_replica_id(replicaId_);
 
-                        VLOG(2) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
+                        VLOG(1) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         broadcastToReplicas(protoMsg, MessageType::DUMMY_PROTO);
                     }
@@ -317,11 +317,11 @@ void DummyReplica::processMessagesThd()
                         *(summary.add_replies()) = reply;
 
                         sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[protoMsg.client_id()]);
-                        VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
+                        VLOG(1) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         // Update committed and clean up state.
                         while (commitCounts[committedSeq_ + 1] >= 2 * f_ + 1) {
-                            VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
+                            VLOG(1) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
                             commitCounts.erase(committedSeq_);
                             committedSeq_++;
                         }

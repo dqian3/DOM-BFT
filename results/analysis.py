@@ -6,7 +6,7 @@ import sys
 
 def parse_time(line):
     match = re.search(f"([0-9]*:[0-9]*:[0-9]*.[0-9]*)", line)
-    time_str = match.group(1);
+    time_str = match.group(1)
     return datetime.datetime.strptime(time_str, "%H:%M:%S.%f")
 
 def parse_tags(line):
@@ -33,46 +33,49 @@ def parse_line(line):
 # In[3]:
 
 
-events = []
+all_events = []
+
 with open(sys.argv[1]) as f:
     for line in f:
-        events.append(parse_line(line))
+        try:
+            all_events.append(parse_line(line))
+        except:
+            pass
 
+all_events = sorted(all_events, key=lambda x: x['time'])
 
 # In[4]:
 
 
-events = sorted(events, key=lambda x: x['time'])
-
-start_time = events[0]['time'] + datetime.timedelta(seconds=10)
-end_time = events[-1]['time'] - datetime.timedelta(seconds=10)
+start_time = all_events[0]['time'] + datetime.timedelta(seconds=10)
+end_time = all_events[-1]['time'] - datetime.timedelta(seconds=10)
+events = list(filter(lambda x: x['time'] > start_time and x['time'] < end_time, all_events))
 
 commits = list(filter(lambda x: x["event"] == "commit", events))
-
-n_clients = max(events, key=lambda x: x["client_id"] if "client_id" in x else 0)["client_id"] + 1
-
 
 # In[5]:
 
 # Look at each client commit, make sure there are no two clients ops on the same seq
 from collections import Counter
 
-counts = Counter(c["seq"] for c in commits)
+all_events = []
+
+
+counts = Counter(c["seq"] for c in commits if c["path"] != "missed")
 for seq in counts:
     if counts[seq] > 1:
         print(f"Sequence {seq} has different commits!")
         print(list(
-            f"c_id={x['client_id']} c_seq={x['client_seq']} path={x['path']}" 
+            f"c_id={x['client_id']} c_seq={x['client_seq']} path={x['path']} round={x['round']}" 
            for x in filter(lambda x: x["seq"] == seq, commits)
         ))
 
 
 # In[6]:
 
+clients = set(x['client_id'] for x in commits)
 
-# Ensure all client operations are committed
-
-for c_id in range(n_clients):
+for c_id in clients:
     c_commits = filter(lambda x: x["client_id"] == c_id, commits)
     seq = sorted(c["client_seq"] for c in c_commits)
 
@@ -86,22 +89,24 @@ for c_id in range(n_clients):
 
 # In[7]:
 
-
 # Get general stats
-commits = list(filter(lambda x: x['time'] > start_time and x['time'] < end_time, commits))
+import numpy as np
 
 
-runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
+runtime = (commits[-1]["time"] - start_time).total_seconds()
 print(f"Runtime: {runtime:.3f} s")
-print("number of clients: ", n_clients)
 print(f"Total Throughput: {len(commits) / runtime:.2f} req/s")
 
+latencies = np.array([c['latency'] for c in commits])
 print(f"Num commits: {len(commits)}")
-print(f"Average latency: {sum(c['latency'] for c in commits) / len(commits):.0f} us")
+print(f"Average latency: {np.mean(latencies):.0f} us")
+print(f"p95 latency: {np.percentile(latencies, 95):.0f} us")
+print(f"p99 latency: {np.percentile(latencies, 99):.0f} us")
 
 fast = list(filter(lambda x: x["path"] == "fast", commits))
 normal = list(filter(lambda x: x["path"] == "normal", commits))
 slow = list(filter(lambda x: x["path"] == "slow", commits))
+missed = list(filter(lambda x: x["path"] == "missed", commits))
 
 print("Fast path:")
 print(f"\tNum commits: {len(fast)}")
@@ -119,7 +124,10 @@ print(f"\tNum commits: {len(slow)}")
 if len(slow) > 0:
     print(f"\tAverage latency: {sum(c['latency'] for c in slow) / len(slow):.0f} us")
 
-
+print("Missed path:")
+print(f"\tNum commits: {len(missed)}")
+if len(missed) > 0:
+    print(f"\tAverage latency: {sum(c['latency'] for c in missed) / len(missed):.0f} us")
 
 
 

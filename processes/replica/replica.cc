@@ -737,7 +737,7 @@ void Replica::processClientRequest(const ClientRequest &request)
 
     seq = log_->getNextSeq() - 1;
 
-    VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
+    VLOG(1) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
             << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest());
 
     Reply reply;
@@ -1014,7 +1014,7 @@ void Replica::startCheckpoint(bool createSnapshot)
     reply.set_seq(entry.seq);
     reply.set_digest(entry.digest);
 
-    VLOG(2) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round=" << round_
+    VLOG(1) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round=" << round_
             << " log_digest=" << digest_to_hex(log_->getDigest());
 
     broadcastToReplicas(reply, MessageType::REPLY);
@@ -1122,9 +1122,10 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         uint32_t startSeq = snapshotReply.log_entries().size() > 0 ? snapshotReply.log_entries(0).seq()
                                                                    : snapshotReply.snapshot_checkpoint().seq();
 
-        LOG(INFO) << "Processing SNAPSHOT_REPLY from replica " << snapshotReply.replica_id() << " for seq "
-                  << snapshotReply.seq() << " with log from " << startSeq
-                  << " has_snapshot=" << snapshotReply.has_snapshot();
+        VLOG(1) << "PERF event=snapshot_align seq=" << snapshotReply.seq() << " start_seq=" << startSeq
+                << " has_snapshot=" << snapshotReply.has_snapshot()
+                << " log_digest=" << digest_to_hex(snapshotReply.checkpoint().log_digest())
+                << " snapshot_size=" << snapshotReply.ByteSizeLong();
 
         if (!log_->applySnapshotModifyLog(snapshotReply)) {
             LOG(ERROR) << "Failed to apply snapshot because it did not match digest!";
@@ -1154,6 +1155,8 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
         }
+
+        VLOG(1) << "PERF event=snapshot_align_end seq=" << snapshotReply.seq();
     }
 }
 
@@ -1856,7 +1859,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
             VLOG(3) << "Starting new commit round for seq=" << seq
                     << " to create a new application snapshot directly from commit!";
 
-            VLOG(2) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=1"
+            VLOG(1) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=1"
                     << " round=" << round_ << " log_digest=" << digest_to_hex(log_->getDigest());
 
             Commit commit;

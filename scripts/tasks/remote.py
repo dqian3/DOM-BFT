@@ -287,6 +287,8 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
             resolve=lambda x: x,
             v=5,
             prot="dombft",
+            slow_path_freq=0,
+            normal_path_freq=0,
 ):
     # gcloud_vm(c, config_file=config_file)
     # time.sleep(5)
@@ -300,10 +302,11 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
 
         cfg["client"]["sendMode"] = "maxInFlight"
 
-        for inFlight in [25, 50, 75, 100, 150, 200]:
+        for inFlight in [25, 50, 75, 100]:
             cfg["client"]["maxInFlight"] = inFlight
             yaml.dump(cfg, open(config_file, "w"))
-            run(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
+            run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, slow_path_freq=slow_path_freq,
+                normal_path_freq=normal_path_freq)
             c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{inFlight}.out")
 
     finally:
