@@ -1947,6 +1947,7 @@ void Replica::tryFinishRepair()
         // initiated a view change.
         assert(viewChange_);
         LOG(INFO) << "Repair on round " << round_ - 1 << " already committed on current replica, skipping";
+        finishRepair({});
         return;
     }
 
