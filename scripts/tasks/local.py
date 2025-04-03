@@ -51,6 +51,7 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
             slow_path_freq=0,
             normal_path_freq=0,
             view_change_freq=0,
+            max_view_change=0,
             commit_local_in_view_change = False):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
@@ -89,6 +90,8 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
                     view_change_arg = f'-viewChangeFreq {view_change_freq}'
                 if commit_local_in_view_change and view_change_freq == 0:
                     view_change_arg += ' -commitLocalInViewChange'
+                if max_view_change != 0:
+                    view_change_arg += f' -viewChangeNum {max_view_change}'
             
             if (id < num_crashed):
                 crashed_arg = '-crashed'
