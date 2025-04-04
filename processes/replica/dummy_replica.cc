@@ -16,6 +16,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     , f_(config.replicaIps.size() / 3)
     , prot_(prot)
     , batchSize_(batchSize)
+    , nextSeq_(batchSize)
     , sigProvider_()
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , sendThreadpool_(config.replicaNumSendThreads)
@@ -194,14 +195,21 @@ void DummyReplica::verifyMessagesThd()
             if (dummyProtoMsg.phase() == 0) {
                 // Verify contained client requests
 
+                bool clientSigs = true;
+
                 for (uint32_t i = 0; i < dummyProtoMsg.client_reqs_size(); i++) {
                     const auto &req = dummyProtoMsg.client_reqs(i).req();
                     const std::string &sig = dummyProtoMsg.client_reqs(i).sig();
 
                     if (!sigProvider_.verify(req.SerializeAsString(), sig, "client", req.client_id())) {
                         LOG(INFO) << "Failed to verify client signature from " << req.client_id();
-                        continue;
+                        clientSigs = false;
+                        break;
                     }
+                }
+
+                if (!clientSigs) {
+                    continue;
                 }
             }
 
@@ -330,7 +338,6 @@ void DummyReplica::processMessagesThd()
                         VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         // Use Repair Summary here since client only needs to see f + 1 of these
-                        RepairSummary summary;
                         std::map<uint32_t, std::set<uint32_t>> clientSeqs;
 
                         for (uint32_t i = 0; i < protoMsg.client_reqs().size(); i++) {
@@ -339,6 +346,8 @@ void DummyReplica::processMessagesThd()
                         }
 
                         for (auto &[clientId, seqs] : clientSeqs) {
+                            RepairSummary summary;
+
                             summary.set_round(0);
                             summary.set_replica_id(replicaId_);
 
@@ -353,11 +362,17 @@ void DummyReplica::processMessagesThd()
                                 *(summary.add_replies()) = reply;
                             }
 
-                            while (commitCounts[committedSeq_ + 1] >= 2 * f_ + 1) {
-                                VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
-                                commitCounts.erase(committedSeq_);
-                                committedSeq_++;
-                            }
+                            sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[clientId]);
+                        }
+
+                        while (commitCounts[committedSeq_ + batchSize_] >= 2 * f_ + 1) {
+                            committedSeq_ += batchSize_;
+
+                            VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_
+                                    << " prepareCountsSize=" << prepareCounts.size()
+                                    << " commitCountsSize=" << commitCounts.size();
+                            commitCounts.erase(commitCounts.begin(), commitCounts.upper_bound(committedSeq_));
+                            prepareCounts.erase(prepareCounts.begin(), prepareCounts.upper_bound(committedSeq_));
                         }
                     }
                 }
@@ -368,6 +383,7 @@ void DummyReplica::processMessagesThd()
 
 void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &request, std::span<byte> sig)
 {
+
     if (prot_ == DUMMY_DOM_BFT) {
         Reply reply;
 
@@ -400,7 +416,7 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
     // For Zyz/PBFT, only leader handles client requests
     if (replicaId_ == 0) {
 
-        batchQueue_.push_back({request, std::string{sig.begin(), sig.end()}});
+        batchQueue_.push_back({request, std::string(sig.begin(), sig.end())});
 
         if (batchQueue_.size() < batchSize_) {
             return;
@@ -417,9 +433,10 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
 
             dummyReq->set_client_id(req.client_id());
             dummyReq->set_client_seq(req.client_seq());
-            *(dummyReq->mutable_req()) = request;
+            *(dummyReq->mutable_req()) = req;
             dummyReq->set_sig(sig);
         }
+        batchQueue_.clear();
 
         broadcastToReplicas(preprepare, MessageType::DUMMY_PROTO);
 
@@ -427,7 +444,7 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
                 << " client_id=" << request.client_id() << " client_seq=" << request.client_seq();
 
         //... but here increment nextSeq_ to keep track of requests received
-        nextSeq_++;
+        nextSeq_ += batchSize_;
     }
 }
 

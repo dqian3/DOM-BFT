@@ -47,7 +47,7 @@ private:
     std::unique_ptr<Endpoint> endpoint_;
 
     // Replica state
-    uint32_t nextSeq_ = 1;
+    uint32_t nextSeq_;
     uint32_t committedSeq_ = 0;
 
     std::map<uint32_t, uint32_t> prepareCounts;

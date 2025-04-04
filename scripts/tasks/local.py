@@ -96,7 +96,7 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
                 crashed_arg = ''
 
             
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} --batchSize 5 &>logs/replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
