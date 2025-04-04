@@ -28,6 +28,7 @@ private:
     std::vector<Address> clientAddrs_;
     uint32_t f_;
     uint32_t numVerifyThreads_;
+    uint32_t batchSize_;
 
     DummyProtocol prot_;
 
@@ -52,20 +53,20 @@ private:
     std::map<uint32_t, uint32_t> prepareCounts;
     std::map<uint32_t, uint32_t> commitCounts;
 
+    std::deque<std::pair<dombft::proto::ClientRequest, std::string>> batchQueue_;
+
     // TODO use a log here
-    // std::shared_ptr<Log> log_;
-    // ClientRecord clientRecords_;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void verifyMessagesThd();
     void processMessagesThd();
-    void processClientRequest(const dombft::proto::ClientRequest &request);
+    void processClientRequest(const dombft::proto::ClientRequest &request, std::span<byte> sig);
 
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot);
+    DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize = 1);
     ~DummyReplica();
 
     void run();

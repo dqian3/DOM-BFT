@@ -293,14 +293,22 @@ message SnapshotReply {
     optional bytes snapshot = 8;
 }
 
+
 message DummyProtocolMessage
 {
+
     uint32 phase = 1;
     uint32 replica_id = 2;
     uint32 seq = 3;
 
-    uint32 client_id = 4;
-    uint32 client_seq = 5;
+    message DummyClientRequest {
+        uint32 client_id = 4;
+        uint32 client_seq = 5;
+        optional ClientRequest req = 6;
+        optional bytes sig = 7;
+    }
+
+    repeated DummyClientRequest client_reqs = 7;
 }
 
 

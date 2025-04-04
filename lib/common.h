@@ -29,7 +29,7 @@
 #define NNG_BUFFER_SIZE  (20000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY     1
+#define USE_PROXY     0
 #define FABRIC_CRYPTO 0
 #define SKIP_CRYPTO   0
 

@@ -11,15 +11,18 @@
 namespace dombft {
 using namespace dombft::proto;
 
-DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot)
+DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
     : replicaId_(replicaId)
     , f_(config.replicaIps.size() / 3)
     , prot_(prot)
+    , batchSize_(batchSize)
     , sigProvider_()
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , sendThreadpool_(config.replicaNumSendThreads)
 {
     LOG(INFO) << "f=" << f_;
+
+    LOG(INFO) << "batchSize=" << batchSize_;
 
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
@@ -187,6 +190,21 @@ void DummyReplica::verifyMessagesThd()
                 LOG(INFO) << "Failed to verify replica signature from " << dummyProtoMsg.replica_id();
                 continue;
             }
+
+            if (dummyProtoMsg.phase() == 0) {
+                // Verify contained client requests
+
+                for (uint32_t i = 0; i < dummyProtoMsg.client_reqs_size(); i++) {
+                    const auto &req = dummyProtoMsg.client_reqs(i).req();
+                    const std::string &sig = dummyProtoMsg.client_reqs(i).sig();
+
+                    if (!sigProvider_.verify(req.SerializeAsString(), sig, "client", req.client_id())) {
+                        LOG(INFO) << "Failed to verify client signature from " << req.client_id();
+                        continue;
+                    }
+                }
+            }
+
             processQueue_.enqueue(msg);
         } else {
             LOG(ERROR) << "Verify thread does not handle message with unknown type " << (int) hdr->msgType;
@@ -224,7 +242,7 @@ void DummyReplica::processMessagesThd()
                 return;
             }
 
-            processClientRequest(clientHeader);
+            processClientRequest(clientHeader, std::span{clientBody + clientMsgHdr->msgLen, clientMsgHdr->sigLen});
         }
         if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest clientRequestMsg;
@@ -234,8 +252,7 @@ void DummyReplica::processMessagesThd()
                 continue;
             }
 
-            processClientRequest(clientRequestMsg);
-
+            processClientRequest(clientRequestMsg, std::span{body + hdr->msgLen, hdr->sigLen});
         } else if (hdr->msgType == DUMMY_PROTO) {
             DummyProtocolMessage protoMsg;
 
@@ -251,19 +268,28 @@ void DummyReplica::processMessagesThd()
                     protoMsg.set_phase(1);
                     protoMsg.set_replica_id(replicaId_);
 
+                    for (uint32_t i = 0; i < protoMsg.client_reqs().size(); i++) {
+                        protoMsg.mutable_client_reqs(i)->clear_req();
+                    }
+
                     broadcastToReplicas(protoMsg, MessageType::DUMMY_PROTO);
 
                 } else if (prot_ == DummyProtocol::ZYZ) {
-                    Reply reply;
-                    reply.set_replica_id(replicaId_);
-                    reply.set_client_id(protoMsg.client_id());
-                    reply.set_client_seq(protoMsg.client_seq());
-                    reply.set_round(0);
-                    reply.set_seq(protoMsg.seq());
-                    reply.set_replica_id(replicaId_);
-                    reply.set_digest(std::string(32, '\0'));
 
-                    sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[protoMsg.client_id()]);
+                    for (uint32_t i = 0; i < protoMsg.client_reqs().size(); i++) {
+                        auto &req = protoMsg.client_reqs(i);
+
+                        Reply reply;
+                        reply.set_replica_id(replicaId_);
+                        reply.set_client_id(req.client_id());
+                        reply.set_client_seq(req.client_seq());
+                        reply.set_round(0);
+                        reply.set_seq(protoMsg.seq() + 1);
+                        reply.set_replica_id(replicaId_);
+                        reply.set_digest(std::string(32, '\0'));
+
+                        sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[req.client_id()]);
+                    }
                 }
 
             }
@@ -291,7 +317,6 @@ void DummyReplica::processMessagesThd()
 
             else if (protoMsg.phase() == 2) {
                 if (prot_ == DummyProtocol::PBFT) {
-
                     uint32_t seq = protoMsg.seq();
                     if (seq <= committedSeq_)
                         continue;
@@ -302,28 +327,37 @@ void DummyReplica::processMessagesThd()
 
                     if (commitCounts[seq] == 2 * f_ + 1) {
 
-                        // Use Repair Summary here since client only needs to see f + 1 of these
-                        RepairSummary summary;
-                        std::set<int> clients;
-
-                        summary.set_round(0);
-                        summary.set_replica_id(replicaId_);
-
-                        CommittedReply reply;
-                        reply.set_client_id(protoMsg.client_id());
-                        reply.set_client_seq(protoMsg.client_seq());
-                        reply.set_seq(protoMsg.seq());
-
-                        *(summary.add_replies()) = reply;
-
-                        sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[protoMsg.client_id()]);
                         VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
-                        // Update committed and clean up state.
-                        while (commitCounts[committedSeq_ + 1] >= 2 * f_ + 1) {
-                            VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
-                            commitCounts.erase(committedSeq_);
-                            committedSeq_++;
+                        // Use Repair Summary here since client only needs to see f + 1 of these
+                        RepairSummary summary;
+                        std::map<uint32_t, std::set<uint32_t>> clientSeqs;
+
+                        for (uint32_t i = 0; i < protoMsg.client_reqs().size(); i++) {
+                            auto &req = protoMsg.client_reqs(i);
+                            clientSeqs[req.client_id()].insert(req.client_seq());
+                        }
+
+                        for (auto &[clientId, seqs] : clientSeqs) {
+                            summary.set_round(0);
+                            summary.set_replica_id(replicaId_);
+
+                            for (uint32_t seq : seqs) {
+                                CommittedReply reply;
+
+                                reply.set_replica_id(replicaId_);
+                                reply.set_client_id(clientId);
+                                reply.set_client_seq(seq);
+                                reply.set_seq(protoMsg.seq());
+
+                                *(summary.add_replies()) = reply;
+                            }
+
+                            while (commitCounts[committedSeq_ + 1] >= 2 * f_ + 1) {
+                                VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_;
+                                commitCounts.erase(committedSeq_);
+                                committedSeq_++;
+                            }
                         }
                     }
                 }
@@ -332,7 +366,7 @@ void DummyReplica::processMessagesThd()
     }
 }
 
-void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &request)
+void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &request, std::span<byte> sig)
 {
     if (prot_ == DUMMY_DOM_BFT) {
         Reply reply;
@@ -365,14 +399,27 @@ void DummyReplica::processClientRequest(const dombft::proto::ClientRequest &requ
 
     // For Zyz/PBFT, only leader handles client requests
     if (replicaId_ == 0) {
+
+        batchQueue_.push_back({request, std::string{sig.begin(), sig.end()}});
+
+        if (batchQueue_.size() < batchSize_) {
+            return;
+        }
+
         DummyProtocolMessage preprepare;
 
         preprepare.set_phase(0);
         preprepare.set_replica_id(replicaId_);
         preprepare.set_seq(nextSeq_);
 
-        preprepare.set_client_id(request.client_id());
-        preprepare.set_client_seq(request.client_seq());
+        for (const auto &[req, sig] : batchQueue_) {
+            auto dummyReq = preprepare.add_client_reqs();
+
+            dummyReq->set_client_id(req.client_id());
+            dummyReq->set_client_seq(req.client_seq());
+            *(dummyReq->mutable_req()) = request;
+            dummyReq->set_sig(sig);
+        }
 
         broadcastToReplicas(preprepare, MessageType::DUMMY_PROTO);
 

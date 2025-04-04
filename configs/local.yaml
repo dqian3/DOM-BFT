@@ -15,7 +15,7 @@ client:
   sendMode: "maxInFlight"
   maxInFlight: 5
   sendRate: 10 
-  runtimeSeconds: 600
+  runtimeSeconds: 30
   requestSize: 512
 
 
