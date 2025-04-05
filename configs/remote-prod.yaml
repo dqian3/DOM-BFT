@@ -39,13 +39,13 @@ client:
   runtimeSeconds: 60
   
   sendMode: maxInFlight
-  maxInFlight: 50
-  sendRate: 300
+  maxInFlight: 200
+  sendRate: 1500
   requestSize: 512
 
   normalPathTimeout: 200000
   slowPathTimeout:  1000000   # 1 s
-  requestTimeout:   5000000    # 5 s
+  requestTimeout:   2000000    # 5 s
 
 proxy:
   forwardPort: 31000
@@ -61,7 +61,7 @@ proxy:
   # - 10.182.0.13
 
   keysDir: keys/proxy
-  maxOwd: 100000
+  maxOwd: 150000
   measurementPort: 32000
   shards: 1
 
@@ -91,4 +91,4 @@ replica:
   port: 34000
 
   checkpointInterval: 5000
-  snapshotInterval: 10000
+  snapshotInterval: 50000
