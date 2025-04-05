@@ -286,6 +286,7 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
 def run_rates(c, config_file="../configs/remote-prod.yaml",
             resolve=lambda x: x,
             v=5,
+            use_in_flight=False,
             prot="dombft",
 ):
     # gcloud_vm(c, config_file=config_file)
@@ -298,13 +299,24 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
             cfg = yaml.load(original_contents, Loader=yaml.Loader)
             
 
-        cfg["client"]["sendMode"] = "maxInFlight"
+        if use_in_flight:
+            cfg["client"]["sendMode"] = "maxInFlight"
 
-        for inFlight in [25, 50, 75, 100, 150, 200]:
-            cfg["client"]["maxInFlight"] = inFlight
-            yaml.dump(cfg, open(config_file, "w"))
-            run(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
-            c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{inFlight}.out")
+            for num_in_flight in [25, 50, 75, 100, 150, 200]:
+                cfg["client"]["maxInFlight"] = num_in_flight
+                yaml.dump(cfg, open(config_file, "w"))
+                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
+                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{num_in_flight}.out")
+        else:
+            cfg["client"]["sendMode"] = "sendRate"
+            cfg["client"]["maxInFlight"] = 200
+
+            for send_rate in [250, 500, 750, 1000, 1500, 2000]:
+                cfg["client"]["sendRate"] = send_rate
+                yaml.dump(cfg, open(config_file, "w"))
+                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
+                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_sr{send_rate}.out")
+
 
     finally:
         with open(config_file, "w") as cfg_file:

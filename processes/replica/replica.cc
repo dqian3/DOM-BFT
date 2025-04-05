@@ -1941,12 +1941,17 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
 void Replica::tryFinishRepair()
 {
+    LogSuffix &logSuffix = getRepairLogSuffix();
+
     assert(repairProposal_.has_value());
     if (repairProposal_.value().round() == round_ - 1) {
         // This happens if the repair round is already committed on the current replica, but other replicas
         // initiated a view change.
         assert(viewChange_);
         LOG(INFO) << "Repair on round " << round_ - 1 << " already committed on current replica, skipping";
+
+        std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
+        finishRepair(abortedRequests);
         return;
     }
 
@@ -1954,8 +1959,6 @@ void Replica::tryFinishRepair()
     round_ = proposal.round();
     // Reset timer
     repairViewStart_ = 0;
-
-    LogSuffix &logSuffix = getRepairLogSuffix();
 
     // Check if own checkpoint seq is behind suffix checkpoint seq
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
