@@ -6,6 +6,9 @@
 
 #include "proto/dombft_proto.pb.h"
 
+typedef std::pair<uint32_t, uint32_t> RequestId;
+typedef std::map<RequestId, const dombft::proto::LogEntry *> ClientReqs;
+
 // Struct that records the checkpoint and order of entries to use within
 // the given RepairProposal
 struct LogSuffix {
@@ -38,6 +41,6 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
 std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log, uint32_t startSeq);
 
-void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log);
+void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availableReqs, std::shared_ptr<Log> log);
 
 #endif

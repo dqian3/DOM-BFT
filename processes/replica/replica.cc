@@ -1061,6 +1061,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 
         dombft::proto::LogEntry entryProto;
         entry.toProto(entryProto);
+        entryProto.set_request(entry.request);
         (*snapshotReply.add_log_entries()) = entryProto;
     }
 
@@ -1112,7 +1113,12 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // Got the snapshot
         repairSnapshotRequested_ = false;
 
-        applySuffix(logSuffix, log_);
+        std::map<RequestId, std::string> availableReqs;
+        for (auto [_, req] : repairQueuedReqs_) {
+            availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
+        }
+
+        applySuffix(logSuffix, availableReqs, log_);
         finishRepair(abortedRequests);
 
     } else {
@@ -1970,7 +1976,12 @@ void Replica::tryFinishRepair()
 
         if (checkpoint->seq() < log_->getNextSeq() && checkpoint->log_digest() == log_->getDigest(checkpoint->seq())) {
             std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
-            applySuffix(logSuffix, log_);
+            std::map<RequestId, std::string> availableReqs;
+            for (auto [_, req] : repairQueuedReqs_) {
+                availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
+            }
+
+            applySuffix(logSuffix, availableReqs, log_);
             finishRepair(abortedRequests);
         } else {
             LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq() << " is inconsistent with my log";
@@ -1981,8 +1992,13 @@ void Replica::tryFinishRepair()
             repairSnapshotRequested_ = true;
         }
     } else {
+        std::map<RequestId, std::string> availableReqs;
+        for (auto [_, req] : repairQueuedReqs_) {
+            availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
+        }
+
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
-        applySuffix(logSuffix, log_);
+        applySuffix(logSuffix, availableReqs, log_);
         finishRepair(abortedRequests);
     }
 }

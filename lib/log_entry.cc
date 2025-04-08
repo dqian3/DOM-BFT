@@ -42,7 +42,14 @@ void LogEntry::toProto(dombft::proto::LogEntry &msg) const
     msg.set_client_id(client_id);
     msg.set_client_seq(client_seq);
     msg.set_digest(digest);
-    msg.set_request(request);
+    // msg.set_request(request);
+
+    byte digest_bytes[SHA256_DIGEST_LENGTH];
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, request.c_str(), request.length());
+    SHA256_Final(digest_bytes, &ctx);
+    msg.set_request_digest(std::string(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH));
 }
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)

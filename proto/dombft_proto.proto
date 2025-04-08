@@ -127,6 +127,9 @@ message LogEntry
 
     // TODO remove this and add mechanism for replicas to fetch missing entries after fallback (as part of snapshot request maybe)
     bytes request = 8;
+    bytes request_digest = 9;
+
+
 }
 
 message ClientSequence

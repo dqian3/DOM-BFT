@@ -2,9 +2,6 @@
 
 #include "utils.h"
 
-typedef std::pair<uint32_t, uint32_t> RequestId;
-typedef std::map<RequestId, const dombft::proto::LogEntry *> ClientReqs;
-
 ClientReqs getValidClientRequests(const dombft::proto::RepairProposal &repairProposal)
 {
     uint32_t f = repairProposal.logs().size() / 2;
@@ -209,7 +206,7 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
     return ret;
 }
 
-void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
+void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availableReqs, std::shared_ptr<Log> log)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
@@ -250,6 +247,13 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         seq++;
     }
 
+    // Save any requests that will get aborted
+    for (uint32_t i = seq; i < log->getNextSeq(); i++) {
+        const LogEntry &entry = log->getEntry(i);
+        RequestId key = {entry.client_id, entry.client_seq};
+        availableReqs[key] = entry.request;
+    }
+
     LOG(INFO) << "Aborting own entries from seq=" << seq;
     log->abort(seq);
 
@@ -262,8 +266,29 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
 
+        // Get request and check the digest
+        RequestId key = {clientId, clientSeq};
+        if (!availableReqs.contains(key)) {
+            throw std::runtime_error("Missing request in repair proposal!");
+            LOG(ERROR) << "Missing request at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq;
+        }
+
+        byte digest_bytes[SHA256_DIGEST_LENGTH];
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, availableReqs[key].c_str(), availableReqs[key].length());
+        SHA256_Final(digest_bytes, &ctx);
+        std::string digestMyReq(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
+
+        if (digestMyReq != entry->request_digest()) {
+            LOG(ERROR) << "Digest mismatch for entry at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq
+                       << " digest=" << digestMyReq << " repair digest=" << entry->request_digest();
+            throw std::runtime_error("Request in repair proposal does not match!");
+        }
+
         std::string result;
-        if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
+
+        if (!log->addEntry(entry->client_id(), clientSeq, availableReqs[key], result)) {
             LOG(ERROR) << "Failure to add log entry!";
             continue;
         }
