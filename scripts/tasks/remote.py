@@ -336,8 +336,8 @@ def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x)
     print("Copying keys over...")
     for process in ["client", "replica", "receiver", "proxy"]:
         group.run(f"mkdir -p keys/{process}")
-        for filename in os.listdir(f"../keys/{process}"):
-            group.put(os.path.join(f"../keys/{process}", filename), f"keys/{process}")
+        for filename in os.listdir(f"keys/{process}"):
+            group.put(os.path.join(f"keys/{process}", filename), f"keys/{process}")
 
 
 @task
