@@ -209,13 +209,13 @@ void Client::submitRequest()
 void Client::submitRequestsOpenLoop()
 {
     // If we are in the slow path, don't submit anymore
-    if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
-        VLOG(6) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
-                << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
-                << " numInFlight=" << numInFlight_;
+    // if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
+    //     VLOG(6) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
+    //             << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
+    //             << " numInFlight=" << numInFlight_;
 
-        return;
-    }
+    //     return;
+    // }
 
     uint64_t startSendTime = GetMicrosecondTimestamp();
     uint64_t actualSendRate = lastFastPath_ < lastNormalPath_ ? sendRate_ / replicaAddrs_.size() : sendRate_;
