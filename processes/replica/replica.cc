@@ -1797,14 +1797,16 @@ void Replica::sendRepairSummaryToClients()
         (*summary.add_replies()) = reply;
     }
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::REPAIR_SUMMARY);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::REPAIR_SUMMARY, buffer);
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
-    // TODO make this only send to clients that need it
-    LOG(INFO) << "Sending repair summary for round=" << round_;
-    for (auto &addr : clientAddrs_) {
-        endpoint_->SendPreparedMsgTo(addr);
-    }
+        // TODO make this only send to clients that need it
+        LOG(INFO) << "Sending repair summary for round=" << round_;
+        for (uint32_t clientId : clients) {
+            endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
+        }
+    });
 }
 
 void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)

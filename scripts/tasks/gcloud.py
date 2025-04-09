@@ -76,6 +76,11 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
 
 
 @task
+def cmd(c, cmd, config_file="../configs/remote-prod.yaml"):
+    remote.cmd(c, cmd, config_file=config_file, resolve=get_address_resolver(c))
+
+
+@task
 def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False):
     config_file = os.path.abspath(config_file)
     resolve = get_address_resolver(c)
