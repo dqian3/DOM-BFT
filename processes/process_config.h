@@ -42,6 +42,7 @@ struct ProcessConfig {
     int proxyForwardPort;
     int proxyMeasurementPort;
     int proxyShards;
+    float proxyOffsetCoefficient;
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
 
@@ -111,7 +112,7 @@ struct ProcessConfig {
         try {
             parseStringVector(clientIps, clientNode, "ips");
             clientPort = parseField<int>(clientNode, "port");
-            clientKeysDir = parseField<std::string>(clientNode, "keysDir");
+            clientKeysDir = parseField<std::string>(clientNode, "keysDir", "keys/client");
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
@@ -139,6 +140,8 @@ struct ProcessConfig {
             proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
+            proxyOffsetCoefficient = parseField<float>(proxyNode, "offsetCoefficient", 1.5);
+
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing proxy " + std::string(e.what()));
         }

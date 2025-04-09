@@ -19,7 +19,7 @@ def resolve(c, ip, platform):
         raise ValueError(f"Unknown platform {platform}")
 
 
-def arun_on(ip, logfile, profile=False):
+def arun_on(ip, logfile, timeout, profile=False):
     def perf_prefix(prof_file):
         return f"env LD_PRELOAD='/home/dqian/libprofiler.so' CPUPROFILE={prof_file} CPUPROFILE_FREQUENCY={10} "
 
@@ -36,7 +36,7 @@ def arun_on(ip, logfile, profile=False):
             command = perf_prefix(os.path.splitext(logfile)[0] + '.prof') + command
 
         print(f"Running {command} on {ip}, logging on remote machine {logfile}" )
-        return conn.run(command + f" &>{logfile}", **kwargs, asynchronous=True, warn=True)
+        return conn.run(command + f" &>{logfile}", **kwargs, asynchronous=True, timeout=timeout, warn=True)
     
     return arun
 
@@ -75,7 +75,7 @@ def get_all_ips(config_file, resolve):
 
 
 @task
-def logs(c,  config_file="../configs/remote-prod.yaml", resolve=lambda x: x,):
+def logs(c,  config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     # ips of each process 
     replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
 
@@ -115,6 +115,12 @@ def run(
 ):
     config_file = os.path.abspath(config_file)
 
+    with open(config_file) as f:
+        cfg = yaml.load(f, Loader=yaml.Loader)
+
+    runtime = cfg["client"]["runtimeSeconds"]
+    print(f"Running for {runtime} seconds")
+
     replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
 
     replica_path = "./dombft_replica"
@@ -127,7 +133,7 @@ def run(
     group = ThreadingGroup(*replicas, *receivers, *proxies, *clients)
 
     # Kill previous runs
-    group.run("killall dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+    group.run("killall dombft_proxy dombft_replica dombft_receiver dombft_client", warn=True, hide="both")
 
     # Give replicas the config file
     group.put(config_file)
@@ -164,19 +170,19 @@ def run(
             crashed_arg = ''
 
 
-        arun = arun_on(ip, f"replica{id}.log", profile=profile)
+        arun = arun_on(ip, f"replica{id}.log", timeout=2*runtime, profile=profile)
         hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", profile=profile)
+        arun = arun_on(ip, f"receiver{id}.log", timeout=2*runtime, profile=profile)
         hdl = arun(f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = arun_on(ip, f"proxy{id}.log", profile=profile )
+        arun = arun_on(ip, f"proxy{id}.log", timeout=2*runtime, profile=profile )
         hdl = arun(f"{proxy_path} -v {v} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
@@ -184,7 +190,7 @@ def run(
 
     print("Starting clients")
     for id, ip in enumerate(clients):
-        arun = arun_on(ip, f"client{id}.log", profile=profile)
+        arun = arun_on(ip, f"client{id}.log", timeout=2*runtime, profile=profile)
         hdl = arun(f"{client_path} -v {v} -config {remote_config_file} -clientId {id}")
         client_handles.append(hdl)
 
@@ -311,7 +317,7 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
             cfg["client"]["sendMode"] = "sendRate"
             cfg["client"]["maxInFlight"] = 200
 
-            for send_rate in [250, 500, 750, 1000, 1500, 2000]:
+            for send_rate in [400, 600, 800, 900, 1000, 1100, 1200]:
                 cfg["client"]["sendRate"] = send_rate
                 yaml.dump(cfg, open(config_file, "w"))
                 run(c, config_file=config_file, resolve=resolve, v=v, prot=prot)

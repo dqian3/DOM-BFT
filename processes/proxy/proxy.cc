@@ -12,6 +12,9 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     maxOWD_ = config.proxyMaxOwd;
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
     proxyId_ = proxyId;
+    offsetCoefficient_ = config.proxyOffsetCoefficient;
+    LOG(INFO) << "offsetCoefficient=" << config.proxyOffsetCoefficient;
+
     selfGenReqs_ = false;
 
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".der";
@@ -116,7 +119,7 @@ void Proxy::LaunchThreads()
 
 void Proxy::RecvMeasurementsTd()
 {
-    OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 10, 90, maxOWD_);
+    OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 40, 90, maxOWD_);
     // OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
 
     MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
@@ -137,7 +140,7 @@ void Proxy::RecvMeasurementsTd()
             context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
         }
 
-        latencyBound_.store(context.getCappedMaxOWD() * 1.5);
+        latencyBound_.store(context.getCappedMaxOWD() * offsetCoefficient_);
         VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
                 << " rtt=" << now - reply.send_time() << " now=" << now << "\nLatency bound is set to be "
                 << latencyBound_.load();

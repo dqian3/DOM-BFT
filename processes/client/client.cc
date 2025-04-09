@@ -208,17 +208,9 @@ void Client::submitRequest()
 
 void Client::submitRequestsOpenLoop()
 {
-    // If we are in the slow path, don't submit anymore
-    if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
-        VLOG(6) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
-                << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
-                << " numInFlight=" << numInFlight_;
-
-        return;
-    }
 
     uint64_t startSendTime = GetMicrosecondTimestamp();
-    uint64_t actualSendRate = lastFastPath_ < lastNormalPath_ ? sendRate_ / replicaAddrs_.size() : sendRate_;
+    uint64_t actualSendRate = sendRate_;
     double sendIntervalUs = 1000000.0 / actualSendRate;
 
     uint64_t numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
@@ -230,8 +222,8 @@ void Client::submitRequestsOpenLoop()
     VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
             << " us since last burst with send interval " << sendIntervalUs << "us";
 
-    // Rather than just setting lastSendTime here, add the number of requests sent * sendInterval, so
-    // that we account for rounding errors.
+    // Rather than just setting lastSendTime at the end, add the number of requests sent * sendInterval, so
+    // that we account for accumulating errors from sending
     lastSendTime_ += numToSend * sendIntervalUs;
 
     std::vector<ClientRequest> requests;
@@ -362,7 +354,6 @@ void Client::checkTimeouts()
 
             reqState.triggerSent = true;
             reqState.triggerSendTime = now;
-            lastSlowPath_ = clientSeq;
 
             RepairClientTimeout msg;
             msg.set_client_id(clientId_);

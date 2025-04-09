@@ -44,8 +44,8 @@ with open(sys.argv[1]) as f:
 
 events = sorted(events, key=lambda x: x['time'])
 
-start_time = events[0]['time'] + datetime.timedelta(seconds=10)
-end_time = events[-1]['time'] - datetime.timedelta(seconds=10)
+start_time = events[0]['time'] + datetime.timedelta(seconds=20)
+end_time = events[-1]['time'] - datetime.timedelta(seconds=20)
 
 commits = list(filter(lambda x: x["event"] == "commit", events))
 
@@ -94,7 +94,7 @@ commits = list(filter(lambda x: x['time'] > start_time and x['time'] < end_time,
 runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
 print(f"Runtime: {runtime:.3f} s")
 print("number of clients: ", n_clients)
-print(f"Total Throughput: {len(commits) / runtime:.2f} req/s")
+print(f"Total Throughput: {len(commits) / runtime:.0f} req/s")
 
 print(f"Num commits: {len(commits)}")
 print(f"Average latency: {sum(c['latency'] for c in commits) / len(commits):.0f} us")
