@@ -12,9 +12,10 @@ message ClientRequest {
     uint32 client_seq = 2;
 
     uint64 send_time = 5;
-    bool is_write = 6;
+    uint64 deadline = 6;
+    bool is_write = 7;
 
-    bytes req_data = 7;
+    bytes req_data = 8;
 }
 
 message DOMRequest {

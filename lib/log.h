@@ -63,7 +63,7 @@ public:
     uint32_t getNextSeq() const;
     const std::string &getDigest() const;
     const std::string &getDigest(uint32_t seq) const;
-    const LogEntry &getEntry(uint32_t seq);
+    LogEntry &getEntry(uint32_t seq);
 
     LogCheckpoint &getCommittedCheckpoint();
     LogCheckpoint &getStableCheckpoint();

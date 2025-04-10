@@ -32,6 +32,8 @@ struct ClientRequest {
     uint32_t clientSeq;
     std::string requestData;
     std::string padding;
+
+    uint64_t deadline = 0;
 };
 
 bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposal, LogSuffix &logSuffix);

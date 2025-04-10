@@ -22,6 +22,7 @@ struct LogEntry {
 
     uint32_t client_id;
     uint32_t client_seq;
+    uint64_t deadline = 0;
 
     std::string request;
     std::string result;

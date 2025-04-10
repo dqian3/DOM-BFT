@@ -514,6 +514,9 @@ void Replica::processMessagesThd()
                 continue;
             }
 
+            // TODO Hack to pass through deadline lol
+            clientHeader.set_deadline(domHeader.deadline());
+
             if (repair_) {
                 VLOG(6) << "Queuing request due to repair";
                 repairQueuedReqs_.insert({{domHeader.deadline(), clientHeader.client_id()}, clientHeader});
@@ -746,6 +749,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     }
 
     seq = log_->getNextSeq() - 1;
+    log_->getEntry(seq).deadline = request.deadline();
 
     VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
             << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest());
@@ -1937,9 +1941,9 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         clientReq.set_client_seq(req.clientSeq);
         clientReq.set_req_data(req.requestData);
 
-        VLOG(5) << "Processing aborted request client_id=" << req.clientId << " client_seq=" << req.clientSeq;
+        VLOG(5) << "Adding aborted request client_id=" << req.clientId << " client_seq=" << req.clientSeq;
 
-        processClientRequest(clientReq);
+        repairQueuedReqs_.insert({{req.deadline, req.clientId}, clientReq});
     }
 
     curRoundStartSeq_ = log_->getNextSeq();

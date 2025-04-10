@@ -279,7 +279,7 @@ const std::string &Log::getDigest(uint32_t seq) const
     return log_[seq - offset].digest;
 }
 
-const LogEntry &Log::getEntry(uint32_t seq)
+LogEntry &Log::getEntry(uint32_t seq)
 {
     if (!inRange(seq)) {
         throw std::runtime_error("Tried to get entry of seq=" + std::to_string(seq) + " but seq is out of range.");

@@ -202,6 +202,7 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
             req.clientId = entry.client_id;
             req.clientSeq = entry.client_seq;
             req.requestData = entry.request;
+            req.deadline = entry.deadline;
 
             ret.push_back(req);
         }
@@ -255,7 +256,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
     // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
     for (; idx < logSuffix.entries.size(); idx++) {
-        LOG(INFO) << "Applying entry at seq=" << seq << " log next seq=" << log->getNextSeq();
+        VLOG(2) << "Applying entry at seq=" << seq << " log next seq=" << log->getNextSeq();
 
         assert(seq == log->getNextSeq());
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
@@ -268,7 +269,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
             continue;
         }
 
-        VLOG(1) << "PERF event=repair_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
+        VLOG(2) << "PERF event=repair_execute replica_id=" << logSuffix.replicaId << " seq=" << seq
                 << " round=" << logSuffix.round << " client_id=" << clientId << " client_seq=" << entry->client_seq()
                 << " digest=" << digest_to_hex(log->getDigest());
         seq++;
