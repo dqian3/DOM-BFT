@@ -72,7 +72,7 @@ private:
     // We do not retry and aborted requests before this point after repair (see getAbortedRequests in repair_utils.cc)
     // TODO refactor this to be more clean./
     uint64_t curRoundStartSeq_ = 0;
-    std::vector<std::pair<uint64_t, dombft::proto::ClientRequest>> repairQueuedReqs_;
+    std::map<std::pair<uint64_t, uint32_t>, dombft::proto::ClientRequest> repairQueuedReqs_;
 
     std::map<uint32_t, dombft::proto::RepairReplicaTimeout> repairReplicaTimeouts_;
     std::map<uint32_t, std::string> repairReplicaTimeoutSigs_;

@@ -154,6 +154,16 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
     byte *rawMsg = (byte *) msgHdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
 
+    // Optimization: drop any messages here during repair that we don't need
+    // TODO this should probably be synchronized better
+    if (repair_) {
+        if (msgHdr->msgType == REPAIR_CLIENT_TIMEOUT || msgHdr->msgType == REPAIR_REPLICA_TIMEOUT ||
+            msgHdr->msgType == REPAIR_REPLY_PROOF || msgHdr->msgType == REPAIR_TIMEOUT_PROOF ||
+            msgHdr->msgType == CERT) {
+            return;
+        }
+    }
+
     if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
@@ -506,7 +516,7 @@ void Replica::processMessagesThd()
 
             if (repair_) {
                 VLOG(6) << "Queuing request due to repair";
-                repairQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
+                repairQueuedReqs_.insert({{domHeader.deadline(), clientHeader.client_id()}, clientHeader});
                 continue;
             }
 
@@ -1024,7 +1034,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 {
     uint32_t reqSeq = request.seq();
     uint32_t round = request.round();
-    VLOG(3) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq
+    VLOG(1) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq
             << " from sequnece " << request.last_checkpoint_seq();
 
     if (reqSeq > log_->getCommittedCheckpoint().seq) {
@@ -1064,7 +1074,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
         (*snapshotReply.add_log_entries()) = entryProto;
     }
 
-    VLOG(3) << "Sending SNAPSHOT_REPLY to " << request.replica_id() << " round=" << snapshotReply.round() << " from "
+    VLOG(1) << "Sending SNAPSHOT_REPLY to " << request.replica_id() << " round=" << snapshotReply.round() << " from "
             << startSeq << " to " << log_->getCommittedCheckpoint().seq
             << " (app snapshot=" << snapshotReply.has_snapshot() << ")";
 
@@ -1538,6 +1548,8 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
     }
 
     if (!(checkpoint.commits().size() != 2 * f_ + 1 || checkpoint.repair_commits().size() != 2 * f_ + 1)) {
+
+        LOG(INFO) << "Checkpoint commits not the right size!!";
         return false;
     }
 
@@ -1555,7 +1567,8 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         replicaIds.insert(commit.replica_id());
 
         if (commit.log_digest() != checkpoint.log_digest()) {
-            LOG(INFO) << "Checkpoint commit digest does not match!";
+            LOG(INFO) << "Checkpoint commit digest does not match " << digest_to_hex(commit.log_digest())
+                      << " != " << digest_to_hex(checkpoint.log_digest());
             return false;
         }
 
@@ -1932,6 +1945,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     curRoundStartSeq_ = log_->getNextSeq();
 
     // Retry any requests
+
     for (auto &[_, req] : repairQueuedReqs_) {
         VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
         processClientRequest(req);

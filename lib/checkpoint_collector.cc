@@ -94,6 +94,8 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
 
     for (uint32_t replicaId : matchedReplicas_) {
         VLOG(6) << "Adding replica commit " << replicaId << " to checkpoint";
+        assert(commits_.at(replicaId).log_digest() == checkpoint.logDigest);
+
         checkpoint.commits[replicaId] = commits_.at(replicaId);
         checkpoint.commitSigs[replicaId] = sigs_.at(replicaId);
     }
