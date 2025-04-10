@@ -136,8 +136,8 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
     verifyQueue_.enqueue(r);
 
-    // Send measurements replies back to the proxy, but only every 50ms
-    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 50000) {
+    // Send measurements replies back to the proxy, but only every 5ms
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
         lastMeasurementTimes_[request.proxy_id()] = recv_time;
 
         MeasurementReply mReply;

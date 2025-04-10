@@ -292,7 +292,7 @@ void DummyReplica::processMessagesThd()
                         reply.set_client_id(req.client_id());
                         reply.set_client_seq(req.client_seq());
                         reply.set_round(0);
-                        reply.set_seq(protoMsg.seq() + 1);
+                        reply.set_seq(protoMsg.seq() + i);
                         reply.set_replica_id(replicaId_);
                         reply.set_digest(std::string(32, '\0'));
 

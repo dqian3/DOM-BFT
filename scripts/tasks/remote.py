@@ -96,7 +96,6 @@ def run(
 
     # function to resolve addresses in the config file to accesible addresses
     resolve=lambda x: x,
-    prot="dombft",
 
     # Options for logging/output to fetch
     v=5,
@@ -105,6 +104,8 @@ def run(
     profile=False,
 
     # Optional args to modify the dombft experiments
+    prot="dombft",
+    batch_size=1,
     num_crashed=0,
     slow_path_freq=0,
     normal_path_freq=0,
@@ -169,9 +170,11 @@ def run(
         else:
             crashed_arg = ''
 
+        batch_size_arg = f'--batchSize {batch_size}'
+
 
         arun = arun_on(ip, f"replica{id}.log", timeout=2*runtime, profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
