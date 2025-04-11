@@ -1,4 +1,7 @@
-app: counter
+transport: nng 
+
+app: "counter"
+
 client:
   ips:
   - 10.138.0.15
@@ -9,32 +12,38 @@ client:
   - 10.182.0.14
   - 10.142.0.15
   - 10.150.0.13
-  - 10.138.0.15
-  - 10.182.0.13
-  - 10.142.0.14
-  - 10.150.0.12
-  - 10.138.0.16
-  - 10.182.0.14
-  - 10.142.0.15
-  - 10.150.0.13
-  - 10.138.0.15
-  - 10.182.0.13
-  - 10.142.0.14
-  - 10.150.0.12
-  - 10.138.0.16
-  - 10.182.0.14
-  - 10.142.0.15
-  - 10.150.0.13
+
+  # - 10.138.0.15
+  # - 10.182.0.13
+  # - 10.142.0.14
+  # - 10.150.0.12
+  # - 10.138.0.16
+  # - 10.182.0.14
+  # - 10.142.0.15
+  # - 10.150.0.13
+
+  # - 10.138.0.15
+  # - 10.182.0.13
+  # - 10.142.0.14
+  # - 10.150.0.12
+  # - 10.138.0.16
+  # - 10.182.0.14
+  # - 10.142.0.15
+  # - 10.150.0.13
+
   keysDir: keys/client
-  maxInFlight: 200
-  normalPathTimeout: 200000
   port: 33000
+  runtimeSeconds: 60
+  
+  sendMode: sendRate 
+  maxInFlight: 500
+  sendRate: 200
   requestSize: 512
-  requestTimeout: 2000000
-  runtimeSeconds: 30
-  sendMode: sendRate
-  sendRate: 400
-  slowPathTimeout: 1000000
+
+  normalPathTimeout: 200000   # 200 ms
+  slowPathTimeout:   500000   # 1 s
+  requestTimeout:   2000000   # 2 s
+
 proxy:
   forwardPort: 31000
   ips:
@@ -42,38 +51,44 @@ proxy:
   - 10.182.0.13
   - 10.142.0.14
   - 10.150.0.12
+  
   - 10.138.0.16
   - 10.182.0.14
   - 10.142.0.15
   - 10.150.0.13
+
   keysDir: keys/proxy
   maxOwd: 150000
   measurementPort: 32000
-  offsetCoefficient: 1.5
   shards: 1
+  offsetCoefficient: 1.5
+
 receiver:
   ips:
   - 10.138.0.14
   - 10.182.0.12
   - 10.142.0.13
   - 10.150.0.11
+
   keysDir: keys/receiver
   local: true
   numVerifyThreads: 6
   port: 33000
   shards: 1
+
 replica:
-  checkpointInterval: 5000
+  repairTimeout:      1000000
+  repairViewTimeout:  5000000
   ips:
   - 10.138.0.14
   - 10.182.0.12
   - 10.142.0.13
   - 10.150.0.11
+
   keysDir: keys/replica
   numSendThreads: 6
   numVerifyThreads: 6
   port: 34000
-  repairTimeout: 2000000
-  repairViewTimeout: 5000000
+
+  checkpointInterval: 5000
   snapshotInterval: 250000
-transport: nng
