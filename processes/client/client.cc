@@ -262,18 +262,6 @@ void Client::submitRequestsOpenLoop()
     });
 }
 
-void Client::retryRequests()
-{
-    for (auto &[cseq, reqState] : requestStates_) {
-        uint64_t now = GetMicrosecondTimestamp();
-        ClientRequest &req = reqState.request;
-        req.set_send_time(now);
-        reqState = RequestState(f_, req, now);
-        threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
-        VLOG(1) << "Retrying cseq=" << reqState.clientSeq << " after round/view update";
-    }
-}
-
 void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
 #if USE_PROXY

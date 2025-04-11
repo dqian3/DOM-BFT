@@ -42,7 +42,6 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
                 (*cert_->add_replies()) = replies_[repId];
             }
 
-            VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
             return true;
         }
     }

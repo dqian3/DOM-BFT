@@ -119,7 +119,6 @@ private:
     void submitRequest();
     void submitRequestsOpenLoop();   // For sending in open loop.
 
-    void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);
     void commitRequest(uint32_t clientSeq);
 

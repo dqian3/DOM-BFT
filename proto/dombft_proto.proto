@@ -202,7 +202,6 @@ message RepairSummary
     repeated CommittedReply replies = 3;
     uint32 pbft_view = 4;
 
-
     ClientSequence committed_seqs = 5;
 }
 

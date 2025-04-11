@@ -723,8 +723,8 @@ void Replica::processClientRequest(const ClientRequest &request)
     // 1. Check if client request has been executed in latest checkpoint (i.e. is committed), in which case
     // we should return a CommittedReply, and client only needs f + 1
     if (log_->getCommittedCheckpoint().clientRecord_.contains(clientId, clientSeq)) {
-        LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
-                     << " has been committed in previous checkpoint/repair!, Sending committed reply";
+        VLOG(4) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
+                << " has been committed in previous checkpoint/repair!, Sending committed reply";
 
         CommittedReply reply;
 
@@ -733,7 +733,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         reply.set_client_seq(clientSeq);
         reply.set_is_repair(false);
 
-        LOG(ERROR) << "TODO Cache for client results not implemented, sending blank result!";
+        // TODO Cache for client results not implemented, so blank results are sent that all look the same
 
         sendMsgToDst(reply, MessageType::COMMITTED_REPLY, clientAddrs_[clientId]);
         return;
@@ -743,8 +743,8 @@ void Replica::processClientRequest(const ClientRequest &request)
     uint32_t seq;
 
     if (!log_->addEntry(clientId, clientSeq, request.req_data(), result)) {
-        LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
-                     << " is added into log, but not committed, dropping!";
+        VLOG(2) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
+                << " is added into log, but not committed, dropping!";
         return;
     }
 
@@ -1028,7 +1028,7 @@ void Replica::startCheckpoint(bool createSnapshot)
     reply.set_seq(entry.seq);
     reply.set_digest(entry.digest);
 
-    VLOG(2) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round=" << round_
+    VLOG(1) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round=" << round_
             << " log_digest=" << digest_to_hex(log_->getDigest());
 
     broadcastToReplicas(reply, MessageType::REPLY);
@@ -1149,6 +1149,8 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         // if there is overlapping and later checkpoint commits first, skip earlier ones
         checkpointCollectors_.cleanStaleCollectors(log_->getStableCheckpoint().seq, log_->getCommittedCheckpoint().seq);
 
+        VLOG(1) << "PERF event=align seq=" << log_->getCommittedCheckpoint().seq + 1;
+
         // Resend replies after modifying log
         for (int seq = log_->getCommittedCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
             auto &entry = log_->getEntry(seq);
@@ -1163,7 +1165,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             reply.set_round(round_);
             reply.set_digest(entry.digest);
 
-            VLOG(1) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest)
+            VLOG(2) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest)
                     << " c_id=" << entry.client_id << " c_seq=" << entry.client_seq;
 
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
@@ -1785,9 +1787,9 @@ void Replica::startRepair()
     // TODO could add requests in DOM queue here to decrease average latency.
 
     uint32_t primaryId = getPrimary();
-    LOG(INFO) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
+    VLOG(2) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
     sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
-    LOG(INFO) << "DUMP start repair round=" << round_ << " " << *log_;
+    VLOG(2) << "DUMP start repair round=" << round_ << " " << *log_;
 }
 
 void Replica::sendRepairSummaryToClients()
@@ -1833,12 +1835,12 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq() << " round=" << round_
             << " pbft_view=" << pbftView_;
 
-    LOG(INFO) << "DUMP finish repair round=" << round_ << " " << *log_;
-    LOG(INFO) << "Current client record" << log_->getClientRecord();
-    LOG(INFO) << "Checkpoint client record" << log_->getCommittedCheckpoint().clientRecord_;
+    VLOG(2) << "DUMP finish repair round=" << round_ << " " << *log_;
+    // LOG(INFO) << "Current client record" << log_->getClientRecord();
+    // LOG(INFO) << "Checkpoint client record" << log_->getCommittedCheckpoint().clientRecord_;
 
     round_++;
-    LOG(INFO) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
+    VLOG(2) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
 
     if (viewChange_) {
         viewChangeInst_ += viewChangeFreq_;
@@ -1964,7 +1966,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     }
     repairQueuedReqs_.clear();
 
-    LOG(INFO) << "DUMP post repair round=" << round_ - 1 << " " << *log_;
+    VLOG(2) << "DUMP post repair round=" << round_ - 1 << " " << *log_;
 }
 
 void Replica::tryFinishRepair()

@@ -100,6 +100,11 @@ void ClientRecord::toProto(dombft::proto::ClientRecord &recordProto) const
 
 void ClientRecord::toProtoSingleClient(uint32_t clientId, dombft::proto::ClientSequence &clientSequence) const
 {
+    if (!sequences.contains(clientId)) {
+        // This could happen if we have not received client requests yet.
+        return;
+    }
+
     clientSequence.set_client_id(clientId);
     clientSequence.set_last_seq(sequences.at(clientId).lastSeq_);
     for (uint32_t s : sequences.at(clientId).missedSeqs_) {
