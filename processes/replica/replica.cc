@@ -1599,7 +1599,8 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         replicaIds.insert(commit.replica_id());
 
         if (commit.log_digest() != checkpoint.log_digest()) {
-            LOG(INFO) << "Checkpoint commit digest does not match!";
+            LOG(INFO) << "Checkpoint commit digest does not match!" << digest_to_hex(commit.log_digest())
+                      << " != " << digest_to_hex(checkpoint.log_digest());
             return false;
         }
 
@@ -1621,7 +1622,14 @@ bool Replica::verifyRepairLog(const RepairStart &log)
         return false;
     }
 
-    verifyCheckpoint(log.checkpoint());
+    if (!verifyCheckpoint(log.checkpoint())) {
+
+        LOG(INFO) << "Failed to verify checkpoint in log from " << log.replica_id();
+
+        return false;
+    }
+
+    ;
 
     for (auto &entry : log.log_entries()) {
         // TODO verify log entries
@@ -1922,6 +1930,8 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
             VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
                     << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.logDigest);
 
+            LOG(INFO) << "TEST checkpoint_repair log_digest=" << digest_to_hex(newCheckpoint.logDigest);
+
             log_->setCheckpoint(newCheckpoint);
         }
     }
@@ -2059,6 +2069,8 @@ void Replica::doPreparePhase()
     prepare.set_proposal_digest(proposalDigest_);
 
     LogSuffix &logSuffix = getRepairLogSuffix();
+
+    LOG(INFO) << "TEST prepare log_digest=" << digest_to_hex(logSuffix.logDigest);
     prepare.set_log_digest(logSuffix.logDigest);
 
     broadcastToReplicas(prepare, PBFT_PREPARE);
@@ -2076,6 +2088,7 @@ void Replica::doCommitPhase()
 
     LogSuffix &logSuffix = getRepairLogSuffix();
     cmt.set_log_digest(logSuffix.logDigest);
+    LOG(INFO) << "TEST commit log_digest=" << digest_to_hex(logSuffix.logDigest);
 
     if (viewChangeByCommit()) {
         if (commitLocalInViewChange_)
