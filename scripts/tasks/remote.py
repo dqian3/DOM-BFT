@@ -295,8 +295,9 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
 def run_rates(c, config_file="../configs/remote-prod.yaml",
             resolve=lambda x: x,
             v=5,
-            use_in_flight=False,
             prot="dombft",
+            batch_size=1,
+            use_in_flight=False,
 ):
     # gcloud_vm(c, config_file=config_file)
     # time.sleep(5)
@@ -314,7 +315,7 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
             for num_in_flight in [25, 50, 75, 100, 150, 200]:
                 cfg["client"]["maxInFlight"] = num_in_flight
                 yaml.dump(cfg, open(config_file, "w"))
-                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
+                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
                 c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{num_in_flight}.out")
         else:
             cfg["client"]["sendMode"] = "sendRate"
@@ -323,7 +324,7 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
             for send_rate in [400, 600, 800, 900, 1000, 1100, 1200]:
                 cfg["client"]["sendRate"] = send_rate
                 yaml.dump(cfg, open(config_file, "w"))
-                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot)
+                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
                 c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_sr{send_rate}.out")
 
 

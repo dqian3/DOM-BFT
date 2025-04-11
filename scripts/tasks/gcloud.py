@@ -205,10 +205,11 @@ def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
 def run_rates(c, config_file="../configs/remote-prod.yaml",
                v=5,
                prot="dombft",
+               batch_size=1,
                use_in_flight=False,
 ):
     resolve = get_address_resolver(c)
-    remote.run_rates(c, config_file=config_file, resolve=resolve, v=v, prot=prot, use_in_flight=use_in_flight)
+    remote.run_rates(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, use_in_flight=use_in_flight)
     vm(c, config_file=config_file, stop=True)
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
