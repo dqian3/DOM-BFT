@@ -175,21 +175,32 @@ def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
             original_contents = cfg_file.read()
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
           
-        in_flight = original_cfg["client"]["maxInFlight"]
+
 
         for n_replicas in [7, 10, 13, 16]:
             vm(c, config_file=config_file)
-            time.sleep(20)
+            time.sleep(30)
 
-
+            
             cfg = copy.deepcopy(original_cfg)
+
+            cfg["client"]["maxInFlight"] = 200
+            cfg["client"]["sendMode"] = "sendRate"
+
+            cfg["client"]["ips"] = cfg["client"]["ips"][:n_replicas]
 
             cfg["replica"]["ips"] = cfg["replica"]["ips"][:n_replicas]
             cfg["receiver"]["ips"] = cfg["receiver"]["ips"][:n_replicas]
 
-            yaml.dump(cfg, open(config_file, "w"))
-            run(c, config_file=config_file, v=v, prot=prot)
-            c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n_replicas}_if{in_flight}.out")
+
+            for total_send_rate in [12000, 16000, 20000]:
+                send_rate = total_send_rate // n_replicas
+
+                cfg["client"]["sendRate"] = send_rate
+
+                yaml.dump(cfg, open(config_file, "w"))
+                run(c, config_file=config_file, v=v, prot=prot)
+                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n_replicas}_sr{send_rate}.out")
 
             vm(c, config_file=config_file, stop=True)
 
@@ -209,7 +220,7 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
                use_in_flight=False,
 ):
     resolve = get_address_resolver(c)
-    remote.run_rates(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, use_in_flight=use_in_flight)
+    remote.run_rates(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, use_in_flight=use_in_flight, num_crashed=num_crashed)
     vm(c, config_file=config_file, stop=True)
 
 # local_log_file is good for debugging, but will slow the system down at high throughputs
