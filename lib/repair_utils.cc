@@ -144,6 +144,9 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     ClientReqs remainingClientReqs = getValidClientRequests(repairProposal, logSuffix.checkpoint->seq());
 
     // Remove all requests already in the log suffix or in the checkopint
+    for (const auto &entry : logSuffix.entries) {
+        remainingClientReqs.erase({entry->client_id(), entry->client_seq()});
+    }
 
     if (VLOG_IS_ON(4)) {
         VLOG(4) << "Remaining client requests:";

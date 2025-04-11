@@ -1931,9 +1931,10 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             newCheckpoint.clientRecord_ = log_->getClientRecord();
 
-            assert(newCheckpoint.logDigest == newCheckpoint.repairCommits.begin()->second.log_digest());
             VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
                     << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.logDigest);
+
+            assert(newCheckpoint.logDigest == newCheckpoint.repairCommits.begin()->second.log_digest());
 
             log_->setCheckpoint(newCheckpoint);
         }
@@ -2081,7 +2082,6 @@ void Replica::doPreparePhase()
 void Replica::doCommitPhase()
 {
     uint32_t proposalInst = repairProposal_.value().round();
-    LOG(INFO) << "PBFTCommit for round=" << proposalInst << " replicaId=" << replicaId_;
     PBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
     cmt.set_round(proposalInst);
@@ -2097,6 +2097,10 @@ void Replica::doCommitPhase()
         holdPrepareOrCommit_ = !holdPrepareOrCommit_;
         return;
     }
+
+    LOG(INFO) << "PBFTCommit for round=" << proposalInst << " replicaId=" << replicaId_
+              << " log_digest=" << digest_to_hex(logSuffix.logDigest);
+
     broadcastToReplicas(cmt, PBFT_COMMIT);
 }
 
