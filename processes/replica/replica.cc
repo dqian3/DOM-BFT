@@ -1184,13 +1184,13 @@ void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeou
     }
 
     if (repairTimeoutStart_ != 0) {
-        LOG(WARNING) << "Received redundant repair trigger due to client side timeout from client_id="
-                     << msg.client_id() << " for cseq=" << msg.client_seq();
+        VLOG(2) << "Received redundant repair trigger due to client side timeout from client_id=" << msg.client_id()
+                << " for cseq=" << msg.client_seq();
         return;
     }
 
     if (msg.round() != round_) {
-        LOG(WARNING) << "Received repair trigger for round " << msg.round() << " != " << round_;
+        VLOG(2) << "Received repair trigger for round " << msg.round() << " != " << round_;
         return;
     }
 
