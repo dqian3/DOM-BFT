@@ -1930,8 +1930,6 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
             VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
                     << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.logDigest);
 
-            LOG(INFO) << "TEST checkpoint_repair log_digest=" << digest_to_hex(newCheckpoint.logDigest);
-
             log_->setCheckpoint(newCheckpoint);
         }
     }
@@ -2070,7 +2068,6 @@ void Replica::doPreparePhase()
 
     LogSuffix &logSuffix = getRepairLogSuffix();
 
-    LOG(INFO) << "TEST prepare log_digest=" << digest_to_hex(logSuffix.logDigest);
     prepare.set_log_digest(logSuffix.logDigest);
 
     broadcastToReplicas(prepare, PBFT_PREPARE);
@@ -2088,7 +2085,6 @@ void Replica::doCommitPhase()
 
     LogSuffix &logSuffix = getRepairLogSuffix();
     cmt.set_log_digest(logSuffix.logDigest);
-    LOG(INFO) << "TEST commit log_digest=" << digest_to_hex(logSuffix.logDigest);
 
     if (viewChangeByCommit()) {
         if (commitLocalInViewChange_)

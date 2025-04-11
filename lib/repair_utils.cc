@@ -176,10 +176,6 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     uint32_t seq = logSuffix.checkpoint->seq() + 1;
 
     for (const dombft::proto::LogEntry *e : logSuffix.entries) {
-        if (seq != e->seq()) {
-            LOG(INFO) << "TEST ERROR seq=" << seq << " e.seq=" << e->seq();
-        }
-
         ::LogEntry entry(seq, e->client_id(), e->client_seq(), e->request(), prevDigest);
         prevDigest = entry.digest;
         seq++;
