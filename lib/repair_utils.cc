@@ -112,7 +112,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
         auto &log = repairProposal.logs()[i];
         // TODO verify each checkpoint
         for (const dombft::proto::LogEntry &entry : log.log_entries()) {
-            if (entry.seq() <= maxCertSeq)
+            if (entry.seq() <= maxCertSeq || entry.seq() <= logSuffix.checkpoint->seq())
                 continue;
 
             matchingEntries[entry.seq()][entry.digest()]++;
@@ -216,8 +216,11 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
 void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
-    LOG(INFO) << "checkpoint seq=" << logSuffix.checkpoint->seq()
-              << " my checkpoint seq=" << log->getCommittedCheckpoint().seq;
+    LOG(INFO) << "logSuffix.checkpoint.seq=" << logSuffix.checkpoint->seq()
+              << " logSuffix.checkpoint.digest=" << digest_to_hex(logSuffix.checkpoint->log_digest())
+              << " self.checkpoint.seq=" << log->getCommittedCheckpoint().seq
+              << " self.checkpoint.digest=" << digest_to_hex(log->getCommittedCheckpoint().logDigest);
+
     assert(
         logSuffix.checkpoint->seq() <= log->getCommittedCheckpoint().seq ||
         log->getDigest(logSuffix.checkpoint->seq()) == logSuffix.checkpoint->log_digest()
@@ -269,7 +272,9 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
         std::string result;
         if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
-            LOG(ERROR) << "Failure to add log entry!";
+            // This should not happen!
+            VLOG(2) << "Failure to add request in slow path! " << " seq=" << seq << " round=" << logSuffix.round
+                    << " client_id=" << clientId << " client_seq=" << entry->client_seq();
             continue;
         }
 

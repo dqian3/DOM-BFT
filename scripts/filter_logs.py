@@ -45,6 +45,10 @@ def parse_client():
     start_time = None
     interval = 0
 
+    # TODO add some logging for the first normal path commit to tell when a 
+    # do some post processing on all the logs (including replica) to figure
+    # out how long recovery takes
+
     commits = {
         "fast": [],
         "slow": [],
@@ -125,6 +129,7 @@ def parse_client():
     print(f"Percent time in fast path: {(runtime - non_fast_seconds)/ runtime:0.3f}")
     for path in total_latencies:
         print(f"Number of {path} commits: {counts[path]}, average latency: {total_latencies[path] / max(1, counts[path]):.0f}")
+
 
 
 
