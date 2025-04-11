@@ -8,6 +8,7 @@
 #include "lib/application.h"
 #include "lib/apps/counter.h"
 #include "lib/apps/kv_store.h"
+#include "lib/client_record.h"
 #include "proto/dombft_apps.pb.h"
 
 #define NUM_CLIENTS 100
@@ -614,6 +615,23 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
 void Client::handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig)
 {
     VLOG(2) << "Received repair summary for round=" << summary.round() << " from replicaId=" << summary.replica_id();
+
+    ::ClientSequence committed(summary.committed_seqs());
+    for (const auto &[cseq, reqState] : requestStates_) {
+        // TODO this is a hack to make a dummy reply...
+        if (!committed.contains(cseq)) {
+            continue;
+        }
+
+        CommittedReply reply;
+        reply.set_client_id(clientId_);
+        reply.set_client_seq(cseq);
+        reply.set_is_repair(false);   // Missed in this round
+        reply.set_seq(0);             // TODO we do not know the seq
+        reply.set_replica_id(summary.replica_id());
+
+        LOG(INFO) << "DEBUG adding request that was in repair summary checkpoint record";
+    }
 
     for (const CommittedReply &reply : summary.replies()) {
         if (reply.client_id() != clientId_)

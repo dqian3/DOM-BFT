@@ -1,7 +1,4 @@
-transport: nng 
-
-app: "counter"
-
+app: counter
 client:
   ips:
   - 10.138.0.15
@@ -12,7 +9,6 @@ client:
   - 10.182.0.14
   - 10.142.0.15
   - 10.150.0.13
-
   - 10.138.0.15
   - 10.182.0.13
   - 10.142.0.14
@@ -21,7 +17,6 @@ client:
   - 10.182.0.14
   - 10.142.0.15
   - 10.150.0.13
-
   - 10.138.0.15
   - 10.182.0.13
   - 10.142.0.14
@@ -30,62 +25,55 @@ client:
   - 10.182.0.14
   - 10.142.0.15
   - 10.150.0.13
-
   keysDir: keys/client
-  port: 33000
-  runtimeSeconds: 40
-  
-  sendMode: sendRate 
   maxInFlight: 200
-  sendRate: 1500
-  requestSize: 512
-
   normalPathTimeout: 200000
-  slowPathTimeout:  1000000   # 1 s
-  requestTimeout:   2000000    # 5 s
-
+  port: 33000
+  requestSize: 512
+  requestTimeout: 2000000
+  runtimeSeconds: 30
+  sendMode: sendRate
+  sendRate: 400
+  slowPathTimeout: 1000000
 proxy:
   forwardPort: 31000
   ips:
   - 10.138.0.15
+  - 10.182.0.13
   - 10.142.0.14
   - 10.150.0.12
-  - 10.182.0.13
-
-  # - 10.138.0.15
-  # - 10.142.0.14
-  # - 10.150.0.12
-  # - 10.182.0.13
-
+  - 10.138.0.16
+  - 10.182.0.14
+  - 10.142.0.15
+  - 10.150.0.13
   keysDir: keys/proxy
   maxOwd: 150000
   measurementPort: 32000
+  offsetCoefficient: 1.5
   shards: 1
-
 receiver:
   ips:
   - 10.138.0.14
+  - 10.182.0.12
   - 10.142.0.13
   - 10.150.0.11
-  - 10.182.0.12
   keysDir: keys/receiver
   local: true
   numVerifyThreads: 6
   port: 33000
   shards: 1
-
 replica:
-  repairTimeout: 5000000
-  repairViewTimeout: 10000000
+  checkpointInterval: 5000
   ips:
   - 10.138.0.14
+  - 10.182.0.12
   - 10.142.0.13
   - 10.150.0.11
-  - 10.182.0.12
   keysDir: keys/replica
   numSendThreads: 6
   numVerifyThreads: 6
   port: 34000
-
-  checkpointInterval: 5000
-  snapshotInterval: 50000
+  repairTimeout: 2000000
+  repairViewTimeout: 5000000
+  snapshotInterval: 250000
+transport: nng

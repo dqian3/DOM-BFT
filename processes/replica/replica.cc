@@ -1792,19 +1792,26 @@ void Replica::startRepair()
 
 void Replica::sendRepairSummaryToClients()
 {
-    RepairSummary summary;
-    std::set<int> clients;
-
-    summary.set_round(round_);
-    summary.set_replica_id(replicaId_);
-    summary.set_pbft_view(pbftView_);
+    std::map<uint32_t, RepairSummary> messages;
 
     uint32_t seq = log_->getCommittedCheckpoint().seq + 1;
     for (; seq < log_->getNextSeq(); seq++) {
         const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
-        CommittedReply reply;
 
-        clients.insert(entry.client_id);
+        if (!messages.contains(entry.client_id)) {
+            RepairSummary &summary = messages[entry.client_id];
+            summary.set_round(round_);
+            summary.set_replica_id(replicaId_);
+            summary.set_pbft_view(pbftView_);
+
+            log_->getCommittedCheckpoint().clientRecord_.toProtoSingleClient(
+                entry.client_id, *summary.mutable_committed_seqs()
+            );
+        }
+
+        RepairSummary &summary = messages[entry.client_id];
+
+        CommittedReply reply;
 
         reply.set_replica_id(replicaId_);
         reply.set_client_id(entry.client_id);
@@ -1816,16 +1823,9 @@ void Replica::sendRepairSummaryToClients()
         (*summary.add_replies()) = reply;
     }
 
-    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::REPAIR_SUMMARY, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-
-        // TODO make this only send to clients that need it
-        LOG(INFO) << "Sending repair summary for round=" << round_;
-        for (uint32_t clientId : clients) {
-            endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
-        }
-    });
+    for (auto &[clientId, summary] : messages) {
+        sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[clientId]);
+    }
 }
 
 void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)

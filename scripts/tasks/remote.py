@@ -5,6 +5,7 @@ import time
 import yaml
 from fabric import Connection, ThreadingGroup, SerialGroup
 from invoke import task
+import invoke
 
 #=================================================
 #               Helper functions
@@ -99,7 +100,6 @@ def run(
 
     # Options for logging/output to fetch
     v=5,
-
     dom_logs=False,
     profile=False,
 
@@ -209,8 +209,11 @@ def run(
         group.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True, hide="both")
 
         for hdl in other_handles:
-            hdl.join()
-
+            try:
+                hdl.join()
+            except invoke.exceptions.CommandTimedOut as e:
+                print(f"{e}")
+ 
         c.run("rm -f ../logs/*.log")
 
         get_logs(c, clients, "client")

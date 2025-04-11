@@ -201,6 +201,9 @@ message RepairSummary
     uint32 replica_id = 2;
     repeated CommittedReply replies = 3;
     uint32 pbft_view = 4;
+
+
+    ClientSequence committed_seqs = 5;
 }
 
 message PBFTPrePrepare

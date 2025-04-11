@@ -98,6 +98,15 @@ void ClientRecord::toProto(dombft::proto::ClientRecord &recordProto) const
     recordProto.set_digest(digest());
 }
 
+void ClientRecord::toProtoSingleClient(uint32_t clientId, dombft::proto::ClientSequence &clientSequence) const
+{
+    clientSequence.set_client_id(clientId);
+    clientSequence.set_last_seq(sequences.at(clientId).lastSeq_);
+    for (uint32_t s : sequences.at(clientId).missedSeqs_) {
+        clientSequence.add_missed_seqs(s);
+    }
+}
+
 // Computes the number of records in referenceRecord that are misssing in this record
 // Does not check for extra records in this record
 // The purpose of this is to attempt to line up the replica's log with the checkpoints
