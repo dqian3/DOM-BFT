@@ -330,32 +330,39 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
             #     cfg["client"]["sendRate"] = send_rate
             #     yaml.dump(cfg, open(config_file, "w"))
             #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, num_crashed=num_crashed)
-            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_sr{send_rate}.out")
+            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out")
 
 
-            # Normal Path
-            # cfg["client"]["sendMode"] = "sendRate"
-            # cfg["client"]["maxInFlight"] = 500
-
-            # for send_rate in [400, 500, 600, 700, 800]:
-            #     cfg["client"]["sendRate"] = send_rate
-            #     yaml.dump(cfg, open(config_file, "w"))
-            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, normal_path_freq=100)
-            #     # normal_crashed
-            #     # run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, num_crashed=1)
-
-            #     # normal_swap
-            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_sr{send_rate}.out")
-
-            # Slow Path, 
+            # Normal Path Swapped
             cfg["client"]["sendMode"] = "sendRate"
             cfg["client"]["maxInFlight"] = 500
 
-            for send_rate in [400, 500, 600, 700, 800]:
+            # for send_rate in [400, 600, 800, 900, 1000]:
+            #     cfg["client"]["sendRate"] = send_rate
+            #     yaml.dump(cfg, open(config_file, "w"))
+
+            #     # normal_swap
+            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, normal_path_freq=100)
+            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_swap_sr{send_rate}.out")
+
+            # Normal Path Crashed
+            for send_rate in [800, 900, 1000]:
+                cfg["client"]["sendRate"] = send_rate
+                yaml.dump(cfg, open(config_file, "w"))
+
+                # normal_crashed
+                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, num_crashed=1)
+                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_crashed_sr{send_rate}.out")
+
+            # Slow Path
+            cfg["client"]["sendMode"] = "sendRate"
+            cfg["client"]["maxInFlight"] = 500
+
+            for send_rate in [200, 400, 600, 700, 800 ]:
                 cfg["client"]["sendRate"] = send_rate
                 yaml.dump(cfg, open(config_file, "w"))
                 run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100)
-                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_sr{send_rate}.out")
+                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_sr{send_rate}.out")
 
 
 
