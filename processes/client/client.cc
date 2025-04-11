@@ -124,7 +124,6 @@ Client::Client(const ProcessConfig &config, size_t id)
     }
     if (sendMode_ == dombft::RateBased) {
         // Kick off sending with a small burst every 5 ms
-        lastSendTime_ = GetMicrosecondTimestamp();
         sendTimer_ = std::make_unique<Timer>([&](void *ctx, void *endpoint) { submitRequestsOpenLoop(); }, 5000, this);
         endpoint_->RegisterTimer(sendTimer_.get());
 
@@ -211,17 +210,16 @@ void Client::submitRequestsOpenLoop()
 {
 
     uint64_t startSendTime = GetMicrosecondTimestamp();
-    uint64_t actualSendRate = sendRate_;
-    double sendIntervalUs = 1000000.0 / actualSendRate;
+    double sendIntervalUs = 1000000.0 / sendRate_;
 
-    uint64_t numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
+    uint64_t numToSend = (startSendTime - lastSendTime_) * sendRate_ / 1000000.0;
+
+    VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
+            << " us since last burst with send interval " << sendIntervalUs << "us";
 
     if (numToSend == 0) {
         return;
     }
-
-    VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
-            << " us since last burst with send interval " << sendIntervalUs << "us";
 
     // Rather than just setting lastSendTime at the end, add the number of requests sent * sendInterval, so
     // that we account for accumulating errors from sending

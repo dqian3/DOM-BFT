@@ -71,9 +71,11 @@ Replica::Replica(
         exit(1);
     }
 
-    LOG(INFO) << "instantiating log";
+    LOG(INFO) << "Instantiating log";
 
-    if (config.app == AppType::COUNTER) {
+    LOG(INFO) << "Swapping every " << swapFreq_ << " requests";
+
+        if (config.app == AppType::COUNTER) {
         app_ = std::make_shared<Counter>();
     } else if (config.app == AppType::KV_STORE) {
         // TODO make keysize configurable

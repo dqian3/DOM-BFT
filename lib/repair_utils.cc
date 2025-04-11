@@ -255,6 +255,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
     }
 
     LOG(INFO) << "Aborting own entries from seq=" << seq;
+
     log->abort(seq);
 
     // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
