@@ -75,7 +75,7 @@ Replica::Replica(
 
     LOG(INFO) << "Swapping every " << swapFreq_ << " requests";
 
-        if (config.app == AppType::COUNTER) {
+    if (config.app == AppType::COUNTER) {
         app_ = std::make_shared<Counter>();
     } else if (config.app == AppType::KV_STORE) {
         // TODO make keysize configurable
@@ -1233,14 +1233,14 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 {
     // Ignore repeated repair triggers
     if (repair_) {
-        LOG(WARNING) << "Received repair trigger during a repair from client " << msg.client_id()
-                     << " for cseq=" << msg.client_seq();
+        VLOG(6) << "Received repair trigger during a repair from client " << msg.client_id()
+                << " for cseq=" << msg.client_seq();
         return;
     }
 
     // Proof is verified by verify thread
     if (msg.round() < round_) {
-        LOG(INFO) << "Received repair trigger proof for previous round " << msg.round() << " < " << round_;
+        VLOG(6) << "Received repair trigger proof for previous round " << msg.round() << " < " << round_;
         return;
     }
 
@@ -1931,6 +1931,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             newCheckpoint.clientRecord_ = log_->getClientRecord();
 
+            assert(newCheckpoint.logDigest == newCheckpoint.repairCommits.begin()->second.log_digest());
             VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
                     << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.logDigest);
 

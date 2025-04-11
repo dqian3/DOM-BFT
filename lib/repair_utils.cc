@@ -5,7 +5,7 @@
 typedef std::pair<uint32_t, uint32_t> RequestId;
 typedef std::map<RequestId, const dombft::proto::LogEntry *> ClientReqs;
 
-ClientReqs getValidClientRequests(const dombft::proto::RepairProposal &repairProposal)
+ClientReqs getValidClientRequests(const dombft::proto::RepairProposal &repairProposal, uint32_t checkpointSeq)
 {
     uint32_t f = repairProposal.logs().size() / 2;
 
@@ -18,6 +18,10 @@ ClientReqs getValidClientRequests(const dombft::proto::RepairProposal &repairPro
         auto &log = repairProposal.logs()[i];
 
         for (const dombft::proto::LogEntry &entry : log.log_entries()) {
+            if (entry.seq() <= checkpointSeq) {
+                continue;
+            }
+
             std::pair<uint32_t, uint32_t> key = {entry.client_id(), entry.client_seq()};
 
             requestCounts[key][entry.request()]++;
@@ -90,8 +94,6 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
         VLOG(4) << "No certs found!";
     }
 
-    std::set<std::pair<uint32_t, uint32_t>> clientReqsAdded;
-
     // Add entries up to cert
     for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
         if (entry.seq() <= logSuffix.checkpoint->seq())
@@ -100,7 +102,6 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
         if (entry.seq() > maxCertSeq)
             break;
 
-        clientReqsAdded.insert({entry.client_id(), entry.client_seq()});
         logSuffix.entries.push_back(&entry);
     }
 
@@ -131,25 +132,18 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     // Add entries with f + 1 entries
     for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
-        if (entry.seq() <= maxCertSeq)
+        if (entry.seq() <= maxCertSeq || entry.seq() <= logSuffix.checkpoint->seq())
             continue;
 
         if (entry.seq() > logToUseSeq)
             break;
 
-        if (clientReqsAdded.contains({entry.client_id(), entry.client_seq()}))
-            continue;
-        clientReqsAdded.insert({entry.client_id(), entry.client_seq()});
-
         logSuffix.entries.push_back(&entry);
     }
 
-    ClientReqs remainingClientReqs = getValidClientRequests(repairProposal);
+    ClientReqs remainingClientReqs = getValidClientRequests(repairProposal, logSuffix.checkpoint->seq());
 
-    // Remove all requests already in the log suffix
-    for (const auto &entry : logSuffix.entries) {
-        remainingClientReqs.erase({entry->client_id(), entry->client_seq()});
-    }
+    // Remove all requests already in the log suffix or in the checkopint
 
     if (VLOG_IS_ON(4)) {
         VLOG(4) << "Remaining client requests:";
@@ -169,6 +163,17 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     }
 
     VLOG(4) << "Rest of client requestes added from seq=" << logToUseSeq << " to seq=" << finalLogSeq;
+
+    ::ClientRecord checkpointClientRecord(logSuffix.checkpoint->client_record());
+    for (const auto &entry : logSuffix.entries) {
+        if (checkpointClientRecord.contains(entry->client_id(), entry->client_seq())) {
+            LOG(ERROR) << "Client request c_id" << entry->client_id() << " c_seq=" << entry->client_seq()
+                       << " already in checkpoint client record";
+            continue;
+        }
+
+        assert(!checkpointClientRecord.contains(entry->client_id(), entry->client_seq()));
+    }
 
     VLOG(4) << "Calculating digest for log suffix";
     // Calculate digest
