@@ -176,10 +176,9 @@ def gcloud_run_largen(c, config_file="../configs/remote-large-n.yaml",
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
           
 
-
         for n_replicas in [7, 10, 13, 16]:
-            vm(c, config_file=config_file)
-            time.sleep(30)
+            vm(c, config_file=config_file) # This should only start the vms that are needed, not all
+            time.sleep(10)
 
             
             cfg = copy.deepcopy(original_cfg)

@@ -93,6 +93,9 @@ def parse_client():
 
         if path == "fast":
             if last_commit != "fast":
+                # TODO Instead of just summing non fast path periods, actually output them so we can get a timeline
+                # Ideally each period should also include the number of types of commits
+                # So for each period here, we should output the counts of each non fast path commit
                 non_fast_seconds += (tags["time"] - last_fast_time).total_seconds()
             last_fast_time = tags["time"]
 
