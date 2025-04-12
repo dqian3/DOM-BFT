@@ -124,7 +124,7 @@ private:
     // ========== Processing messages ===========
 
     // Fast path/normal path
-    void processClientRequest(const dombft::proto::ClientRequest &request);
+    void processClientRequest(const dombft::proto::ClientRequest &request, bool queued = false);
     void processCert(const dombft::proto::Cert &cert);
 
     // Checkpointing

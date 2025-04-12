@@ -47,6 +47,8 @@ message Reply {
     uint32 replica_id = 6;
     bytes result = 9;
     bytes digest = 10;
+
+    bool queued = 11;
 }
 
 message Cert {

@@ -712,7 +712,7 @@ void Replica::processMessagesThd()
     }
 }
 
-void Replica::processClientRequest(const ClientRequest &request)
+void Replica::processClientRequest(const ClientRequest &request, bool queued)
 {
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
@@ -754,7 +754,8 @@ void Replica::processClientRequest(const ClientRequest &request)
     log_->getEntry(seq).deadline = request.deadline();
 
     VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-            << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest());
+            << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest())
+            << " queued=" << queued;
 
     Reply reply;
     reply.set_client_id(clientId);
@@ -764,6 +765,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_seq(seq);
     reply.set_round(round_);
     reply.set_digest(log_->getDigest());
+    reply.set_queued(queued);
 
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
@@ -1324,6 +1326,10 @@ void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
     });
 
     if (numStartMsgs == 2 * f_ + 1) {
+
+        VLOG(1) << "PERF event=repair_proposal replica_id=" << replicaId_ << " round=" << round_
+                << " pbft_view=" << pbftView_;
+
         doPrePreparePhase(repRound);
     }
 }
@@ -1366,7 +1372,6 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
     snapshotRequest.set_round(round_);
     snapshotRequest.set_last_checkpoint_seq(log_->getCommittedCheckpoint().seq);
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
-    LOG(INFO) << "Sending SNAPSHOT_REQUEST for seq " << targetSeq << "  replica " << replicaId;
 }
 
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
@@ -1791,7 +1796,7 @@ void Replica::startRepair()
     uint32_t primaryId = getPrimary();
     VLOG(2) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
     sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
-    VLOG(2) << "DUMP start repair round=" << round_ << " " << *log_;
+    VLOG(2) << "PERF DUMP start repair round=" << round_ << " " << *log_;
 }
 
 void Replica::sendRepairSummaryToClients()
@@ -1837,7 +1842,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq() << " round=" << round_
             << " pbft_view=" << pbftView_;
 
-    VLOG(2) << "DUMP finish repair round=" << round_ << " " << *log_;
+    VLOG(2) << "PERF DUMP finish repair round=" << round_ << " " << *log_;
     // LOG(INFO) << "Current client record" << log_->getClientRecord();
     // LOG(INFO) << "Checkpoint client record" << log_->getCommittedCheckpoint().clientRecord_;
 
@@ -1966,11 +1971,11 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
     for (auto &[_, req] : repairQueuedReqs_) {
         VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
-        processClientRequest(req);
+        processClientRequest(req, true);
     }
     repairQueuedReqs_.clear();
 
-    VLOG(2) << "DUMP post repair round=" << round_ - 1 << " " << *log_;
+    VLOG(2) << "PERF DUMP post repair round=" << round_ - 1 << " " << *log_;
 }
 
 void Replica::tryFinishRepair()
@@ -1996,6 +2001,9 @@ void Replica::tryFinishRepair()
 
     // Check if own checkpoint seq is behind suffix checkpoint seq
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
+
+    VLOG(1) << "PERF event=repair_apply replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << round_ << " pbft_view=" << pbftView_;
 
     ::LogCheckpoint &myCheckpoint = log_->getCommittedCheckpoint();   // bad namespace
     if (checkpoint->seq() > myCheckpoint.seq) {
@@ -2122,6 +2130,10 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
     }
 
     LOG(INFO) << "PrePrepare RECEIVED for round=" << msg.round() << " from replicaId=" << msg.primary_id();
+    VLOG(1) << "PERF event=repair_preprepare replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << preparedRound_ << " pbft_view=" << pbftView_
+            << " proposal_digest=" << digest_to_hex(msg.proposal_digest());
+
     // accepts the proposal as long as it's from the primary
     repairProposal_ = msg.proposal();
     proposalDigest_ = msg.proposal_digest();
@@ -2189,6 +2201,10 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     LOG(INFO) << "Prepare received from 2f + 1 replicas, agreement reached for round=" << preparedRound_
               << " pbft_view=" << pbftView_;
 
+    VLOG(1) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << preparedRound_ << " pbft_view=" << pbftView_
+            << " proposal_digest=" << digest_to_hex(msg.proposal_digest());
+
     if (viewChangeByCommit()) {
         if (commitLocalInViewChange_) {
             LOG(INFO) << "Commit message only send to itself to commit locally to advance to next round";
@@ -2240,6 +2256,12 @@ void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
     if (numMsgs < 2 * f_ + 1) {
         return;
     }
+
+    VLOG(1) << "PERF event=repair_commit replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << preparedRound_ << " pbft_view=" << pbftView_
+            << " log_digest=" << digest_to_hex(msg.log_digest())
+            << " proposal_digest=" << digest_to_hex(msg.proposal_digest());
+
     LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
     tryFinishRepair();
 }

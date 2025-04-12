@@ -484,7 +484,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
                 << " seq=" << reply.seq() << " round=" << reply.round() << " latency=" << now - reqState.firstSendTime
-                << " digest=" << digest_to_hex(reply.digest());
+                << " digest=" << digest_to_hex(reply.digest()) << " queued=" << reply.queued();
 
         lastFastPath_ = clientSeq;
 
