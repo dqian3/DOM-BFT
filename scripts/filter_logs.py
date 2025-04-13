@@ -86,6 +86,9 @@ def parse_client():
 
             last_commit = tags["path"]
 
+            # Just do this for now so we don't get an error
+            last_fast_time = tags["time"]
+
         path = tags["path"]
         commits[path].append(tags)
         total_latencies[path] += tags["latency"]
