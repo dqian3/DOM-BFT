@@ -235,6 +235,14 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
 
     );
 
+    // If checkpoint is too far ahead, just don't do anything
+    if (log->getCommittedCheckpoint().seq >= logSuffix.checkpoint->seq() + logSuffix.entries.size()) {
+        LOG(INFO) << "Checkpoint seq=" << log->getCommittedCheckpoint().seq
+                  << " is ahead of repair checkpoint seq=" << logSuffix.checkpoint->seq()
+                  << " + entries size=" << logSuffix.entries.size() << " so not applying suffix";
+        return;
+    }
+
     // First sequence to apply is right after checkpoint
     uint32_t seq = logSuffix.checkpoint->seq() + 1;
     uint32_t idx = 0;

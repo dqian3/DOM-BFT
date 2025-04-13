@@ -331,7 +331,8 @@ void Replica::verifyMessagesThd()
             }
 
             if (!verifyRepairReplyProof(proofMsg)) {
-                LOG(WARNING) << "Failed to verify repair reply proof!";
+                // TODO should be LOG(WARNING)
+                VLOG(2) << "Failed to verify repair reply proof!";
                 continue;
             }
 
@@ -1133,6 +1134,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         applySuffix(logSuffix, log_);
         finishRepair(abortedRequests);
 
+        // TODO temporary fix for issue #120, this may lead to later issues though
+        round_ = std::max(round_, snapshotReply.round());
+
     } else {
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
@@ -1454,8 +1458,9 @@ bool Replica::verifyCert(const Cert &cert)
 bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
 {
     if (proof.replies().size() < f_ + 1) {
-        LOG(INFO) << "Received repair proof of size " << proof.replies().size()
-                  << ", which is smaller than f + 1, f=" << f_;
+        // TODO This is trigering even with correct clients.
+        VLOG(2) << "Received repair proof of size " << proof.replies().size()
+                << ", which is smaller than f + 1, f=" << f_;
         return false;
     }
 

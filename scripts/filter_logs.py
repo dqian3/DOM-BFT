@@ -38,6 +38,8 @@ def read_log_lines():
 
 def parse_client():
 
+    print("Starting to parse client logs")
+
     last_fast_time = None
     non_fast_seconds = 0
     last_commit = None
@@ -72,69 +74,82 @@ def parse_client():
     }
     
 
+    runtime = 0
 
-    for line in read_log_lines():
-        tags = parse_line(line)
 
-        if "event" not in tags or tags["event"] != "commit":
-            continue
+    try:
+        for line in read_log_lines():
+            tags = parse_line(line)
 
-        if start_time is None:
-            start_time = tags["time"]
-            # Take the nearest minute
-            start_time = start_time.replace(second=0, microsecond=0)
+            if "event" not in tags or tags["event"] != "commit":
+                continue
+
+            if start_time is None:
+                start_time = tags["time"]
+                # Take the nearest minute
+                start_time = start_time.replace(second=0, microsecond=0)
+
+                last_commit = tags["path"]
+
+                # Just do this for now so we don't get an error
+                last_fast_time = tags["time"]
+
+            path = tags["path"]
+            commits[path].append(tags)
+            total_latencies[path] += tags["latency"]
+            counts[path] += 1
+
+            if path == "fast":
+                if last_commit != "fast":
+                    # TODO Instead of just summing non fast path periods, actually output them so we can get a timeline
+                    # Ideally each period should also include the number of types of commits
+                    # So for each period here, we should output the counts of each non fast path commit
+                    non_fast_seconds += (tags["time"] - last_fast_time).total_seconds()
+                    print(f"Non-fast path period start={(last_fast_time - start_time).total_seconds()} end={(tags['time'] - start_time).total_seconds()} ")
+
+                last_fast_time = tags["time"]
 
             last_commit = tags["path"]
 
-            # Just do this for now so we don't get an error
-            last_fast_time = tags["time"]
+            if tags["time"] > start_time + interval * datetime.timedelta(minutes=1):
+                print(f"Minute ending {(start_time + interval * datetime.timedelta(minutes=1)).strftime('%H:%M')} summary:")
+                # TODO more stats
 
-        path = tags["path"]
-        commits[path].append(tags)
-        total_latencies[path] += tags["latency"]
-        counts[path] += 1
+                total_commits = sum(len(commits[path]) for path in commits)
+                total_latency = sum(sum(c["latency"] for c in commits[path]) for path in commits)  
 
-        if path == "fast":
-            if last_commit != "fast":
-                # TODO Instead of just summing non fast path periods, actually output them so we can get a timeline
-                # Ideally each period should also include the number of types of commits
-                # So for each period here, we should output the counts of each non fast path commit
-                non_fast_seconds += (tags["time"] - last_fast_time).total_seconds()
-            last_fast_time = tags["time"]
-
-        last_commit = tags["path"]
-
-        if tags["time"] > start_time + interval * datetime.timedelta(minutes=1):
-            print(f"Minute ending {(start_time + interval * datetime.timedelta(minutes=1)).strftime('%H:%M')} summary:")
-            # TODO more stats
-
-            total_commits = sum(len(commits[path]) for path in commits)
-            print(f"\tnum_commits={total_commits} ")
-            
-            for path in commits: 
-                print(f"\t{path}_num_commits = {len(commits[path])}")
-                latencies = np.array([c["latency"] for c in commits[path]])
-                
-                if (len(commits[path]) > 0):
-                    print(f"\t{path}_avg_latency = {np.mean(latencies):.0f} us")
-                    print(f"\t{path}_p95_latency = {np.percentile(latencies, 95):.0f} us")
-                    print(f"\t{path}_p99_latency = {np.percentile(latencies, 99):.0f} us")
-
-                commits[path] = []
-
-            interval += 1
+                print(f"\tnum_commits={total_commits} ")
+                print(f"\tavg_latency={0 if total_latency == 0 else total_latency / total_commits}")
 
 
-    runtime = (tags["time"] - start_time).total_seconds()
+                for path in commits: 
+                    print(f"\t{path}_num_commits = {len(commits[path])}")
+                    latencies = np.array([c["latency"] for c in commits[path]])
+                    
+                    if (len(commits[path]) > 0):
+                        print(f"\t{path}_avg_latency = {np.mean(latencies):.0f} us")
+                        print(f"\t{path}_p95_latency = {np.percentile(latencies, 95):.0f} us")
+                        print(f"\t{path}_p99_latency = {np.percentile(latencies, 99):.0f} us")
+
+                    commits[path] = []
+
+                interval += 1
+
+            runtime = (tags["time"] - start_time).total_seconds()
 
 
-    total_commits = sum(counts[path] for path in counts)
+    except KeyboardInterrupt:
+        print("Interrupted, exiting...")
 
-    print(f"Percent commits in fast path: {counts['fast']/total_commits:0.3f}")
+    finally:
 
-    print(f"Percent time in fast path: {(runtime - non_fast_seconds)/ runtime:0.3f}")
-    for path in total_latencies:
-        print(f"Number of {path} commits: {counts[path]}, average latency: {total_latencies[path] / max(1, counts[path]):.0f}")
+        total_commits = sum(counts[path] for path in counts)
+
+        print(f"Percent commits in fast path: {counts['fast']/total_commits:0.3f}")
+
+        print(f"Percent time in fast path: {(runtime - non_fast_seconds)/ runtime:0.3f}")
+        for path in total_latencies:
+            print(f"Number of {path} commits: {counts[path]}, average latency: {total_latencies[path] / max(1, counts[path]):.0f}")
 
 
 

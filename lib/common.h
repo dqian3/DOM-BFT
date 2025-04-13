@@ -24,9 +24,9 @@
 // as IPs and ports. Generally these will be used for ablation experiments or benchmarks
 // of specific components of the system.
 
-#define SEND_BUFFER_SIZE (20000000)
+#define SEND_BUFFER_SIZE (200000000)
 #define UDP_BUFFER_SIZE  (1024)
-#define NNG_BUFFER_SIZE  (20000000)
+#define NNG_BUFFER_SIZE  (200000000)
 #define IPC_BUFFER_SIZE  (1024)
 
 #define USE_PROXY     1

@@ -237,6 +237,7 @@ def run(
     v=5,
     dom_logs=False,
     profile=False,
+    filter_client_logs=False,
 
     batch_size=0,
     slow_path_freq=0,
@@ -249,7 +250,7 @@ def run(
     # Wrapper around remote run to convert ips
     resolve = get_address_resolver(c)
     remote.run(c, config_file, resolve=resolve, prot=prot, v=v, dom_logs=dom_logs, profile=profile,
-               batch_size=batch_size,
+               batch_size=batch_size, filter_client_logs=filter_client_logs,
                slow_path_freq=slow_path_freq, normal_path_freq=normal_path_freq, view_change_freq=view_change_freq,
                drop_checkpoint_freq=drop_checkpoint_freq, commit_local_in_view_change=commit_local_in_view_change,
                max_view_change=max_view_change)

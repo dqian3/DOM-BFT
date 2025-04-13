@@ -102,7 +102,8 @@ def run(
     v=5,
     dom_logs=False,
     profile=False,
-
+    filter_client_logs=False,
+    
     # Optional args to modify the dombft experiments
     prot="dombft",
     batch_size=1,
@@ -113,6 +114,8 @@ def run(
     drop_checkpoint_freq=0,
     commit_local_in_view_change=False,
     max_view_change = 0,
+
+
 ):
     config_file = os.path.abspath(config_file)
 
@@ -138,6 +141,8 @@ def run(
 
     # Give replicas the config file
     group.put(config_file)
+    group.put("filter_logs.py")
+
     remote_config_file = os.path.basename(config_file)
 
     client_handles = []
@@ -173,19 +178,19 @@ def run(
         batch_size_arg = f'--batchSize {batch_size}'
 
 
-        arun = arun_on(ip, f"replica{id}.log", timeout=2*runtime, profile=profile)
+        arun = arun_on(ip, f"replica{id}.log", timeout=10 + runtime, profile=profile)
         hdl = arun(f"nice -n 20 {replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", timeout=2*runtime, profile=profile)
+        arun = arun_on(ip, f"receiver{id}.log", timeout=10 + runtime, profile=profile)
         hdl = arun(f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = arun_on(ip, f"proxy{id}.log", timeout=2*runtime, profile=profile )
+        arun = arun_on(ip, f"proxy{id}.log", timeout=10 + runtime, profile=profile )
         hdl = arun(f"{proxy_path} -v {v} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
@@ -193,8 +198,16 @@ def run(
 
     print("Starting clients")
     for id, ip in enumerate(clients):
-        arun = arun_on(ip, f"client{id}.log", timeout=2*runtime, profile=profile)
-        hdl = arun(f"{client_path} -v {v} -config {remote_config_file} -clientId {id}")
+        arun = arun_on(ip, f"client{id}.log", timeout=10 + runtime, profile=profile)
+
+
+        if (filter_client_logs):
+            suffix = " 2>&1 | python3 -u filter_logs.py "
+        else:
+            suffix = " "
+
+
+        hdl = arun(f"{client_path} -v {v} -config {remote_config_file} -clientId {id} {suffix}")
         client_handles.append(hdl)
 
     try:
