@@ -61,23 +61,23 @@ def parse_client():
 
     commits = {
         "fast": [],
-        "slow": [],
         "normal": [],
+        "slow": [],
         "missed": [],
     }
     
     total_latencies = {
         "fast": 0,
-        "slow": 0,
         "normal": 0,
+        "slow": 0,
         "missed": 0,
     }
     
 
     counts = {
         "fast": 0,
-        "slow": 0,
         "normal": 0,
+        "slow": 0,
         "missed": 0,
     }
     

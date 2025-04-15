@@ -335,16 +335,25 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
                 c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{num_in_flight}.out")
         else:
 
-            # Fast path
+            # Fast path long (client logs are filtered)
             cfg["client"]["sendMode"] = "sendRate"
-            cfg["client"]["maxInFlight"] = 200
+            cfg["client"]["maxInFlight"] = 300
 
-            for send_rate in [400, 600, 800, 900, 1000, 1100, 1200]:
+            for send_rate in [500, 750, 1000, 1100, 1200]:
                 cfg["client"]["sendRate"] = send_rate
                 yaml.dump(cfg, open(config_file, "w"))
-                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
+                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, filter_client_logs=True)
                 c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out")
 
+            # Fast path short
+            # cfg["client"]["sendMode"] = "sendRate"
+            # cfg["client"]["maxInFlight"] = 200
+
+            # for send_rate in [400, 600, 800, 900, 1000, 1100, 1200]:
+            #     cfg["client"]["sendRate"] = send_rate
+            #     yaml.dump(cfg, open(config_file, "w"))
+            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
+            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out")
 
             # # Normal Path Swapped
             # cfg["client"]["sendMode"] = "sendRate"
