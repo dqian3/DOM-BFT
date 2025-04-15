@@ -149,7 +149,11 @@ def parse_client():
                 runtime = (tags["time"] - start_time).total_seconds()
 
                 if (runtime > 0):
-                    print(f"Percent time in fast path (so far): {(runtime - non_fast_seconds)/ runtime:0.3f}")
+                    cur_non_fast_seconds = non_fast_seconds
+                    if last_commit != "fast":
+                        cur_non_fast_seconds += (tags["time"] - last_fast_time).total_seconds()
+
+                    print(f"Percent time in fast path (so far): {(runtime - cur_non_fast_seconds)/ runtime:0.3f}")
                 interval += 1
 
             runtime = (tags["time"] - start_time).total_seconds()
@@ -165,6 +169,11 @@ def parse_client():
         if (runtime == 0 or total_commits == 0):
             print("No commits! exiting...")
             return
+
+
+        if last_commit != "fast":
+            non_fast_seconds += (tags["time"] - last_fast_time).total_seconds()
+
 
         print(f"Percent commits in fast path: {counts['fast']/total_commits:0.3f}")
         print(f"Percent time in fast path: {(runtime - non_fast_seconds)/ runtime:0.3f}")

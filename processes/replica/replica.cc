@@ -1151,6 +1151,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             throw std::runtime_error("Snapshot digest mismatch");
         }
 
+        // if there is overlapping and later checkpoint commits first, skip earlier ones
+        checkpointCollectors_.cleanStaleCollectors(log_->getStableCheckpoint().seq, log_->getCommittedCheckpoint().seq);
+
         if (snapshotReply.checkpoint().seq() > logSuffix.checkpoint->seq()) {
             LOG(WARNING) << "Snapshot is from future: seq=" << snapshotReply.seq() << " round=" << snapshotReply.round()
                          << ". We requested seq=" << logSuffix.checkpoint->seq() << " round=" << round_
