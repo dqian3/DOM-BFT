@@ -2219,32 +2219,37 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
 
 void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
 {
-    uint32_t inInst = msg.round();
+    uint32_t inRound = msg.round();
     if (msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for round=" << inInst
+        LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for round=" << inRound
                   << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if (inInst < round_ && viewPrepared_) {
-        LOG(INFO) << "Received old repair prepare from round=" << inInst << " own round is " << round_;
+    if (inRound < round_ && viewPrepared_) {
+        LOG(INFO) << "Received old repair prepare from round=" << inRound << " own round is " << round_;
         return;
     }
 
-    if (repairPrepares_.count(msg.replica_id()) && repairPrepares_[msg.replica_id()].round() > inInst &&
+    if (inRound > round_) {
+        LOG(INFO) << "Received future repair prepare from round=" << inRound << " own round is " << round_;
+        return;
+    }
+
+    if (repairPrepares_.count(msg.replica_id()) && repairPrepares_[msg.replica_id()].round() > inRound &&
         repairPrepares_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
-        LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for round=" << inInst;
+        LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for round=" << inRound;
         return;
     }
     repairPrepares_[msg.replica_id()] = msg;
     repairPrepareSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
-    LOG(INFO) << "Prepare RECEIVED for round=" << inInst << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "Prepare RECEIVED for round=" << inRound << " from replicaId=" << msg.replica_id();
     // skip if already prepared for it
     // note: if viewPrepared_==false, then viewChange_==true
-    if (viewPrepared_ && preparedRound_ == inInst) {
-        LOG(INFO) << "Already prepared for round=" << inInst << " pbft_view=" << pbftView_;
+    if (viewPrepared_ && preparedRound_ == inRound) {
+        LOG(INFO) << "Already prepared for round=" << inRound << " pbft_view=" << pbftView_;
         return;
     }
-    if (!repairProposal_.has_value() || repairProposal_.value().round() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().round() < inRound) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process prepare";
         return;
     }
@@ -2300,6 +2305,12 @@ void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
         LOG(INFO) << "Received old repair commit from round=" << inInst << " own round is " << round_;
         return;
     }
+
+    if (inInst > round_) {
+        LOG(INFO) << "Received future repair commit from round=" << inInst << " own round is " << round_;
+        return;
+    }
+
     if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].round() > inInst &&
         repairPBFTCommits_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
         LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for round=" << inInst;

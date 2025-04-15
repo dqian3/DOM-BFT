@@ -16,12 +16,12 @@ bool Log::inRange(uint32_t seq) const
     return seq > stableCheckpoint_.seq && seq < nextSeq_ && !log_.empty();
 }
 
-bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res)
+bool Log::addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res, bool checkDup)
 {
     std::string prevDigest;
 
     // TODO check duplicates
-    if (!clientRecord_.update(c_id, c_seq)) {
+    if (checkDup && !clientRecord_.update(c_id, c_seq)) {
         VLOG(4) << "Duplicate request detected by the log! c_id=" << c_id << " c_seq=" << c_seq;
         return false;
     }
@@ -185,25 +185,23 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
         committedCheckpoint_ = checkpoint;
     }
 
-    // TODO hack here to just clear client records so these requests aren't counted as duplicates and reset it
-    // afterwards Instead, abort should properly fix client records.
-    clientRecord_ = ClientRecord();
-
     // Apply LogEntries in snapshotReply
 
-    VLOG(1) << "Start appliyng entries in snapshot seq=" << nextSeq_ - 1;
+    VLOG(1) << "Start applying entries in snapshot seq=" << nextSeq_ - 1;
     std::string res;
     for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
         if (entry.seq() < startSeq) {
             continue;
         }
 
-        if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res)) {
+        // TODO hack here to just isgnore client records so these requests aren't counted as duplicates and reset it
+        // afterwards Instead, abort above should properly fix client records.
+        if (!addEntry(entry.client_id(), entry.client_seq(), entry.request(), res, false)) {
             LOG(ERROR) << "Failed to add entry from snapshot " << entry.client_id() << " " << entry.client_seq();
             return false;
         }
     }
-    VLOG(1) << "Finish appliyng entries in snapshot seq=" << nextSeq_ - 1;
+    VLOG(1) << "Finish applying entries in snapshot seq=" << nextSeq_ - 1;
 
     // TODO end of above mentioned hack.
     clientRecord_ = checkpoint.clientRecord_;

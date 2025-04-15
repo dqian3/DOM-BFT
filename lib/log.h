@@ -46,7 +46,9 @@ public:
     bool inRange(uint32_t seq) const;
 
     // Adds an entry and returns whether it is successful.
-    bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res);
+    // TODO: checkDup is a hacky way to not check duplicates when we abort then reset to a snapshot. Instead, abort
+    // should properly undo clientRecords...
+    bool addEntry(uint32_t c_id, uint32_t c_seq, const std::string &req, std::string &res, bool checkDup = true);
     bool addCert(uint32_t seq, const dombft::proto::Cert &cert);
 
     // Abort all requests up to and including seq, as well as app state
