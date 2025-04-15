@@ -200,14 +200,14 @@ void CheckpointCollectorStore::cleanStaleCollectors(uint32_t stableSeq, uint32_t
         if (coll.needsSnapshot()) {
             if (stableSeq >= seq) {
                 it = collectors_.erase(it);
-                VLOG(6) << "Cleaning up collector for round=" << round << " seq=" << seq;
+                VLOG(1) << "Cleaning up stable checkpoint collector for round=" << round << " seq=" << seq;
             } else {
                 ++it;
             }
         } else {
             if (committedSeq >= seq) {
                 it = collectors_.erase(it);
-                VLOG(6) << "Cleaning up collector for round=" << round << " seq=" << seq;
+                VLOG(1) << "Cleaning up committed checkpoint collector for round=" << round << " seq=" << seq;
 
             } else {
                 ++it;

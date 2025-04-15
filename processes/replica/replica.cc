@@ -927,7 +927,9 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     if (!checkpointCollectors_.hasCollector(commit.round(), seq)) {
         VLOG(4) << "Checkpoint collector does not exist for seq=" << seq << " round=" << commit.round()
                 << " creating one now";
-        if (!checkpointCollectors_.initCollector(commit.round(), seq, seq % snapshotInterval_ == 0)) {
+        if (!checkpointCollectors_.initCollector(
+                commit.round(), seq, seq % snapshotInterval_ == 0 || commit.has_app_digest()
+            )) {
             return;
         }
     }
@@ -999,6 +1001,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         } else {
             VLOG(4) << "CHECKPOINT: Quorum of commits match our log, but we do not have a snapshot yet!"
                     << " Will wait for our snapshot request to finish and then receive our own commit!";
+            // TODO, if a replica needed a snapshot to catch up, this case may happen and then the
+            // snapshot will never be taken. This would get cleaned up next time...
         }
 
         // Unregister repair timer set by client as checkpoint confirms progress
