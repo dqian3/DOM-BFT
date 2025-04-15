@@ -970,13 +970,13 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                           << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
-            sendSnapshotRequest(replicaId, checkpoint.seq);
+            // sendSnapshotRequest(replicaId, checkpoint.seq);
 
-            // This cuase replica to fall behind; by teh time it got a snapshot, it would already be too far behind
-            // if (!checkpointSnapshotRequested_) {
-            //     sendSnapshotRequest(replicaId, checkpoint.seq);
-            // }
-            // checkpointSnapshotRequested_ = true;
+            // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far behind
+            if (!checkpointSnapshotRequested_) {
+                sendSnapshotRequest(replicaId, checkpoint.seq);
+            }
+            checkpointSnapshotRequested_ = true;
 
         } else if (!coll.needsSnapshot()) {
             log_->setCheckpoint(checkpoint);
@@ -1122,8 +1122,8 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         // Finish applying LogSuffix computed from repair proposal and return to normal processing
 
-        // TODO this is a temporary fix, since we have replicas get stuck in repair an unable to catch up
-        if (!repairSnapshotRequested_) {
+        // This prevents us from accidentally ressettiting to some old state
+        if (!repairSnapshotRequested_ && snapshotReply.round() <= round_) {
             LOG(ERROR) << "Received snapshot reply during repair before repair finishes due to previous checkpoint, "
                           "ignoring... !";
             return;
