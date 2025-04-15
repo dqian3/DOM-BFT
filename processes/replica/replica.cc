@@ -970,10 +970,13 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                           << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
-            if (!checkpointSnapshotRequested_ && !repairSnapshotRequested_ && !repair_) {
-                sendSnapshotRequest(replicaId, checkpoint.seq);
-            }
-            checkpointSnapshotRequested_ = true;
+            sendSnapshotRequest(replicaId, checkpoint.seq);
+
+            // This cuase replica to fall behind; by teh time it got a snapshot, it would already be too far behind
+            // if (!checkpointSnapshotRequested_) {
+            //     sendSnapshotRequest(replicaId, checkpoint.seq);
+            // }
+            // checkpointSnapshotRequested_ = true;
 
         } else if (!coll.needsSnapshot()) {
             log_->setCheckpoint(checkpoint);
@@ -1177,12 +1180,11 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             throw std::runtime_error("Snapshot digest mismatch");
         }
 
+        // TODO temporary fix for issue #120, this may lead to later issues though
         round_ = std::max(round_, snapshotReply.round());
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
         checkpointCollectors_.cleanStaleCollectors(log_->getStableCheckpoint().seq, log_->getCommittedCheckpoint().seq);
-
-        VLOG(1) << "PERF event=align seq=" << log_->getCommittedCheckpoint().seq + 1;
 
         // Resend replies after modifying log
         for (int seq = log_->getCommittedCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
@@ -1203,6 +1205,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
         }
+
+        VLOG(1) << "PERF event=align checkpoint_seq=" << log_->getCommittedCheckpoint().seq
+                << " log_seq=" << log_->getNextSeq() - 1 << " log_digest=" << digest_to_hex(log_->getDigest());
     }
 
     // Got the snapshot

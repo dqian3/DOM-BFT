@@ -190,6 +190,8 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
     clientRecord_ = ClientRecord();
 
     // Apply LogEntries in snapshotReply
+
+    VLOG(1) << "Start appliyng entries in snapshot seq=" << nextSeq_ - 1;
     std::string res;
     for (const dombft::proto::LogEntry &entry : snapshotReply.log_entries()) {
         if (entry.seq() < startSeq) {
@@ -201,6 +203,7 @@ bool Log::resetToSnapshot(const dombft::proto::SnapshotReply &snapshotReply)
             return false;
         }
     }
+    VLOG(1) << "Finish appliyng entries in snapshot seq=" << nextSeq_ - 1;
 
     // TODO end of above mentioned hack.
     clientRecord_ = checkpoint.clientRecord_;
@@ -248,6 +251,9 @@ bool Log::applySnapshotModifyLog(const dombft::proto::SnapshotReply &snapshotRep
         std::string temp;   // result gets stored here, but we don't need it
         addEntry(entry.client_id, entry.client_seq, entry.request, temp);
     }
+
+    VLOG(1) << "applySnapshotModifyLog reapply_size=" << toReapply.size() << " checkpoint_seq=" << checkpoint.seq
+            << " log_seq=" << nextSeq_ - 1;
 
     return true;
 }
