@@ -117,6 +117,11 @@ def parse_client():
 
                 last_fast_time = tags["time"]
 
+            else:
+                if last_commit == "fast":
+                    print(f"Starting non-fast period at {(last_fast_time - start_time).total_seconds()}")
+ 
+
             last_commit = tags["path"]
 
             if tags["time"] > start_time + interval * datetime.timedelta(minutes=1):

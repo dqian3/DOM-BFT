@@ -405,6 +405,7 @@ void Replica::verifyMessagesThd()
 
             if (!verifyRepairProposal(proposal)) {
                 LOG(INFO) << "Failed to verify repair proposal!";
+                assert(false);   // TODO remove later
                 continue;
             }
 
@@ -939,10 +940,10 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     // use the majority agreed commit message if exists
     if (coll.addAndCheckCommit(commit, sig)) {
         // TODO we can update our round in case commit.round() > round_
-        if (round_ < commit.round()) {
-            LOG(WARNING) << "Ignoring checkpoint for future round " << commit.round() << " current round is " << round_;
-            return;
-        }
+        // if (round_ < commit.round()) {
+        //     LOG(WARNING) << "Ignoring checkpoint for future round " << commit.round() << " current round is " <<
+        //     round_; return;
+        // }
 
         ::LogCheckpoint checkpoint;
         coll.getCheckpoint(checkpoint);
@@ -953,7 +954,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             return;
         }
 
-        LOG(INFO) << "Trying to commit seq=" << seq << " commit_digest=" << digest_to_hex(checkpoint.logDigest);
+        LOG(INFO) << "Trying to commit  seq=" << seq << " commit_digest=" << digest_to_hex(checkpoint.logDigest)
+                  << " in round=" << commit.round();
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != checkpoint.logDigest) {
             // TODO choose a random replica from those that have this
@@ -962,8 +964,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                 std::next(checkpoint.commits.begin(), GetMicrosecondTimestamp() % checkpoint.commits.size())
                     ->second.replica_id();
             if (seq >= log_->getNextSeq()) {
-                LOG(INFO) << "My log is behind (nextSeq=" << log_->getNextSeq() << "), requesting snapshot from "
-                          << replicaId;
+                LOG(INFO) << "My log is behind round=" << round_ << " nextSeq=" << log_->getNextSeq()
+                          << ", requesting snapshot from " << replicaId;
             } else {
                 LOG(INFO) << "My log digest (" << digest_to_hex(log_->getDigest(seq))
                           << ") does not match the commit message digest (" << digest_to_hex(checkpoint.logDigest)
@@ -1120,7 +1122,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         }
         LogSuffix &logSuffix = getRepairLogSuffix();
         if (snapshotReply.seq() < logSuffix.checkpoint->seq()) {
-            LOG(ERROR) << "Received snapshot reply during repair due to previous checkpoint, ignoring... !"
+            LOG(ERROR) << "Received snapshot reply during repair that is too old, ignoring... !"
                        << " Previous checkpoint for seq=" << snapshotReply.seq()
                        << " need seq=" << logSuffix.checkpoint->seq();
             return;
@@ -1639,7 +1641,7 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         if (commit.log_digest() != checkpoint.log_digest()) {
             LOG(INFO) << "Checkpoint commit digest does not match Repair commits " << digest_to_hex(commit.log_digest())
                       << " != " << digest_to_hex(checkpoint.log_digest());
-            // return false;
+            return false;
         }
 
         if (!sigProvider_.verify(
@@ -2158,6 +2160,12 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
         LOG(INFO) << "Received old repair preprepare from round=" << msg.round() << " own round is " << round_;
         return;
     }
+
+    if (msg.round() > round_) {
+        LOG(INFO) << "Received future repair preprepare from round=" << msg.round() << " own round is " << round_;
+        return;
+    }
+
     if (msg.pbft_view() != pbftView_) {
         LOG(INFO) << "Received preprepare from replicaId=" << msg.primary_id() << " for round=" << msg.round()
                   << " with different pbft_view=" << msg.pbft_view();
