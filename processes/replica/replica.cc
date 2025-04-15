@@ -964,12 +964,10 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                 std::next(checkpoint.commits.begin(), GetMicrosecondTimestamp() % checkpoint.commits.size())
                     ->second.replica_id();
             if (seq >= log_->getNextSeq()) {
-                LOG(INFO) << "My log is behind round=" << round_ << " nextSeq=" << log_->getNextSeq()
-                          << ", requesting snapshot from " << replicaId;
+                LOG(INFO) << "My log is behind round=" << round_ << " nextSeq=" << log_->getNextSeq();
             } else {
-                LOG(INFO) << "My log digest (" << digest_to_hex(log_->getDigest(seq))
-                          << ") does not match the commit message digest (" << digest_to_hex(checkpoint.logDigest)
-                          << ") requesting snapshot from " << replicaId;
+                LOG(INFO) << "My log digest " << digest_to_hex(log_->getDigest(seq))
+                          << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
             if (!checkpointSnapshotRequested_ && !repairSnapshotRequested_ && !repair_) {
@@ -1103,11 +1101,18 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply)
 {
     if (snapshotReply.round() < round_) {
-        VLOG(4) << "Snapshot reply round outdated, skipping";
+        VLOG(1) << "Snapshot reply round outdated, skipping";
+
+        // TODO these are probably not necessary
+        repairSnapshotRequested_ = false;
+        checkpointSnapshotRequested_ = false;
         return;
     }
     if (snapshotReply.seq() <= log_->getCommittedCheckpoint().seq) {
-        VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
+        VLOG(1) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
+        repairSnapshotRequested_ = false;
+        checkpointSnapshotRequested_ = false;
+
         return;
     }
     if (repair_) {
@@ -1274,6 +1279,11 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
         return;
     }
 
+    if (msg.round() > round_) {
+        VLOG(6) << "Received repair trigger proof for round " << msg.round() << " > " << round_;
+        return;
+    }
+
     LOG(INFO) << "Repair trigger for round " << msg.round() << " client_id=" << msg.client_id()
               << " cseq=" << msg.client_seq() << " has a proof, starting repair!";
 
@@ -1306,6 +1316,11 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
     // Proof is verified by verify thread
     if (msg.round() < round_) {
         LOG(INFO) << "Received repair timeout proof for previous round " << msg.round() << " < " << round_;
+        return;
+    }
+
+    if (msg.round() > round_) {
+        VLOG(6) << "Received repair trigger proof for future round " << msg.round() << " > " << round_;
         return;
     }
 
