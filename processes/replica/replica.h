@@ -60,6 +60,7 @@ private:
 
     // State for commit/checkpoint protocol
     CheckpointCollectorStore checkpointCollectors_;
+    bool checkpointSnapshotRequested_ = false;
 
     // State for repair
     bool repair_ = false;

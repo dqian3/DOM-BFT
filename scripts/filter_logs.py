@@ -2,6 +2,14 @@ import sys
 import re
 import datetime
 import numpy as np
+import select
+
+import signal
+
+# TODO hack to ignore sigint, since code it is wrapping will eventually fail
+# should fix this
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 
 def parse_time(line):
     match = re.search(f"([0-9]*:[0-9]*:[0-9]*.[0-9]*)", line)
@@ -133,6 +141,10 @@ def parse_client():
 
                     commits[path] = []
 
+                runtime = (tags["time"] - start_time).total_seconds()
+
+                if (runtime > 0):
+                    print(f"Percent time in fast path (so far): {(runtime - non_fast_seconds)/ runtime:0.3f}")
                 interval += 1
 
             runtime = (tags["time"] - start_time).total_seconds()
@@ -145,8 +157,11 @@ def parse_client():
 
         total_commits = sum(counts[path] for path in counts)
 
-        print(f"Percent commits in fast path: {counts['fast']/total_commits:0.3f}")
+        if (runtime == 0 or total_commits == 0):
+            print("No commits! exiting...")
+            return
 
+        print(f"Percent commits in fast path: {counts['fast']/total_commits:0.3f}")
         print(f"Percent time in fast path: {(runtime - non_fast_seconds)/ runtime:0.3f}")
         for path in total_latencies:
             print(f"Number of {path} commits: {counts[path]}, average latency: {total_latencies[path] / max(1, counts[path]):.0f}")

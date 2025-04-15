@@ -48,6 +48,7 @@ def genkeys(c, config_file, algorithm="ED25519", keysize=2048):
 @task
 def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
             batch_size=5,
+            filter_client_logs=False,
             num_crashed=0,
             slow_path_freq=0,
             normal_path_freq=0,
@@ -118,7 +119,14 @@ def run(c, config_file="../configs/local.yaml", v=5, prot="dombft",
         time.sleep(3)
 
         for id in range(n_clients):
-            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
+
+            if (filter_client_logs):
+                suffix = " 2>&1 | python3 -u scripts/filter_logs.py "
+            else:
+                suffix = " "
+
+
+            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} {suffix} &>logs/client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 

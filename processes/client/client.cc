@@ -324,8 +324,6 @@ void Client::checkTimeouts()
             VLOG(2) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
             reqState.certSent = true;
 
-            lastNormalPath_ = clientSeq;
-
             // Send cert to replicas;
             endpoint_->PrepareProtoMsg(reqState.collector.getCert(), CERT);
             for (const Address &addr : replicaAddrs_) {
@@ -340,6 +338,7 @@ void Client::checkTimeouts()
                       << " now=" << now << " due to timeout";
 
             reqState.triggerSent = true;
+            reqState.triggerRound = reqState.collector.round_;
             reqState.triggerSendTime = now;
 
             RepairClientTimeout msg;
@@ -486,8 +485,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
                 << " seq=" << reply.seq() << " round=" << reply.round() << " latency=" << now - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reply.digest()) << " queued=" << reply.queued();
 
-        lastFastPath_ = clientSeq;
-
         commitRequest(clientSeq);
         return;
     }
@@ -503,8 +500,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
         reqState.certSent = true;
 
-        lastNormalPath_ = clientSeq;
-
         // Send cert to replicas
         endpoint_->PrepareProtoMsg(reqState.collector.getCert(), CERT);
         for (const Address &addr : replicaAddrs_) {
@@ -514,12 +509,14 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (!reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_) {
-        LOG(INFO) << "Client detected cert is impossible, triggering repair with proof for cseq=" << clientSeq;
+    if (!reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_ &&
+        reqState.collector.round_ == reply.round()) {
+        LOG(INFO) << "Client detected cert is impossible, triggering repair with proof for cseq=" << clientSeq
+                  << " for round=" << reqState.collector.round_;
 
-        reqState.triggerSendTime = now;
         reqState.triggerSent = true;
-        lastSlowPath_ = clientSeq;
+        reqState.triggerRound = reqState.collector.round_;
+        reqState.triggerSendTime = now;
 
         RepairReplyProof proofMsg;
 
@@ -527,13 +524,13 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         proofMsg.set_client_seq(clientSeq);
         proofMsg.set_round(reqState.collector.round_);
 
-        for (auto &[replicaId, reply] : reqState.collector.replies_) {
-            if (reply.round() != reqState.collector.round_)
+        for (auto &[replicaId, r] : reqState.collector.replies_) {
+            if (r.round() != reqState.collector.round_)
                 continue;
 
             auto &sig = reqState.collector.signatures_[replicaId];
             proofMsg.add_signatures(std::string(sig.begin(), sig.end()));
-            (*proofMsg.add_replies()) = reply;
+            (*proofMsg.add_replies()) = r;
         }
         reqState.triggerSendTime = GetMicrosecondTimestamp();
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);
@@ -563,7 +560,6 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
                 << " seq=" << certReply.seq() << " round=" << certReply.round()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest());
-        lastNormalPath_ = cseq;
         commitRequest(cseq);
     }
 }
@@ -593,7 +589,6 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
                     << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime;
         }
 
-        lastSlowPath_ = cseq;
         commitRequest(cseq);
     }
 }

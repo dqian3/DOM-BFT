@@ -41,6 +41,8 @@ struct RequestState {
     // Slow Path state
     bool hasQuorum = false;
     uint64_t quorumTime = 0;   // Time by when we have 2f + 1 replies
+
+    uint32_t triggerRound = 0;
     bool triggerSent = false;
     uint64_t triggerSendTime;
 
@@ -99,9 +101,6 @@ private:
     uint32_t numCommitted_ = 0;
 
     uint32_t lastCommitted_ = 0;
-    uint32_t lastFastPath_ = 0;
-    uint32_t lastNormalPath_ = 0;
-    uint32_t lastSlowPath_ = 0;
 
     uint64_t startTime_ = 0;
 

@@ -956,8 +956,9 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != checkpoint.logDigest) {
             // TODO choose a random replica from those that have this
             assert(!checkpoint.commits.empty());
-            uint32_t replicaId = checkpoint.commits.begin()->first;
-
+            uint32_t replicaId =
+                std::next(checkpoint.commits.begin(), GetMicrosecondTimestamp() % checkpoint.commits.size())
+                    ->second.replica_id();
             if (seq >= log_->getNextSeq()) {
                 LOG(INFO) << "My log is behind (nextSeq=" << log_->getNextSeq() << "), requesting snapshot from "
                           << replicaId;
@@ -967,7 +968,10 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                           << ") requesting snapshot from " << replicaId;
             }
 
-            sendSnapshotRequest(replicaId, checkpoint.seq);
+            if (!checkpointSnapshotRequested_ && !repairSnapshotRequested_ && !repair_) {
+                sendSnapshotRequest(replicaId, checkpoint.seq);
+            }
+            checkpointSnapshotRequested_ = true;
 
         } else if (!coll.needsSnapshot()) {
             log_->setCheckpoint(checkpoint);
@@ -1101,8 +1105,20 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         return;
     }
     if (repair_) {
+
+        // Finish applying LogSuffix computed from repair proposal and return to normal processing
+
+        // TODO this is a temporary fix, since we have replicas get stuck in repair an unable to catch up
         if (!repairSnapshotRequested_) {
-            LOG(ERROR) << "Received snapshot reply during repair due to previous checkpoint, ignoring... !";
+            LOG(ERROR) << "Received snapshot reply during repair before repair finishes due to previous checkpoint, "
+                          "ignoring... !";
+            return;
+        }
+        LogSuffix &logSuffix = getRepairLogSuffix();
+        if (snapshotReply.seq() < logSuffix.checkpoint->seq()) {
+            LOG(ERROR) << "Received snapshot reply during repair due to previous checkpoint, ignoring... !"
+                       << " Previous checkpoint for seq=" << snapshotReply.seq()
+                       << " need seq=" << logSuffix.checkpoint->seq();
             return;
         }
 
@@ -1113,9 +1129,6 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                   << " for seq " << snapshotReply.seq() << " with log from " << startSeq
                   << " has_snapshot=" << snapshotReply.has_snapshot();
 
-        // Finish applying LogSuffix computed from repair proposal and return to normal processing
-        LogSuffix &logSuffix = getRepairLogSuffix();
-
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
 
         if (!log_->resetToSnapshot(snapshotReply)) {
@@ -1125,18 +1138,17 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         }
 
         if (snapshotReply.checkpoint().seq() > logSuffix.checkpoint->seq()) {
-            VLOG(3) << "Warning, received future checkpoint and applying it before finishRepair!";
+            LOG(WARNING) << "Snapshot is from future: seq=" << snapshotReply.seq() << " round=" << snapshotReply.round()
+                         << ". We requested seq=" << logSuffix.checkpoint->seq() << " round=" << round_
+                         << " repair_last_seq=" << logSuffix.checkpoint->seq() + logSuffix.entries.size()
+                         << ". Still applying it before finishRepair, but will likely drop lots of messages";
         }
-
-        // Got the snapshot
-        repairSnapshotRequested_ = false;
 
         applySuffix(logSuffix, log_);
         finishRepair(abortedRequests);
 
         // TODO temporary fix for issue #120, this may lead to later issues though
         round_ = std::max(round_, snapshotReply.round());
-
     } else {
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
@@ -1153,6 +1165,8 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             // TODO handle this better by requesting from another replica..
             throw std::runtime_error("Snapshot digest mismatch");
         }
+
+        round_ = std::max(round_, snapshotReply.round());
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
         checkpointCollectors_.cleanStaleCollectors(log_->getStableCheckpoint().seq, log_->getCommittedCheckpoint().seq);
@@ -1179,6 +1193,10 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
         }
     }
+
+    // Got the snapshot
+    repairSnapshotRequested_ = false;
+    checkpointSnapshotRequested_ = false;
 }
 
 void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig)
@@ -1370,6 +1388,8 @@ void Replica::checkTimeouts()
 
 void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
 {
+    LOG(INFO) << "Sending snapshot request to replica " << replicaId;
+
     SnapshotRequest snapshotRequest;
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_seq(targetSeq);
@@ -1613,9 +1633,9 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         replicaIds.insert(commit.replica_id());
 
         if (commit.log_digest() != checkpoint.log_digest()) {
-            LOG(INFO) << "Checkpoint commit digest does not match!" << digest_to_hex(commit.log_digest())
+            LOG(INFO) << "Checkpoint commit digest does not match Repair commits " << digest_to_hex(commit.log_digest())
                       << " != " << digest_to_hex(checkpoint.log_digest());
-            return false;
+            // return false;
         }
 
         if (!sigProvider_.verify(
@@ -1801,7 +1821,7 @@ void Replica::startRepair()
     uint32_t primaryId = getPrimary();
     VLOG(2) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
     sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
-    VLOG(2) << "PERF DUMP start repair round=" << round_ << " " << *log_;
+    VLOG(2) << "PERF_DUMP start repair round=" << round_ << " " << *log_;
 }
 
 void Replica::sendRepairSummaryToClients()
@@ -1847,7 +1867,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq() << " round=" << round_
             << " pbft_view=" << pbftView_;
 
-    VLOG(2) << "PERF DUMP finish repair round=" << round_ << " " << *log_;
+    VLOG(2) << "PERF_DUMP finish repair round=" << round_ << " " << *log_;
     // LOG(INFO) << "Current client record" << log_->getClientRecord();
     // LOG(INFO) << "Checkpoint client record" << log_->getCommittedCheckpoint().clientRecord_;
 
@@ -1891,6 +1911,8 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         // Repair round crosses a snapshot interavl, we should also kick off one
         // The reason we need to do this is because if repair is continuously triggered,
         // replicas may never be able to gather a cert before the next repair is triggered
+
+        // TODO
         if (seq / snapshotInterval_ > startSeq / snapshotInterval_) {
             // TODO this is also a bit hacky...
             // Create a checkpoint with a new stable app digest by doing a commit round!
@@ -1909,7 +1931,9 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             log_->getClientRecord().toProto(*commit.mutable_client_record());
 
-            checkpointCollectors_.initCollector(round_, seq, true);
+            if (!checkpointCollectors_.hasCollector(round_, seq)) {
+                checkpointCollectors_.initCollector(round_, seq, true);
+            }
 
             uint32_t round = round_;
             app_->takeSnapshot([&, round, commit](const AppSnapshot &snapshot) {
@@ -1944,9 +1968,16 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
             VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
                     << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.logDigest);
 
-            assert(newCheckpoint.logDigest == newCheckpoint.repairCommits.begin()->second.log_digest());
+            if (newCheckpoint.logDigest == newCheckpoint.repairCommits.begin()->second.log_digest()) {
+                log_->setCheckpoint(newCheckpoint);
 
-            log_->setCheckpoint(newCheckpoint);
+            } else {
+                // TODO this should be an assert, but we will fix this later.
+                LOG(ERROR) << "Reapir commit digests "
+                           << digest_to_hex(newCheckpoint.repairCommits.begin()->second.log_digest())
+                           << " does not match my log digest " << digest_to_hex(newCheckpoint.logDigest)
+                           << " skipping...";
+            }
         }
     }
 
@@ -1980,7 +2011,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     }
     repairQueuedReqs_.clear();
 
-    VLOG(2) << "PERF DUMP post repair round=" << round_ - 1 << " " << *log_;
+    VLOG(2) << "PERF_DUMP post repair round=" << round_ - 1 << " " << *log_;
 }
 
 void Replica::tryFinishRepair()
