@@ -64,11 +64,11 @@ def get_process_ips(config_file, resolve):
 
 
 def get_all_ips(config_file, resolve):
-    return [
+    return set(
         ip 
         for ip_list in get_process_ips(config_file, resolve)
         for ip in ip_list 
-    ]
+    )
 
 #=================================================
 #             Main experiment tasks
@@ -134,7 +134,7 @@ def run(
 
     f = len(replicas) // 3
 
-    group = ThreadingGroup(*replicas, *receivers, *proxies, *clients)
+    group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
     # Kill previous runs
     group.run("killall dombft_proxy dombft_replica dombft_receiver dombft_client", warn=True, hide="both")
@@ -313,91 +313,87 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
             v=5,
             prot="dombft",
             batch_size=1,
-            use_in_flight=False,
 ):
-    # gcloud_vm(c, config_file=config_file)
-    # time.sleep(5)
-
     try:
-
         with open(config_file, "r") as cfg_file:
             original_contents = cfg_file.read()
             cfg = yaml.load(original_contents, Loader=yaml.Loader)
-            
+ 
+        # Fast path long (client logs are filtered)
+        cfg["client"]["sendMode"] = "sendRate"
+        cfg["client"]["maxInFlight"] = 300
+        n_clients = len(cfg["client"]["ips"])
 
-        if use_in_flight:
-            cfg["client"]["sendMode"] = "maxInFlight"
+        for send_rate in [500, 750, 1000, 1100, 1200]:
+            cfg["client"]["sendRate"] = send_rate
 
-            for num_in_flight in [25, 50, 75, 100, 150, 200]:
-                cfg["client"]["maxInFlight"] = num_in_flight
-                yaml.dump(cfg, open(config_file, "w"))
-                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
-                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_if{num_in_flight}.out")
-        else:
+            with open(config_file, "w") as yaml_file:
+                yaml.dump(cfg, yaml_file)
 
-            # Fast path long (client logs are filtered)
-            cfg["client"]["sendMode"] = "sendRate"
-            cfg["client"]["maxInFlight"] = 300
+            run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, filter_client_logs=True)
 
-            for send_rate in [500, 750, 1000, 1100, 1200]:
-                cfg["client"]["sendRate"] = send_rate
-                yaml.dump(cfg, open(config_file, "w"))
-                run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, filter_client_logs=True)
-                c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out")
+            folder = f"../output/{prot}_long_{send_rate * n_clients}"
+            c.run(f"mkdir -p {folder}")
+            c.run(f"cp ../logs/*.log {folder}")
 
-            # Fast path short
-            # cfg["client"]["sendMode"] = "sendRate"
-            # cfg["client"]["maxInFlight"] = 200
+            with open(os.path.join(folder, f"{send_rate}_config.yaml"), "w") as yaml_file:
+                yaml.dump(cfg, yaml_file)
 
-            # for send_rate in [400, 600, 800, 900, 1000, 1100, 1200]:
-            #     cfg["client"]["sendRate"] = send_rate
-            #     yaml.dump(cfg, open(config_file, "w"))
-            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
-            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out")
 
-            # # Normal Path Swapped
-            # cfg["client"]["sendMode"] = "sendRate"
-            # cfg["client"]["maxInFlight"] = 500
 
-            # for send_rate in [800, 900, 1000]:
-            #     cfg["client"]["sendRate"] = send_rate
-            #     yaml.dump(cfg, open(config_file, "w"))
+        # Fast path short
+        # cfg["client"]["sendMode"] = "sendRate"
+        # cfg["client"]["maxInFlight"] = 200
 
-            #     # normal_swap
-            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, normal_path_freq=100)
-            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_swap_sr{send_rate}.out")
+        # for send_rate in [400, 600, 800, 900, 1000, 1100, 1200]:
+        #     cfg["client"]["sendRate"] = send_rate
+        #     yaml.dump(cfg, open(config_file, "w"))
+        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
+        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out")
 
-            # Normal Path Crashed
-            # cfg["client"]["sendMode"] = "sendRate"
-            # cfg["client"]["maxInFlight"] = 500
+        # # Normal Path Swapped
+        # cfg["client"]["sendMode"] = "sendRate"
+        # cfg["client"]["maxInFlight"] = 500
 
-            # for send_rate in [400, 600, 800, 900, 1000]:
-            #     cfg["client"]["sendRate"] = send_rate
-            #     yaml.dump(cfg, open(config_file, "w"))
+        # for send_rate in [800, 900, 1000]:
+        #     cfg["client"]["sendRate"] = send_rate
+        #     yaml.dump(cfg, open(config_file, "w"))
 
-            #     # normal_crashed
-            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, num_crashed=1)
-            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_crashed_sr{send_rate}.out")
+        #     # normal_swap
+        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, normal_path_freq=100)
+        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_swap_sr{send_rate}.out")
 
-            # Slow Path
-            # cfg["client"]["sendMode"] = "sendRate"
-            # cfg["client"]["maxInFlight"] = 1000
+        # Normal Path Crashed
+        # cfg["client"]["sendMode"] = "sendRate"
+        # cfg["client"]["maxInFlight"] = 500
 
-            # for send_rate in [200, 400, 600, 700, 800 ]:
-            #     cfg["client"]["sendRate"] = send_rate
-            #     yaml.dump(cfg, open(config_file, "w"))
-            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100)
-            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_sr{send_rate}.out")
+        # for send_rate in [400, 600, 800, 900, 1000]:
+        #     cfg["client"]["sendRate"] = send_rate
+        #     yaml.dump(cfg, open(config_file, "w"))
 
-            # Slow Path, crashed
-            # cfg["client"]["sendMode"] = "sendRate"
-            # cfg["client"]["maxInFlight"] = 1000
+        #     # normal_crashed
+        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, num_crashed=1)
+        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_crashed_sr{send_rate}.out")
 
-            # for send_rate in [200, 400, 600, 700, 800 ]:
-            #     cfg["client"]["sendRate"] = send_rate
-            #     yaml.dump(cfg, open(config_file, "w"))
-            #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100, num_crashed=1)
-            #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_crashed_sr{send_rate}.out")
+        # Slow Path
+        # cfg["client"]["sendMode"] = "sendRate"
+        # cfg["client"]["maxInFlight"] = 1000
+
+        # for send_rate in [200, 400, 600, 700, 800 ]:
+        #     cfg["client"]["sendRate"] = send_rate
+        #     yaml.dump(cfg, open(config_file, "w"))
+        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100)
+        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_sr{send_rate}.out")
+
+        # Slow Path, crashed
+        # cfg["client"]["sendMode"] = "sendRate"
+        # cfg["client"]["maxInFlight"] = 1000
+
+        # for send_rate in [200, 400, 600, 700, 800 ]:
+        #     cfg["client"]["sendRate"] = send_rate
+        #     yaml.dump(cfg, open(config_file, "w"))
+        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100, num_crashed=1)
+        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_crashed_sr{send_rate}.out")
 
 
 
@@ -427,7 +423,7 @@ def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x)
 @task
 def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, resolve=lambda x: x):
     replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
-    group = ThreadingGroup(*replicas, *receivers, *proxies, *clients)    
+    group = ThreadingGroup(*get_all_ips(config_file, resolve))    
 
     if upload_once:
     
@@ -502,7 +498,7 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, re
 
 @task
 def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, setup=False):
-    group = ThreadingGroup(*set(get_all_ips(config_file, resolve)))
+    group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.put(config_file)
 
     if setup:
@@ -524,7 +520,7 @@ def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, set
 @task
 def cmd(c, cmd, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     
-    ips = set(get_all_ips(config_file, resolve))
+    ips = get_all_ips(config_file, resolve)
     print(ips)
 
     group = ThreadingGroup(*ips)
@@ -542,8 +538,8 @@ def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False,
     _, receivers, proxies, _ = get_process_ips(config_file, resolve)
     _, receivers_int, proxies_int, _ = get_process_ips(config_file, resolve=lambda x: x)
 
-    addrs = receivers + proxies
-    addrs_int = receivers_int + proxies_int
+    addrs = set(receivers + proxies)
+    addrs_int = set(receivers_int + proxies_int)
 
     # Only need to do this on proxies and receivers
     group = ThreadingGroup(*addrs)
