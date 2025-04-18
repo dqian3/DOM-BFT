@@ -38,12 +38,23 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         exit(1);
     }
 
+    // CPU affinites, so there are dedicated threads for receiving messages from network/queue
+    // TODO don't hardcode this
+    std::set<int> recvCpus = {0, 1};
+    std::set<int> otherCpus;
+    for (int i = 2; i < 16; i++) {
+        otherCpus.insert(i);
+    }
+
     /** Store replica addrs */
     numReceivers_ = config.receiverIps.size();
     if (config.transport == "nng") {
         auto addrPairs = getReceiverAddrs(config, receiverId);
         replicaAddr_ = addrPairs.back().second;
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
+        auto nngEndpoint = std::make_unique<NngEndpointThreaded>(addrPairs, true, std::nullopt);
+        nngEndpoint->setCpuAffinities(recvCpus, otherCpus);
+        endpoint_ = std::move(nngEndpoint);
+
     } else {
         replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
         LOG(INFO) << "Replica Address: " << replicaAddr_;
@@ -58,7 +69,6 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     endpoint_->RegisterTimer(fwdTimer_.get());
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->receiveRequest(msgHdr, msgBuffer, sender);
-        checkDeadlines();
     });
     endpoint_->RegisterSignalHandler([&]() {
         running_ = false;
@@ -66,12 +76,16 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     });
 
     // Start verify threads
-    // TODO parameterize verifyThreads
     uint32_t numVerifyThreads = config.numVerifyThreads;
 
     for (int i = 0; i < numVerifyThreads; i++) {
         verifyThds_.emplace_back(&Receiver::verifyThd, this, i);
     }
+
+    // Start forward thread
+    forwardThd_ = std::thread(&Receiver::forwardThd, this);
+
+    setCpuAffinites(recvCpus, otherCpus);
 
     endpoint_->LoopRun();
     for (std::thread &thd : verifyThds_) {
@@ -81,6 +95,43 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
 }
 
 Receiver::~Receiver() {}
+
+void Receiver::setCpuAffinites(const std::set<int> &critCpus, const std::set<int> &otherCpus)
+{
+    // Set CPU affinites, so there are dedicated threads for receiving messages from network/queue
+    cpu_set_t critSet;
+    cpu_set_t otherSet;
+
+    CPU_ZERO(&critSet);
+    CPU_ZERO(&otherSet);
+
+    for (int cpu : critCpus) {
+        CPU_SET(cpu, &critSet);
+    }
+    for (int cpu : otherCpus) {
+        CPU_SET(cpu, &otherSet);
+    }
+
+    // TODO portability and error codes
+    for (size_t i = 0; i < verifyThds_.size(); i++) {
+        int ret = pthread_setaffinity_np(verifyThds_[i].native_handle(), sizeof(otherSet), &otherSet);
+        if (ret != 0) {
+            LOG(ERROR) << "Error setting thread affinity for verify thread: " << ret;
+            exit(1);
+        }
+    }
+    int ret = pthread_setaffinity_np(forwardThd_.native_handle(), sizeof(otherSet), &otherSet);
+    if (ret != 0) {
+        LOG(ERROR) << "Error setting thread affinity for forward thread: " << ret;
+        exit(1);
+    }
+
+    ret = pthread_setaffinity_np(pthread_self(), sizeof(critSet), &critSet);
+    if (ret != 0) {
+        LOG(ERROR) << "Error setting thread affinity for processing thread: " << ret;
+        exit(1);
+    }
+}
 
 void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 {
@@ -129,9 +180,15 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
     auto r = std::make_shared<Request>(request, request.deadline(), request.client_id(), false);
 
-    {
-        std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-        deadlineQueue_[{deadline, request.client_id()}] = r;
+    while (true) {
+        std::unique_lock<std::mutex> lock(deadlineQueueMtx_, std::try_to_lock);
+        if (lock.owns_lock()) {
+            // Acquired the lock successfully
+            deadlineQueue_[{deadline, request.client_id()}] = r;
+            break;
+        }
+
+        // VLOG(1) << "Unable to acquire lock for deadlineQueue";
     }
 
     verifyQueue_.enqueue(r);
@@ -188,32 +245,44 @@ void Receiver::forwardRequest(const DOMRequest &request)
     endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
 }
 
-void Receiver::checkDeadlines()
+// Put this on another thread
+uint64_t Receiver::checkDeadlines()
 {
+    const uint64_t DEFAULT_CHECK = 1000;
     std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
 
     uint64_t now = GetMicrosecondTimestamp();
     auto it = deadlineQueue_.begin();
 
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
-    while (it != deadlineQueue_.end() && it->first.first <= now) {
-        VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
+    VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
 
-        if (!it->second->verified) {
-            VLOG(3) << "Request not verified, waiting for next check";
-            break;
-        }
+    if (!it->second->verified) {
 
-        forwardRequest(it->second->request);
-        auto temp = std::next(it);
-        deadlineQueue_.erase(it);
-        it = temp;
+        VLOG(3) << "Request not verified, waiting for next check";
+        return DEFAULT_CHECK;
     }
 
-    int64_t nextCheck = deadlineQueue_.empty() ? 1000 : (int64_t) deadlineQueue_.begin()->first.first - now;
+    forwardRequest(it->second->request);
+    auto temp = std::next(it);
+    deadlineQueue_.erase(it);
+
+    int64_t nextCheck = deadlineQueue_.empty() ? DEFAULT_CHECK : (int64_t) deadlineQueue_.begin()->first.first - now;
     nextCheck = std::max(1000l, nextCheck);
 
-    endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+    VLOG(3) << "Next check in " << nextCheck << " us";
+    return nextCheck;
+}
+
+void Receiver::forwardThd()
+{
+    while (running_) {
+        uint64_t nextCheck = checkDeadlines();
+
+        if (nextCheck > 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(nextCheck));
+        }
+    }
 }
 
 void Receiver::verifyThd(int workerId)

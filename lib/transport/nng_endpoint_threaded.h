@@ -86,6 +86,8 @@ public:
     );
     virtual ~NngEndpointThreaded();
 
+    void setCpuAffinities(const std::set<int> &recvCpus, const std::set<int> &sendCpus);
+
     virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr) override;
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
 

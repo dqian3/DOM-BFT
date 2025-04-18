@@ -16,7 +16,7 @@ NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
 
     // Timeout after 5 seconds, so we can gracefully exit
     // TODO would be nice to do something neater like handle queues/timeouts ourselves.
-    nng_setopt_ms(sock, NNG_OPT_SENDTIMEO, 5000);
+    nng_setopt_ms(sock, NNG_OPT_SENDTIMEO, 2000);
 
     thread_ = std::thread(&NngSendThread::run, this);
 }
@@ -50,7 +50,7 @@ void NngSendThread::run()
 
                 // Send up to 5 messages. However, if the messages get too big, we may need to split them up..
                 std::vector<byte> &curMsg = msgs[0];
-                curMsg.reserve(curMsg.size() * 5);
+                curMsg.reserve(NNG_BUFFER_SIZE);
 
                 for (int i = 1; i < numMsgs; i++) {
                     // Next message is too big... Send current batch and start new one
@@ -204,6 +204,42 @@ NngEndpointThreaded::NngEndpointThreaded(
 }
 
 NngEndpointThreaded::~NngEndpointThreaded() {}
+
+void NngEndpointThreaded::setCpuAffinities(const std::set<int> &recvCpus, const std::set<int> &sendCpus)
+{
+
+    // Either both or neither should be set
+    assert(!recvCpus.empty() && !sendCpus.empty());
+    if (recvCpus.empty()) {
+        cpu_set_t sendSet;
+        cpu_set_t recvSet;
+
+        CPU_ZERO(&sendSet);
+        CPU_ZERO(&recvSet);
+
+        for (int cpu : sendCpus) {
+            CPU_SET(cpu, &sendSet);
+        }
+        for (int cpu : recvCpus) {
+            CPU_SET(cpu, &recvSet);
+        }
+
+        // TODO portability and error codes
+        for (size_t i = 0; i < sendThreads_.size(); i++) {
+            int ret = pthread_setaffinity_np(sendThreads_[i]->thread_.native_handle(), sizeof(sendSet), &sendSet);
+            if (ret != 0) {
+                LOG(ERROR) << "Error setting thread affinity for send thread: " << ret;
+                exit(1);
+            }
+        }
+
+        int ret = pthread_setaffinity_np(recvThread_->thread_.native_handle(), sizeof(recvSet), &recvSet);
+        if (ret != 0) {
+            LOG(ERROR) << "Error setting thread affinity for recv thread: " << ret;
+            exit(1);
+        }
+    }
+}
 
 int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
 {

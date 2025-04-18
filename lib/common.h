@@ -15,7 +15,6 @@
 #include "readerwriterqueue.h"
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <junction/ConcurrentMap_Leapfrog.h>
 
 // Compile time configs
 
@@ -43,7 +42,6 @@ template <typename T1> using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
 template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcurrentQueue<T1>;
 template <typename T1> using RWQueue = moodycamel::ReaderWriterQueue<T1>;
 template <typename T1> using BlockingRWQueue = moodycamel::BlockingReaderWriterQueue<T1>;
-template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
 /**
  * The message types are defined according to the proto files and the
