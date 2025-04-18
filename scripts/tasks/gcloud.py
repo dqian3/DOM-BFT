@@ -264,8 +264,7 @@ def logs(c,  config_file="../configs/remote-prod.yaml", resolve=lambda x: x,):
 
 
 @task
-def gcloud_reorder_exp(c, config_file="../configs/remote-prod.yaml", 
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100,
-                    local_log=False):
+def reorder_exp(c, config_file="../configs/remote-prod.yaml", 
+                    poisson=False, ignore_deadlines=False, duration=20, rate=100):
     resolve = get_address_resolver(c)
-    remote.reorder_exp(c, config_file, resolve=resolve, poisson=poisson, ignore_deadlines=ignore_deadlines, duration=duration, rate=rate, local_log=local_log)
+    remote.reorder_exp(c, config_file, resolve=resolve, poisson=poisson, ignore_deadlines=ignore_deadlines, duration=duration, rate=rate)

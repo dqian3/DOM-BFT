@@ -179,13 +179,13 @@ def run(
 
 
         arun = arun_on(ip, f"replica{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(f"taskset --cpu-list 8-15 {replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(f"taskset --cpu-list 0-7 {receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
+        hdl = arun(f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
@@ -239,8 +239,7 @@ def run(
 
 @task
 def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x,
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100,
-                    local_log=False):
+                    poisson=False, ignore_deadlines=False, duration=20, rate=100):
     
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
@@ -264,7 +263,7 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"receiver{id}.log", timeout=duration + 10)
         hdl = arun(
             f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
             + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
@@ -276,7 +275,7 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
+        arun = arun_on(ip, f"proxy{id}.log", timeout=duration + 10)
         hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
                 f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
         
