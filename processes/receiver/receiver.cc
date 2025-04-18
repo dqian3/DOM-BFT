@@ -91,6 +91,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     for (std::thread &thd : verifyThds_) {
         thd.join();
     }
+    forwardThd_.join();
     LOG(INFO) << "Receiver exited cleanly";
 }
 
@@ -180,15 +181,15 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
     auto r = std::make_shared<Request>(request, request.deadline(), request.client_id(), false);
 
+    uint64_t now = GetMicrosecondTimestamp();
     while (true) {
         std::unique_lock<std::mutex> lock(deadlineQueueMtx_, std::try_to_lock);
         if (lock.owns_lock()) {
+            VLOG(6) << "Took " << GetMicrosecondTimestamp() - now << " to acquire lock for deadline queue";
             // Acquired the lock successfully
             deadlineQueue_[{deadline, request.client_id()}] = r;
             break;
         }
-
-        // VLOG(1) << "Unable to acquire lock for deadlineQueue";
     }
 
     verifyQueue_.enqueue(r);
@@ -211,11 +212,14 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
 void Receiver::forwardRequest(const DOMRequest &request)
 {
+    static byte sendBuffer[SEND_BUFFER_SIZE];
+
     int64_t now = GetMicrosecondTimestamp();
 
     if (VLOG_IS_ON(2)) {
         VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
-                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+                << " c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+                << " usec queue_size=" << deadlineQueue_.size();
 
         if (lastFwdDeadline_ > request.deadline()) {
             VLOG(2) << "Forwarded request out of order!";
@@ -234,7 +238,7 @@ void Receiver::forwardRequest(const DOMRequest &request)
     numForwarded_ += 1;
     lastFwdDeadline_ = request.deadline();
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST, sendBuffer, SEND_BUFFER_SIZE);
 #if FABRIC_CRYPTO
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
@@ -255,7 +259,7 @@ uint64_t Receiver::checkDeadlines()
     auto it = deadlineQueue_.begin();
 
     if (it == deadlineQueue_.end()) {
-        VLOG(4) << "No deadlines to check";
+        // VLOG(6) << "No deadlines to check";
         return DEFAULT_CHECK;
     }
 
@@ -274,7 +278,6 @@ uint64_t Receiver::checkDeadlines()
     }
 
     forwardRequest(it->second->request);
-    auto temp = std::next(it);
     deadlineQueue_.erase(it);
 
     int64_t nextCheck = deadlineQueue_.empty() ? DEFAULT_CHECK : (int64_t) deadlineQueue_.begin()->first.first - now;
