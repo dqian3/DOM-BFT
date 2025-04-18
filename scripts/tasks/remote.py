@@ -425,9 +425,9 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, re
     replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
     group = ThreadingGroup(*get_all_ips(config_file, resolve))    
 
-    if upload_once:
-    
+    group.run("killall dombft_proxy dombft_replica dombft_receiver dombft_client", warn=True, hide="both")
 
+    if upload_once:
         # TODO try and check to see if binaries are stale
         print(f"Copying binaries over to one machine {clients[0]}")
         start_time = time.time()
