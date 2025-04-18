@@ -205,6 +205,42 @@ NngEndpointThreaded::NngEndpointThreaded(
 
 NngEndpointThreaded::~NngEndpointThreaded() {}
 
+void NngEndpointThreaded::setCpuAffinities(const std::set<int> &recvCpus, const std::set<int> &sendCpus)
+{
+
+    // Either both or neither should be set
+    assert(!recvCpus.empty() && !sendCpus.empty());
+    if (recvCpus.empty()) {
+        cpu_set_t sendSet;
+        cpu_set_t recvSet;
+
+        CPU_ZERO(&sendSet);
+        CPU_ZERO(&recvSet);
+
+        for (int cpu : sendCpus) {
+            CPU_SET(cpu, &sendSet);
+        }
+        for (int cpu : recvCpus) {
+            CPU_SET(cpu, &recvSet);
+        }
+
+        // TODO portability and error codes
+        for (size_t i = 0; i < sendThreads_.size(); i++) {
+            int ret = pthread_setaffinity_np(sendThreads_[i]->thread_.native_handle(), sizeof(sendSet), &sendSet);
+            if (ret != 0) {
+                LOG(ERROR) << "Error setting thread affinity for send thread: " << ret;
+                exit(1);
+            }
+        }
+
+        int ret = pthread_setaffinity_np(recvThread_->thread_.native_handle(), sizeof(recvSet), &recvSet);
+        if (ret != 0) {
+            LOG(ERROR) << "Error setting thread affinity for recv thread: " << ret;
+            exit(1);
+        }
+    }
+}
+
 int NngEndpointThreaded::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
 {
     if (hdr == nullptr) {

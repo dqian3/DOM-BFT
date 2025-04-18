@@ -179,7 +179,7 @@ def run(
 
 
         arun = arun_on(ip, f"replica{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        hdl = arun(f"taskset --cpu-list 2-15 {replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")

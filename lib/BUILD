@@ -8,7 +8,6 @@ cc_library(
     deps=[
         "@com_github_cameron314_concurrentqueue//:concurrentqueue",
         "@com_github_cameron314_readerwriterqueue//:readerwriterqueue",
-        "@com_github_preshing_junction//:libjunction",
         "@openssl//:openssl",
     ]
 )

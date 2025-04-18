@@ -45,23 +45,6 @@ new_git_repository(
     remote = "https://github.com/cameron314/readerwriterqueue.git",
 )
 
-new_git_repository(
-    name = "com_github_preshing_junction",
-    commit = "5ad3be7ce1d3f16b9f7ed6065bbfeacd2d629a08",
-    shallow_since = "1518982100 -0500",
-    patches = ["//third_party/junction:junction.patch"],
-    patch_args = ["-p1"],
-    build_file = "//third_party/junction:BUILD.bazel",
-    remote = "https://github.com/preshing/junction",
-)
-
-new_git_repository(
-    name = "com_github_preshing_turf",
-    commit = "9ae0d4b984fa95ed5f823274b39c87ee742f6650", 
-    shallow_since = "1484317994 -0500" ,
-    build_file = "//third_party/turf:BUILD.bazel",
-    remote = "https://github.com/preshing/turf",
-)
 
 new_git_repository(
     name = "com_github_enki_libev",

@@ -43,6 +43,7 @@ private:
     BlockingConcurrentQueue<std::shared_ptr<Request>> verifyQueue_;
 
     std::vector<std::thread> verifyThds_;
+    std::thread forwardThd_;
     bool running_;
 
     // Static receiver config
@@ -62,13 +63,17 @@ private:
     bool skipForwarding_;
     bool ignoreDeadlines_;
 
-    /** The actual message / timeout handlers */
+    /** The actual message  handlers */
     void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
-    void checkDeadlines();
+    void verifyThd(int threadId);
+
+    /* Pushing requests off the queue */
+    void forwardThd();
+    uint64_t checkDeadlines();   // Returns the time until the next deadline
     void forwardRequest(const dombft::proto::DOMRequest &request);
 
-    void verifyThd(int threadId);
+    void setCpuAffinites(const std::set<int> &processingSet, const std::set<int> &verifySet);
 
 public:
     Receiver(
