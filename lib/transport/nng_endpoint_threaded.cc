@@ -50,7 +50,7 @@ void NngSendThread::run()
 
                 // Send up to 5 messages. However, if the messages get too big, we may need to split them up..
                 std::vector<byte> &curMsg = msgs[0];
-                curMsg.reserve(NNG_BUFFER_SIZE);
+                curMsg.reserve(curMsg.size() * 5);
 
                 for (int i = 1; i < numMsgs; i++) {
                     // Next message is too big... Send current batch and start new one
