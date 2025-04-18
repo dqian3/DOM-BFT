@@ -211,7 +211,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
 void Receiver::forwardRequest(const DOMRequest &request)
 {
-    uint64_t now = GetMicrosecondTimestamp();
+    int64_t now = GetMicrosecondTimestamp();
 
     if (VLOG_IS_ON(2)) {
         VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline r_id=" << receiverId_
@@ -254,6 +254,16 @@ uint64_t Receiver::checkDeadlines()
     uint64_t now = GetMicrosecondTimestamp();
     auto it = deadlineQueue_.begin();
 
+    if (it == deadlineQueue_.end()) {
+        VLOG(6) << "No deadlines to check";
+        return DEFAULT_CHECK;
+    }
+
+    if (it->first.first > now) {
+        VLOG(3) << "No deadlines reached yet, next deadline in " << it->first.first - now << " us";
+        return (int64_t) it->first.first - now;
+    }
+
     // ->first gets the key of {deadline, client_id}, second .first gets deadline
     VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
 
@@ -268,9 +278,15 @@ uint64_t Receiver::checkDeadlines()
     deadlineQueue_.erase(it);
 
     int64_t nextCheck = deadlineQueue_.empty() ? DEFAULT_CHECK : (int64_t) deadlineQueue_.begin()->first.first - now;
-    nextCheck = std::max(1000l, nextCheck);
 
-    VLOG(3) << "Next check in " << nextCheck << " us";
+    if (VLOG_IS_ON(3)) {
+        if (nextCheck < 0) {
+            VLOG(3) << "Next deadline has already been reached " << -nextCheck << " us ago";
+        } else {
+            VLOG(3) << "Next check in " << nextCheck << " us";
+        }
+    }
+
     return nextCheck;
 }
 
