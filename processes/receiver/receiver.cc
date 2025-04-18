@@ -255,7 +255,7 @@ uint64_t Receiver::checkDeadlines()
     auto it = deadlineQueue_.begin();
 
     if (it == deadlineQueue_.end()) {
-        VLOG(6) << "No deadlines to check";
+        VLOG(4) << "No deadlines to check";
         return DEFAULT_CHECK;
     }
 
@@ -281,7 +281,7 @@ uint64_t Receiver::checkDeadlines()
 
     if (VLOG_IS_ON(3)) {
         if (nextCheck < 0) {
-            VLOG(3) << "Next deadline has already been reached " << -nextCheck << " us ago";
+            VLOG(3) << "Next deadline has already been reached!";
         } else {
             VLOG(3) << "Next check in " << nextCheck << " us";
         }
@@ -297,6 +297,8 @@ void Receiver::forwardThd()
 
         if (nextCheck > 0) {
             std::this_thread::sleep_for(std::chrono::microseconds(nextCheck));
+        } else {
+            std::this_thread::yield();
         }
     }
 }

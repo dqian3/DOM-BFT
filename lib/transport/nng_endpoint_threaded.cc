@@ -16,7 +16,7 @@ NngSendThread::NngSendThread(nng_socket sock, const Address &addr)
 
     // Timeout after 5 seconds, so we can gracefully exit
     // TODO would be nice to do something neater like handle queues/timeouts ourselves.
-    nng_setopt_ms(sock, NNG_OPT_SENDTIMEO, 2000);
+    nng_setopt_ms(sock, NNG_OPT_SENDTIMEO, 5000);
 
     thread_ = std::thread(&NngSendThread::run, this);
 }
