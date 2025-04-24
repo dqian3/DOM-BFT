@@ -274,8 +274,16 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
     recvWatcher_.data = this;
 
     auto cb = [](struct ev_loop *loop, ev_async *w, int revents) {
+        static uint64_t lastPrintTime = 0;
+
         NngEndpointThreaded *ep = (NngEndpointThreaded *) w->data;
         std::pair<std::vector<byte>, Address> item;
+
+        uint64_t now = GetMicrosecondTimestamp();
+        if (now - lastPrintTime > 1000000) {
+            lastPrintTime = now;
+            LOG(INFO) << "NngEndpoint recvQueue size " << ep->recvThread_->queue_.size_approx();
+        }
 
         while (ep->recvThread_->queue_.try_dequeue(item)) {
             auto &[msg, addr] = item;
