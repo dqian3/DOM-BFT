@@ -253,7 +253,7 @@ void Proxy::sendReq(uint32_t seq)
     outReq.set_client_id(proxyId_);
     outReq.set_client_seq(seq);
 
-    VLOG(1) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to " << " deadline=" << deadline
+    VLOG(6) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to " << " deadline=" << deadline
             << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
 
     for (int i = 0; i < numReceivers_; i++) {

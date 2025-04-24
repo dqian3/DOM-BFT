@@ -9,10 +9,13 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
+Receiver::Receiver(
+    const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool skipVerify, bool ignoreDeadlines
+)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
     , skipForwarding_(skipForwarding)
+    , skipVerify_(skipVerify)
     , ignoreDeadlines_(ignoreDeadlines)
     , running_(true)
 {
@@ -42,7 +45,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     // TODO don't hardcode this
     std::set<int> recvCpus = {0, 1};
     std::set<int> otherCpus;
-    for (int i = 2; i < 16; i++) {
+    for (int i = 2; i < 8; i++) {
         otherCpus.insert(i);
     }
 
@@ -170,7 +173,10 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     if (recv_time > request.deadline()) {
         request.set_late(true);
 
-        VLOG(1) << "Request is late by " << recv_time - request.deadline() << "us";
+        NngEndpointThreaded *ep = (NngEndpointThreaded *) endpoint_.get();
+
+        VLOG(1) << "Request is late by " << recv_time - request.deadline() << "us. ";
+        // << ep->recvThread_->queue_.size_approx() << " messages in recv queue";
     }
 
     uint64_t deadline = request.deadline();
@@ -179,7 +185,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         deadline = recv_time;
     }
 
-    auto r = std::make_shared<Request>(request, request.deadline(), request.client_id(), false);
+    auto r = std::make_shared<Request>(request, request.deadline(), request.client_id(), skipVerify_);
 
     uint64_t now = GetMicrosecondTimestamp();
     while (true) {
@@ -192,7 +198,9 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         }
     }
 
-    verifyQueue_.enqueue(r);
+    if (!skipVerify_) {
+        verifyQueue_.enqueue(r);
+    }
 
     // Send measurements replies back to the proxy, but only every 5ms
     if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
@@ -334,7 +342,7 @@ void Receiver::verifyThd(int workerId)
 
         {
             std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-            if (verified) {
+            if (verified || skipForwarding_) {
                 VLOG(4) << "Verified client signature for c_id=" << request->clientId
                         << " c_seq=" << request->request.client_seq() << " time until deadline: "
                         << ((int64_t) request->request.deadline()) - GetMicrosecondTimestamp() << " us";

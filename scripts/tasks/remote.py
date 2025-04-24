@@ -239,7 +239,7 @@ def run(
 
 @task
 def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x,
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100):
+                    poisson=False, ignore_deadlines=False, skip_verify=False, duration=20, rate=100):
     
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
@@ -265,7 +265,8 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", timeout=duration + 10)
         hdl = arun(
-            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+            f"taskset -a -c 0-15 {receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+            + f" -{'-skipVerify' if skip_verify else ''} "
             + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
         )
 

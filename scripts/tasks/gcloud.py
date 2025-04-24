@@ -265,6 +265,6 @@ def logs(c,  config_file="../configs/remote-prod.yaml", resolve=lambda x: x,):
 
 @task
 def reorder_exp(c, config_file="../configs/remote-prod.yaml", 
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100):
+                    poisson=False, ignore_deadlines=False, skip_verify=False, duration=20, rate=100):
     resolve = get_address_resolver(c)
-    remote.reorder_exp(c, config_file, resolve=resolve, poisson=poisson, ignore_deadlines=ignore_deadlines, duration=duration, rate=rate)
+    remote.reorder_exp(c, config_file, resolve=resolve, poisson=poisson, ignore_deadlines=ignore_deadlines, skip_verify=skip_verify, duration=duration, rate=rate)

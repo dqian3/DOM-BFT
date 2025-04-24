@@ -51,6 +51,7 @@ private:
     uint32_t proxyMeasurementPort_;
     uint32_t numReceivers_;
     Address replicaAddr_;
+    std::string transport_;
 
     // Bookeeping
     uint64_t lastFwdDeadline_ = 0;
@@ -59,8 +60,12 @@ private:
     uint32_t numForwarded_ = 0;
     uint64_t lastStatTime_ = 0;
 
+    //
+    std::map<uint32_t, uint64_t> lastSeqs_;
+
     // Turn off various receiver behaviors, for running micro-experiments between proxy and receiver
     bool skipForwarding_;
+    bool skipVerify_;
     bool ignoreDeadlines_;
 
     /** The actual message  handlers */
@@ -77,7 +82,8 @@ private:
 
 public:
     Receiver(
-        const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false, bool ignoreDeadlines = false
+        const ProcessConfig &config, uint32_t receiverId, bool skipForwarding = false, bool skipVerify = false,
+        bool ignoreDeadlines = false
     );
     ~Receiver();
 };

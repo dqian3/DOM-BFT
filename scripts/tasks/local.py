@@ -171,7 +171,7 @@ def reorder_exp(c, config_file, poisson=False):
                 + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
             )
             hdl = arun(cmd)
-
+            print(cmd)
             other_handles.append(hdl)
 
         for id in range(n_proxies):
@@ -182,6 +182,7 @@ def reorder_exp(c, config_file, poisson=False):
             )
 
             hdl = arun(cmd)
+            print(cmd)
             proxy_handles.append(hdl)
 
     try:
