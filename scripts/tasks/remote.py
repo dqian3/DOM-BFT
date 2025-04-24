@@ -179,13 +179,13 @@ def run(
 
 
         arun = arun_on(ip, f"replica{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        hdl = arun(f"taskset -a -c 9-15 {replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
+        hdl = arun(f"taskset -a -c 0-8 {receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
         other_handles.append(hdl)
 
     print("Starting proxies")
@@ -265,8 +265,8 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", timeout=duration + 10)
         hdl = arun(
-            f"taskset -a -c 0-15 {receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
-            + f" -{'-skipVerify' if skip_verify else ''} "
+            f"taskset -a -c 0-8 {receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+            + f" {'-skipVerify' if skip_verify else ''} "
             + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
         )
 

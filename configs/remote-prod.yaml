@@ -33,11 +33,11 @@ client:
 
   keysDir: keys/client
   port: 33000
-  runtimeSeconds: 60
+  runtimeSeconds: 1200
   
   sendMode: sendRate 
   maxInFlight: 500
-  sendRate: 1000
+  sendRate: 2000
   requestSize: 512
 
   normalPathTimeout: 200000   # 200 ms
@@ -90,5 +90,5 @@ replica:
   numVerifyThreads: 6
   port: 34000
 
-  checkpointInterval: 5000
-  snapshotInterval: 250000
+  checkpointInterval: 2000
+  snapshotInterval:  50000
