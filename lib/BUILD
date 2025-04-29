@@ -174,3 +174,22 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+
+cc_library(
+    name = "ooo_service",
+    srcs = ["transport/ooo_service.h"],
+    hdrs = ["transport/ooo_service.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "ooo_service_implementation",
+    srcs = ["transport/ooo_service_implementation.cc"],
+    hdrs = ["transport/ooo_service_implementation.h"],
+    deps= [
+        ":ooo_service",
+        "//lib/rrr:rrrLib"
+    ],
+    visibility = ["//visibility:public"],
+)
