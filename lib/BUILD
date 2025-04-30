@@ -193,3 +193,16 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+
+
+cc_library(
+    name = "ooo_rpc_endpoint",
+    srcs = ["transport/ooo_rpc_endpoint.cc"],
+    hdrs = ["transport/ooo_rpc_endpoint.h"],
+    deps= [
+        ":ooo_service_implementation",
+        ":endpoint"
+    ],
+    visibility = ["//visibility:public"],
+)
