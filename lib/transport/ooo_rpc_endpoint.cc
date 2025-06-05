@@ -1,6 +1,6 @@
 #include "ooo_rpc_endpoint.h"
 
-OOORPCEndpoint::OOORPCEndpoint(const std::string &ip, const int port, const OOOHandler &hdl)
+OOORPCEndpoint::OOORPCEndpoint(const std::string &ip, const int port, const std::vector<Address> &targetAddrs)
     : myIP_(ip)
     , myListeningPort_(port)
 {
@@ -10,14 +10,7 @@ OOORPCEndpoint::OOORPCEndpoint(const std::string &ip, const int port, const OOOH
     thrpool_ = new rrr::ThreadPool(8);
 }
 
-OOORPCEndpoint::~OOORPCEndpoint()
-{
-    // Destruct the RPC-related
-    clientPoll_->release();
-    serverPoll_->release();
-    thrpool_->release();
-    delete oooServer_;
-}
+OOORPCEndpoint::~OOORPCEndpoint() {}
 
 void OOORPCEndpoint::ConnectTo(const Address &dstAddr)
 {
@@ -75,4 +68,22 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
     oooServer_->reg(oooService_);
 
     return true;
+}
+
+void OOORPCEndpoint::LoopRun()
+{
+    SetupServer();
+    // Connect to my target receivers
+    for (auto &targetAddr : targetAddrs_) {
+        ConnectTo(targetAddr);
+    }
+}
+
+void OOORPCEndpoint::LoopBreak()
+{
+    // Destruct the RPC-related
+    clientPoll_->release();
+    serverPoll_->release();
+    thrpool_->release();
+    delete oooServer_;
 }

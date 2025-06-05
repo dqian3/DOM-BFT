@@ -4,7 +4,8 @@
 #include "lib/transport/endpoint.h"
 #include "lib/transport/ooo_service_implementation.h"
 
-void OOORPCMsgHandler(const std::string &msg) { printf("The message is %s", msg.c_str()); }
+/** demo handler for test only */
+inline void OOORPCMsgHandler(const std::string &msg) { printf("The message is %s", msg.c_str()); }
 
 using namespace OOO_BFT_RPC;
 
@@ -27,14 +28,15 @@ protected:
     rrr::Server *oooServer_;
     std::thread *serverThread_;
 
+    std::vector<Address> targetAddrs_;
     std::unordered_map<Address, OOOProxyInfo> proxies_;
 
 public:
-    OOORPCEndpoint(const std::string &ip, const int port, const OOOHandler &hdl);
+    OOORPCEndpoint(const std::string &ip, const int port, const std::vector<Address> &targetAddrs);
     ~OOORPCEndpoint();
 
     // Unlike UDP which is connectionless, for RPC based on TCP,
-    // we must actively set up the connection before we want to send data to it
+    // we must explicitly set up the connection before we want to send data to it
     void ConnectTo(const Address &dstAddr);
 
     void SetupServer();
@@ -43,6 +45,13 @@ public:
     virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr) override;
 
     virtual bool RegisterMsgHandler(MessageHandlerFunc) override;
+
+    // use this function to set up my server and connect to my clients
+    // The caller will call it after registering  handler
+    virtual void LoopRun() override;
+
+    // use this function to destroy my server context
+    virtual void LoopBreak() override;
 };
 
 #endif

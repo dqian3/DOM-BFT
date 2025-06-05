@@ -75,6 +75,20 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         for (size_t i = nReplicas; i < addrPairs.size(); i++)
             proxyAddrs_.push_back(addrPairs[i].second);
+    } else if (config.transport == "simple-rpc") {
+        /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        }
+
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort, replicaAddrs_);
+
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
 
