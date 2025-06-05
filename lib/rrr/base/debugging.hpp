@@ -15,10 +15,10 @@ namespace rrr {
 
 /**
  * Use assert() when the test is only intended for debugging.
- * Use verify() when the test is crucial for both debug and release binary.
+ * Use rrr_verify() when the test is crucial for both debug and release binary.
  */
 #ifdef NDEBUG
-#define verify(expr)                                                                                                   \
+#define rrr_verify(expr)                                                                                               \
     do {                                                                                                               \
         if (unlikely(!(expr))) {                                                                                       \
             printf("  *** verify failed: %s at %s, line %d\n", #expr, __FILE__, __LINE__);                             \
@@ -27,7 +27,7 @@ namespace rrr {
         }                                                                                                              \
     } while (0)
 #else
-#define verify(expr) assert(expr)
+#define rrr_verify(expr) assert(expr)
 #endif
 
 void print_stack_trace(FILE *fp = stderr) __attribute__((noinline));

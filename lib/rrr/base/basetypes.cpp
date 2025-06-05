@@ -4,8 +4,8 @@
 
 namespace rrr {
 
-
-size_t SparseInt::buf_size(char byte0) {
+size_t SparseInt::buf_size(char byte0)
+{
     if ((byte0 & 0x80) == 0) {
         // binary: 0...
         return 1;
@@ -35,7 +35,8 @@ size_t SparseInt::buf_size(char byte0) {
     }
 }
 
-size_t SparseInt::val_size(i64 val) {
+size_t SparseInt::val_size(i64 val)
+{
     if (-64 <= val && val <= 63) {
         return 1;
     } else if (-8192 <= val && val <= 8191) {
@@ -57,8 +58,9 @@ size_t SparseInt::val_size(i64 val) {
     }
 }
 
-size_t SparseInt::dump(i32 val, char* buf) {
-    char* pv = (char *) &val;
+size_t SparseInt::dump(i32 val, char *buf)
+{
+    char *pv = (char *) &val;
     if (-64 <= val && val <= 63) {
         buf[0] = pv[0];
         buf[0] &= 0x7F;
@@ -98,8 +100,9 @@ size_t SparseInt::dump(i32 val, char* buf) {
     }
 }
 
-size_t SparseInt::dump(i64 val, char* buf) {
-    char* pv = (char *) &val;
+size_t SparseInt::dump(i64 val, char *buf)
+{
+    char *pv = (char *) &val;
     if (-64 <= val && val <= 63) {
         buf[0] = pv[0];
         buf[0] &= 0x7F;
@@ -180,10 +183,10 @@ size_t SparseInt::dump(i64 val, char* buf) {
     }
 }
 
-
-i32 SparseInt::load_i32(const char* buf) {
+i32 SparseInt::load_i32(const char *buf)
+{
     i32 val = 0;
-    char* pv = (char *) &val;
+    char *pv = (char *) &val;
     int bsize = SparseInt::buf_size(buf[0]);
     if (bsize < 5) {
         for (int i = 0; i < bsize; i++) {
@@ -204,9 +207,10 @@ i32 SparseInt::load_i32(const char* buf) {
     return val;
 }
 
-i64 SparseInt::load_i64(const char* buf) {
+i64 SparseInt::load_i64(const char *buf)
+{
     i64 val = 0;
-    char* pv = (char *) &val;
+    char *pv = (char *) &val;
     int bsize = SparseInt::buf_size(buf[0]);
     if (bsize < 8) {
         for (int i = 0; i < bsize; i++) {
@@ -227,28 +231,32 @@ i64 SparseInt::load_i64(const char* buf) {
     return val;
 }
 
-Timer::Timer() : begin_(), end_() {
+Timer::Timer()
+    : begin_()
+    , end_()
+{
     reset();
 }
 
-void Timer::start() {
+void Timer::start()
+{
     reset();
     gettimeofday(&begin_, nullptr);
 }
 
-void Timer::stop() {
-    gettimeofday(&end_, nullptr);
-}
+void Timer::stop() { gettimeofday(&end_, nullptr); }
 
-void Timer::reset() {
+void Timer::reset()
+{
     begin_.tv_sec = 0;
     begin_.tv_usec = 0;
     end_.tv_sec = 0;
     end_.tv_usec = 0;
 }
 
-double Timer::elapsed() const {
-    verify(begin_.tv_sec != 0 || begin_.tv_usec != 0);
+double Timer::elapsed() const
+{
+    rrr_verify(begin_.tv_sec != 0 || begin_.tv_usec != 0);
     if (end_.tv_sec == 0 && end_.tv_usec == 0) {
         // not stopped yet
         struct timeval now;
@@ -258,10 +266,12 @@ double Timer::elapsed() const {
     return end_.tv_sec - begin_.tv_sec + (end_.tv_usec - begin_.tv_usec) / 1000000.0;
 }
 
-Rand::Rand() : rand_() {
+Rand::Rand()
+    : rand_()
+{
     struct timeval now;
     gettimeofday(&now, nullptr);
     rand_.seed(now.tv_sec + now.tv_usec + (long long) pthread_self() + (long long) this);
 }
 
-} // namespace base
+}   // namespace rrr

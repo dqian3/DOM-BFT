@@ -10,7 +10,7 @@ void OOOBFTServiceImpl::SendOOOPrepareRequest(const std::string &req, rrr::Defer
 {
     handler_(req);
     // defer->reply triggers reply to the RPC client, if you do not want to reply immediately,
-    // save the defer variable and pass it to the others
+    // save the defer variable and pass it to the other functions
     defer->reply();
 }
 }   // namespace OOO_BFT_RPC

@@ -1,11 +1,11 @@
 #include <string>
 
 #include <errno.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
 #include "client.hpp"
 
@@ -13,7 +13,8 @@ using namespace std;
 
 namespace rrr {
 
-void Future::wait() {
+void Future::wait()
+{
     Pthread_mutex_lock(&ready_m_);
     while (!ready_ && !timed_out_) {
         Pthread_cond_wait(&ready_cond_, &ready_m_);
@@ -21,7 +22,8 @@ void Future::wait() {
     Pthread_mutex_unlock(&ready_m_);
 }
 
-void Future::timed_wait(double sec) {
+void Future::timed_wait(double sec)
+{
     Pthread_mutex_lock(&ready_m_);
     while (!ready_ && !timed_out_) {
         int full_sec = (int) sec;
@@ -40,7 +42,7 @@ void Future::timed_wait(double sec) {
         if (ret == ETIMEDOUT) {
             timed_out_ = true;
         } else {
-            verify(ret == 0);
+            rrr_verify(ret == 0);
         }
     }
     Pthread_mutex_unlock(&ready_m_);
@@ -52,7 +54,8 @@ void Future::timed_wait(double sec) {
     }
 }
 
-void Future::notify_ready() {
+void Future::notify_ready()
+{
     Pthread_mutex_lock(&ready_m_);
     if (!timed_out_) {
         ready_ = true;
@@ -64,16 +67,17 @@ void Future::notify_ready() {
     }
 }
 
-void Client::invalidate_pending_futures() {
-    list<Future*> futures;
+void Client::invalidate_pending_futures()
+{
+    list<Future *> futures;
     pending_fu_l_.lock();
-    for (auto& it: pending_fu_) {
+    for (auto &it : pending_fu_) {
         futures.push_back(it.second);
     }
     pending_fu_.clear();
     pending_fu_l_.unlock();
 
-    for (auto& fu: futures) {
+    for (auto &fu : futures) {
         if (fu != nullptr) {
             fu->error_code_ = ENOTCONN;
             fu->notify_ready();
@@ -84,7 +88,8 @@ void Client::invalidate_pending_futures() {
     }
 }
 
-void Client::close() {
+void Client::close()
+{
     if (status_ == CONNECTED) {
         pollmgr_->remove(this);
         ::close(sock_);
@@ -93,8 +98,9 @@ void Client::close() {
     invalidate_pending_futures();
 }
 
-int Client::connect(const char* addr) {
-    verify(status_ != CONNECTED);
+int Client::connect(const char *addr)
+{
+    rrr_verify(status_ != CONNECTED);
     string addr_str(addr);
     size_t idx = addr_str.find(":");
     if (idx == string::npos) {
@@ -107,8 +113,8 @@ int Client::connect(const char* addr) {
     struct addrinfo hints, *result, *rp;
     memset(&hints, 0, sizeof(struct addrinfo));
 
-    hints.ai_family = AF_INET; // ipv4
-    hints.ai_socktype = SOCK_STREAM; // tcp
+    hints.ai_family = AF_INET;         // ipv4
+    hints.ai_socktype = SOCK_STREAM;   // tcp
 
     int r = getaddrinfo(host.c_str(), port.c_str(), &hints, &result);
     if (r != 0) {
@@ -123,8 +129,8 @@ int Client::connect(const char* addr) {
         }
 
         const int yes = 1;
-        verify(setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == 0);
-        verify(setsockopt(sock_, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes)) == 0);
+        rrr_verify(setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == 0);
+        rrr_verify(setsockopt(sock_, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes)) == 0);
 
         if (::connect(sock_, rp->ai_addr, rp->ai_addrlen) == 0) {
             break;
@@ -140,7 +146,7 @@ int Client::connect(const char* addr) {
         return ENOTCONN;
     }
 
-    verify(set_nonblocking(sock_, true) == 0);
+    rrr_verify(set_nonblocking(sock_, true) == 0);
     Log_debug("rrr::Client: connected to %s", addr);
 
     status_ = CONNECTED;
@@ -149,11 +155,10 @@ int Client::connect(const char* addr) {
     return 0;
 }
 
-void Client::handle_error() {
-    close();
-}
+void Client::handle_error() { close(); }
 
-void Client::handle_write() {
+void Client::handle_write()
+{
     if (status_ != CONNECTED) {
         return;
     }
@@ -167,7 +172,8 @@ void Client::handle_write() {
     out_l_.unlock();
 }
 
-void Client::handle_read() {
+void Client::handle_read()
+{
     if (status_ != CONNECTED) {
         return;
     }
@@ -182,7 +188,7 @@ void Client::handle_read() {
         int n_peek = in_.peek(&packet_size, sizeof(i32));
         if (n_peek == sizeof(i32) && in_.content_size() >= packet_size + sizeof(i32)) {
             // consume the packet size
-            verify(in_.read(&packet_size, sizeof(i32)) == sizeof(i32));
+            rrr_verify(in_.read(&packet_size, sizeof(i32)) == sizeof(i32));
 
             v64 v_reply_xid;
             v32 v_error_code;
@@ -190,10 +196,10 @@ void Client::handle_read() {
             in_ >> v_reply_xid >> v_error_code;
 
             pending_fu_l_.lock();
-            unordered_map<i64, Future*>::iterator it = pending_fu_.find(v_reply_xid.get());
+            unordered_map<i64, Future *>::iterator it = pending_fu_.find(v_reply_xid.get());
             if (it != pending_fu_.end()) {
-                Future* fu = it->second;
-                verify(fu->xid_ == v_reply_xid.get());
+                Future *fu = it->second;
+                rrr_verify(fu->xid_ == v_reply_xid.get());
                 pending_fu_.erase(it);
                 pending_fu_l_.unlock();
 
@@ -216,7 +222,8 @@ void Client::handle_read() {
     }
 }
 
-int Client::poll_mode() {
+int Client::poll_mode()
+{
     int mode = Pollable::READ;
     out_l_.lock();
     if (!out_.empty()) {
@@ -226,14 +233,15 @@ int Client::poll_mode() {
     return mode;
 }
 
-Future* Client::begin_request(i32 rpc_id, const FutureAttr& attr /* =... */) {
+Future *Client::begin_request(i32 rpc_id, const FutureAttr &attr /* =... */)
+{
     out_l_.lock();
 
     if (status_ != CONNECTED) {
         return nullptr;
     }
 
-    Future* fu = new Future(xid_counter_.next(), attr);
+    Future *fu = new Future(xid_counter_.next(), attr);
     pending_fu_l_.lock();
     pending_fu_[fu->xid_] = fu;
     pending_fu_l_.unlock();
@@ -241,7 +249,7 @@ Future* Client::begin_request(i32 rpc_id, const FutureAttr& attr /* =... */) {
     // check if the client gets closed in the meantime
     if (status_ != CONNECTED) {
         pending_fu_l_.lock();
-        unordered_map<i64, Future*>::iterator it = pending_fu_.find(fu->xid_);
+        unordered_map<i64, Future *>::iterator it = pending_fu_.find(fu->xid_);
         if (it != pending_fu_.end()) {
             it->second->release();
             pending_fu_.erase(it);
@@ -251,7 +259,7 @@ Future* Client::begin_request(i32 rpc_id, const FutureAttr& attr /* =... */) {
         return nullptr;
     }
 
-    bmark_ = out_.set_bookmark(sizeof(i32)); // will fill packet size later
+    bmark_ = out_.set_bookmark(sizeof(i32));   // will fill packet size later
 
     *this << v64(fu->xid_);
     *this << rpc_id;
@@ -260,7 +268,8 @@ Future* Client::begin_request(i32 rpc_id, const FutureAttr& attr /* =... */) {
     return (Future *) fu->ref_copy();
 }
 
-void Client::end_request() {
+void Client::end_request()
+{
     // set reply size in packet
     if (bmark_ != nullptr) {
         i32 request_size = out_.get_and_reset_write_cnt();
@@ -276,10 +285,11 @@ void Client::end_request() {
     out_l_.unlock();
 }
 
-ClientPool::ClientPool(PollMgr* pollmgr /* =? */, int parallel_connections /* =? */)
-        : parallel_connections_(parallel_connections) {
+ClientPool::ClientPool(PollMgr *pollmgr /* =? */, int parallel_connections /* =? */)
+    : parallel_connections_(parallel_connections)
+{
 
-    verify(parallel_connections_ > 0);
+    rrr_verify(parallel_connections_ > 0);
     if (pollmgr == nullptr) {
         pollmgr_ = new PollMgr;
     } else {
@@ -287,8 +297,9 @@ ClientPool::ClientPool(PollMgr* pollmgr /* =? */, int parallel_connections /* =?
     }
 }
 
-ClientPool::~ClientPool() {
-    for (auto& it : cache_) {
+ClientPool::~ClientPool()
+{
+    for (auto &it : cache_) {
         for (int i = 0; i < parallel_connections_; i++) {
             it.second[i]->close_and_release();
         }
@@ -297,14 +308,15 @@ ClientPool::~ClientPool() {
     pollmgr_->release();
 }
 
-Client* ClientPool::get_client(const string& addr) {
-    Client* cl = nullptr;
+Client *ClientPool::get_client(const string &addr)
+{
+    Client *cl = nullptr;
     l_.lock();
-    map<string, Client**>::iterator it = cache_.find(addr);
+    map<string, Client **>::iterator it = cache_.find(addr);
     if (it != cache_.end()) {
         cl = it->second[rand_() % parallel_connections_];
     } else {
-        Client** parallel_clients = new Client*[parallel_connections_];
+        Client **parallel_clients = new Client *[parallel_connections_];
         int i;
         bool ok = true;
         for (i = 0; i < parallel_connections_; i++) {
@@ -330,4 +342,4 @@ Client* ClientPool::get_client(const string& addr) {
     return cl;
 }
 
-} // namespace rrr
+}   // namespace rrr

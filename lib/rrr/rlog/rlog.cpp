@@ -1,6 +1,6 @@
-#include <string>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 
 #include "rlog.h"
 
@@ -10,24 +10,25 @@ using namespace rlog;
 
 namespace rlog {
 
-char* RLog::my_ident_s = nullptr;
-RLogProxy* RLog::rp_s = nullptr;
-Client* RLog::cl_s = nullptr;
-char* RLog::buf_s = nullptr;
+char *RLog::my_ident_s = nullptr;
+RLogProxy *RLog::rp_s = nullptr;
+Client *RLog::cl_s = nullptr;
+char *RLog::buf_s = nullptr;
 int RLog::buf_len_s = -1;
-PollMgr* RLog::poll_s = nullptr;
+PollMgr *RLog::poll_s = nullptr;
 rrr::Counter RLog::msg_counter_s;
 
 // no static Mutex class, use pthread_mutex_t and PTHREAD_MUTEX_INITIALIZER instead
 pthread_mutex_t RLog::mutex_s = PTHREAD_MUTEX_INITIALIZER;
 
-void RLog::init(const char* my_ident /* =? */, const char* rlog_addr /* =? */) {
+void RLog::init(const char *my_ident /* =? */, const char *rlog_addr /* =? */)
+{
     Pthread_mutex_lock(&mutex_s);
     if (RLog::cl_s == nullptr) {
         if (my_ident == nullptr) {
             const int len = 128;
             char cstr[len];
-            verify(gethostname(cstr, len) == 0);
+            rrr_verify(gethostname(cstr, len) == 0);
             string src = cstr;
             sprintf(cstr, "(pid=%d)", getpid());
             src += cstr;
@@ -56,9 +57,9 @@ void RLog::init(const char* my_ident /* =? */, const char* rlog_addr /* =? */) {
     Pthread_mutex_unlock(&mutex_s);
 }
 
-
 // function called while holding lock on RLog
-void RLog::do_finalize() {
+void RLog::do_finalize()
+{
     if (my_ident_s) {
         free(my_ident_s);
         my_ident_s = nullptr;
@@ -81,7 +82,8 @@ void RLog::do_finalize() {
     }
 }
 
-void RLog::log_v(int level, const char* fmt, va_list args) {
+void RLog::log_v(int level, const char *fmt, va_list args)
+{
     Pthread_mutex_lock(&mutex_s);
     if (buf_s == nullptr) {
         buf_len_s = 8192;
@@ -93,14 +95,14 @@ void RLog::log_v(int level, const char* fmt, va_list args) {
         buf_len_s = cnt + 16;
         buf_s = (char *) realloc(buf_s, buf_len_s);
         cnt = vsnprintf(buf_s, buf_len_s - 1, fmt, args);
-        verify(cnt < buf_len_s - 1);
+        rrr_verify(cnt < buf_len_s - 1);
     }
     buf_s[cnt] = '\0';
     Log::log(level, 0, "remote", "%s", buf_s);
     if (rp_s) {
         // always use async rpc
         string message = buf_s;
-        Future* fu = rp_s->async_log(level, my_ident_s, msg_counter_s.next(), message);
+        Future *fu = rp_s->async_log(level, my_ident_s, msg_counter_s.next(), message);
         if (fu != nullptr) {
             fu->release();
         } else {
@@ -111,11 +113,12 @@ void RLog::log_v(int level, const char* fmt, va_list args) {
     Pthread_mutex_unlock(&mutex_s);
 }
 
-void RLog::aggregate_qps(const std::string& metric_name, const rrr::i32 increment) {
+void RLog::aggregate_qps(const std::string &metric_name, const rrr::i32 increment)
+{
     Pthread_mutex_lock(&mutex_s);
     if (rp_s) {
         // always use async rpc
-        Future* fu = rp_s->async_aggregate_qps(metric_name, increment);
+        Future *fu = rp_s->async_aggregate_qps(metric_name, increment);
         if (fu != nullptr) {
             fu->release();
         } else {
@@ -126,4 +129,4 @@ void RLog::aggregate_qps(const std::string& metric_name, const rrr::i32 incremen
     Pthread_mutex_unlock(&mutex_s);
 }
 
-} // namespace rlog
+}   // namespace rlog

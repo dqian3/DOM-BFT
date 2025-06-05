@@ -10,7 +10,14 @@ OOORPCEndpoint::OOORPCEndpoint(const std::string &ip, const int port, const OOOH
     thrpool_ = new rrr::ThreadPool(8);
 }
 
-OOORPCEndpoint::~OOORPCEndpoint() {}
+OOORPCEndpoint::~OOORPCEndpoint()
+{
+    // Destruct the RPC-related
+    clientPoll_->release();
+    serverPoll_->release();
+    thrpool_->release();
+    delete oooServer_;
+}
 
 void OOORPCEndpoint::ConnectTo(const Address &dstAddr)
 {

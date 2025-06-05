@@ -62,8 +62,11 @@ cc_library(
 
 cc_library(
     name = "endpoint",
-    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc", "transport/nng_endpoint_threaded.cc"],
-    hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h" , "transport/nng_endpoint_threaded.h"],
+    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", 
+            "transport/nng_endpoint.cc", "transport/nng_endpoint_threaded.cc"],
+    hdrs = ["transport/message_handler.h", "transport/endpoint.h", 
+            "transport/udp_endpoint.h", "transport/nng_endpoint.h" , 
+            "transport/nng_endpoint_threaded.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",

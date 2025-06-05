@@ -18,7 +18,8 @@ static Counter g_marshal_out_stat_cumulative[12];
 static uint64_t g_marshal_stat_report_time = 0;
 static const uint64_t g_marshal_stat_report_interval = 1000 * 1000 * 1000;
 
-static void stat_marshal_report() {
+static void stat_marshal_report()
+{
     Log::info("* MARSHAL:     -1 0~15 16~31 32~63 64~127 128~255 256~511 512~1023 1024~2047 2048~4095 4096~8191 8192~");
     {
         ostringstream ostr;
@@ -56,7 +57,8 @@ static void stat_marshal_report() {
     }
 }
 
-void stat_marshal_in(int fd, const void* buf, size_t nbytes, ssize_t ret) {
+void stat_marshal_in(int fd, const void *buf, size_t nbytes, ssize_t ret)
+{
     if (ret == -1) {
         g_marshal_in_stat[0].next();
     } else if (ret < 16) {
@@ -90,7 +92,8 @@ void stat_marshal_in(int fd, const void* buf, size_t nbytes, ssize_t ret) {
     }
 }
 
-void stat_marshal_out(int fd, const void* buf, size_t nbytes, ssize_t ret) {
+void stat_marshal_out(int fd, const void *buf, size_t nbytes, ssize_t ret)
+{
     if (ret == -1) {
         g_marshal_out_stat[0].next();
     } else if (ret < 16) {
@@ -124,7 +127,7 @@ void stat_marshal_out(int fd, const void* buf, size_t nbytes, ssize_t ret) {
     }
 }
 
-#endif // RPC_STATISTICS
+#endif   // RPC_STATISTICS
 
 /**
  * 8kb minimum chunk size.
@@ -132,20 +135,22 @@ void stat_marshal_out(int fd, const void* buf, size_t nbytes, ssize_t ret) {
  */
 const size_t Marshal::raw_bytes::min_size = 8192;
 
-Marshal::~Marshal() {
-    chunk* chnk = head_;
+Marshal::~Marshal()
+{
+    chunk *chnk = head_;
     while (chnk != nullptr) {
-        chunk* next = chnk->next;
+        chunk *next = chnk->next;
         delete chnk;
         chnk = next;
     }
 }
 
-size_t Marshal::content_size_slow() const {
+size_t Marshal::content_size_slow() const
+{
     assert(tail_ == nullptr || tail_->next == nullptr);
 
     size_t sz = 0;
-    chunk* chnk = head_;
+    chunk *chnk = head_;
     while (chnk != nullptr) {
         sz += chnk->content_size();
         chnk = chnk->next;
@@ -153,7 +158,8 @@ size_t Marshal::content_size_slow() const {
     return sz;
 }
 
-size_t Marshal::write(const void* p, size_t n) {
+size_t Marshal::write(const void *p, size_t n)
+{
     assert(tail_ == nullptr || tail_->next == nullptr);
 
     if (head_ == nullptr) {
@@ -170,7 +176,7 @@ size_t Marshal::write(const void* p, size_t n) {
         assert(n_write > 0);
 
         if (n_write < n) {
-            const char* pc = (const char *) p;
+            const char *pc = (const char *) p;
             tail_->next = new chunk(pc + n_write, n - n_write);
             tail_ = tail_->next;
         }
@@ -182,11 +188,12 @@ size_t Marshal::write(const void* p, size_t n) {
     return n;
 }
 
-size_t Marshal::read(void* p, size_t n) {
+size_t Marshal::read(void *p, size_t n)
+{
     assert(tail_ == nullptr || tail_->next == nullptr);
     assert(empty() || (head_ != nullptr && !head_->fully_read()));
 
-    char* pc = (char *) p;
+    char *pc = (char *) p;
     size_t n_read = 0;
     while (n_read < n && head_ != nullptr && head_->content_size() > 0) {
         size_t cnt = head_->read(pc + n_read, n - n_read);
@@ -195,7 +202,7 @@ size_t Marshal::read(void* p, size_t n) {
                 // deleted the only chunk
                 tail_ = nullptr;
             }
-            chunk* chnk = head_;
+            chunk *chnk = head_;
             head_ = head_->next;
             delete chnk;
         }
@@ -216,13 +223,14 @@ size_t Marshal::read(void* p, size_t n) {
     return n_read;
 }
 
-size_t Marshal::peek(void* p, size_t n) const {
+size_t Marshal::peek(void *p, size_t n) const
+{
     assert(tail_ == nullptr || tail_->next == nullptr);
     assert(empty() || (head_ != nullptr && !head_->fully_read()));
 
-    char* pc = (char *) p;
+    char *pc = (char *) p;
     size_t n_peek = 0;
-    chunk* chnk = head_;
+    chunk *chnk = head_;
     while (chnk != nullptr && n - n_peek > 0) {
         size_t cnt = chnk->peek(pc + n_peek, n - n_peek);
         if (cnt == 0) {
@@ -239,7 +247,8 @@ size_t Marshal::peek(void* p, size_t n) const {
     return n_peek;
 }
 
-size_t Marshal::read_from_fd(int fd) {
+size_t Marshal::read_from_fd(int fd)
+{
     assert(empty() || (head_ != nullptr && !head_->fully_read()));
 
     size_t n_bytes = 0;
@@ -265,7 +274,8 @@ size_t Marshal::read_from_fd(int fd) {
     return n_bytes;
 }
 
-size_t Marshal::read_from_marshal(Marshal& m, size_t n) {
+size_t Marshal::read_from_marshal(Marshal &m, size_t n)
+{
     assert(m.content_size() >= n);   // require m.content_size() >= n > 0
     size_t n_fetch = 0;
 
@@ -275,7 +285,7 @@ size_t Marshal::read_from_marshal(Marshal& m, size_t n) {
             // NOTE: The copied chunk is shared by 2 Marshal objects. Be careful
             //       that only one Marshal should be able to write to it! For the
             //       given 2 use cases, it works.
-            chunk* chnk = m.head_->shared_copy();
+            chunk *chnk = m.head_->shared_copy();
             if (n_fetch + chnk->content_size() > n) {
                 // only fetch enough bytes we need
                 chnk->write_idx -= (n_fetch + chnk->content_size()) - n;
@@ -283,7 +293,7 @@ size_t Marshal::read_from_marshal(Marshal& m, size_t n) {
             size_t cnt = chnk->content_size();
             assert(cnt > 0);
             n_fetch += cnt;
-            verify(m.head_->discard(cnt) == cnt);
+            rrr_verify(m.head_->discard(cnt) == cnt);
             if (head_ == nullptr) {
                 head_ = tail_ = chnk;
             } else {
@@ -295,29 +305,29 @@ size_t Marshal::read_from_marshal(Marshal& m, size_t n) {
                     // deleted the only chunk
                     m.tail_ = nullptr;
                 }
-                chunk* next = m.head_->next;
+                chunk *next = m.head_->next;
                 delete m.head_;
                 m.head_ = next;
             }
         }
         write_cnt_ += n_fetch;
         content_size_ += n_fetch;
-        verify(m.content_size_ >= n_fetch);
+        rrr_verify(m.content_size_ >= n_fetch);
         m.content_size_ -= n_fetch;
 
     } else {
 
         // number of bytes that need to be copied
         size_t copy_n = std::min(tail_->data->size - tail_->write_idx, n);
-        char* buf = new char[copy_n];
+        char *buf = new char[copy_n];
         n_fetch = m.read(buf, copy_n);
-        verify(n_fetch == copy_n);
-        verify(this->write(buf, n_fetch) == n_fetch);
+        rrr_verify(n_fetch == copy_n);
+        rrr_verify(this->write(buf, n_fetch) == n_fetch);
         delete[] buf;
 
         size_t leftover = n - copy_n;
         if (leftover > 0) {
-            verify(tail_->fully_written());
+            rrr_verify(tail_->fully_written());
             n_fetch += this->read_from_marshal(m, leftover);
         }
     }
@@ -326,8 +336,8 @@ size_t Marshal::read_from_marshal(Marshal& m, size_t n) {
     return n_fetch;
 }
 
-
-size_t Marshal::write_to_fd(int fd) {
+size_t Marshal::write_to_fd(int fd)
+{
     size_t n_write = 0;
     while (!empty()) {
         int cnt = head_->write_to_fd(fd);
@@ -335,7 +345,7 @@ size_t Marshal::write_to_fd(int fd) {
             if (head_ == tail_) {
                 tail_ = nullptr;
             }
-            chunk* chnk = head_;
+            chunk *chnk = head_;
             head_ = head_->next;
             delete chnk;
         }
@@ -351,12 +361,13 @@ size_t Marshal::write_to_fd(int fd) {
     return n_write;
 }
 
-Marshal::bookmark* Marshal::set_bookmark(size_t n) {
-    verify(write_cnt_ == 0);
+Marshal::bookmark *Marshal::set_bookmark(size_t n)
+{
+    rrr_verify(write_cnt_ == 0);
 
-    bookmark* bm = new bookmark;
+    bookmark *bm = new bookmark;
     bm->size = n;
-    bm->ptr = new char*[bm->size];
+    bm->ptr = new char *[bm->size];
     for (size_t i = 0; i < n; i++) {
         if (head_ == nullptr) {
             head_ = new chunk;
@@ -373,4 +384,4 @@ Marshal::bookmark* Marshal::set_bookmark(size_t n) {
     return bm;
 }
 
-} // namespace rrr
+}   // namespace rrr

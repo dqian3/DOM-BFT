@@ -8,7 +8,8 @@ using namespace std;
 
 namespace rrr {
 
-void SpinLock::lock() {
+void SpinLock::lock()
+{
     if (!locked_ && !__sync_lock_test_and_set(&locked_, true)) {
         return;
     }
@@ -29,7 +30,8 @@ void SpinLock::lock() {
 
 #ifndef ALL_SPIN_LOCK
 
-int CondVar::timed_wait(Mutex& m, double sec) {
+int CondVar::timed_wait(Mutex &m, double sec)
+{
     int full_sec = (int) sec;
     int nsec = int((sec - full_sec) * 1000 * 1000 * 1000);
     struct timeval tv;
@@ -44,15 +46,16 @@ int CondVar::timed_wait(Mutex& m, double sec) {
     return pthread_cond_timedwait(&cv_, &m.m_, &abstime);
 }
 
-#endif // ifndef ALL_SPIN_LOCK
+#endif   // ifndef ALL_SPIN_LOCK
 
 struct start_thread_pool_args {
-    ThreadPool* thrpool;
+    ThreadPool *thrpool;
     int id_in_pool;
 };
 
-void* ThreadPool::start_thread_pool(void* args) {
-    start_thread_pool_args* t_args = (start_thread_pool_args *) args;
+void *ThreadPool::start_thread_pool(void *args)
+{
+    start_thread_pool_args *t_args = (start_thread_pool_args *) args;
     t_args->thrpool->run_thread(t_args->id_in_pool);
     delete t_args;
     pthread_exit(nullptr);
@@ -60,30 +63,36 @@ void* ThreadPool::start_thread_pool(void* args) {
 }
 
 ThreadPool::ThreadPool(int n /* =... */)
-    : n_(n), should_stop_(false), round_robin_(), th_(), q_() {
-    verify(n_ >= 0);
+    : n_(n)
+    , should_stop_(false)
+    , round_robin_()
+    , th_()
+    , q_()
+{
+    rrr_verify(n_ >= 0);
     th_ = new pthread_t[n_];
-    q_ = new Queue<function<void()>*> [n_];
+    q_ = new Queue<function<void()> *>[n_];
 
     for (int i = 0; i < n_; i++) {
-        start_thread_pool_args* args = new start_thread_pool_args();
+        start_thread_pool_args *args = new start_thread_pool_args();
         args->thrpool = this;
         args->id_in_pool = i;
         Pthread_create(&th_[i], nullptr, ThreadPool::start_thread_pool, args);
     }
 }
 
-ThreadPool::~ThreadPool() {
+ThreadPool::~ThreadPool()
+{
     should_stop_ = true;
     for (int i = 0; i < n_; i++) {
-        q_[i].push(nullptr);  // death pill
+        q_[i].push(nullptr);   // death pill
     }
     for (int i = 0; i < n_; i++) {
         Pthread_join(th_[i], nullptr);
     }
     // check if there's left over jobs
     for (int i = 0; i < n_; i++) {
-        function<void()>* job;
+        function<void()> *job;
         while (q_[i].try_pop(&job)) {
             if (job != nullptr) {
                 (*job)();
@@ -94,7 +103,8 @@ ThreadPool::~ThreadPool() {
     delete[] q_;
 }
 
-int ThreadPool::run_async(const std::function<void()>& f) {
+int ThreadPool::run_async(const std::function<void()> &f)
+{
     if (should_stop_) {
         return EPERM;
     }
@@ -103,16 +113,17 @@ int ThreadPool::run_async(const std::function<void()>& f) {
     return 0;
 }
 
-void ThreadPool::run_thread(int id_in_pool) {
+void ThreadPool::run_thread(int id_in_pool)
+{
     struct timespec sleep_req;
-    const int min_sleep_nsec = 1000;  // 1us
-    const int max_sleep_nsec = 50 * 1000;  // 50us
-    sleep_req.tv_nsec = 1000;  // 1us
+    const int min_sleep_nsec = 1000;        // 1us
+    const int max_sleep_nsec = 50 * 1000;   // 50us
+    sleep_req.tv_nsec = 1000;               // 1us
     sleep_req.tv_sec = 0;
     int stage = 0;
 
     // randomized stealing order
-    int* steal_order = new int[n_];
+    int *steal_order = new int[n_];
     for (int i = 0; i < n_; i++) {
         steal_order[i] = i;
     }
@@ -130,9 +141,9 @@ void ThreadPool::run_thread(int id_in_pool) {
     // succeed: sleep - 1
     // failure: sleep + 10
     for (;;) {
-        function<void()>* job = nullptr;
+        function<void()> *job = nullptr;
 
-        switch(stage) {
+        switch (stage) {
         case 0:
         case 2:
             if (q_[id_in_pool].try_pop(&job)) {
@@ -179,15 +190,23 @@ void ThreadPool::run_thread(int id_in_pool) {
     delete[] steal_order;
 }
 
-void* RunLater::start_run_later(void* thiz) {
-    RunLater* rl = (RunLater *) thiz;
+void *RunLater::start_run_later(void *thiz)
+{
+    RunLater *rl = (RunLater *) thiz;
     rl->run_later_loop();
     pthread_exit(nullptr);
     return nullptr;
 }
 
-RunLater::RunLater() :
-    th_(), m_(), cv_(), should_stop_(), jobs_(), latest_(), latest_l_() {
+RunLater::RunLater()
+    : th_()
+    , m_()
+    , cv_()
+    , should_stop_()
+    , jobs_()
+    , latest_()
+    , latest_l_()
+{
     should_stop_ = false;
     latest_ = 0.0;
     Pthread_mutex_init(&m_, nullptr);
@@ -195,11 +214,12 @@ RunLater::RunLater() :
     Pthread_create(&th_, nullptr, RunLater::start_run_later, this);
 }
 
-RunLater::~RunLater() {
+RunLater::~RunLater()
+{
     should_stop_ = true;
 
     Pthread_mutex_lock(&m_);
-    jobs_.push(make_pair(0.0, nullptr)); // death pill
+    jobs_.push(make_pair(0.0, nullptr));   // death pill
     Pthread_cond_signal(&cv_);
     Pthread_mutex_unlock(&m_);
 
@@ -208,10 +228,11 @@ RunLater::~RunLater() {
     Pthread_cond_destroy(&cv_);
 }
 
-void RunLater::try_one_job() {
+void RunLater::try_one_job()
+{
     Pthread_mutex_lock(&m_);
     if (!jobs_.empty()) {
-        auto& j = jobs_.top();
+        auto &j = jobs_.top();
         struct timeval now;
         gettimeofday(&now, nullptr);
         double now_f = now.tv_sec + now.tv_usec / 1000.0 / 1000.0;
@@ -239,7 +260,7 @@ void RunLater::try_one_job() {
                 abstime.tv_nsec -= 1000 * 1000 * 1000;
             }
             int ret = pthread_cond_timedwait(&cv_, &m_, &abstime);
-            verify(ret == ETIMEDOUT || ret == 0);
+            rrr_verify(ret == ETIMEDOUT || ret == 0);
         }
     } else {
         // wait for inserting a new job
@@ -248,7 +269,8 @@ void RunLater::try_one_job() {
     Pthread_mutex_unlock(&m_);
 }
 
-void RunLater::run_later_loop() {
+void RunLater::run_later_loop()
+{
     while (!should_stop_) {
         try_one_job();
     }
@@ -266,7 +288,8 @@ void RunLater::run_later_loop() {
     }
 }
 
-int RunLater::run_later(double sec, const std::function<void()>& f) {
+int RunLater::run_later(double sec, const std::function<void()> &f)
+{
     if (should_stop_) {
         return EPERM;
     }
@@ -292,11 +315,12 @@ int RunLater::run_later(double sec, const std::function<void()>& f) {
     return 0;
 }
 
-double RunLater::max_wait() const {
+double RunLater::max_wait() const
+{
     struct timeval now;
     gettimeofday(&now, nullptr);
     double now_f = now.tv_sec + now.tv_usec / 1000.0 / 1000.0;
     return max(0.0, latest_ - now_f);
 }
 
-} // namespace base
+}   // namespace rrr

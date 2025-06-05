@@ -11,14 +11,14 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include <unistd.h>
-#include <string.h>
 #include <errno.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "base/all.hpp"
 
-#include "utils.hpp"
 #include "polling.hpp"
+#include "utils.hpp"
 
 using namespace std;
 
@@ -28,24 +28,25 @@ class PollMgr::PollThread {
 
     friend class PollMgr;
 
-    PollMgr* poll_mgr_;
+    PollMgr *poll_mgr_;
 
     // guard mode_ and poll_set_
     SpinLock l_;
     std::unordered_map<int, int> mode_;
-    std::unordered_set<Pollable*> poll_set_;
+    std::unordered_set<Pollable *> poll_set_;
     int poll_fd_;
 
-    std::set<FrequentJob*> fjobs_;
+    std::set<FrequentJob *> fjobs_;
 
-    std::unordered_set<Pollable*> pending_remove_;
+    std::unordered_set<Pollable *> pending_remove_;
     SpinLock pending_remove_l_;
 
     pthread_t th_;
     bool stop_flag_;
 
-    static void* start_poll_loop(void* arg) {
-        PollThread* thiz = (PollThread *) arg;
+    static void *start_poll_loop(void *arg)
+    {
+        PollThread *thiz = (PollThread *) arg;
         thiz->poll_loop();
         pthread_exit(nullptr);
         return nullptr;
@@ -53,64 +54,73 @@ class PollMgr::PollThread {
 
     void poll_loop();
 
-    void start(PollMgr* poll_mgr) {
+    void start(PollMgr *poll_mgr)
+    {
         poll_mgr_ = poll_mgr;
         Pthread_create(&th_, nullptr, PollMgr::PollThread::start_poll_loop, this);
     }
 
-    void trigger_fjob() {
-	for (auto &fjob: fjobs_) {
-	    fjob->trigger();
-	}
+    void trigger_fjob()
+    {
+        for (auto &fjob : fjobs_) {
+            fjob->trigger();
+        }
     }
 
 public:
-
-    PollThread(): poll_mgr_(nullptr), stop_flag_(false) {
+    PollThread()
+        : poll_mgr_(nullptr)
+        , stop_flag_(false)
+    {
 #ifdef USE_KQUEUE
         poll_fd_ = kqueue();
 #else
-        poll_fd_ = epoll_create(10);    // arg ignored, any value > 0 will do
+        poll_fd_ = epoll_create(10);   // arg ignored, any value > 0 will do
 #endif
-        verify(poll_fd_ != -1);
+        rrr_verify(poll_fd_ != -1);
     }
 
-    ~PollThread() {
+    ~PollThread()
+    {
         stop_flag_ = true;
         Pthread_join(th_, nullptr);
 
         // when stopping, release anything registered in pollmgr
-        for (auto& it: poll_set_) {
+        for (auto &it : poll_set_) {
             this->remove(it);
         }
-        for (auto& it: pending_remove_) {
+        for (auto &it : pending_remove_) {
             it->release();
         }
     }
 
-    void add(Pollable*);
-    void remove(Pollable*);
-    void update_mode(Pollable*, int new_mode);
+    void add(Pollable *);
+    void remove(Pollable *);
+    void update_mode(Pollable *, int new_mode);
 
-    void add(FrequentJob*);
-    void remove(FrequentJob*);
+    void add(FrequentJob *);
+    void remove(FrequentJob *);
 };
 
 PollMgr::PollMgr(int n_threads /* =... */)
-    : n_threads_(n_threads), poll_threads_() {
-    verify(n_threads_ > 0);
+    : n_threads_(n_threads)
+    , poll_threads_()
+{
+    rrr_verify(n_threads_ > 0);
     poll_threads_ = new PollThread[n_threads_];
     for (int i = 0; i < n_threads_; i++) {
         poll_threads_[i].start(this);
     }
 }
 
-PollMgr::~PollMgr() {
+PollMgr::~PollMgr()
+{
     delete[] poll_threads_;
-    //Log_debug("rrr::PollMgr: destroyed");
+    // Log_debug("rrr::PollMgr: destroyed");
 }
 
-void PollMgr::PollThread::poll_loop() {
+void PollMgr::PollThread::poll_loop()
+{
     while (!stop_flag_) {
         const int max_nev = 100;
 
@@ -119,13 +129,13 @@ void PollMgr::PollThread::poll_loop() {
         struct kevent evlist[max_nev];
         struct timespec timeout;
         timeout.tv_sec = 0;
-        timeout.tv_nsec = 50 * 1000 * 1000; // 0.05 sec
+        timeout.tv_nsec = 50 * 1000 * 1000;   // 0.05 sec
 
         int nev = kevent(poll_fd_, nullptr, 0, evlist, max_nev, &timeout);
 
         for (int i = 0; i < nev; i++) {
-            Pollable* poll = (Pollable *) evlist[i].udata;
-            verify(poll != nullptr);
+            Pollable *poll = (Pollable *) evlist[i].udata;
+            rrr_verify(poll != nullptr);
 
             if (evlist[i].filter == EVFILT_READ) {
                 poll->handle_read();
@@ -143,19 +153,19 @@ void PollMgr::PollThread::poll_loop() {
 #else
 
         struct epoll_event evlist[max_nev];
-        int timeout = 1; // milli, 0.001 sec
+        int timeout = 1;   // milli, 0.001 sec
 
         int nev = epoll_wait(poll_fd_, evlist, max_nev, timeout);
 
         if (stop_flag_) {
             break;
         }
-	
-	trigger_fjob();
-	
+
+        trigger_fjob();
+
         for (int i = 0; i < nev; i++) {
-            Pollable* poll = (Pollable *) evlist[i].data.ptr;
-            verify(poll != nullptr);
+            Pollable *poll = (Pollable *) evlist[i].data.ptr;
+            rrr_verify(poll != nullptr);
 
             if (evlist[i].events & EPOLLIN) {
                 poll->handle_read();
@@ -169,18 +179,18 @@ void PollMgr::PollThread::poll_loop() {
                 poll->handle_error();
             }
         }
-	
-	trigger_fjob();
+
+        trigger_fjob();
 
 #endif
 
         // after each poll loop, remove uninterested pollables
         pending_remove_l_.lock();
-        list<Pollable*> remove_poll(pending_remove_.begin(), pending_remove_.end());
+        list<Pollable *> remove_poll(pending_remove_.begin(), pending_remove_.end());
         pending_remove_.clear();
         pending_remove_l_.unlock();
 
-        for (auto& poll: remove_poll) {
+        for (auto &poll : remove_poll) {
             int fd = poll->fd();
 
             l_.lock();
@@ -219,15 +229,12 @@ void PollMgr::PollThread::poll_loop() {
     close(poll_fd_);
 }
 
-void PollMgr::PollThread::add(FrequentJob* fjob) {
-    fjobs_.insert(fjob);
-}
+void PollMgr::PollThread::add(FrequentJob *fjob) { fjobs_.insert(fjob); }
 
-void PollMgr::PollThread::remove(FrequentJob* fjob) {
-    fjobs_.erase(fjob);
-}
+void PollMgr::PollThread::remove(FrequentJob *fjob) { fjobs_.erase(fjob); }
 
-void PollMgr::PollThread::add(Pollable* poll) {
+void PollMgr::PollThread::add(Pollable *poll)
+{
     poll->ref_copy();   // increase ref count
 
     int poll_mode = poll->poll_mode();
@@ -236,8 +243,8 @@ void PollMgr::PollThread::add(Pollable* poll) {
     l_.lock();
 
     // verify not exists
-    verify(poll_set_.find(poll) == poll_set_.end());
-    verify(mode_.find(fd) == mode_.end());
+    rrr_verify(poll_set_.find(poll) == poll_set_.end());
+    rrr_verify(mode_.find(fd) == mode_.end());
 
     // register pollable
     poll_set_.insert(poll);
@@ -254,7 +261,7 @@ void PollMgr::PollThread::add(Pollable* poll) {
         ev.flags = EV_ADD;
         ev.filter = EVFILT_READ;
         ev.udata = poll;
-        verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
+        rrr_verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
     }
     if (poll_mode & Pollable::WRITE) {
         bzero(&ev, sizeof(ev));
@@ -262,7 +269,7 @@ void PollMgr::PollThread::add(Pollable* poll) {
         ev.flags = EV_ADD;
         ev.filter = EVFILT_WRITE;
         ev.udata = poll;
-        verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
+        rrr_verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
     }
 
 #else
@@ -271,20 +278,21 @@ void PollMgr::PollThread::add(Pollable* poll) {
     memset(&ev, 0, sizeof(ev));
 
     ev.data.ptr = poll;
-    ev.events = EPOLLET | EPOLLIN | EPOLLRDHUP; // EPOLLERR and EPOLLHUP are included by default
+    ev.events = EPOLLET | EPOLLIN | EPOLLRDHUP;   // EPOLLERR and EPOLLHUP are included by default
 
     if (poll_mode & Pollable::WRITE) {
         ev.events |= EPOLLOUT;
     }
-    verify(epoll_ctl(poll_fd_, EPOLL_CTL_ADD, fd, &ev) == 0);
+    rrr_verify(epoll_ctl(poll_fd_, EPOLL_CTL_ADD, fd, &ev) == 0);
 
 #endif
 }
 
-void PollMgr::PollThread::remove(Pollable* poll) {
+void PollMgr::PollThread::remove(Pollable *poll)
+{
     bool found = false;
     l_.lock();
-    unordered_set<Pollable*>::iterator it = poll_set_.find(poll);
+    unordered_set<Pollable *>::iterator it = poll_set_.find(poll);
     if (it != poll_set_.end()) {
         found = true;
         assert(mode_.find(poll->fd()) != mode_.end());
@@ -302,7 +310,8 @@ void PollMgr::PollThread::remove(Pollable* poll) {
     }
 }
 
-void PollMgr::PollThread::update_mode(Pollable* poll, int new_mode) {
+void PollMgr::PollThread::update_mode(Pollable *poll, int new_mode)
+{
     int fd = poll->fd();
 
     l_.lock();
@@ -313,7 +322,7 @@ void PollMgr::PollThread::update_mode(Pollable* poll, int new_mode) {
     }
 
     unordered_map<int, int>::iterator it = mode_.find(fd);
-    verify(it != mode_.end());
+    rrr_verify(it != mode_.end());
     int old_mode = it->second;
     it->second = new_mode;
 
@@ -329,7 +338,7 @@ void PollMgr::PollThread::update_mode(Pollable* poll, int new_mode) {
             ev.udata = poll;
             ev.flags = EV_ADD;
             ev.filter = EVFILT_READ;
-            verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
+            rrr_verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
         }
         if (!(new_mode & Pollable::READ) && (old_mode & Pollable::READ)) {
             // del READ
@@ -338,7 +347,7 @@ void PollMgr::PollThread::update_mode(Pollable* poll, int new_mode) {
             ev.udata = poll;
             ev.flags = EV_DELETE;
             ev.filter = EVFILT_READ;
-            verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
+            rrr_verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
         }
         if ((new_mode & Pollable::WRITE) && !(old_mode & Pollable::WRITE)) {
             // add WRITE
@@ -347,7 +356,7 @@ void PollMgr::PollThread::update_mode(Pollable* poll, int new_mode) {
             ev.udata = poll;
             ev.flags = EV_ADD;
             ev.filter = EVFILT_WRITE;
-            verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
+            rrr_verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
         }
         if (!(new_mode & Pollable::WRITE) && (old_mode & Pollable::WRITE)) {
             // del WRITE
@@ -356,7 +365,7 @@ void PollMgr::PollThread::update_mode(Pollable* poll, int new_mode) {
             ev.udata = poll;
             ev.flags = EV_DELETE;
             ev.filter = EVFILT_WRITE;
-            verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
+            rrr_verify(kevent(poll_fd_, &ev, 1, nullptr, 0, nullptr) == 0);
         }
 
 #else
@@ -372,17 +381,17 @@ void PollMgr::PollThread::update_mode(Pollable* poll, int new_mode) {
         if (new_mode & Pollable::WRITE) {
             ev.events |= EPOLLOUT;
         }
-        verify(epoll_ctl(poll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0);
+        rrr_verify(epoll_ctl(poll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0);
 
 #endif
-
     }
 
     l_.unlock();
 }
 
-static inline uint32_t hash_fd(uint32_t key) {
-    uint32_t c2 = 0x27d4eb2d; // a prime or an odd constant
+static inline uint32_t hash_fd(uint32_t key)
+{
+    uint32_t c2 = 0x27d4eb2d;   // a prime or an odd constant
     key = (key ^ 61) ^ (key >> 16);
     key = key + (key << 3);
     key = key ^ (key >> 4);
@@ -391,7 +400,8 @@ static inline uint32_t hash_fd(uint32_t key) {
     return key;
 }
 
-void PollMgr::add(Pollable* poll) {
+void PollMgr::add(Pollable *poll)
+{
     int fd = poll->fd();
     if (fd >= 0) {
         int tid = hash_fd(fd) % n_threads_;
@@ -399,7 +409,8 @@ void PollMgr::add(Pollable* poll) {
     }
 }
 
-void PollMgr::remove(Pollable* poll) {
+void PollMgr::remove(Pollable *poll)
+{
     int fd = poll->fd();
     if (fd >= 0) {
         int tid = hash_fd(fd) % n_threads_;
@@ -407,7 +418,8 @@ void PollMgr::remove(Pollable* poll) {
     }
 }
 
-void PollMgr::update_mode(Pollable* poll, int new_mode) {
+void PollMgr::update_mode(Pollable *poll, int new_mode)
+{
     int fd = poll->fd();
     if (fd >= 0) {
         int tid = hash_fd(fd) % n_threads_;
@@ -415,14 +427,16 @@ void PollMgr::update_mode(Pollable* poll, int new_mode) {
     }
 }
 
-void PollMgr::add(FrequentJob* fjob) {
+void PollMgr::add(FrequentJob *fjob)
+{
     int tid = 0;
     poll_threads_[tid].add(fjob);
 }
 
-void PollMgr::remove(FrequentJob* fjob) {
+void PollMgr::remove(FrequentJob *fjob)
+{
     int tid = 0;
     poll_threads_[tid].remove(fjob);
 }
 
-} // namespace rrr
+}   // namespace rrr
