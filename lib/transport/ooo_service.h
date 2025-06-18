@@ -12,7 +12,7 @@ namespace OOO_BFT_RPC {
 class OOOBFTService: public rrr::Service {
 public:
     enum {
-        SENDOOOPREPAREREQUEST = 0x64eb1eb3,
+        SENDOOOPREPAREREQUEST = 0x1a6dc960,
     };
     int __reg_to__(rrr::Server* svr) {
         int ret = 0;
@@ -26,10 +26,10 @@ public:
     }
     // these RPC handler functions need to be implemented by user
     // for 'raw' handlers, remember to reply req, delete req, and sconn->release(); use sconn->run_async for heavy job
-    virtual void SendOOOPrepareRequest(const std::string& req, rrr::DeferredReply* defer) = 0;
+    virtual void SendOOOPrepareRequest(const OOOPrepareRequest& req, rrr::DeferredReply* defer) = 0;
 private:
     void __SendOOOPrepareRequest__wrapper__(rrr::Request* req, rrr::ServerConnection* sconn) {
-        std::string* in_0 = new std::string;
+        OOOPrepareRequest* in_0 = new OOOPrepareRequest;
         req->m >> *in_0;
         auto __marshal_reply__ = [=] {
         };
@@ -46,7 +46,7 @@ protected:
     rrr::Client* __cl__;
 public:
     OOOBFTProxy(rrr::Client* cl): __cl__(cl) { }
-    rrr::Future* async_SendOOOPrepareRequest(const std::string& req, const rrr::FutureAttr& __fu_attr__ = rrr::FutureAttr()) {
+    rrr::Future* async_SendOOOPrepareRequest(const OOOPrepareRequest& req, const rrr::FutureAttr& __fu_attr__ = rrr::FutureAttr()) {
         rrr::Future* __fu__ = __cl__->begin_request(OOOBFTService::SENDOOOPREPAREREQUEST, __fu_attr__);
         if (__fu__ != nullptr) {
             *__cl__ << req;
@@ -54,7 +54,7 @@ public:
         __cl__->end_request();
         return __fu__;
     }
-    rrr::i32 SendOOOPrepareRequest(const std::string& req) {
+    rrr::i32 SendOOOPrepareRequest(const OOOPrepareRequest& req) {
         rrr::Future* __fu__ = this->async_SendOOOPrepareRequest(req);
         if (__fu__ == nullptr) {
             return ENOTCONN;

@@ -47,7 +47,31 @@ void OOORPCEndpoint::SetupServer()
     });
 }
 
-int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr) {}
+int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
+{
+
+    int ret = -1;
+    // TODO: Need lock?
+    if (hdr == nullptr) {
+        hdr = (MessageHeader *) sendBuffer_;
+    }
+
+    auto iter = proxies_.find(dstAddr);
+    if (iter == proxies_.end()) {
+        LOG(ERROR) << "Does not find the proxy for addr: " << dstAddr.ip() << ":" << dstAddr.port();
+        return -1;
+    }
+    OOOBFTProxy *proxy = iter->second.proxy_;
+
+    OOOPrepareRequest req;
+    req.senderIPInt_ = inet_addr(myIP_.c_str());
+    req.senderPort_ = myListeningPort_;
+    req.length_ = sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen;
+    req.content_.resize(req.length_, '\0');
+    memcpy(&(req.content_[0]), hdr, req.length_);
+    ret = proxy->SendOOOPrepareRequest(req);
+    return ret;
+}
 
 bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
 {
@@ -56,12 +80,22 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
         return false;
     }
     hdlrFunc_ = f;
-    oooHdl_ = [this](const std::string &str) {
+    oooHdl_ = [this](const OOOPrepareRequest &req) {
         // Parse the string to MessageHeader style
-        MessageHeader *header;
-        byte *payload;
+        uint32_t senderIPInt = req.senderIPInt_;
+        uint32_t senderPort = req.senderPort_;
+        in_addr addr;
+        addr.s_addr = htonl(senderIPInt);
+        const char *ipStr = inet_ntoa(addr);
+        Address senderAddr(ipStr, senderPort);
+
+        std::string content = req.content_;
+        MessageHeader *header = reinterpret_cast<MessageHeader *>(&(content[0]));
+        assert(req.content_.length() == req.length_);
+        assert(req.length_ >= sizeof(MessageHeader));
+        byte *payload = reinterpret_cast<byte *>(&(content[sizeof(MessageHeader)]));
         // Delegate to the hdlrFunc_;
-        hdlrFunc_(header, payload, NULL /** Cannot get the address */);
+        hdlrFunc_(header, payload, &senderAddr);
     };
     oooServer_ = new rrr::Server(serverPoll_, thrpool_);
     OOOBFTServiceImpl *oooService_ = new OOOBFTServiceImpl(oooHdl_);

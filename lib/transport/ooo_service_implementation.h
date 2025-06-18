@@ -1,3 +1,6 @@
+
+// clang-format off
+#include "ooo_service_msg.h"
 #include "ooo_service.h"
 #include <iostream>
 
@@ -20,9 +23,9 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
-
+// clang-format on
 namespace OOO_BFT_RPC {
-using OOOHandler = std::function<void(const std::string &)>;
+using OOOHandler = std::function<void(const OOOPrepareRequest &)>;
 class OOOBFTServiceImpl : public OOOBFTService {
 protected:
     // To add your own instance to handle requests, e.g.,
@@ -32,6 +35,6 @@ protected:
 
 public:
     OOOBFTServiceImpl(const OOOHandler &h);
-    void SendOOOPrepareRequest(const std::string &req, rrr::DeferredReply *defer) override;
+    void SendOOOPrepareRequest(const OOOPrepareRequest &req, rrr::DeferredReply *defer) override;
 };
 }   // namespace OOO_BFT_RPC

@@ -7,7 +7,7 @@ namespace  OOO_BFT_RPC
 
 
 abstract service OOOBFT {
-    defer SendOOOPrepareRequest(string req);
+    defer SendOOOPrepareRequest(OOOPrepareRequest req);
 };
 
 

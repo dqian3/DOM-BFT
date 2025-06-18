@@ -548,7 +548,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
             (*proofMsg.add_replies()) = r;
         }
         reqState.triggerSendTime = GetMicrosecondTimestamp();
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);   // JK: Unused?
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }
