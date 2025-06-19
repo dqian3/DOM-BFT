@@ -187,14 +187,13 @@ void Replica::handleMessage(MessageHeader *hdr, const Address &sender)
     // Optimization: drop any messages here during repair that we don't need
     // TODO this should probably be synchronized better
     if (repair_) {
-        if (msgHdr->msgType == REPAIR_CLIENT_TIMEOUT || msgHdr->msgType == REPAIR_REPLICA_TIMEOUT ||
-            msgHdr->msgType == REPAIR_REPLY_PROOF || msgHdr->msgType == REPAIR_TIMEOUT_PROOF ||
-            msgHdr->msgType == CERT) {
+        if (hdr->msgType == REPAIR_CLIENT_TIMEOUT || hdr->msgType == REPAIR_REPLICA_TIMEOUT ||
+            hdr->msgType == REPAIR_REPLY_PROOF || hdr->msgType == REPAIR_TIMEOUT_PROOF || hdr->msgType == CERT) {
             return;
         }
     }
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+    if (sender == receiverAddr_ || sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);

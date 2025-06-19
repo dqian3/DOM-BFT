@@ -252,7 +252,7 @@ bool NngEndpointThreaded::RegisterMsgHandler(MessageHandlerFunc hdl)
                 size_t msgLen = sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen;
 
                 if (offset + msgLen <= totalLen) {
-                    ep->hdlrFunc_(hdr, msgStart + sizeof(MessageHeader), &addr);
+                    ep->hdlrFunc_(hdr, addr);
                 } else {
                     LOG(WARNING) << "Malformed message " << totalLen << " " << offset << " " << msgLen;
                 }
