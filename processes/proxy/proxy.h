@@ -65,6 +65,7 @@ private:
     uint32_t maxOWD_;
     uint64_t lastDeadline_;
     uint32_t numForwarded_ = 0;
+    float offsetCoefficient_;
 
     int numShards_;
     int numReceivers_;

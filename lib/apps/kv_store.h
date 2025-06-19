@@ -2,29 +2,64 @@
 #define KV_STORE_H
 
 #include "lib/application.h"
+#include "lib/utils.h"
+#include "proto/dombft_apps.pb.h"
 
+#include <iomanip>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
-// TODO instead of requests and responses being raw bytes, have
-// request and response types that can be serialized/unserialized.
+#include <mutex>
+#include <shared_mutex>
+
+// THese should prboably be in a config file, but they don't actually affect our protocol
+// so I was lazy and put them here...
+#define NUM_KEYS    500000
+#define SKEW_FACTOR 0.9
+
+struct KVStoreRequest {
+    uint32_t idx;
+    std::string key;
+    std::string value;
+    dombft::apps::KVRequestType type;
+};
+
 class KVStore : public Application {
+
+private:
+    std::vector<KVStoreRequest> requests;
     std::unordered_map<std::string, std::string> data;
+    std::unordered_map<std::string, std::string> committedData;
+    uint32_t dataIdx;
+    uint32_t committedIdx;
+
+    std::shared_mutex committedDataMutex_;
+
+    std::thread snapshotThread_;
 
 public:
-    virtual ~KVStore();
+    KVStore(uint32_t numKeys = NUM_KEYS);
 
-    virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
+    ~KVStore() override;
 
-    virtual bool commit(uint32_t commit_idx) override { return true; }
+    std::string execute(const std::string &serialized_request, uint32_t execute_idx) override;
 
-    virtual std::string getDigest(uint32_t digest_idx) override;
+    bool commit(uint32_t idx) override;
+    bool abort(uint32_t idx) override;
 
-    virtual std::string takeSnapshot() override;
+    void takeSnapshot(SnapshotCallback cb) override;
 
-    virtual void applySnapshot(const std::string &snapshot) override;
+    bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
+};
 
-    virtual bool abort(const uint32_t abort_idx) override;
+class KVStoreClient : public ApplicationClient {
+    std::vector<uint32_t> keyDist_;
+
+public:
+    KVStoreClient(uint32_t numKeys = NUM_KEYS);
+
+    std::string generateAppRequest() override;
 };
 
 #endif

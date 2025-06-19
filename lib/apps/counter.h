@@ -9,49 +9,41 @@
 
 #include <vector>
 
-#define INT_SIZE_IN_BYTES (sizeof(int))
-
-typedef struct VersionedValue {
-    uint64_t version;
-    int64_t value;
-} VersionedValue;
-
 class Counter : public Application {
 public:
-    int counter;
-
-    VersionedValue committed_state;
-
-    virtual ~Counter();
-
-    virtual std::string execute(const std::string &serialized_request, const uint32_t execute_idx) override;
-
-    virtual bool commit(uint32_t commit_idx) override;
-
-    virtual std::string getDigest(uint32_t digest_idx) override;
-
-    virtual std::string takeSnapshot() override;
-
-    virtual void applySnapshot(const std::string &snapshot) override;
-
     Counter()
         : counter(0)
-        , committed_state(0, 0)
-        , version_hist()
+        , committedValue(0)
+        , committedIdx(0)
     {
     }
 
-    virtual bool abort(const uint32_t abort_idx) override;
+    ~Counter() override;
+
+    std::string execute(const std::string &serialized_request, uint32_t execute_idx) override;
+
+    bool commit(uint32_t commit_idx) override;
+    bool abort(uint32_t abort_idx) override;
+
+    void takeSnapshot(SnapshotCallback cb) override;
+    bool applySnapshot(const std::string &snapshot, const std::string &digest, uint32_t idx) override;
 
 private:
-    std::vector<VersionedValue> version_hist;
+    int counter;
+
+    std::map<uint64_t, uint64_t> values;
+
+    int committedValue;
+    int committedIdx;
+
+    AppSnapshot snapshot;
 };
 
-class CounterTrafficGen : public AppTrafficGen {
+class CounterClient : public ApplicationClient {
 public:
-    CounterTrafficGen() = default;
+    CounterClient() = default;
 
-    void *generateAppTraffic() override;
+    std::string generateAppRequest() override;
 };
 
 #endif

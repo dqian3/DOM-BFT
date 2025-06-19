@@ -25,6 +25,8 @@ public:
 
     bool verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId);
     bool verify(MessageHeader *hdr, const std::string &pubKeyType, int pubKeyId);
+    bool verify(const std::string &data, const std::string &sig, const std::string &pubKeyType, int pubKeyId);
+
     // get signature as a byte vector (to be stored elsewhere) after receiving a message.
     std::vector<byte> getSignature(MessageHeader *hdr);
 

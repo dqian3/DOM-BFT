@@ -1,3 +1,4 @@
+cat <<EOF > temp.yaml
 transport: nng 
 
 app: "counter"
@@ -8,39 +9,27 @@ client:
   - 10.182.0.13
   - 10.142.0.14
   - 10.150.0.12
+  - 10.138.0.16
+  - 10.182.0.14
+  - 10.142.0.15
+  - 10.150.0.13
 
-  - 10.138.0.15
-  - 10.182.0.13
-  - 10.142.0.14
-  - 10.150.0.12
-
-  - 10.138.0.15
-  - 10.182.0.13
-  - 10.142.0.14
-  - 10.150.0.12
-
-  - 10.138.0.15
-  - 10.182.0.13
-  - 10.142.0.14
-  - 10.150.0.12
-
-  - 10.138.0.15
-  - 10.182.0.13
-  - 10.142.0.14
-  - 10.150.0.12
-
-  - 10.138.0.15
-  - 10.182.0.13
-  - 10.142.0.14
-  - 10.150.0.12
+  # - 10.138.0.15
+  # - 10.182.0.13
+  # - 10.142.0.14
+  # - 10.150.0.12
+  # - 10.138.0.16
+  # - 10.182.0.14
+  # - 10.142.0.15
+  # - 10.150.0.13
 
   keysDir: keys/client
   port: 33000
-  runtimeSeconds: 120
+  runtimeSeconds: 45
   
   sendMode: sendRate 
   maxInFlight: 500
-  sendRate: 500
+  sendRate: 200
   requestSize: 512
 
   normalPathTimeout: 200000   # 200 ms
@@ -55,6 +44,11 @@ proxy:
   - 10.142.0.14
   - 10.150.0.12
   
+  - 10.138.0.16
+  - 10.182.0.14
+  - 10.142.0.15
+  - 10.150.0.13
+
   keysDir: keys/proxy
   maxOwd: 150000
   measurementPort: 32000
@@ -88,5 +82,20 @@ replica:
   numVerifyThreads: 6
   port: 34000
 
-  checkpointInterval: 5000
-  snapshotInterval: 250000
+  checkpointInterval: 1000
+  snapshotInterval:  25000
+EOF
+
+
+
+
+invoke gcloud.vm && 
+invoke gcloud.run -v 2 --slow-path-freq=10000 --config-file=temp.yaml &&
+cat ../logs/replica*.log ../logs/client*.log | grep PERF >slow.out && 
+
+invoke gcloud.run -v 2 --normal-path-freq=10000  --config-file=temp.yaml && 
+cat ../logs/replica*.log ../logs/client*.log | grep PERF >normal.out; 
+
+
+rm temp.yaml
+invoke gcloud.vm --stop

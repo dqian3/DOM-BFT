@@ -15,6 +15,9 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     maxOWD_ = config.proxyMaxOwd;
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
     proxyId_ = proxyId;
+    offsetCoefficient_ = config.proxyOffsetCoefficient;
+    LOG(INFO) << "offsetCoefficient=" << config.proxyOffsetCoefficient;
+
     selfGenReqs_ = false;
 
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".der";
@@ -136,7 +139,7 @@ void Proxy::LaunchThreads()
 
 void Proxy::RecvMeasurementsTd()
 {
-    OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 10, 90, maxOWD_);
+    OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 40, 90, maxOWD_);
     // OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
 
     MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, const Address &sender) {
@@ -158,7 +161,7 @@ void Proxy::RecvMeasurementsTd()
             context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
         }
 
-        latencyBound_.store(context.getCappedMaxOWD() * 1.5);
+        latencyBound_.store(context.getCappedMaxOWD() * offsetCoefficient_);
         VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
                 << " rtt=" << now - reply.send_time() << " now=" << now << "\nLatency bound is set to be "
                 << latencyBound_.load();
@@ -270,8 +273,8 @@ void Proxy::sendReq(uint32_t seq)
     outReq.set_client_id(proxyId_);
     outReq.set_client_seq(seq);
 
-    VLOG(1) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to "
-            << " deadline=" << deadline << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
+    VLOG(1) << "Issuing simmed client req (" << proxyId_ << ", " << seq << ") to " << " deadline=" << deadline
+            << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
 
     for (int i = 0; i < numReceivers_; i++) {
         MessageHeader *hdr = forwardEps_[0]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);

@@ -32,14 +32,17 @@ struct ProcessConfig {
     int clientRuntimeSeconds;
     int clientNormalPathTimeout;
     int clientSlowPathTimeout;
+    int clientRequestTimeout;
     int clientMaxInFlight;
     int clientSendRate;
     std::string clientSendMode;
+    int clientRequestSize;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
     int proxyMeasurementPort;
     int proxyShards;
+    float proxyOffsetCoefficient;
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
 
@@ -52,11 +55,13 @@ struct ProcessConfig {
 
     std::vector<std::string> replicaIps;
     int replicaPort;
-    int replicaFallbackStartTimeout;
-    int replicaFallbackTimeout;
+    int replicaRepairTimeout;
+    int replicaRepairViewTimeout;
     std::string replicaKeysDir;
     int replicaNumSendThreads;
     int replicaNumVerifyThreads;
+    uint32_t replicaCheckpointInterval;
+    uint32_t replicaSnapshotInterval;
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -107,13 +112,15 @@ struct ProcessConfig {
         try {
             parseStringVector(clientIps, clientNode, "ips");
             clientPort = parseField<int>(clientNode, "port");
-            clientKeysDir = parseField<std::string>(clientNode, "keysDir");
+            clientKeysDir = parseField<std::string>(clientNode, "keysDir", "keys/client");
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
             clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
+            clientRequestTimeout = parseField<int>(clientNode, "requestTimeout");
             clientMaxInFlight = parseField<int>(clientNode, "maxInFlight");
             clientSendRate = parseField<int>(clientNode, "sendRate");
             clientSendMode = parseField<std::string>(clientNode, "sendMode");
+            clientRequestSize = parseField<int>(clientNode, "requestSize");
         }
 
         catch (const ConfigParseException &e) {
@@ -133,6 +140,8 @@ struct ProcessConfig {
             proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
+            proxyOffsetCoefficient = parseField<float>(proxyNode, "offsetCoefficient", 1.5);
+
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing proxy " + std::string(e.what()));
         }
@@ -165,14 +174,21 @@ struct ProcessConfig {
             replicaPort = parseField<int>(replicaNode, "port");
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
 
-            replicaFallbackStartTimeout = parseField<int>(replicaNode, "fallbackStartTimeout");
-            replicaFallbackTimeout = parseField<int>(replicaNode, "fallbackTimeout");
+            replicaRepairTimeout = parseField<int>(replicaNode, "repairTimeout");
+            replicaRepairViewTimeout = parseField<int>(replicaNode, "repairViewTimeout");
 
             replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads");
             replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");
 
+            replicaCheckpointInterval = parseField<int>(replicaNode, "checkpointInterval");
+            replicaSnapshotInterval = parseField<int>(replicaNode, "snapshotInterval", replicaCheckpointInterval);
+
+            if (replicaSnapshotInterval % replicaCheckpointInterval != 0) {
+                throw ConfigParseException("Snapshot interval must be a multiple of checkpoint interval");
+            }
+
         } catch (const ConfigParseException &e) {
-            throw ConfigParseException("Error parsing replica " + std::string(e.what()));
+            throw ConfigParseException("Error parsing replica config: " + std::string(e.what()));
         }
     }
 
@@ -191,9 +207,12 @@ struct ProcessConfig {
         appStr = parseField<std::string>(config, "app");
         if (appStr == "counter") {
             app = AppType::COUNTER;
+        } else if (appStr == "kv_store") {
+            app = AppType::KV_STORE;
         } else {
-            throw ConfigParseException("Invalid app type");
+            throw ConfigParseException("Invalid app type " + appStr + ". Must be 'counter' or 'kv_store'");
         }
+        LOG(INFO) << "Application type: " << appStr;
 
         parseClientConfig(config);
         parseProxyConfig(config);

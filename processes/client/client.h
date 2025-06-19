@@ -17,32 +17,37 @@
 
 namespace dombft {
 struct RequestState {
-
     RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
         : collector(f)
         , request(req)
-        , client_seq(req.client_seq())
+        , clientSeq(req.client_seq())
+        , firstSendTime(sendT)
         , sendTime(sendT)
     {
     }
     CertCollector collector;
     dombft::proto::ClientRequest request;
 
-    uint32_t client_seq;
+    uint32_t clientSeq;
+    uint64_t firstSendTime;
     uint64_t sendTime;
 
     // Normal path state
-    uint64_t certTime;
+    uint64_t certTime = 0;
     bool certSent = false;
     uint64_t certSendTime = false;
     std::set<int> certReplies;
 
     // Slow Path state
+    bool hasQuorum = false;
+    uint64_t quorumTime = 0;   // Time by when we have 2f + 1 replies
+
+    uint32_t triggerRound = 0;
     bool triggerSent = false;
     uint64_t triggerSendTime;
+
     // TODO keep track of matching replies, not just number of replies, of which we need f + 1
-    std::set<int> fallbackReplies;
-    std::optional<dombft::proto::Cert> fallbackProof;
+    std::set<int> repairReplies;
 };
 
 enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
@@ -61,9 +66,11 @@ private:
     dombft::ClientSendMode sendMode_;
     uint32_t sendRate_;
     uint32_t maxInFlight_ = 0;
+    uint32_t requestSize_ = 0;
 
     uint64_t normalPathTimeout_;
     uint64_t slowPathTimeout_;
+    uint64_t requestTimeout_;
 
     /** The endpoint uses to submit request to proxies and receive replies*/
     std::unique_ptr<Endpoint> endpoint_;
@@ -77,7 +84,7 @@ private:
     std::unique_ptr<Timer> terminateTimer_;
 
     /* Class for generating requests */
-    std::unique_ptr<AppTrafficGen> trafficGen_;
+    std::unique_ptr<ApplicationClient> trafficGen_;
     AppType appType_;
 
     SignatureProvider sigProvider_;
@@ -85,10 +92,6 @@ private:
     std::mutex clientStateLock;
 
     /* Global state */
-
-    // Map of replica id instance, once f + 1 are higher than n, update own instance
-    std::map<uint32_t, uint32_t> replicaInstances_;
-    uint32_t myInstance_ = 0;
 
     // Keeping track of sending rate
     uint64_t lastSendTime_ = 0;
@@ -98,9 +101,6 @@ private:
     uint32_t numCommitted_ = 0;
 
     uint32_t lastCommitted_ = 0;
-    uint32_t lastFastPath_ = 0;
-    uint32_t lastNormalPath_ = 0;
-    uint32_t lastSlowPath_ = 0;
 
     uint64_t startTime_ = 0;
 
@@ -111,16 +111,15 @@ private:
     void handleMessage(MessageHeader *hdr, const Address &sender);
     void handleReply(dombft::proto::Reply &reply, std::span<byte> sig);
     void handleCertReply(const dombft::proto::CertReply &reply, std::span<byte> sig);
-    void handleFallbackSummary(const dombft::proto::FallbackSummary &summary, std::span<byte> sig);
+    void handleCommittedReply(const dombft::proto::CommittedReply &reply, std::span<byte> sig);
+    void handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig);
 
+    void fillRequestData(dombft::proto::ClientRequest &request);
     void submitRequest();
     void submitRequestsOpenLoop();   // For sending in open loop.
 
-    void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);
     void commitRequest(uint32_t clientSeq);
-
-    bool updateInstance();
 
     void checkTimeouts();
 

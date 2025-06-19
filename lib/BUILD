@@ -106,8 +106,8 @@ cc_library(
 
 cc_library(
     name = "log",
-    hdrs = ["log.h"],
-    srcs = ["log.cc"],
+    hdrs = ["log.h", "log_checkpoint.h", "log_entry.h"],
+    srcs = ["log.cc", "log_checkpoint.cc", "log_entry.cc"],
     deps = [
         ":common",
         ":utils",
@@ -115,14 +115,15 @@ cc_library(
         "@openssl//:openssl",
         "//proto:dombft_proto_cc",
         "//lib:application",
+        "//lib:client_record",
     ],
     visibility = ["//visibility:public"],
 )
 
 cc_library(
-    name = "fallback_utils",
-    hdrs = ["fallback_utils.h"],
-    srcs = ["fallback_utils.cc"],
+    name = "repair_utils",
+    hdrs = ["repair_utils.h"],
+    srcs = ["repair_utils.cc"],
     deps = [
         ":common",
         ":utils",
@@ -130,7 +131,7 @@ cc_library(
         "@openssl//:openssl",
         "//lib:log",
         "//proto:dombft_proto_cc",
-        "//lib:client_record"
+        "//lib:client_record",
     ],
     visibility = ["//visibility:public"],
 )
@@ -142,8 +143,10 @@ cc_library(
     deps = [
         "//proto:dombft_apps_cc",
         ":common",
+        ":utils",
         "@openssl//:openssl",
         "@com_github_google_glog//:glog",
+        "@com_github_jbeder_yaml_cpp//:yaml-cpp",
     ],
     visibility = ["//visibility:public"],
 )

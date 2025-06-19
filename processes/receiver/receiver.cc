@@ -144,7 +144,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
     if (recv_time > request.deadline()) {
         request.set_late(true);
 
-        VLOG(3) << "Request is late by " << recv_time - request.deadline() << "us";
+        VLOG(1) << "Request is late by " << recv_time - request.deadline() << "us";
     }
 
     uint64_t deadline = request.deadline();
@@ -162,8 +162,8 @@ void Receiver::receiveRequest(MessageHeader *hdr, const Address &sender)
 
     verifyQueue_.enqueue(r);
 
-    // Send measurements replies back to the proxy, but only every 500ms
-    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 500000) {
+    // Send measurements replies back to the proxy, but only every 5ms
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
         lastMeasurementTimes_[request.proxy_id()] = recv_time;
 
         MeasurementReply mReply;

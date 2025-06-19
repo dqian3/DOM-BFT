@@ -24,10 +24,10 @@
 // as IPs and ports. Generally these will be used for ablation experiments or benchmarks
 // of specific components of the system.
 
-#define SEND_BUFFER_SIZE (20000000)
+#define SEND_BUFFER_SIZE (200000000)
 #define UDP_BUFFER_SIZE  (1024)
-#define NNG_BUFFER_SIZE  (20000000)
-#define TCP_BUFFER_SIZE  (20000000)
+#define NNG_BUFFER_SIZE  (200000000)
+#define TCP_BUFFER_SIZE  (200000000)
 #define IPC_BUFFER_SIZE  (1024)
 
 #define USE_PROXY     1
@@ -37,10 +37,8 @@
 // For working with dummy protocols
 #define SEND_TO_LEADER 0
 
-#define MAX_SPEC_HIST       50000
-#define CHECKPOINT_INTERVAL 500
-
 typedef unsigned char byte;
+typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
 
 template <typename T1> using ConcurrentQueue = moodycamel::ConcurrentQueue<T1>;
 template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcurrentQueue<T1>;
@@ -64,19 +62,30 @@ enum MessageType {
     REPLY = 5,
     CERT = 6,
     CERT_REPLY = 7,
+    COMMITTED_REPLY = 8,
 
-    COMMIT = 8,
+    COMMIT = 9,
 
-    FALLBACK_TRIGGER = 9,
-    FALLBACK_START = 10,
-    FALLBACK_PROPOSAL = 11,
-    FALLBACK_SUMMARY = 12,
+    REPAIR_CLIENT_TIMEOUT = 10,
+    REPAIR_REPLICA_TIMEOUT = 11,
+    REPAIR_REPLY_PROOF = 12,
+    REPAIR_TIMEOUT_PROOF = 13,
 
-    DUMMY_PROTO = 13,
+    REPAIR_START = 14,
+    REPAIR_PROPOSAL = 15,
+    REPAIR_DONE = 16,
+    REPAIR_SUMMARY = 17,
 
-    FALLBACK_PREPREPARE = 14,
-    FALLBACK_PREPARE = 15,
-    FALLBACK_COMMIT = 16
+    PBFT_PREPREPARE = 18,
+    PBFT_PREPARE = 19,
+    PBFT_COMMIT = 20,
+    PBFT_VIEWCHANGE = 21,
+    PBFT_NEWVIEW = 22,
+
+    SNAPSHOT_REQUEST = 23,
+    SNAPSHOT_REPLY = 24,
+
+    DUMMY_PROTO = 25
 };
 
 /**
@@ -93,10 +102,17 @@ struct MessageHeader {
     uint8_t msgType;
     uint32_t msgLen;
     uint32_t sigLen;
-    MessageHeader(const uint8_t t, const uint32_t l, const uint32_t sl)
+    MessageHeader(const uint8_t t, uint32_t l, uint32_t sl)
         : msgType(t)
         , msgLen(l)
         , sigLen(sl) {};
 };
+
+// Just to help vscode with recognizing this namespace
+namespace dombft {
+namespace proto {
+
+}
+}   // namespace dombft
 
 #endif

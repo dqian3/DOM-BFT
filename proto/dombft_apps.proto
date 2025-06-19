@@ -1,6 +1,7 @@
 syntax = "proto3";
 package dombft.apps;
 
+// ===================== KV Store =====================
 enum KVRequestType {
     GET = 0;
     SET = 1;
@@ -21,6 +22,8 @@ message KVResponse {
     optional string value = 2;
 }
 
+
+// ===================== Counter =====================
 enum CounterOperation {
     INCREMENT = 0;
     DECREMENT = 1;
@@ -31,5 +34,5 @@ message CounterRequest {
 }
 
 message CounterResponse {
-    int64 value = 1;
+    fixed64 value = 1;
 }

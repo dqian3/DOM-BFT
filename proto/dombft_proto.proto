@@ -1,15 +1,21 @@
 syntax = "proto3";
 package dombft.proto;
 
+
+message PaddedRequestData {
+    bytes req_data = 1;
+    bytes padding = 2;
+}
+
 message ClientRequest {
     uint32 client_id = 1;
     uint32 client_seq = 2;
-    uint32 instance = 3;
 
-    uint64 send_time = 4;
-    bool is_write = 5;
+    uint64 send_time = 5;
+    uint64 deadline = 6;
+    bool is_write = 7;
 
-    bytes req_data = 6;
+    bytes req_data = 8;
 }
 
 message DOMRequest {
@@ -34,15 +40,15 @@ message Reply {
     uint32 client_id = 1;
     uint32 client_seq = 2;
 
-    // Tentative global ordering
-    uint32 instance = 3;
-    uint32 seq = 4;
+    uint32 round = 3;
 
-    uint32 replica_id = 5;
-    bool fast = 6;
-    bool retry = 7;
-    bytes result = 8;
-    bytes digest = 9;
+    // Tentative global ordering
+    uint32 seq = 5;
+    uint32 replica_id = 6;
+    bytes result = 9;
+    bytes digest = 10;
+
+    bool queued = 11;
 }
 
 message Cert {
@@ -51,11 +57,11 @@ message Cert {
     // TODO to save space, we would only store 1 copy of each common field. Instead
     // we just repeat them here since it's easier
     // seq is also just for convenience
-    uint32 seq = 4;
-    uint32 instance = 5; 
+    uint32 seq = 1;
+    uint32 round = 2;
     
-    repeated Reply replies    = 7;
-    repeated bytes signatures = 8;
+    repeated Reply replies    = 4;
+    repeated bytes signatures = 5;
 }
 
 
@@ -63,48 +69,56 @@ message CertReply {
     uint32 replica_id = 1;
     uint32 client_id = 2;
     uint32 client_seq = 3;
-    uint32 instance = 4;
+    uint32 round = 4;
     uint32 seq = 5;
 }
 
 message Commit {
     uint32 replica_id = 1;
-    uint32 instance = 2;
+    uint32 round = 2;
+
     uint32 seq = 3;
-
     bytes log_digest = 4;
-    bytes app_digest = 5;
-    CheckpointClientRecordsSet client_records_set = 6;
+
+    optional bytes app_digest = 7;
+
+    ClientRecord client_record = 8;
 }
 
-message FallbackTrigger
+message RepairClientTimeout
 {
-    uint32 client_id = 2;
-    uint32 client_seq = 3;
 
-    uint32 instance = 4;
-
-    bytes req_data = 6;
-
-    // Reuse Cert message here, since it is just a set of replies.
-    optional Cert proof = 7;
-}
-
-message CheckpointClientRecord
-{
     uint32 client_id = 1;
-    uint32 instance = 2;
-    uint32 last_seq = 3;
+    uint32 client_seq = 2;
 
-    repeated uint32 missed_seqs = 4;
+    uint32 round = 3;
+
+    // could add request here too, but we do not
 }
 
-// wraps records and digest
-message CheckpointClientRecordsSet
+message RepairReplicaTimeout
 {
-    bytes client_records_digest = 1;
-    repeated CheckpointClientRecord records = 2;
+    uint32 round = 1;
+    uint32 replica_id = 2;
 }
+
+message RepairTimeoutProof {
+    uint32 round = 1;
+
+    repeated RepairReplicaTimeout timeouts = 2;
+    repeated bytes signatures = 3;
+}
+
+message RepairReplyProof {
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+
+    uint32 round = 3;
+
+    repeated Reply replies = 4;
+    repeated bytes signatures = 5;
+}
+
 
 message LogEntry
 {
@@ -114,93 +128,192 @@ message LogEntry
 
     bytes digest = 7;
 
-    // TODO is this needed?
+    // TODO remove this and add mechanism for replicas to fetch missing entries after fallback (as part of snapshot request maybe)
     bytes request = 8;
-    bytes result = 9;
-
-    optional Cert cert = 10;
 }
 
+message ClientSequence
+{
+    uint32 client_id = 1;
+    uint32 last_seq = 2;
+
+    repeated uint32 missed_seqs = 3;
+}
+
+// wraps records and digest
+message ClientRecord
+{
+    bytes digest = 1;
+    repeated ClientSequence sequences = 2;
+}
 
 message LogCheckpoint
 {
-    uint32 seq = 4;
-    bytes app_digest = 5;
-    bytes log_digest = 6;
+    uint32 seq = 1;
+    bytes log_digest = 2;
 
-    repeated Commit commits   = 7;
-    repeated bytes signatures = 8;
-    Cert cert = 10;
+    optional bytes app_digest = 5;
+
+    repeated Commit commits   = 6;
+    repeated bytes commit_sigs = 7;
+
+    repeated PBFTCommit repair_commits = 8;
+    repeated bytes repair_commit_sigs = 9;
+
+    ClientRecord client_record = 10;
 }
 
 
-message FallbackStart
+message RepairStart
 {
-    uint32 instance = 1;
-    uint32 replica_id = 2;
+    uint32 pbft_view = 1;
+    uint32 round = 2;
+    uint32 replica_id = 3;
 
-    repeated LogEntry log_entries = 3;
-    LogCheckpoint checkpoint = 4;
-    CheckpointClientRecordsSet client_records_set = 5;
+    repeated LogEntry log_entries = 4;
+    LogCheckpoint checkpoint = 5;
+    
+    optional Cert cert = 7;
 }
 
-message FallbackProposal
+message RepairProposal
 {
-    uint32 instance = 1;
-    uint32 replica_id = 2;
+    uint32 round = 1;
+    uint32 replica_id = 2; //primary id
 
-    repeated FallbackStart logs = 3;
+    repeated RepairStart logs = 3;
     repeated bytes signatures = 4;
 }
 
 
-message FallbackReply
+message CommittedReply
 {
-    uint32 client_id = 5;
-    uint32 client_seq = 6;
+    uint32 replica_id = 1;
+    uint32 client_id = 2;
+    uint32 client_seq = 3;
     uint32 seq = 4;
+    bytes result = 5;
 
-    bytes result = 9;
+    bool is_repair = 6;
 }
 
-message FallbackSummary
+message RepairSummary
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
-    repeated FallbackReply replies = 3;
+    repeated CommittedReply replies = 3;
+    uint32 pbft_view = 4;
+
+    ClientSequence committed_seqs = 5;
 }
 
-message FallbackPrePrepare
+message PBFTPrePrepare
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 primary_id = 2;
+    uint32 pbft_view = 3;
 
-    FallbackProposal proposal = 3;
+    RepairProposal proposal = 4;
+    bytes proposal_digest = 5;
 }
 
-message FallbackPrepare
+message PBFTPrepare
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
+    uint32 pbft_view = 3;
+    bytes proposal_digest = 4;
+    bytes log_digest = 5;
 }
 
-message FallbackPBFTCommit
+message PBFTCommit
 {
-    uint32 instance = 1;
+    uint32 round = 1;
     uint32 replica_id = 2;
+    uint32 pbft_view = 3;
+    bytes proposal_digest = 4;
+    
+    bytes log_digest = 5;
 }
 
 
+message RepairDone 
+{
+    uint32 round = 1;
+    uint32 replica_id = 2;
+    bytes proposal_digest = 4;
+
+    repeated PBFTCommit commits = 5;
+    repeated bytes commit_sigs = 6;
+}
+
+
+message PBFTViewChange
+{
+    uint32 round = 1;
+    uint32 replica_id = 2;
+    uint32 pbft_view = 3;
+    repeated  PBFTPrepare prepares = 4;
+    repeated  bytes prepare_sigs = 5;
+    // we add the "request" for simplicity though PBFT use fetching when the request is missing
+    RepairProposal proposal = 6;
+    bytes proposal_digest = 7;
+}
+
+message PBFTViewChangeNotif
+{
+    uint32 round = 1;
+    uint32 replica_id = 2;
+    uint32 pbft_view = 3;
+}
+
+
+message PBFTNewView
+{
+    uint32 primary_id = 1;
+    uint32 pbft_view= 2;
+    uint32 round = 3;
+    repeated PBFTViewChange view_changes = 4;
+    repeated bytes view_change_sigs = 5;
+}
+
+message SnapshotRequest {
+    uint32 round = 1;
+    uint32 seq = 2;
+    uint32 replica_id = 3;
+    uint32 last_checkpoint_seq = 4;
+
+    bool for_repair = 5;
+}
+
+message SnapshotReply {
+    uint32 round = 1;
+    uint32 seq = 2;
+    uint32 replica_id = 3;
+
+    LogCheckpoint checkpoint = 4;
+    repeated LogEntry log_entries = 5; 
+
+    optional LogCheckpoint snapshot_checkpoint = 7;
+    optional bytes snapshot = 8;
+}
 
 
 message DummyProtocolMessage
 {
+
     uint32 phase = 1;
     uint32 replica_id = 2;
     uint32 seq = 3;
 
-    uint32 client_id = 4;
-    uint32 client_seq = 5;
+    message DummyClientRequest {
+        uint32 client_id = 4;
+        uint32 client_seq = 5;
+        optional ClientRequest req = 6;
+        optional bytes sig = 7;
+    }
+
+    repeated DummyClientRequest client_reqs = 7;
 }
 
 
