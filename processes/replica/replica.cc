@@ -5,6 +5,7 @@
 #include "lib/apps/kv_store.h"
 #include "lib/common.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -104,11 +105,38 @@ Replica::Replica(
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else {
-        LOG(ERROR) << "Unsupported transport " << config.transport;
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
+
+        /** Store all client addrs */
+        for (uint32_t i = 0; i < config.clientIps.size(); i++) {
+            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
+        }
+
+        if (config.transport == "tcp") {
+            auto ep = std::make_unique<TCPEndpoint>(bindAddress, replicaPort, true);
+
+            std::vector<Address> addrs;
+            std::copy(replicaAddrs_.begin(), replicaAddrs_.end(), std::back_inserter(addrs));
+            std::copy(clientAddrs_.begin(), clientAddrs_.end(), std::back_inserter(addrs));
+            addrs.push_back(receiverAddr_);
+            ep->connectToAddrs(addrs);
+
+            endpoint_ = std::move(ep);
+        } else if (config.transport == "udp") {
+            endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
+        } else {
+            LOG(ERROR) << "Invalid transport " << config.transport;
+            exit(1);
+        }
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->handleMessage(msgHdr, msgBuffer, sender);
+    MessageHandlerFunc handler = [this](MessageHeader *hdr, const Address &sender) {
+        this->handleMessage(hdr, sender);
     };
 
     endpoint_->RegisterMsgHandler(handler);
@@ -147,26 +175,25 @@ void Replica::run()
     processThread_.join();
 }
 
-void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+void Replica::handleMessage(MessageHeader *hdr, const Address &sender)
 {
     // First make sure message is well formed
 
     // We skip verification of our own messages, and any message from the receiver
     // process (which does its own verification)
-    byte *rawMsg = (byte *) msgHdr;
-    std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
+    byte *rawMsg = (byte *) hdr;
+    std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 
     // Optimization: drop any messages here during repair that we don't need
     // TODO this should probably be synchronized better
     if (repair_) {
-        if (msgHdr->msgType == REPAIR_CLIENT_TIMEOUT || msgHdr->msgType == REPAIR_REPLICA_TIMEOUT ||
-            msgHdr->msgType == REPAIR_REPLY_PROOF || msgHdr->msgType == REPAIR_TIMEOUT_PROOF ||
-            msgHdr->msgType == CERT) {
+        if (hdr->msgType == REPAIR_CLIENT_TIMEOUT || hdr->msgType == REPAIR_REPLICA_TIMEOUT ||
+            hdr->msgType == REPAIR_REPLY_PROOF || hdr->msgType == REPAIR_TIMEOUT_PROOF || hdr->msgType == CERT) {
             return;
         }
     }
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+    if (sender == receiverAddr_ || sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);

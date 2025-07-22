@@ -115,7 +115,7 @@ private:
     bool holdPrepareOrCommit_ = false;
 
     // Boilerplate for handling/verifying messages
-    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void handleMessage(MessageHeader *msgHdr, const Address &sender);
 
     void verifyMessagesThd();
     void processMessagesThd();

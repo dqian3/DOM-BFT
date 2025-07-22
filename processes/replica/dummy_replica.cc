@@ -96,8 +96,8 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         LOG(ERROR) << "Unsupported transport " << config.transport;
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->handleMessage(msgHdr, msgBuffer, sender);
+    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, const Address &sender) {
+        this->handleMessage(msgHdr, sender);
     };
 
     endpoint_->RegisterMsgHandler(handler);
@@ -136,7 +136,7 @@ void DummyReplica::run()
     processThread_.join();
 }
 
-void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+void DummyReplica::handleMessage(MessageHeader *msgHdr, const Address &sender)
 {
     // First make sure message is well formed
 
@@ -145,7 +145,7 @@ void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address
     byte *rawMsg = (byte *) msgHdr;
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+    if (sender == receiverAddr_ || sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);

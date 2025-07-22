@@ -57,7 +57,7 @@ private:
 
     // TODO use a log here
 
-    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void handleMessage(MessageHeader *msgHdr, const Address &sender);
     void verifyMessagesThd();
     void processMessagesThd();
     void processClientRequest(const dombft::proto::ClientRequest &request, std::span<byte> sig);

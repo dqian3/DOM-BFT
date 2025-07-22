@@ -50,6 +50,7 @@ private:
     uint32_t proxyMeasurementPort_;
     uint32_t numReceivers_;
     Address replicaAddr_;
+    std::vector<Address> proxyAddrs_;
 
     // Bookeeping
     uint64_t lastFwdDeadline_ = 0;
@@ -63,7 +64,7 @@ private:
     bool ignoreDeadlines_;
 
     /** The actual message / timeout handlers */
-    void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void receiveRequest(MessageHeader *hdr, const Address &sender);
 
     void checkDeadlines();
     void forwardRequest(const dombft::proto::DOMRequest &request);

@@ -75,9 +75,9 @@ vector<pair<Address, Address>> getReceiverAddrs(ProcessConfig config, uint32_t i
     // 3. proxyForwardBase + nClients + receiverId <==> receiverBase + proxyId
     std::string receiverIp = config.receiverIps[id];
     int receiverBase = config.receiverPort;
-
     uint32_t proxyBase = config.proxyForwardPort + config.clientIps.size();
     addAddrPairs(ret, receiverIp, receiverBase, config.proxyIps, proxyBase);
+
     // 4. proxyMeasurmentBase + receiverId <==> receiverBase + proxyId + numProxies
     receiverBase += config.proxyIps.size();
     proxyBase = config.proxyMeasurementPort;
