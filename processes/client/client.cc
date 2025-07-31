@@ -26,11 +26,15 @@ Client::Client(const ProcessConfig &config, size_t id)
     int clientPort = config.clientPort;
     LOG(INFO) << "clientPort=" << clientPort;
 
-#if SIZE_5F_PLUS_1
-    f_ = config.replicaIps.size() / 5;
-#else
-    f_ = config.replicaIps.size() / 3;
-#endif
+    if (config.resiliency == "5f+1") {
+        f_ = config.replicaIps.size() / 5;
+        quorumSize_ = 4 * f_ + 1;
+        superQuorumSize_ = 4 * f_ + 1;
+    } else {
+        f_ = config.replicaIps.size() / 3;
+        quorumSize_ = 2 * f_ + 1;
+        superQuorumSize_ = 3 * f_ + 1;
+    }
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;
@@ -200,7 +204,7 @@ void Client::submitRequest()
 
     fillRequestData(request);
 
-    requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
+    requestStates_.emplace(nextSeq_, RequestState(f_, quorumSize_, request, now));
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
@@ -250,7 +254,7 @@ void Client::submitRequestsOpenLoop()
 
         fillRequestData(request);
 
-        requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
+        requestStates_.emplace(nextSeq_, RequestState(f_, quorumSize_, request, now));
         VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
                 << " in_flight=" << numInFlight_;
 
@@ -337,7 +341,7 @@ void Client::checkTimeouts()
             continue;
         }
 
-        if (!reqState.triggerSent && reqState.collector.numReceived() >= QUORUM_SIZE(f_) &&
+        if (!reqState.triggerSent && reqState.collector.numReceived() >= quorumSize_ &&
             now - reqState.quorumTime > slowPathTimeout_) {
             LOG(INFO) << "Client attempting repair on request " << clientSeq << " sendTime=" << reqState.sendTime
                       << " now=" << now << " due to timeout";
@@ -473,7 +477,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     bool hasCertBefore = reqState.collector.hasCert();
     uint32_t maxMatchSize = reqState.collector.insertReply(reply, std::vector<byte>(sig.begin(), sig.end()));
 
-    if (reqState.collector.numReceived() == QUORUM_SIZE(f_)) {
+    if (reqState.collector.numReceived() == quorumSize_) {
         reqState.quorumTime = now;
     }
 
@@ -483,8 +487,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         reqState.certTime = now;
     }
 
-    LOG(INFO) << maxMatchSize << " " << SUPERQUROUM_SIZE(f_);
-    if (maxMatchSize >= SUPERQUROUM_SIZE(f_)) {
+    if (maxMatchSize >= superQuorumSize_) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
@@ -500,7 +503,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     if (reqState.collector.numReceived() == maxMatchSize)
         return;
 
-    // `hasCert() == true` iff maxMatchSize >= QUORUM_SIZE(f_)
+    // `hasCert() == true` iff maxMatchSize >= quorumSize_
     // TODO handle sending cert in new round better
     if (!reqState.certSent && reqState.collector.hasCert()) {
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
@@ -561,7 +564,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     VLOG(4) << "Received cert ack client_seq=" << cseq << " seq=" << certReply.seq() << " round=" << certReply.round()
             << " replica_id=" << certReply.replica_id();
 
-    if (reqState.certReplies.size() >= QUORUM_SIZE(f_)) {
+    if (reqState.certReplies.size() >= quorumSize_) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " round=" << certReply.round()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime

@@ -33,7 +33,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         matchingReplies[key].insert(replicaId);
 
         // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= QUORUM_SIZE(f_) && matchingReplies[key].contains(replicaId_)) {
+        if (matchingReplies[key].size() >= quorumSize_ && matchingReplies[key].contains(replicaId_)) {
             cert_ = Cert();
             cert_->set_seq(std::get<2>(key));
 
@@ -72,7 +72,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
 
                 << digest_to_hex(commit.app_digest());
 
-        if (matchingCommits[key].size() >= QUORUM_SIZE(f_)) {
+        if (matchingCommits[key].size() >= quorumSize_) {
             matchedReplicas_ = matchingCommits[key];
             commitToUse_ = commit;
             return true;
@@ -168,7 +168,7 @@ bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool 
         }
     }
 
-    auto [_, created] = collectors_.try_emplace(key, replicaId_, f_, round, seq, needsSnapshot);
+    auto [_, created] = collectors_.try_emplace(key, replicaId_, quorumSize_, round, seq, needsSnapshot);
     assert(created);
 
     return true;

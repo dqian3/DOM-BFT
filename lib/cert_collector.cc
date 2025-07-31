@@ -12,8 +12,9 @@
 
 using namespace dombft::proto;
 
-CertCollector::CertCollector(int f)
+CertCollector::CertCollector(int f, int q)
     : f_(f)
+    , quorumSize_(q)
     , maxMatchSize_(0)
     , round_(0)
 {
@@ -59,7 +60,7 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         matchingReplies[key].insert(replicaId);
 
         maxMatchSize_ = std::max(maxMatchSize_, matchingReplies[key].size());
-        if (matchingReplies[key].size() >= QUORUM_SIZE(f_)) {
+        if (matchingReplies[key].size() >= quorumSize_) {
 
             // Skip creating certificate if we already have a certificate with a higher round
             if (cert_.has_value() && cert_->round() >= reply.round()) {

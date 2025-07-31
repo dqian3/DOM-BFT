@@ -36,17 +36,6 @@
 // For working with dummy protocols
 #define SEND_TO_LEADER 0
 
-// Switch between 3f + 1 and 5f + 1 replicas
-#define SIZE_5F_PLUS_1 1
-
-#if SIZE_5F_PLUS_1
-#define QUORUM_SIZE(f)      (4 * (f) + 1)
-#define SUPERQUROUM_SIZE(f) (4 * (f) + 1)
-#else
-#define QUORUM_SIZE(f)      (2 * (f) + 1)
-#define SUPERQUROUM_SIZE(f) (3 * (f) + 1)
-#endif
-
 typedef unsigned char byte;
 typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
 

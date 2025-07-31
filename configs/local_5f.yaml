@@ -1,6 +1,6 @@
 transport: nng 
-
 app: kv_store 
+resiliency: 5f+1
 
 client:
   ips: 
@@ -33,10 +33,12 @@ proxy:
 # Receiver Info
 receiver:
   ips: 
-    - "127.0.0.5"
-    - "127.0.0.6"
-    - "127.0.0.7"
-    - "127.0.0.8"
+    - "127.0.2.1"
+    - "127.0.2.2"
+    - "127.0.2.3"
+    - "127.0.2.4"
+    - "127.0.2.5"
+    - "127.0.2.6"
   port: 33000
   keysDir: scripts/keys/receiver
   shards: 1 # The number of threads to receive threads 
@@ -50,6 +52,8 @@ replica:
   - "127.0.0.2"
   - "127.0.0.3"
   - "127.0.0.4"
+  - "127.0.0.5"
+  - "127.0.0.6"
   port: 34000
   app: "counter"
   keysDir: "scripts/keys/replica"
