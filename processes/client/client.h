@@ -19,8 +19,8 @@
 
 namespace dombft {
 struct RequestState {
-    RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
-        : collector(f)
+    RequestState(uint32_t f, uint32_t q, dombft::proto::ClientRequest &req, uint64_t sendT)
+        : collector(f, q)
         , request(req)
         , clientSeq(req.client_seq())
         , firstSendTime(sendT)
@@ -63,6 +63,8 @@ private:
     std::vector<Address> proxyAddrs_;
     std::vector<Address> replicaAddrs_;
     uint32_t f_;
+    uint32_t quorumSize_;
+    uint32_t superQuorumSize_;
 
     /* Sending config */
     dombft::ClientSendMode sendMode_;

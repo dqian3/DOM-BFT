@@ -12,7 +12,10 @@ using namespace dombft::proto;
 
 DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
     : replicaId_(replicaId)
-    , f_(config.replicaIps.size() / 3)
+    , f_(config.resiliency == "5f+1" ? config.replicaIps.size() / 5 : config.replicaIps.size() / 3)
+    , quorumSize_(config.resiliency == "5f+1" ? 4 * f_ + 1 : 2 * f_ + 1)
+    , superQuorumSize_(config.resiliency == "5f+1" ? 4 * f_ + 1 : 3 * f_ + 1)
+
     , prot_(prot)
     , batchSize_(batchSize)
     , nextSeq_(batchSize)
@@ -311,7 +314,7 @@ void DummyReplica::processMessagesThd()
 
                     VLOG(5) << "PREPARE " << seq << " " << prepareCounts[seq] << " " << protoMsg.replica_id();
 
-                    if (prepareCounts[seq] == 2 * f_ + 1) {
+                    if (prepareCounts[seq] == quorumSize_) {
                         protoMsg.set_phase(2);
                         protoMsg.set_replica_id(replicaId_);
 
@@ -332,7 +335,7 @@ void DummyReplica::processMessagesThd()
 
                     VLOG(5) << "COMMIT " << seq << " " << commitCounts[seq] << " " << protoMsg.replica_id();
 
-                    if (commitCounts[seq] == 2 * f_ + 1) {
+                    if (commitCounts[seq] == quorumSize_) {
 
                         VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
@@ -364,7 +367,7 @@ void DummyReplica::processMessagesThd()
                             sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[clientId]);
                         }
 
-                        while (commitCounts[committedSeq_ + batchSize_] >= 2 * f_ + 1) {
+                        while (commitCounts[committedSeq_ + batchSize_] >= quorumSize_) {
                             committedSeq_ += batchSize_;
 
                             VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_

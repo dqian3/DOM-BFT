@@ -15,7 +15,7 @@ typedef std::tuple<std::string, uint32_t, uint32_t> ReplyKeyTuple;
 
 struct ReplyCollector {
     uint32_t replicaId_;
-    uint32_t f_;
+    uint32_t quorumSize_;
     uint32_t round_;
     uint32_t seq_;
 
@@ -25,9 +25,9 @@ struct ReplyCollector {
     std::map<uint32_t, std::string> replySigs_;
     std::optional<dombft::proto::Cert> cert_;
 
-    ReplyCollector(uint32_t replicaId, uint32_t f, uint32_t round, uint32_t seq)
+    ReplyCollector(uint32_t replicaId, uint32_t q, uint32_t round, uint32_t seq)
         : replicaId_(replicaId)
-        , f_(f)
+        , quorumSize_(q)
         , round_(round)
         , seq_(seq)
     {
@@ -39,7 +39,7 @@ struct ReplyCollector {
 typedef std::tuple<uint32_t, uint32_t, std::string, std::string, std::string> CommitKeyTuple;
 
 struct CommitCollector {
-    uint32_t f_;
+    uint32_t quorumSize_;
     uint32_t round_;
 
     uint32_t seq_;
@@ -50,8 +50,8 @@ struct CommitCollector {
     std::map<uint32_t, std::string> sigs_;
     std::set<uint32_t> matchedReplicas_;
 
-    CommitCollector(uint32_t f, uint32_t round, uint32_t seq)
-        : f_(f)
+    CommitCollector(uint32_t q, uint32_t round, uint32_t seq)
+        : quorumSize_(q)
         , round_(round)
         , seq_(seq)
     {
@@ -65,7 +65,7 @@ class CheckpointCollector {
     // We only need our own latests state, so don't index by round
 
     uint32_t replicaId_;
-    uint32_t f_;
+    uint32_t quorumSize_;
 
     uint32_t round_;
     uint32_t seq_;
@@ -80,14 +80,14 @@ class CheckpointCollector {
     CommitCollector commitCollector;
 
 public:
-    explicit CheckpointCollector(uint32_t replicaId, uint32_t f, uint32_t round, uint32_t seq, bool needsSnapshot)
+    explicit CheckpointCollector(uint32_t replicaId, uint32_t q, uint32_t round, uint32_t seq, bool needsSnapshot)
         : replicaId_(replicaId)
-        , f_(f)
+        , quorumSize_(q)
         , round_(round)
         , seq_(seq)
         , needsSnapshot_(needsSnapshot)
-        , replyCollector(replicaId, f, round, seq)
-        , commitCollector(f, round, seq)
+        , replyCollector(replicaId, q, round, seq)
+        , commitCollector(q, round, seq)
     {
     }
 
@@ -129,12 +129,12 @@ class CheckpointCollectorStore {
     uint32_t committedSeq_ = 0;
 
     uint32_t replicaId_;
-    uint32_t f_;
+    uint32_t quorumSize_;
 
 public:
-    explicit CheckpointCollectorStore(uint32_t replicaId, uint32_t f)
+    explicit CheckpointCollectorStore(uint32_t replicaId, uint32_t q)
         : replicaId_(replicaId)
-        , f_(f)
+        , quorumSize_(q)
     {
     }
 

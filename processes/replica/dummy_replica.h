@@ -27,6 +27,9 @@ private:
     Address receiverAddr_;
     std::vector<Address> clientAddrs_;
     uint32_t f_;
+    uint32_t quorumSize_;
+    uint32_t superQuorumSize_;
+
     uint32_t numVerifyThreads_;
     uint32_t batchSize_;
 
