@@ -28,12 +28,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("proxy", config.proxyKeysDir)) {
-        LOG(ERROR) << "Unable to load proxy public keys!";
-        exit(1);
-    }
-
-    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::CLIENT, config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }

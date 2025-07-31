@@ -56,17 +56,12 @@ Replica::Replica(
 
     LOG(INFO) << "private key loaded";
 
-    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::CLIENT, config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("receiver", config.receiverKeysDir)) {
-        LOG(ERROR) << "Unable to load receiver public keys!";
-        exit(1);
-    }
-
-    if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
         LOG(ERROR) << "Unable to load receiver public keys!";
         exit(1);
     }
