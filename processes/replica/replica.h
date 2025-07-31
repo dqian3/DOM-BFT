@@ -4,9 +4,9 @@
 
 #include "lib/application.h"
 #include "lib/checkpoint_collector.h"
+#include "lib/crypto/sig_provider.h"
 #include "lib/log.h"
 #include "lib/repair_utils.h"
-#include "lib/sig_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"

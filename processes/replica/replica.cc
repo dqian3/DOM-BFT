@@ -8,7 +8,7 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
-#include <openssl/pem.h>
+#include <cryptopp/sha.h>
 #include <sstream>
 
 namespace dombft {
@@ -204,7 +204,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -220,7 +220,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", commitMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, commitMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -234,7 +234,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse SNAPSHOT_REQUEST message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", request.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, request.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -247,7 +247,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse SNAPSHOT_REPLY message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -274,7 +274,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", requestMsg.client_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, requestMsg.client_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -293,7 +293,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
                 return;
             }
-            if (!sigProvider_.verify(hdr, "client", timeoutMsg.client_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, timeoutMsg.client_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -309,7 +309,7 @@ void Replica::verifyMessagesThd()
                 return;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", timeoutMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, timeoutMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -357,7 +357,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", repairStartMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, repairStartMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -386,7 +386,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTPrePrepare message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", PBFTPrePrepareMsg.primary_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, PBFTPrePrepareMsg.primary_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
@@ -411,7 +411,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTPrepare message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", PBFTPrepareMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, PBFTPrepareMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
@@ -422,7 +422,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTCommit message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", PBFTCommitMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, PBFTCommitMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
@@ -433,7 +433,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTViewChange message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", viewChangeMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, viewChangeMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
@@ -447,7 +447,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTNewView message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", newViewMsg.primary_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, newViewMsg.primary_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature for PBFTNewView!";
                 continue;
             }
@@ -456,7 +456,7 @@ void Replica::verifyMessagesThd()
             bool success = true;
             for (int i = 0; i < viewChanges.size(); i++) {
                 if (!sigProvider_.verify(
-                        viewChanges[i].SerializeAsString(), sigs[i], "replica", viewChanges[i].replica_id()
+                        viewChanges[i].SerializeAsString(), sigs[i], {NodeType::REPLICA, viewChanges[i].replica_id()}
                     )) {
                     LOG(INFO) << "Failed to verify replica signature in new view!";
                     success = false;
@@ -1480,8 +1480,8 @@ bool Replica::verifyCert(const Cert &cert)
 
         std::string serializedReply = reply.SerializeAsString();
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                reply.replica_id()
+                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, reply.replica_id()}
             )) {
             LOG(INFO) << "Cert failed to verify!";
             return false;
@@ -1535,8 +1535,8 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
         matchingReplies[key].insert(replicaId);
         std::string serializedReply = proof.replies(i).SerializeAsString();
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                reply.replica_id()
+                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, reply.replica_id()}
             )) {
             LOG(INFO) << "Proof failed to verify!";
             return false;
@@ -1593,7 +1593,7 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
         std::string serializedTimeout = timeout.SerializeAsString();
         if (!sigProvider_.verify(
                 (byte *) serializedTimeout.c_str(), serializedTimeout.size(), (byte *) sig.c_str(), sig.size(),
-                "replica", timeout.replica_id()
+                {NodeType::REPLICA, timeout.replica_id()}
             )) {
             LOG(INFO) << "Proof failed to verify!";
             return false;
@@ -1635,8 +1635,8 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         }
 
         if (!sigProvider_.verify(
-                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                commit.replica_id()
+                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, commit.replica_id()}
             )) {
             LOG(INFO) << "Failed to verify replica signature in repair log checkpoint!";
             return false;
@@ -1663,8 +1663,8 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         }
 
         if (!sigProvider_.verify(
-                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                commit.replica_id()
+                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, commit.replica_id()}
             )) {
             LOG(INFO) << "Failed to verify replica signature in repair log checkpoint!";
             return false;
@@ -1710,7 +1710,9 @@ bool Replica::verifyRepairProposal(const RepairProposal &proposal)
         byte *logSig = std::get<0>(logSigs[ind]);
         uint32_t logSigLen = std::get<1>(logSigs[ind]);
         ind++;
-        if (!sigProvider_.verify(logBuffer, logStr.length(), logSig, logSigLen, "replica", log.replica_id())) {
+        if (!sigProvider_.verify(
+                logBuffer, logStr.length(), logSig, logSigLen, {NodeType::REPLICA, log.replica_id()}
+            )) {
             LOG(INFO) << "Failed to verify replica signature in proposal!";
             return false;
         }
@@ -1739,7 +1741,7 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
     for (int i = 0; i < prepares.size(); i++) {
         if (!sigProvider_.verify(
                 (byte *) prepares[i].SerializeAsString().c_str(), prepares[i].ByteSizeLong(), (byte *) sigs[i].c_str(),
-                sigs[i].size(), "replica", prepares[i].replica_id()
+                sigs[i].size(), {NodeType::REPLICA, prepares[i].replica_id()}
             )) {
             LOG(INFO) << "Failed to verify replica signature in view change!";
             return false;
@@ -1808,7 +1810,7 @@ bool Replica::verifyRepairDone(const RepairDone &done)
 
         // Note do not check view, since we accept RepairDone messages in a valid view
 
-        if (!sigProvider_.verify(commit.SerializeAsString(), sig, "replica", commit.replica_id())) {
+        if (!sigProvider_.verify(commit.SerializeAsString(), sig, {NodeType::REPLICA, commit.replica_id()})) {
             LOG(WARNING) << "Failed to verify replica signature from " << commit.replica_id() << " in repair done!";
             return false;
         }
@@ -2516,17 +2518,18 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
 std::string Replica::getProposalDigest(const RepairProposal &proposal)
 {
     // use signatures as digest, since signatures are can function as the the digest of each proposal
-    byte digestBuf[SHA256_DIGEST_LENGTH];
+    CryptoPP::SHA256 hash;
+    byte digestBuf[CryptoPP::SHA256::DIGESTSIZE];
     std::string digestStr;
+
     for (const auto &sig : proposal.signatures()) {
         digestStr += sig;
     }
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, digestStr.c_str(), digestStr.size());
-    SHA256_Final(digestBuf, &ctx);
 
-    return std::string((char *) digestBuf, SHA256_DIGEST_LENGTH);
+    hash.Update(reinterpret_cast<const byte *>(digestStr.data()), digestStr.size());
+    hash.Final(digestBuf);
+
+    return std::string(reinterpret_cast<const char *>(digestBuf), CryptoPP::SHA256::DIGESTSIZE);
 }
 
 }   // namespace dombft

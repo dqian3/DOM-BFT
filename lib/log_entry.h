@@ -4,8 +4,6 @@
 #include "common.h"
 #include "proto/dombft_proto.pb.h"
 
-#include <openssl/sha.h>
-
 #include <iostream>
 #include <map>
 #include <memory>

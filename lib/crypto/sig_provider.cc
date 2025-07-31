@@ -75,8 +75,6 @@ bool SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
     return true;
 #endif
 
-    size_t sigLen;
-
     if (hdr->msgLen + sizeof(MessageHeader) > bufLen) {
         LOG(ERROR) << "Error signing message, inital message size " << hdr->msgLen + sizeof(MessageHeader)
                    << " exceeds given buffer capacity " << bufLen;

@@ -5,12 +5,11 @@
 #include <thread>
 
 // Third party libs
-#include <openssl/pem.h>
 #include <yaml-cpp/yaml.h>
 
 // Own libraries
 #include "lib/common.h"
-#include "lib/sig_provider.h"
+#include "lib/crypto/sig_provider.h"
 #include "lib/transport/endpoint.h"
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/udp_endpoint.h"

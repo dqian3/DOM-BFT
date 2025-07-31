@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include <openssl/sha.h>
-
 #include "blockingconcurrentqueue.h"
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"

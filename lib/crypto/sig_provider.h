@@ -1,5 +1,5 @@
-#ifndef SIG_PR
-#define SIGNED_UDP_ENDPOINT_H
+#ifndef SIG_PROVIDER_H
+#define SIG_PROVIDER_H
 
 #include "lib/common.h"
 #include <map>

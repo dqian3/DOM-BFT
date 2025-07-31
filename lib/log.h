@@ -4,8 +4,6 @@
 #include "common.h"
 #include "proto/dombft_proto.pb.h"
 
-#include <openssl/sha.h>
-
 #include <deque>
 #include <iostream>
 #include <map>

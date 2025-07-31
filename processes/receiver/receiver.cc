@@ -4,8 +4,6 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
-#include <openssl/pem.h>
-
 namespace dombft {
 using namespace dombft::proto;
 
@@ -235,7 +233,7 @@ void Receiver::verifyThd(int workerId)
             return;
         }
 
-        bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
+        bool verified = sigProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
 
         {
             std::lock_guard<std::mutex> guard(deadlineQueueMtx_);

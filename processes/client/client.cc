@@ -54,7 +54,7 @@ Client::Client(const ProcessConfig &config, size_t id)
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
         LOG(ERROR) << "Error loading replica public keys, exiting...";
         exit(1);
     }
@@ -388,7 +388,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
             return;
         }
@@ -410,7 +410,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", certReply.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, certReply.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for CERT_REPLY!";
             return;
         }
@@ -426,7 +426,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for COMMITTED_REPLY!";
             return;
         }
@@ -440,7 +440,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", repairSummary.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, repairSummary.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for REPAIR_SUMMARY!";
             return;
         }

@@ -5,7 +5,6 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
-#include <openssl/pem.h>
 #include <sstream>
 
 namespace dombft {
@@ -173,7 +172,7 @@ void DummyReplica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", request.client_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, request.client_id()})) {
                 LOG(INFO) << "Failed to verify client signature from " << request.client_id();
                 continue;
             }
@@ -187,7 +186,7 @@ void DummyReplica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", dummyProtoMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, dummyProtoMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature from " << dummyProtoMsg.replica_id();
                 continue;
             }
@@ -201,7 +200,7 @@ void DummyReplica::verifyMessagesThd()
                     const auto &req = dummyProtoMsg.client_reqs(i).req();
                     const std::string &sig = dummyProtoMsg.client_reqs(i).sig();
 
-                    if (!sigProvider_.verify(req.SerializeAsString(), sig, "client", req.client_id())) {
+                    if (!sigProvider_.verify(req.SerializeAsString(), sig, {NodeType::CLIENT, req.client_id()})) {
                         LOG(INFO) << "Failed to verify client signature from " << req.client_id();
                         clientSigs = false;
                         break;
