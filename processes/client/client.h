@@ -6,7 +6,7 @@
 
 #include "lib/cert_collector.h"
 #include "lib/common.h"
-#include "lib/signature_provider.h"
+#include "lib/sig_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/udp_endpoint.h"

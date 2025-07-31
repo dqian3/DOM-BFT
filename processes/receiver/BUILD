@@ -7,7 +7,7 @@ cc_library(
         "//lib:utils",
         "//lib:address",
         "//lib:endpoint",
-        "//lib:signature_provider",
+        "//lib:crypto",
         "//lib:common",
         "//processes:process_config",
         "//processes:config_util",

@@ -45,6 +45,10 @@ template <typename T1> using RWQueue = moodycamel::ReaderWriterQueue<T1>;
 template <typename T1> using BlockingRWQueue = moodycamel::BlockingReaderWriterQueue<T1>;
 template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
+enum NodeType { CLIENT, REPLICA };
+
+typedef std::pair<NodeType, uint32_t> NodeID;
+
 /**
  * The message types are defined according to the proto files and the
  * information will be included in each message to facilitate

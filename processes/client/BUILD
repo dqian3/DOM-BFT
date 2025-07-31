@@ -5,7 +5,7 @@ cc_library(
     deps = [
         "//proto:dombft_proto_cc",
         "//lib:endpoint",
-        "//lib:signature_provider",
+        "//lib:crypto",
         "//lib:utils",
         "//lib:common",
         "//lib:cert_collector",

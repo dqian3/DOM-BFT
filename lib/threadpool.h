@@ -1,7 +1,7 @@
 #ifndef VERIFICATION_MANAGER_H
 #define VERIFICATION_MANAGER_H
 
-#include "signature_provider.h"
+#include "sig_provider.h"
 #include <condition_variable>
 #include <future>
 #include <mutex>

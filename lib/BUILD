@@ -31,9 +31,9 @@ cc_library(
 )
 
 cc_library(
-    name = "signature_provider",
-    srcs = ["signature_provider.cc"],
-    hdrs = ["signature_provider.h"],
+    name = "crypto",
+    srcs = ["crypto/*.cc"],
+    hdrs = ["crypto/*.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",
@@ -69,7 +69,7 @@ cc_library(
         ":address",
         ":common",
         ":timer",
-        ":signature_provider",
+        ":crypto",
         ":utils",
         "@com_github_enki_libev//:libev",
         "@com_github_google_glog//:glog",
@@ -143,7 +143,7 @@ cc_library(
     srcs = ["threadpool.cc"],
     hdrs = ["threadpool.h"],
     deps = [
-        ":signature_provider",
+        ":crypto",
         ":utils",
     ],
     visibility = ["//visibility:public"],
