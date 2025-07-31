@@ -6,11 +6,13 @@
 
 #include "lib/cert_collector.h"
 #include "lib/common.h"
+#include "lib/crypto/hmac_provider.h"
 #include "lib/crypto/sig_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/udp_endpoint.h"
 #include "lib/utils.h"
+
 #include "proto/dombft_proto.pb.h"
 
 #include <yaml-cpp/yaml.h>
@@ -88,6 +90,9 @@ private:
     AppType appType_;
 
     SignatureProvider sigProvider_;
+    HMACProvider hmacProvider_;
+    bool useHMAC_ = false;
+
     ThreadPool threadpool_;
     std::mutex clientStateLock;
 

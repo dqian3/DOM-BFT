@@ -4,6 +4,7 @@
 
 #include "lib/application.h"
 #include "lib/checkpoint_collector.h"
+#include "lib/crypto/hmac_provider.h"
 #include "lib/crypto/sig_provider.h"
 #include "lib/log.h"
 #include "lib/repair_utils.h"
@@ -34,11 +35,14 @@ private:
     uint32_t snapshotInterval_;
     uint32_t numVerifyThreads_;
 
+    bool useHMAC_ = false;   // whether to use HMAC for requests
+
     uint64_t repairTimeout_;
     uint64_t repairViewTimeout_;
 
     // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
+    HMACProvider hmacProvider_;
 
     // Control flow/endpoint objects
     BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;

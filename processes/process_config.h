@@ -37,6 +37,7 @@ struct ProcessConfig {
     int clientSendRate;
     std::string clientSendMode;
     int clientRequestSize;
+    bool clientUseHMAC;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -121,6 +122,7 @@ struct ProcessConfig {
             clientSendRate = parseField<int>(clientNode, "sendRate");
             clientSendMode = parseField<std::string>(clientNode, "sendMode");
             clientRequestSize = parseField<int>(clientNode, "requestSize");
+            clientUseHMAC = parseField<bool>(clientNode, "useHMAC", false);
         }
 
         catch (const ConfigParseException &e) {

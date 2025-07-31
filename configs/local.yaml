@@ -1,4 +1,4 @@
-transport: tcp
+transport: nng 
 
 app: kv_store 
 
@@ -17,6 +17,7 @@ client:
   sendRate: 100
   runtimeSeconds: 300
   requestSize: 512
+  useHMAC: true
 
 
 # Proxy Info

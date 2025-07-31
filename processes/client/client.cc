@@ -38,6 +38,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     maxInFlight_ = config.clientMaxInFlight;
     sendRate_ = config.clientSendRate;
     requestSize_ = config.clientRequestSize;
+    useHMAC_ = config.clientUseHMAC;
 
     if (config.clientSendMode == "sendRate") {
         sendMode_ = dombft::RateBased;
@@ -58,6 +59,8 @@ Client::Client(const ProcessConfig &config, size_t id)
         LOG(ERROR) << "Error loading replica public keys, exiting...";
         exit(1);
     }
+
+    hmacProvider_.loadClientKeysDev({NodeType::CLIENT, clientId_}, config.replicaIps.size());
 
     /** Setup transport */
     if (config.transport == "nng") {
@@ -264,27 +267,34 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
-    // VLOG(4) << "Begin sending request number " << nextReqSeq_;
     Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-    // TODO maybe client should own the memory instead of endpoint.
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // VLOG(4) << "Serialization Done " << nextReqSeq_;
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Signature Done " << nextReqSeq_;
+
+    if (useHMAC_) {
+        // TODO send multiple requests for each replica with their own hmacs
+        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
+    } else {
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    }
 
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
     // TODO check errors for all of these lol
     // TODO do this while waiting, not in the critical path
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    if (useHMAC_) {
+        // TODO send multiple requests for each replica with their own hmacs
+        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
+    } else {
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    }
 
 #if SEND_TO_LEADER
     VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
 
     endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
 #else
-    VLOG(1) << "Sending request to all replicas " << replicaAddrs_[0];
+    VLOG(1) << "Sending request to all replicas ";
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr, hdr);
     }

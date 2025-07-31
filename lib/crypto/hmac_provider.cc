@@ -17,7 +17,9 @@ bool HMACProvider::loadClientKeysDev(NodeID self, uint32_t nReplicas)
     assert(self.first == NodeType::CLIENT);
 
     for (uint32_t i = 0; i < nReplicas; i++) {
-        keys_[{NodeType::REPLICA, i}] = "client" + std::to_string(self.second) + "_replica" + std::to_string(i);
+
+        // TODO TODO hack for developement to not include the replica id, workaround to proxy issue for now
+        keys_[{NodeType::REPLICA, i}] = "client" + std::to_string(self.second) + "_replica";   //+ std::to_string(i);
     }
 
     return true;
@@ -28,7 +30,7 @@ bool HMACProvider::loadReplicaKeysDev(NodeID self, uint32_t nClients)
     assert(self.first == NodeType::REPLICA);
 
     for (uint32_t i = 0; i < nClients; i++) {
-        keys_[{NodeType::CLIENT, i}] = "client" + std::to_string(i) + "_replica" + std::to_string(self.second);
+        keys_[{NodeType::CLIENT, i}] = "client" + std::to_string(i) + "_replica";   //+ std::to_string(self.second);
     }
     return true;
 }

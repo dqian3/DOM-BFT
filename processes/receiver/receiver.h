@@ -1,6 +1,7 @@
 #include "processes/process_config.h"
 
 #include "lib/common.h"
+#include "lib/crypto/hmac_provider.h"
 #include "lib/crypto/sig_provider.h"
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
@@ -28,6 +29,7 @@ namespace dombft {
 class Receiver {
 private:
     SignatureProvider sigProvider_;
+    HMACProvider hmacProvider_;
 
     /** The receiver uses this endpoint to receive requests from proxies and reply with OWD measurements*/
     std::unique_ptr<Endpoint> endpoint_;
@@ -50,6 +52,7 @@ private:
     uint32_t proxyMeasurementPort_;
     uint32_t numReceivers_;
     Address replicaAddr_;
+    bool useHMAC_;
 
     // Bookeeping
     uint64_t lastFwdDeadline_ = 0;

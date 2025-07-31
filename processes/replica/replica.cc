@@ -23,6 +23,7 @@ Replica::Replica(
     , checkpointInterval_(config.replicaCheckpointInterval)
     , snapshotInterval_(config.replicaSnapshotInterval)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
+    , useHMAC_(config.clientUseHMAC)
     , repairTimeout_(config.replicaRepairTimeout)
     , repairViewTimeout_(config.replicaRepairViewTimeout)
     , sigProvider_()
@@ -65,6 +66,8 @@ Replica::Replica(
         LOG(ERROR) << "Unable to load receiver public keys!";
         exit(1);
     }
+
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, config.clientIps.size());
 
     LOG(INFO) << "Instantiating log";
 
@@ -1430,7 +1433,18 @@ template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type,
 
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+        if (useHMAC_ && type == REPLY) {
+            auto it = find(clientAddrs_.begin(), clientAddrs_.end(), dst);
+            assert(it != clientAddrs_.end());
+
+            uint32_t clientId = it - clientAddrs_.begin();
+
+            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::CLIENT, clientId});
+        } else {
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        }
+
         endpoint_->SendPreparedMsgTo(dst, hdr);
     });
 }

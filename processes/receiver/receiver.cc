@@ -10,6 +10,7 @@ using namespace dombft::proto;
 Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
     : receiverId_(receiverId)
     , proxyMeasurementPort_(config.proxyMeasurementPort)
+    , useHMAC_(config.clientUseHMAC)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
     , running_(true)
@@ -30,6 +31,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, receiverId_}, config.clientIps.size());
 
     /** Store replica addrs */
     numReceivers_ = config.receiverIps.size();
@@ -233,7 +235,13 @@ void Receiver::verifyThd(int workerId)
             return;
         }
 
-        bool verified = sigProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+        bool verified = false;
+        if (useHMAC_) {
+            verified = hmacProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+
+        } else {
+            verified = sigProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+        }
 
         {
             std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
