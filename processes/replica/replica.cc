@@ -19,7 +19,11 @@ Replica::Replica(
     bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq
 )
     : replicaId_(replicaId)
+#if SIZE_5F_PLUS_1
+    , f_(config.replicaIps.size() / 5)
+#else
     , f_(config.replicaIps.size() / 3)
+#endif
     , checkpointInterval_(config.replicaCheckpointInterval)
     , snapshotInterval_(config.replicaSnapshotInterval)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
@@ -1376,7 +1380,7 @@ void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
         return startMsg.second.round() == repRound;
     });
 
-    if (numStartMsgs == 2 * f_ + 1) {
+    if (numStartMsgs == QUORUM_SIZE(f_)) {
 
         VLOG(1) << "PERF event=repair_proposal replica_id=" << replicaId_ << " round=" << round_
                 << " pbft_view=" << pbftView_;
@@ -1460,7 +1464,7 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
 
 bool Replica::verifyCert(const Cert &cert)
 {
-    if (cert.replies().size() < 2 * f_ + 1) {
+    if (cert.replies().size() < QUORUM_SIZE(f_)) {
         LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
     }
@@ -1614,7 +1618,7 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         return false;
     }
 
-    if (!(checkpoint.commits().size() != 2 * f_ + 1 || checkpoint.repair_commits().size() != 2 * f_ + 1)) {
+    if (!(checkpoint.commits().size() != QUORUM_SIZE(f_) || checkpoint.repair_commits().size() != QUORUM_SIZE(f_))) {
 
         LOG(INFO) << "Checkpoint commits not the right size!!";
         return false;
@@ -1771,7 +1775,7 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
 
 bool Replica::verifyRepairDone(const RepairDone &done)
 {
-    if (done.commits().size() < 2 * f_ + 1) {
+    if (done.commits().size() < QUORUM_SIZE(f_)) {
         LOG(WARNING) << "Number of commits is " << done.commits().size() << ", which is smaller than 2f + 1, f=" << f_;
         return false;
     }
@@ -2258,7 +2262,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return curMsg.second.round() == repairProposal_.value().round() &&
                curMsg.second.proposal_digest() == proposalDigest_ && curMsg.second.pbft_view() == pbftView_;
     });
-    if (numMsgs < 2 * f_ + 1) {
+    if (numMsgs < QUORUM_SIZE(f_)) {
         LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for 2f + 1 to proceed";
         return;
     }
@@ -2335,7 +2339,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
         return curMsg.second.round() == preparedRound_ && curMsg.second.proposal_digest() == proposalDigest_ &&
                curMsg.second.pbft_view() == pbftView_;
     });
-    if (numMsgs < 2 * f_ + 1) {
+    if (numMsgs < QUORUM_SIZE(f_)) {
         return;
     }
 
@@ -2411,7 +2415,7 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
         return curMsg.second.pbft_view() == inViewNum;
     });
 
-    if (numMsgs != 2 * f_ + 1) {
+    if (numMsgs != QUORUM_SIZE(f_)) {
         return;
     }
     LOG(INFO) << "ViewChange for view " << inViewNum << " received from 2f + 1 replicas!";
@@ -2486,7 +2490,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
         LOG(INFO) << "Replica obtains a different choice of round=" << maxVC.round() << "," << msg.round()
                   << " and pbft_view=" << maxVC.pbft_view() << ", " << msg.pbft_view();
     }
-    if (views[maxVC.pbft_view()] < 2 * f_ + 1) {
+    if (views[maxVC.pbft_view()] < QUORUM_SIZE(f_)) {
         LOG(INFO) << "The view number " << maxVC.pbft_view() << " does not have a 2f + 1 quorum";
         return;
     }

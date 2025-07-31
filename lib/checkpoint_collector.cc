@@ -33,7 +33,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         matchingReplies[key].insert(replicaId);
 
         // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= 2 * f_ + 1 && matchingReplies[key].contains(replicaId_)) {
+        if (matchingReplies[key].size() >= QUORUM_SIZE(f_) && matchingReplies[key].contains(replicaId_)) {
             cert_ = Cert();
             cert_->set_seq(std::get<2>(key));
 
@@ -72,7 +72,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
 
                 << digest_to_hex(commit.app_digest());
 
-        if (matchingCommits[key].size() >= 2 * f_ + 1) {
+        if (matchingCommits[key].size() >= QUORUM_SIZE(f_)) {
             matchedReplicas_ = matchingCommits[key];
             commitToUse_ = commit;
             return true;

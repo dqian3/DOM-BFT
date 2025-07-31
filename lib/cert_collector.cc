@@ -59,7 +59,7 @@ size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)
         matchingReplies[key].insert(replicaId);
 
         maxMatchSize_ = std::max(maxMatchSize_, matchingReplies[key].size());
-        if (matchingReplies[key].size() >= 2 * f_ + 1) {
+        if (matchingReplies[key].size() >= QUORUM_SIZE(f_)) {
 
             // Skip creating certificate if we already have a certificate with a higher round
             if (cert_.has_value() && cert_->round() >= reply.round()) {

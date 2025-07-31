@@ -13,7 +13,11 @@ using namespace dombft::proto;
 
 DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
     : replicaId_(replicaId)
+#if SIZE_5F_PLUS_1
+    , f_(config.replicaIps.size() / 5)
+#else
     , f_(config.replicaIps.size() / 3)
+#endif
     , prot_(prot)
     , batchSize_(batchSize)
     , nextSeq_(batchSize)
@@ -312,7 +316,7 @@ void DummyReplica::processMessagesThd()
 
                     VLOG(5) << "PREPARE " << seq << " " << prepareCounts[seq] << " " << protoMsg.replica_id();
 
-                    if (prepareCounts[seq] == 2 * f_ + 1) {
+                    if (prepareCounts[seq] == QUORUM_SIZE(f_)) {
                         protoMsg.set_phase(2);
                         protoMsg.set_replica_id(replicaId_);
 
@@ -333,7 +337,7 @@ void DummyReplica::processMessagesThd()
 
                     VLOG(5) << "COMMIT " << seq << " " << commitCounts[seq] << " " << protoMsg.replica_id();
 
-                    if (commitCounts[seq] == 2 * f_ + 1) {
+                    if (commitCounts[seq] == QUORUM_SIZE(f_)) {
 
                         VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
@@ -365,7 +369,7 @@ void DummyReplica::processMessagesThd()
                             sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[clientId]);
                         }
 
-                        while (commitCounts[committedSeq_ + batchSize_] >= 2 * f_ + 1) {
+                        while (commitCounts[committedSeq_ + batchSize_] >= QUORUM_SIZE(f_)) {
                             committedSeq_ += batchSize_;
 
                             VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_
