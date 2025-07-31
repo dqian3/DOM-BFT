@@ -31,7 +31,7 @@ Replica::Replica(
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
     , round_(1)
-    , checkpointCollectors_(replicaId_, f_)
+    , checkpointCollectors_(replicaId_, quorumSize_)
     , crashed_(crashed)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
@@ -1472,7 +1472,8 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
 bool Replica::verifyCert(const Cert &cert)
 {
     if (cert.replies().size() < quorumSize_) {
-        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
+        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_
+                  << " quorumSize_=" << quorumSize_;
         return false;
     }
 

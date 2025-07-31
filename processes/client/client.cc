@@ -508,14 +508,10 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         return;
     }
 
-    // `replies_.size() == maxMatchSize` iff all replies received so far are matching
-    //  and the normal or slow path wouldn't be triggered yet
-    if (reqState.collector.numReceived() == maxMatchSize)
-        return;
-
     // `hasCert() == true` iff maxMatchSize >= quorumSize_
     // TODO handle sending cert in new round better
-    if (!reqState.certSent && reqState.collector.hasCert()) {
+    if (!reqState.certSent && reqState.collector.hasCert() && reqState.collector.numReceived() > maxMatchSize &&
+        quorumSize_ == 2 * f_ + 1) {
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
         reqState.certSent = true;
 

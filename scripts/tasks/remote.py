@@ -132,7 +132,11 @@ def run(
     proxy_path = "./dombft_proxy"
     client_path = "./dombft_client"
 
-    f = len(replicas) // 3
+    if (cfg.get("resiliency") == "5f+1"):
+        f = len(replicas) // 5
+    else:
+        # Otherwise, we assume 3f+1 resiliency
+        f = len(replicas) // 3
 
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
