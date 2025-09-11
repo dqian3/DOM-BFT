@@ -8,7 +8,6 @@ using namespace dombft::proto;
 
 Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
 {
-    numShards_ = config.proxyShards;
     lastDeadline_ = GetMicrosecondTimestamp();
     maxOWD_ = config.proxyMaxOwd;
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
@@ -29,10 +28,6 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     numReceivers_ = config.receiverIps.size();
 
     if (config.transport == "nng") {
-        if (numShards_ > 1) {
-            LOG(ERROR) << "Multiple shards for proxy and NNG not implemented yet!";
-            exit(1);
-        }
         auto addrPairs = getProxyAddrs(config, proxyId);
 
         // This is rather messy, but the last nReceivers addresses in this return value are for the measurement
@@ -46,7 +41,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             addrPairs.end() - config.receiverIps.size(), addrPairs.end()
         );
 
-        forwardEps_.push_back(std::make_unique<NngEndpointThreaded>(forwardAddrs, false));
+        forwardEp_ = std::make_unique<NngEndpointThreaded>(forwardAddrs, false);
         measurementEp_ = std::make_unique<NngEndpointThreaded>(measurementAddrs);
 
         for (size_t i = nClients; i < forwardAddrs.size(); i++) {
@@ -59,21 +54,14 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
         }
 
-        for (int i = 0; i < numShards_; i++) {
-            forwardEps_.push_back(
-                std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, receiverAddrs_)
-            );
-        }
-
+        forwardEp_ =
+            std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_);
         measurementEp_ =
             std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort, receiverAddrs_);
 
     } else {
-        for (int i = 0; i < numShards_; i++) {
-            forwardEps_.push_back(
-                std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
-            );
-        }
+
+        forwardEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, false);
 
         measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
 
@@ -122,14 +110,11 @@ Proxy::~Proxy()
 
 void Proxy::LaunchThreads()
 {
-    threads_["RecvMeasurementsTd"] = std::make_unique<std::thread>(&Proxy::RecvMeasurementsTd, this);
+    // threads_["RecvMeasurementsTd"] = std::make_unique<std::thread>(&Proxy::RecvMeasurementsTd, this);
     if (selfGenReqs_) {
-        threads_["GenerateRequestsTd"] = std::make_unique<std::thread>(&Proxy::GenerateRequestsTd, this);
+        GenerateRequestsTd();
     } else {
-        for (int i = 0; i < numShards_; i++) {
-            std::string key = "ForwardRequestsTd-" + std::to_string(i);
-            threads_[key] = std::make_unique<std::thread>(&Proxy::ForwardRequestsTd, this, i);
-        }
+        ForwardRequests();
     }
 }
 
@@ -150,7 +135,7 @@ void Proxy::RecvMeasurementsTd()
         if (reply.owd() > 0) {
             context.addMeasure(reply.receiver_id(), reply.owd());
         } else {
-            // THis shouldn't matter too much, since it is ultimately the furtherest/max recevier that determines
+            // This shouldn't matter too much, since it is ultimately the furthest/max receiver that determines
             // the deadline
             VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
             context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
@@ -179,9 +164,9 @@ void Proxy::RecvMeasurementsTd()
     LOG(INFO) << "Measurement thread ending";
 }
 
-void Proxy::ForwardRequestsTd(const int thread_id)
+void Proxy::ForwardRequests()
 {
-    MessageHandlerFunc handleClientRequest = [this, thread_id](MessageHeader *hdr, void *body, Address *sender) {
+    MessageHandlerFunc handleClientRequest = [this](MessageHeader *hdr, void *body, Address *sender) {
         ClientRequest inReq;   // Client request we get
         DOMRequest outReq;     // Outgoing request that we attach a deadline to
 
@@ -220,14 +205,18 @@ void Proxy::ForwardRequestsTd(const int thread_id)
             }
             numForwarded_++;
 
-            MessageHeader *hdr = forwardEps_[thread_id]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+            MessageHeader *hdr = forwardEp_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
 
             for (int i = 0; i < numReceivers_; i++) {
 
-                forwardEps_[thread_id]->SendPreparedMsgTo(receiverAddrs_[i]);
+                VLOG(1) << "Forwarding req (" << inReq.client_id() << ", " << inReq.client_seq() << ") to "
+                        << receiverAddrs_[i].ip() << ":" << receiverAddrs_[i].port_ << " msgType=" << (int) hdr->msgType
+                        << " msgLen=" << hdr->msgLen;
+
+                forwardEp_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
             }
         } else {
             LOG(ERROR) << "Unknown message type " << hdr->msgType;
@@ -243,12 +232,12 @@ void Proxy::ForwardRequestsTd(const int thread_id)
 
     Timer monitor(checkEnd, 10000, this);
 
-    forwardEps_[thread_id]->RegisterMsgHandler(handleClientRequest);
-    forwardEps_[thread_id]->RegisterTimer(&monitor);
+    forwardEp_->RegisterMsgHandler(handleClientRequest);
+    forwardEp_->RegisterTimer(&monitor);
 
-    forwardEps_[thread_id]->LoopRun();
+    forwardEp_->LoopRun();
 
-    LOG(INFO) << "Forward thread ending";
+    LOG(INFO) << "Forward loop ending";
 }
 
 void Proxy::sendReq(uint32_t seq)
@@ -273,8 +262,8 @@ void Proxy::sendReq(uint32_t seq)
             << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
 
     for (int i = 0; i < numReceivers_; i++) {
-        MessageHeader *hdr = forwardEps_[0]->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
-        forwardEps_[0]->SendPreparedMsgTo(receiverAddrs_[i]);
+        MessageHeader *hdr = forwardEp_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+        forwardEp_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
     }
 }
 
@@ -358,11 +347,11 @@ void Proxy::GenerateRequestsTd()
 
         Timer monitor(checkEnd, 10000, this);
 
-        forwardEps_[0]->RegisterTimer(&timer);
-        forwardEps_[0]->RegisterTimer(&monitor);
+        forwardEp_->RegisterTimer(&timer);
+        forwardEp_->RegisterTimer(&monitor);
 
-        forwardEps_[0]->RegisterTimer(&endExperiment);
-        forwardEps_[0]->LoopRun();
+        forwardEp_->RegisterTimer(&endExperiment);
+        forwardEp_->LoopRun();
     }
 }
 

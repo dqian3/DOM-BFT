@@ -27,7 +27,7 @@ void OOORPCEndpoint::ConnectTo(const Address &dstAddr)
         ret = client->connect(addrString.c_str());
         if (ret == 0) {
             // success
-            LOG(INFO) << "Sucessful Connection" << addrString;
+            LOG(INFO) << "Sucessful Connection " << addrString;
         } else {
             sleep(1);
         }
@@ -59,9 +59,13 @@ int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr
 
     auto iter = proxies_.find(dstAddr);
     if (iter == proxies_.end()) {
-        LOG(ERROR) << "Does not find the proxy for addr: " << dstAddr.ip() << ":" << dstAddr.port();
+        LOG(ERROR) << "Cannot find the proxy for addr: " << dstAddr.ip() << ":" << dstAddr.port();
         return -1;
     }
+
+    VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
+            << " msgLen=" << hdr->msgLen;
+
     OOOBFTProxy *proxy = iter->second.proxy_;
 
     OOOPrepareRequest req;
@@ -70,7 +74,13 @@ int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr
     req.length_ = sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen;
     req.content_.resize(req.length_, '\0');
     memcpy(&(req.content_[0]), hdr, req.length_);
+    VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
+            << " msgLen=" << hdr->msgLen;
+
     ret = proxy->SendOOOPrepareRequest(req);
+
+    VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
+            << " msgLen=" << hdr->msgLen;
     return ret;
 }
 
@@ -86,7 +96,7 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
         uint32_t senderIPInt = req.senderIPInt_;
         uint32_t senderPort = req.senderPort_;
         in_addr addr;
-        addr.s_addr = htonl(senderIPInt);
+        addr.s_addr = senderIPInt;
         const char *ipStr = inet_ntoa(addr);
         Address senderAddr(ipStr, senderPort);
 
@@ -112,6 +122,8 @@ void OOORPCEndpoint::LoopRun()
     for (auto &targetAddr : targetAddrs_) {
         ConnectTo(targetAddr);
     }
+
+    ev_run(evLoop_, 0);
 }
 
 void OOORPCEndpoint::LoopBreak()

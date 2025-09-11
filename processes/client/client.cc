@@ -282,13 +282,10 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
-    // VLOG(4) << "Begin sending request number " << nextReqSeq_;
     Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
     // TODO maybe client should own the memory instead of endpoint.
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // VLOG(4) << "Serialization Done " << nextReqSeq_;
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Signature Done " << nextReqSeq_;
 
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
