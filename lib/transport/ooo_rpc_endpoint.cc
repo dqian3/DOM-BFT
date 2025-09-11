@@ -3,6 +3,7 @@
 OOORPCEndpoint::OOORPCEndpoint(const std::string &ip, const int port, const std::vector<Address> &targetAddrs)
     : myIP_(ip)
     , myListeningPort_(port)
+    , targetAddrs_(targetAddrs)
 {
     hdlrFunc_ = NULL;
     clientPoll_ = new rrr::PollMgr(2);

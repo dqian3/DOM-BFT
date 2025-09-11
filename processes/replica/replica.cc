@@ -105,7 +105,6 @@ Replica::Replica(
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
     } else if (config.transport == "simple-rpc") {
-        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, true);
 
         size_t nClients = config.clientIps.size();
         for (int i = 0; i < config.clientIps.size(); i++) {
@@ -119,6 +118,12 @@ Replica::Replica(
             std::string receiverIp = config.replicaIps[i];
             replicaAddrs_.push_back(Address(receiverIp, config.replicaPort));
         }
+
+        auto allAddrs = replicaAddrs_;
+        allAddrs.insert(allAddrs.begin(), clientAddrs_.begin(), clientAddrs_.end());
+        allAddrs.push_back(receiverAddr_);
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs);
 
     } else {
         LOG(ERROR) << "Unsupported transport " << config.transport;

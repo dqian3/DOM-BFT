@@ -54,18 +54,20 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         }
 
     } else if (config.transport == "simple-rpc") {
-        for (int i = 0; i < numShards_; i++) {
-            forwardEps_.push_back(
-                std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
-            );
-        }
-
-        measurementEp_ = std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
-
         for (int i = 0; i < numReceivers_; i++) {
             std::string receiverIp = config.receiverIps[i];
             receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
         }
+
+        for (int i = 0; i < numShards_; i++) {
+            forwardEps_.push_back(
+                std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, receiverAddrs_)
+            );
+        }
+
+        measurementEp_ =
+            std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort, receiverAddrs_);
+
     } else {
         for (int i = 0; i < numShards_; i++) {
             forwardEps_.push_back(

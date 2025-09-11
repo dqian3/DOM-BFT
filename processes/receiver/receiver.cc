@@ -49,7 +49,7 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
         LOG(INFO) << "Replica Address: " << replicaAddr_;
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(receiverIp, receiverPort, true);
+        endpoint_ = std::make_unique<OOORPCEndpoint>(receiverIp, receiverPort, std::vector<Address>{replicaAddr_});
     } else {
         replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
         LOG(INFO) << "Replica Address: " << replicaAddr_;

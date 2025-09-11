@@ -87,7 +87,10 @@ Client::Client(const ProcessConfig &config, size_t id)
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
         }
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort, replicaAddrs_);
+        auto allAddrs = replicaAddrs_;
+        allAddrs.insert(allAddrs.begin(), proxyAddrs_.begin(), proxyAddrs_.end());
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort, allAddrs);
 
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
