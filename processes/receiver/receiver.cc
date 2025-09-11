@@ -1,6 +1,7 @@
 #include "receiver.h"
 
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -44,6 +45,11 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         auto addrPairs = getReceiverAddrs(config, receiverId);
         replicaAddr_ = addrPairs.back().second;
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
+    } else if (config.transport == "simple-rpc") {
+        replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
+        LOG(INFO) << "Replica Address: " << replicaAddr_;
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(receiverIp, receiverPort, true);
     } else {
         replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
         LOG(INFO) << "Replica Address: " << replicaAddr_;

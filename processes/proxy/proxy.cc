@@ -1,6 +1,7 @@
 #include "proxy.h"
 
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/ooo_rpc_endpoint.h"
 
 namespace dombft {
 using namespace dombft::proto;
@@ -52,6 +53,19 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             receiverAddrs_.push_back(forwardAddrs[i].second);
         }
 
+    } else if (config.transport == "simple-rpc") {
+        for (int i = 0; i < numShards_; i++) {
+            forwardEps_.push_back(
+                std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort + i, false)
+            );
+        }
+
+        measurementEp_ = std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+
+        for (int i = 0; i < numReceivers_; i++) {
+            std::string receiverIp = config.receiverIps[i];
+            receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
+        }
     } else {
         for (int i = 0; i < numShards_; i++) {
             forwardEps_.push_back(
