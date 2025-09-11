@@ -1,4 +1,3 @@
-
 import os
 import time
 
@@ -7,9 +6,10 @@ from fabric import Connection, ThreadingGroup, SerialGroup
 from invoke import task
 import invoke
 
-#=================================================
+# =================================================
 #               Helper functions
-#=================================================
+# =================================================
+
 
 def resolve(c, ip, platform):
     if platform == "gcloud":
@@ -28,17 +28,23 @@ def arun_on(ip, logfile, timeout, profile=False):
     #   log = open(logfile, "w")
     #     ...
     #   conn.run(command + " 2>&1", **kwargs, asynchronous=True, warn=True, out_stream=log)
-    # This was changed to use the remote machine's filesystem to avoid issues with this outstream flushing        
+    # This was changed to use the remote machine's filesystem to avoid issues with this outstream flushing
 
     def arun(command, **kwargs):
         conn = Connection(ip)
 
         if profile:
-            command = perf_prefix(os.path.splitext(logfile)[0] + '.prof') + command
+            command = perf_prefix(os.path.splitext(logfile)[0] + ".prof") + command
 
-        print(f"Running {command} on {ip}, logging on remote machine {logfile}" )
-        return conn.run(command + f" &>{logfile}", **kwargs, asynchronous=True, timeout=timeout, warn=True)
-    
+        print(f"Running {command} on {ip}, logging on remote machine {logfile}")
+        return conn.run(
+            command + f" &>{logfile}",
+            **kwargs,
+            asynchronous=True,
+            timeout=timeout,
+            warn=True,
+        )
+
     return arun
 
 
@@ -62,22 +68,20 @@ def get_process_ips(config_file, resolve):
     return replicas, receivers, proxies, clients
 
 
-
 def get_all_ips(config_file, resolve):
     return set(
-        ip 
-        for ip_list in get_process_ips(config_file, resolve)
-        for ip in ip_list 
+        ip for ip_list in get_process_ips(config_file, resolve) for ip in ip_list
     )
 
-#=================================================
+
+# =================================================
 #             Main experiment tasks
-#=================================================
+# =================================================
 
 
 @task
-def logs(c,  config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
-    # ips of each process 
+def logs(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
+    # ips of each process
     replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
 
     get_logs(c, replicas, "replica")
@@ -87,23 +91,18 @@ def logs(c,  config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
 
 
 @task
-def run(       
+def run(
     # Invoke context
     c,
-
-
-    # Necessary args to run dombft 
-    config_file="../config/remote-prod.yaml",            # Path to the config file on the local machine
-
+    # Necessary args to run dombft
+    config_file="../config/remote-prod.yaml",  # Path to the config file on the local machine
     # function to resolve addresses in the config file to accesible addresses
     resolve=lambda x: x,
-
     # Options for logging/output to fetch
     v=5,
     dom_logs=False,
     profile=False,
     filter_client_logs=False,
-    
     # Optional args to modify the dombft experiments
     prot="dombft",
     batch_size=1,
@@ -113,9 +112,7 @@ def run(
     view_change_freq=0,
     drop_checkpoint_freq=0,
     commit_local_in_view_change=False,
-    max_view_change = 0,
-
-
+    max_view_change=0,
 ):
     config_file = os.path.abspath(config_file)
 
@@ -132,7 +129,7 @@ def run(
     proxy_path = "./dombft_proxy"
     client_path = "./dombft_client"
 
-    if (cfg.get("resiliency") == "5f+1"):
+    if cfg.get("resiliency") == "5f+1":
         f = len(replicas) // 5
     else:
         # Otherwise, we assume 3f+1 resiliency
@@ -141,7 +138,11 @@ def run(
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
     # Kill previous runs
-    group.run("killall dombft_proxy dombft_replica dombft_receiver dombft_client", warn=True, hide="both")
+    group.run(
+        "killall dombft_proxy dombft_replica dombft_receiver dombft_client",
+        warn=True,
+        hide="both",
+    )
 
     # Give replicas the config file
     group.put(config_file)
@@ -155,46 +156,49 @@ def run(
     c.run("mkdir -p ../logs")
     print("Starting replicas")
     for id, ip in enumerate(replicas):
-        swap_arg = ''
+        swap_arg = ""
         if normal_path_freq != 0 and id < f:
-            swap_arg = f'-swapFreq {normal_path_freq}'
+            swap_arg = f"-swapFreq {normal_path_freq}"
         if slow_path_freq != 0 and (id % 2) == 0:
-            swap_arg = f'-swapFreq {slow_path_freq}'
+            swap_arg = f"-swapFreq {slow_path_freq}"
 
-        drop_checkpoint_arg = ''
-        if id ==0 and drop_checkpoint_freq != 0:
-            drop_checkpoint_arg = f'-checkpointDropFreq {drop_checkpoint_freq}'
-        view_change_arg = ''
+        drop_checkpoint_arg = ""
+        if id == 0 and drop_checkpoint_freq != 0:
+            drop_checkpoint_arg = f"-checkpointDropFreq {drop_checkpoint_freq}"
+        view_change_arg = ""
 
         if (id % 2) == 0:
             if view_change_freq != 0:
-                view_change_arg = f'-viewChangeFreq {view_change_freq}'
-            if commit_local_in_view_change and id==0:
-                view_change_arg += ' -commitLocalInViewChange'
+                view_change_arg = f"-viewChangeFreq {view_change_freq}"
+            if commit_local_in_view_change and id == 0:
+                view_change_arg += " -commitLocalInViewChange"
             if max_view_change != 0:
-                view_change_arg += f' -viewChangeNum {max_view_change}'
+                view_change_arg += f" -viewChangeNum {max_view_change}"
 
-        if (len(replicas) - id - 1 < num_crashed):
-            crashed_arg = '-crashed'
+        if len(replicas) - id - 1 < num_crashed:
+            crashed_arg = "-crashed"
         else:
-            crashed_arg = ''
+            crashed_arg = ""
 
-        batch_size_arg = f'--batchSize {batch_size}'
-
+        batch_size_arg = f"--batchSize {batch_size}"
 
         arun = arun_on(ip, f"replica{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}")
+        hdl = arun(
+            f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}"
+        )
         other_handles.append(hdl)
 
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}")
+        hdl = arun(
+            f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}"
+        )
         other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
-        arun = arun_on(ip, f"proxy{id}.log", timeout=10 + runtime, profile=profile )
+        arun = arun_on(ip, f"proxy{id}.log", timeout=10 + runtime, profile=profile)
         hdl = arun(f"{proxy_path} -v {v} -config {remote_config_file} -proxyId {id}")
         other_handles.append(hdl)
 
@@ -204,14 +208,14 @@ def run(
     for id, ip in enumerate(clients):
         arun = arun_on(ip, f"client{id}.log", timeout=10 + runtime, profile=profile)
 
-
-        if (filter_client_logs):
+        if filter_client_logs:
             suffix = " 2>&1 | python3 -u filter_logs.py "
         else:
             suffix = " "
 
-
-        hdl = arun(f"{client_path} -v {v} -config {remote_config_file} -clientId {id} {suffix}")
+        hdl = arun(
+            f"{client_path} -v {v} -config {remote_config_file} -clientId {id} {suffix}"
+        )
         client_handles.append(hdl)
 
     try:
@@ -223,16 +227,20 @@ def run(
         print("Clients done, waiting for other processes to finish...")
 
         # kill these processes and then join
-        group.run("killall -SIGINT dombft_replica dombft_proxy dombft_receiver", warn=True, hide="both")
+        group.run(
+            "killall -SIGINT dombft_replica dombft_proxy dombft_receiver",
+            warn=True,
+            hide="both",
+        )
 
         for hdl in other_handles:
             try:
                 hdl.join()
             except invoke.exceptions.CommandTimedOut as e:
                 print(f"{e}")
- 
+
         c.run("rm -f ../logs/*.log")
-        
+
         get_logs(c, replicas, "replica")
         get_logs(c, clients, "client")
 
@@ -242,18 +250,28 @@ def run(
 
 
 @task
-def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x,
-                    poisson=False, ignore_deadlines=False, duration=20, rate=100,
-                    local_log=False):
-    
+def reorder_exp(
+    c,
+    config_file="../configs/remote-prod.yaml",
+    resolve=lambda x: x,
+    poisson=False,
+    ignore_deadlines=False,
+    duration=20,
+    rate=100,
+    local_log=False,
+):
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.put(config_file)
-    group.run("killall dombft_replica dombft_proxy dombft_receiver dombft_client", warn=True, hide="both")
+    group.run(
+        "killall dombft_replica dombft_proxy dombft_receiver dombft_client",
+        warn=True,
+        hide="both",
+    )
 
-    # ips of each process 
+    # ips of each process
     receivers = config["receiver"]["ips"]
     proxies = config["proxy"]["ips"]
 
@@ -270,7 +288,7 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
         hdl = arun(
-            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}" 
+            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}"
             + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
         )
 
@@ -281,17 +299,18 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
         arun = arun_on(ip, f"proxy{id}.log", local_log=local_log)
-        hdl = arun(f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests " +
-                f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}")
-        
+        hdl = arun(
+            f"{proxy_path} -v {5} -config {remote_config_file} -proxyId {id} -genRequests "
+            + f"{'-poisson' if poisson else ''} -duration {duration} -rate {rate}"
+        )
+
         proxy_handles.append(hdl)
 
     try:
-
         # join on the client processes, which should end
         for hdl in proxy_handles:
             hdl.join()
-            
+
         print("Proxies done, waiting 5 sec for receivers to finish...")
         time.sleep(5)
 
@@ -307,53 +326,61 @@ def reorder_exp(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: 
             get_logs(c, proxies, "proxy")
 
 
-
-#=================================================
+# =================================================
 #             Multiple experiment tasks
-#=================================================
+# =================================================
 @task
-def run_rates(c, config_file="../configs/remote-prod.yaml",
-            resolve=lambda x: x,
-            v=5,
-            prot="dombft",
-            batch_size=1,
+def run_rates(
+    c,
+    config_file="../configs/remote-prod.yaml",
+    resolve=lambda x: x,
+    v=1,
+    prot="dombft",
+    batch_size=1,
 ):
     try:
         with open(config_file, "r") as cfg_file:
             original_contents = cfg_file.read()
             cfg = yaml.load(original_contents, Loader=yaml.Loader)
- 
+
         # Fast path long (client logs are filtered)
+        # cfg["client"]["sendMode"] = "sendRate"
+        # cfg["client"]["maxInFlight"] = 300
+        # n_clients = len(cfg["client"]["ips"])
+
+        # for send_rate in [500, 750, 1000, 1100, 1200]:
+        #     cfg["client"]["sendRate"] = send_rate
+
+        #     with open(config_file, "w") as yaml_file:
+        #         yaml.dump(cfg, yaml_file)
+
+        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, filter_client_logs=True)
+
+        #     folder = f"../output/{prot}_long_{send_rate * n_clients}"
+        #     c.run(f"mkdir -p {folder}")
+        #     c.run(f"cp ../logs/*.log {folder}")
+
+        #     with open(os.path.join(folder, f"{send_rate}_config.yaml"), "w") as yaml_file:
+        #         yaml.dump(cfg, yaml_file)
+
+        # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
-        cfg["client"]["maxInFlight"] = 300
-        n_clients = len(cfg["client"]["ips"])
+        cfg["client"]["maxInFlight"] = 200
 
         for send_rate in [500, 750, 1000, 1100, 1200]:
             cfg["client"]["sendRate"] = send_rate
-
-            with open(config_file, "w") as yaml_file:
-                yaml.dump(cfg, yaml_file)
-
-            run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, filter_client_logs=True)
-
-            folder = f"../output/{prot}_long_{send_rate * n_clients}"
-            c.run(f"mkdir -p {folder}")
-            c.run(f"cp ../logs/*.log {folder}")
-
-            with open(os.path.join(folder, f"{send_rate}_config.yaml"), "w") as yaml_file:
-                yaml.dump(cfg, yaml_file)
-
-
-
-        # Fast path short
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 200
-
-        # for send_rate in [400, 600, 800, 900, 1000, 1100, 1200]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size)
-        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out")
+            yaml.dump(cfg, open(config_file, "w"))
+            run(
+                c,
+                config_file=config_file,
+                resolve=resolve,
+                v=v,
+                prot=prot,
+                batch_size=batch_size,
+            )
+            c.run(
+                f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out"
+            )
 
         # # Normal Path Swapped
         # cfg["client"]["sendMode"] = "sendRate"
@@ -399,24 +426,21 @@ def run_rates(c, config_file="../configs/remote-prod.yaml",
         #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100, num_crashed=1)
         #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_crashed_sr{send_rate}.out")
 
-
-
-
     finally:
         with open(config_file, "w") as cfg_file:
             cfg_file.write(original_contents)
 
 
-
-#=================================================
+# =================================================
 #             Other tasks
-#=================================================
+# =================================================
+
 
 @task
 def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.run("rm -rf keys/*")
-    
+
     print("Copying keys over...")
     for process in ["client", "replica", "receiver", "proxy"]:
         group.run(f"mkdir -p keys/{process}")
@@ -425,13 +449,13 @@ def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x)
 
 
 @task
-def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, resolve=lambda x: x):
+def copy_bin(
+    c, config_file="../configs/remote-prod.yaml", upload_once=False, resolve=lambda x: x
+):
     replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
-    group = ThreadingGroup(*get_all_ips(config_file, resolve))    
+    group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
     if upload_once:
-    
-
         # TODO try and check to see if binaries are stale
         print(f"Copying binaries over to one machine {clients[0]}")
         start_time = time.time()
@@ -446,11 +470,12 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, re
 
         print(f"Copying took {time.time() - start_time:.0f}s")
 
-
         print(f"Copying to other machines")
         start_time = time.time()
 
-        replicas, receivers, proxies, clients = get_process_ips(config_file, lambda x: x)
+        replicas, receivers, proxies, clients = get_process_ips(
+            config_file, lambda x: x
+        )
 
         for ip in replicas:
             print(f"Copying dombft_replica to {ip}")
@@ -464,7 +489,7 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, re
             print(f"Copying dombft_proxy to {ip}")
             conn.run(f"scp dombft_proxy {ip}:", warn=True)
 
-        for ip in set(clients[1:]): # Skip own
+        for ip in set(clients[1:]):  # Skip own
             print(f"Copying dombft_client to {ip}")
             conn.run(f"scp dombft_client {ip}:", warn=True)
 
@@ -497,11 +522,10 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False, re
         group.run("chmod +w dombft_*", warn=True)
 
 
-
-
-
 @task
-def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, setup=False):
+def build(
+    c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, setup=False
+):
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.put(config_file)
 
@@ -512,7 +536,9 @@ def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, set
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run("cd DOM-BFT && git checkout kvstore_snapshot2 && bazel build //processes/...")
+    group.run(
+        "cd DOM-BFT && git checkout kvstore_snapshot2 && bazel build //processes/..."
+    )
 
     group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
@@ -523,7 +549,6 @@ def build(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x, set
 
 @task
 def cmd(c, cmd, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
-    
     ips = get_all_ips(config_file, resolve)
     print(ips)
 
@@ -532,13 +557,15 @@ def cmd(c, cmd, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
 
 
 @task
-def copy(c, file, config_file="../configs/remote-prod.yaml"):
+def copy(c, file, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.put(file)
 
 
 @task
-def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False, resolve=lambda x: x):
+def setup_clockwork(
+    c, config_file="../configs/remote-prod.yaml", install=False, resolve=lambda x: x
+):
     _, receivers, proxies, _ = get_process_ips(config_file, resolve)
     _, receivers_int, proxies_int, _ = get_process_ips(config_file, resolve=lambda x: x)
 
@@ -562,7 +589,9 @@ def setup_clockwork(c, config_file="../configs/remote-prod.yaml", install=False,
 
     for ip, ip_int in zip(addrs[1:], addrs_int[1:]):
         ttcs_config = ttcs_template.format(ip_int, ip_int, 1, "true")
-        Connection(ip).run(f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg")
+        Connection(ip).run(
+            f"echo '{ttcs_config}'| sudo tee /etc/opt/ttcs/ttcs-agent.cfg"
+        )
 
     group.run("sudo systemctl stop ntp", warn=True)
     group.run("sudo systemctl disable ntp", warn=True)
