@@ -412,7 +412,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             verified = hmacProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()});
 
         } else {
-            verified = sigProvider_.verify(hdr, {NodeType::CLIENT, reply.replica_id()});
+            verified = sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()});
         }
 
         if (!verified) {
