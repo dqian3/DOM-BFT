@@ -19,9 +19,9 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     , prot_(prot)
     , batchSize_(batchSize)
     , nextSeq_(batchSize)
-    , sigProvider_()
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , sendThreadpool_(config.replicaNumSendThreads)
+    , useHMAC_(config.clientUseHMAC)
 {
     LOG(INFO) << "f=" << f_;
 
@@ -54,6 +54,8 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         LOG(ERROR) << "Unable to load replica public keys!";
         exit(1);
     }
+
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, config.clientIps.size());
 
     // LOG(INFO) << "instantiating log";
 
@@ -175,7 +177,15 @@ void DummyReplica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, request.client_id()})) {
+            bool verified = false;
+            if (useHMAC_) {
+                verified = hmacProvider_.verify(hdr, {NodeType::CLIENT, request.client_id()});
+
+            } else {
+                verified = sigProvider_.verify(hdr, {NodeType::CLIENT, request.client_id()});
+            }
+
+            if (!verified) {
                 LOG(INFO) << "Failed to verify client signature from " << request.client_id();
                 continue;
             }
@@ -455,7 +465,16 @@ template <typename T> void DummyReplica::sendMsgToDst(const T &msg, MessageType 
 {
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        if (useHMAC_ && type == REPLY) {
+            auto it = find(clientAddrs_.begin(), clientAddrs_.end(), dst);
+            assert(it != clientAddrs_.end());
+
+            uint32_t clientId = it - clientAddrs_.begin();
+
+            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::CLIENT, clientId});
+        } else {
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        }
         endpoint_->SendPreparedMsgTo(dst, hdr);
     });
 }

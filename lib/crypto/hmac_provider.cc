@@ -51,6 +51,8 @@ bool HMACProvider::appendMAC(MessageHeader *hdr, uint32_t bufLen, NodeID dst)
 
     const std::string &key = keys_[dst];
 
+    VLOG(6) << "SIGN KEY: " << key;
+
     HMAC<SHA256> hmac(reinterpret_cast<const byte *>(key.data()), key.size());
     hmac.CalculateDigest(sig, data, hdr->msgLen);
 
@@ -66,6 +68,7 @@ bool HMACProvider::verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigL
 #endif
     const std::string &key = keys_[signer];
 
+    VLOG(6) << "VERIFY KEY: " << key;
     HMAC<SHA256> verifier(reinterpret_cast<const byte *>(key.data()), key.size());
     return verifier.VerifyDigest(sig, data, dataLen);
 }

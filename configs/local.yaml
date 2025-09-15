@@ -7,7 +7,7 @@ client:
   - "127.0.1.0"
   - "127.0.1.1"
   port: 33000
-  keysDir: scripts/keys/client
+  keysDir: keys/client
   normalPathTimeout: 15000    # 15ms
   slowPathTimeout:   200000   # 200 ms
   requestTimeout: 10000000    # 10 s
@@ -28,7 +28,7 @@ proxy:
   shards: 1
   forwardPort: 31000
   measurementPort: 32000
-  keysDir: scripts/keys/proxy
+  keysDir: keys/proxy
   maxOwd: 15000
 
 # Receiver Info
@@ -39,7 +39,7 @@ receiver:
     - "127.0.0.7"
     - "127.0.0.8"
   port: 33000
-  keysDir: scripts/keys/receiver
+  keysDir: keys/receiver
   shards: 1 # The number of threads to receive threads 
   local: false # Although it's local, we actually use distinct loopback addresses for localhost experiments
   numVerifyThreads: 2
@@ -53,7 +53,7 @@ replica:
   - "127.0.0.4"
   port: 34000
   app: "counter"
-  keysDir: "scripts/keys/replica"
+  keysDir: "keys/replica"
   repairViewTimeout: 5000000
   repairTimeout: 1000000
   numVerifyThreads: 1

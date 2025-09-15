@@ -407,8 +407,16 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
-            LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
+        bool verified = false;
+        if (useHMAC_) {
+            verified = hmacProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()});
+
+        } else {
+            verified = sigProvider_.verify(hdr, {NodeType::CLIENT, reply.replica_id()});
+        }
+
+        if (!verified) {
+            LOG(INFO) << "Failed to verify replica signature from " << reply.replica_id();
             return;
         }
 
