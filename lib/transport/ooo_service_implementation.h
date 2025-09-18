@@ -25,7 +25,7 @@
 #include <vector>
 // clang-format on
 namespace OOO_BFT_RPC {
-using OOOHandler = std::function<void(const OOOPrepareRequest &)>;
+using OOOHandler = std::function<void(const OOOPrepareRequest &, rrr::DeferredReply *)>;
 class OOOBFTServiceImpl : public OOOBFTService {
 protected:
     // To add your own instance to handle requests, e.g.,

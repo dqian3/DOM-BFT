@@ -46,10 +46,25 @@ void OOORPCEndpoint::SetupServer()
         LOG(INFO) << "Start Service serverAddr=" << myServerAddr;
         oooServer_->start(myServerAddr.c_str());
     });
+
+    for (int i = 0; i < 1; i++) {
+        replyThreads_.emplace_back([this] {
+            rrr::DeferredReply *reply = nullptr;
+
+            // TODO better handlign of exit and no busy wait
+            // TODO how are the replies cleaned up?
+            while (true) {
+                if (replyQueue_.wait_dequeue_timed(reply, 10000)) {
+                    reply->reply();
+                }
+            }
+        });
+    }
 }
 
 int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
 {
+    assert(connected_);
 
     int ret = -1;
     // TODO: Need lock?
@@ -91,7 +106,7 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
         return false;
     }
     hdlrFunc_ = f;
-    oooHdl_ = [this](const OOOPrepareRequest &req) {
+    oooHdl_ = [this](const OOOPrepareRequest &req, rrr::DeferredReply *deferred) {
         // Parse the string to MessageHeader style
         uint32_t senderIPInt = req.senderIPInt_;
         uint32_t senderPort = req.senderPort_;
@@ -105,6 +120,10 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
         assert(req.content_.length() == req.length_);
         assert(req.length_ >= sizeof(MessageHeader));
         byte *payload = reinterpret_cast<byte *>(&(content[sizeof(MessageHeader)]));
+
+        // Queue the deferred reply for processing in another thread
+        replyQueue_.enqueue(deferred);
+
         // Delegate to the hdlrFunc_;
         hdlrFunc_(header, payload, &senderAddr);
     };
@@ -115,13 +134,19 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
     return true;
 }
 
-void OOORPCEndpoint::LoopRun()
+void OOORPCEndpoint::Connect()
 {
     SetupServer();
     // Connect to my target receivers
     for (auto &targetAddr : targetAddrs_) {
         ConnectTo(targetAddr);
     }
+    connected_ = true;
+}
+
+void OOORPCEndpoint::LoopRun()
+{
+    assert(connected_);
 
     ev_run(evLoop_, 0);
 }

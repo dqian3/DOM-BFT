@@ -8,9 +8,6 @@ OOOBFTServiceImpl::OOOBFTServiceImpl(const OOOHandler &h)
 
 void OOOBFTServiceImpl::SendOOOPrepareRequest(const OOOPrepareRequest &req, rrr::DeferredReply *defer)
 {
-    handler_(req);
-    // defer->reply triggers reply to the RPC client, if you do not want to reply immediately,
-    // save the defer variable and pass it to the other functions
-    defer->reply();
+    handler_(req, defer);
 }
 }   // namespace OOO_BFT_RPC

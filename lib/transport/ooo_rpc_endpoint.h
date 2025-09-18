@@ -28,8 +28,13 @@ protected:
     rrr::Server *oooServer_;
     std::thread *serverThread_;
 
+    // concurrent queue for deferred replies
+    BlockingConcurrentQueue<rrr::DeferredReply *> replyQueue_;
+    std::vector<std::thread> replyThreads_;
+
     std::vector<Address> targetAddrs_;
     std::unordered_map<Address, OOOProxyInfo> proxies_;
+    bool connected_ = false;
 
 public:
     OOORPCEndpoint(const std::string &ip, const int port, const std::vector<Address> &targetAddrs);
@@ -52,6 +57,8 @@ public:
 
     // use this function to destroy my server context
     virtual void LoopBreak() override;
+
+    void Connect();
 };
 
 #endif

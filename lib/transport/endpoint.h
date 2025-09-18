@@ -112,6 +112,8 @@ public:
     virtual int SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr = nullptr) = 0;
 
     // -------------------- Entry and exit points --------------------
+    virtual void Connect() {};   // Most likely no-op for connectionless protocols like UDP
+
     virtual void LoopRun();
 
     // Register a SIGINT handler. TODO generalize this, and make sure it's ok being called multiple times
