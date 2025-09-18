@@ -29,7 +29,7 @@ protected:
     std::thread *serverThread_;
 
     // concurrent queue for deferred replies
-    BlockingConcurrentQueue<rrr::DeferredReply *> replyQueue_;
+    ConcurrentQueue<rrr::DeferredReply *> replyQueue_;
     std::vector<std::thread> replyThreads_;
 
     std::vector<Address> targetAddrs_;

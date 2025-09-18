@@ -47,14 +47,14 @@ void OOORPCEndpoint::SetupServer()
         oooServer_->start(myServerAddr.c_str());
     });
 
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < 4; i++) {
         replyThreads_.emplace_back([this] {
             rrr::DeferredReply *reply = nullptr;
 
             // TODO better handlign of exit and no busy wait
             // TODO how are the replies cleaned up?
             while (true) {
-                if (replyQueue_.wait_dequeue_timed(reply, 10000)) {
+                if (replyQueue_.try_dequeue(reply)) {
                     reply->reply();
                 }
             }

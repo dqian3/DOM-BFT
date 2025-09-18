@@ -13,7 +13,7 @@
 #include <iostream>
 #include <thread>
 
-#define NUM_SENDERS_OOO 8
+#define NUM_SENDERS_OOO 64
 
 int main(int argc, char *argv[])
 {
