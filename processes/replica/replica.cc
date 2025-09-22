@@ -5,6 +5,7 @@
 #include "lib/apps/kv_store.h"
 #include "lib/common.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -105,6 +106,27 @@ Replica::Replica(
         }
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
+    } else if (config.transport == "simple-rpc") {
+
+        size_t nClients = config.clientIps.size();
+        for (int i = 0; i < config.clientIps.size(); i++) {
+            std::string receiverIp = config.clientIps[i];
+            clientAddrs_.push_back(Address(receiverIp, config.receiverPort));
+        }
+
+        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
+
+        for (int i = 0; i < config.replicaIps.size(); i++) {
+            std::string receiverIp = config.replicaIps[i];
+            replicaAddrs_.push_back(Address(receiverIp, config.replicaPort));
+        }
+
+        auto allAddrs = replicaAddrs_;
+        allAddrs.insert(allAddrs.begin(), clientAddrs_.begin(), clientAddrs_.end());
+        allAddrs.push_back(receiverAddr_);
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs);
+
     } else {
         LOG(ERROR) << "Unsupported transport " << config.transport;
     }

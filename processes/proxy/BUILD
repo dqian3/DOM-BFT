@@ -7,6 +7,7 @@ cc_library(
         "//lib:utils",
         "//lib:address",
         "//lib:endpoint",
+        "//lib:ooo_rpc_endpoint",
         "//lib:signature_provider",
         "//lib:common",
         "//processes:process_config",

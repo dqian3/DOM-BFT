@@ -62,8 +62,11 @@ cc_library(
 
 cc_library(
     name = "endpoint",
-    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", "transport/nng_endpoint.cc", "transport/nng_endpoint_threaded.cc"],
-    hdrs = ["transport/message_handler.h", "transport/endpoint.h", "transport/udp_endpoint.h", "transport/nng_endpoint.h" , "transport/nng_endpoint_threaded.h"],
+    srcs = ["transport/endpoint.cc", "transport/udp_endpoint.cc", 
+            "transport/nng_endpoint.cc", "transport/nng_endpoint_threaded.cc"],
+    hdrs = ["transport/message_handler.h", "transport/endpoint.h", 
+            "transport/udp_endpoint.h", "transport/nng_endpoint.h" , 
+            "transport/nng_endpoint_threaded.h"],
     visibility = ["//visibility:public"],
     deps = [
         ":address",
@@ -171,6 +174,48 @@ cc_library(
         ":common",
         ":client_record",
         "//proto:dombft_proto_cc"
+    ],
+    visibility = ["//visibility:public"],
+)
+
+
+cc_library(
+    name = "ooo_service",
+    srcs = ["transport/ooo_service.h"],
+    hdrs = ["transport/ooo_service.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "ooo_service_msg",
+    srcs = ["transport/ooo_service_msg.cc"],
+    hdrs = ["transport/ooo_service_msg.h"],
+    visibility = ["//visibility:public"],
+    deps= [
+        "//lib/rrr:rrrLib"
+    ],
+)
+
+cc_library(
+    name = "ooo_service_implementation",
+    srcs = ["transport/ooo_service_implementation.cc"],
+    hdrs = ["transport/ooo_service_implementation.h"],
+    deps= [
+        ":ooo_service",
+        ":ooo_service_msg",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+
+
+cc_library(
+    name = "ooo_rpc_endpoint",
+    srcs = ["transport/ooo_rpc_endpoint.cc"],
+    hdrs = ["transport/ooo_rpc_endpoint.h"],
+    deps= [
+        ":ooo_service_implementation",
+        ":endpoint"
     ],
     visibility = ["//visibility:public"],
 )

@@ -2,6 +2,7 @@
 
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
@@ -83,6 +84,23 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         for (size_t i = nReplicas; i < addrPairs.size(); i++)
             proxyAddrs_.push_back(addrPairs[i].second);
+    } else if (config.transport == "simple-rpc") {
+        /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        }
+
+        /** Store all replica addrs */
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        auto allAddrs = replicaAddrs_;
+        allAddrs.insert(allAddrs.begin(), proxyAddrs_.begin(), proxyAddrs_.end());
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort, allAddrs);
+
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
 
@@ -273,13 +291,10 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
-    // VLOG(4) << "Begin sending request number " << nextReqSeq_;
     Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
     // TODO maybe client should own the memory instead of endpoint.
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // VLOG(4) << "Serialization Done " << nextReqSeq_;
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Signature Done " << nextReqSeq_;
 
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
@@ -538,7 +553,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
             (*proofMsg.add_replies()) = r;
         }
         reqState.triggerSendTime = GetMicrosecondTimestamp();
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);   // JK: Unused?
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }

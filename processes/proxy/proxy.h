@@ -45,7 +45,7 @@ private:
      *
      */
     void LaunchThreads();
-    void ForwardRequestsTd(const int id = -1);
+    void ForwardRequests();
     void RecvMeasurementsTd();
 
     void sendReq(uint32_t seq);
@@ -57,7 +57,7 @@ private:
     SignatureProvider sigProvider_;
 
     std::unique_ptr<Endpoint> measurementEp_;
-    std::vector<std::unique_ptr<Endpoint>> forwardEps_;
+    std::unique_ptr<Endpoint> forwardEp_;
 
     /** CalculateLatencyBoundTd updates latencyBound_ and concurrently
      * ForwardRequestsTds read it and included in request messages */
@@ -69,7 +69,6 @@ private:
     uint32_t numForwarded_ = 0;
     float offsetCoefficient_;
 
-    int numShards_;
     int numReceivers_;
     std::vector<Address> receiverAddrs_;
 
