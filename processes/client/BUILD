@@ -77,9 +77,9 @@ cc_binary(
     srcs = ["bench_server.cc"],
     deps = [
         ":ooo_bench_service_implementation",
+        "//lib:utils",
     ],
     linkopts = [ "-L/usr/local/lib",  "-pthread",
-                "-lgflags", "-lglog"
                 ],
 )
 
@@ -89,9 +89,9 @@ cc_binary(
     srcs = ["bench_client.cc"],
     deps = [
         ":ooo_bench_service_implementation",
+        "//lib:utils",
     ],
     linkopts = [ "-L/usr/local/lib",  "-pthread",
-                "-lgflags", "-lglog"
                 ],
 )
 
