@@ -86,8 +86,8 @@ replica:
   - 10.150.0.11
 
   keysDir: keys/replica
-  numSendThreads: 6
-  numVerifyThreads: 6
+  numSendThreads: 16
+  numVerifyThreads: 8
   port: 34000
 
   checkpointInterval: 5000

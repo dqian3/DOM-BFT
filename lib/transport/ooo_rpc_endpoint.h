@@ -18,6 +18,8 @@ protected:
     // Maintain a proxy for each dest-node that this endpoint will SendPreparedMsgTo
     std::string myIP_;
     uint32_t myListeningPort_;
+    u_int32_t numProxiesPerAddr_;
+
     MessageHandlerFunc hdlrFunc_;
     OOOHandler oooHdl_;
 
@@ -33,11 +35,13 @@ protected:
     std::vector<std::thread> replyThreads_;
 
     std::vector<Address> targetAddrs_;
-    std::unordered_map<Address, OOOProxyInfo> proxies_;
+    std::unordered_map<Address, std::vector<OOOProxyInfo>> proxies_;
     bool connected_ = false;
 
 public:
-    OOORPCEndpoint(const std::string &ip, const int port, const std::vector<Address> &targetAddrs);
+    OOORPCEndpoint(
+        const std::string &ip, const int port, const std::vector<Address> &targetAddrs, int numProxiesPerAddr = 16
+    );
     ~OOORPCEndpoint();
 
     // Unlike UDP which is connectionless, for RPC based on TCP,

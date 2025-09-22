@@ -13,13 +13,12 @@
 #include <iostream>
 #include <thread>
 
-#define NUM_SENDERS_OOO 32
-
 int main(int argc, char *argv[])
 {
     if (argc < 5) {
         LOG(INFO) << "Usage: " << argv[0]
-                  << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type>\n";
+                  << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type> <send_interval_us> "
+                     "[num_senders]\n";
         return 1;
     }
 
@@ -28,16 +27,20 @@ int main(int argc, char *argv[])
     int peer_port = std::stoi(argv[3]);
     int message_size = std::stoi(argv[4]);
     std::string endpoint_type = argv[5];
-
-    Address peer_addr(peer_address, peer_port);
+    int send_interval_us = std::stoi(argv[6]);
 
     int num_senders = 1;
+
+    if (endpoint_type == "ooo") {
+        num_senders = std::stoi(argv[7]);
+    }
+
+    Address peer_addr(peer_address, peer_port);
 
     // ---- choose endpoint implementation ----
     Endpoint *endpoint = nullptr;
     if (endpoint_type == "ooo") {
-        endpoint = new OOORPCEndpoint("0.0.0.0", listen_port, {peer_addr});
-        num_senders = NUM_SENDERS_OOO;
+        endpoint = new OOORPCEndpoint("0.0.0.0", listen_port, {peer_addr}, num_senders);
     } else if (endpoint_type == "nng") {
         endpoint = new NngEndpointThreaded({{Address("0.0.0.0", listen_port), peer_addr}});
     } else if (endpoint_type == "udp") {
@@ -103,18 +106,23 @@ int main(int argc, char *argv[])
 
             if (endpoint_type != "udp") {
                 started.wait(false);
-                LOG(INFO) << "[sender " << i << "] received first message, continuing\n";
+                VLOG(1) << "[sender " << i << "] received first message, continuing\n";
             }
 
             while (true) {
                 auto now = std::chrono::steady_clock::now();
                 if (started && std::chrono::duration_cast<std::chrono::seconds>(now - first_msg_time).count() >= 10) {
-                    LOG(INFO) << "[sender " << i << "] finished after 10 s\n";
+                    VLOG(1) << "[sender " << i << "] finished after 10 s\n";
                     return;
                 }
                 auto *hdr = endpoint->PrepareMsg(
                     reinterpret_cast<const byte *>(msg.data()), msg.size(), 2, (byte *) buf, sizeof(buf)
                 );
+
+                if (send_interval_us > 0) {
+                    usleep(send_interval_us);
+                }
+
                 endpoint->SendPreparedMsgTo(peer_addr, hdr);
             }
         });

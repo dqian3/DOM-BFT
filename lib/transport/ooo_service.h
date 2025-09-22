@@ -60,7 +60,9 @@ public:
             return ENOTCONN;
         }
         rrr::i32 __ret__ = __fu__->get_error_code();
+        
         __fu__->release();
+        
         return __ret__;
     }
 };

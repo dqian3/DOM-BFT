@@ -1,9 +1,12 @@
 #include "ooo_rpc_endpoint.h"
 
-OOORPCEndpoint::OOORPCEndpoint(const std::string &ip, const int port, const std::vector<Address> &targetAddrs)
+OOORPCEndpoint::OOORPCEndpoint(
+    const std::string &ip, const int port, const std::vector<Address> &targetAddrs, int numProxiesPerAddr
+)
     : myIP_(ip)
     , myListeningPort_(port)
     , targetAddrs_(targetAddrs)
+    , numProxiesPerAddr_(numProxiesPerAddr)
 {
     hdlrFunc_ = NULL;
     clientPoll_ = new rrr::PollMgr(2);
@@ -21,21 +24,25 @@ void OOORPCEndpoint::ConnectTo(const Address &dstAddr)
     }
     LOG(INFO) << "ConnectTo= " << dstAddr.ip_ << ":" << dstAddr.port_;
     int ret = -1;
-    rrr::Client *client = new rrr::Client(clientPoll_);
-    do {
-        std::string addrString = dstAddr.ip_ + ":" + std::to_string(dstAddr.port_);
-        ret = client->connect(addrString.c_str());
-        if (ret == 0) {
-            // success
-            LOG(INFO) << "Sucessful Connection " << addrString;
-        } else {
-            sleep(1);
-        }
-    } while (ret != 0);
 
-    OOOBFTProxy *proxy = new OOOBFTProxy(client);
-    // Record this proxy info
-    proxies_[dstAddr] = {client, proxy};
+    for (int i = 0; i < numProxiesPerAddr_; i++) {
+        // Create more proxies if needed
+        rrr::Client *client = new rrr::Client(clientPoll_);
+        do {
+            std::string addrString = dstAddr.ip_ + ":" + std::to_string(dstAddr.port_);
+            ret = client->connect(addrString.c_str());
+            if (ret == 0) {
+                // success
+                LOG(INFO) << "Sucessful Connection " << addrString;
+            } else {
+                sleep(1);
+            }
+        } while (ret != 0);
+
+        OOOBFTProxy *proxy = new OOOBFTProxy(client);
+        // Record this proxy info
+        proxies_[dstAddr].push_back({client, proxy});
+    }
 }
 
 void OOORPCEndpoint::SetupServer()
@@ -47,19 +54,17 @@ void OOORPCEndpoint::SetupServer()
         oooServer_->start(myServerAddr.c_str());
     });
 
-    for (int i = 0; i < 4; i++) {
-        replyThreads_.emplace_back([this] {
-            rrr::DeferredReply *reply = nullptr;
+    replyThreads_.emplace_back([this] {
+        rrr::DeferredReply *reply = nullptr;
 
-            // TODO better handlign of exit and no busy wait
-            // TODO how are the replies cleaned up?
-            while (true) {
-                if (replyQueue_.try_dequeue(reply)) {
-                    reply->reply();
-                }
+        // TODO better handlign of exit and no busy wait
+        // TODO how are the replies cleaned up?
+        while (true) {
+            if (replyQueue_.try_dequeue(reply)) {
+                reply->reply();
             }
-        });
-    }
+        }
+    });
 }
 
 int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr)
@@ -75,13 +80,14 @@ int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr
     auto iter = proxies_.find(dstAddr);
     if (iter == proxies_.end()) {
         LOG(ERROR) << "Cannot find the proxy for addr: " << dstAddr.ip() << ":" << dstAddr.port();
-        return -1;
+        exit(1);
     }
 
     VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
             << " msgLen=" << hdr->msgLen;
 
-    OOOBFTProxy *proxy = iter->second.proxy_;
+    // TODO this is a bit of a hack, need a better way to select the proxy
+    OOOBFTProxy *proxy = iter->second[rand() % iter->second.size()].proxy_;
 
     OOOPrepareRequest req;
     req.senderIPInt_ = inet_addr(myIP_.c_str());
@@ -92,8 +98,7 @@ int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr
     VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
             << " msgLen=" << hdr->msgLen;
 
-    ret = proxy->SendOOOPrepareRequest(req);
-
+    rrr::Future::safe_release(proxy->async_SendOOOPrepareRequest(req));
     VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
             << " msgLen=" << hdr->msgLen;
     return ret;
