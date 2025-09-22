@@ -13,33 +13,35 @@
 #include <iostream>
 #include <thread>
 
-#define NUM_SENDERS_OOO 64
+#define NUM_SENDERS_OOO 32
 
 int main(int argc, char *argv[])
 {
     if (argc < 5) {
-        LOG(INFO) << "Usage: " << argv[0] << " <listen_port> <peer_port> <message_size> <endpoint_type>\n";
+        LOG(INFO) << "Usage: " << argv[0]
+                  << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type>\n";
         return 1;
     }
 
     int listen_port = std::stoi(argv[1]);
-    int peer_port = std::stoi(argv[2]);
-    int message_size = std::stoi(argv[3]);
-    std::string endpoint_type = argv[4];
+    std::string peer_address = argv[2];
+    int peer_port = std::stoi(argv[3]);
+    int message_size = std::stoi(argv[4]);
+    std::string endpoint_type = argv[5];
 
-    Address peer_addr("127.0.0.1", peer_port);
+    Address peer_addr(peer_address, peer_port);
 
     int num_senders = 1;
 
     // ---- choose endpoint implementation ----
     Endpoint *endpoint = nullptr;
     if (endpoint_type == "ooo") {
-        endpoint = new OOORPCEndpoint("127.0.0.1", listen_port, {peer_addr});
+        endpoint = new OOORPCEndpoint("0.0.0.0", listen_port, {peer_addr});
         num_senders = NUM_SENDERS_OOO;
     } else if (endpoint_type == "nng") {
-        endpoint = new NngEndpointThreaded({{Address("127.0.0.1", listen_port), Address("127.0.0.1", peer_port)}});
+        endpoint = new NngEndpointThreaded({{Address("0.0.0.0", listen_port), peer_addr}});
     } else if (endpoint_type == "udp") {
-        endpoint = new UDPEndpoint("127.0.0.1", listen_port);
+        endpoint = new UDPEndpoint("0.0.0.0", listen_port);
     } else {
         LOG(INFO) << "Unknown endpoint type: " << endpoint_type << "\n";
         return 1;
@@ -98,12 +100,15 @@ int main(int argc, char *argv[])
             endpoint->SendPreparedMsgTo(peer_addr, hdr);
 
             // Wait until main thread sets started = true
-            started.wait(false);
-            LOG(INFO) << "[sender " << i << "] received first message, continuing\n";
+
+            if (endpoint_type != "udp") {
+                started.wait(false);
+                LOG(INFO) << "[sender " << i << "] received first message, continuing\n";
+            }
 
             while (true) {
                 auto now = std::chrono::steady_clock::now();
-                if (std::chrono::duration_cast<std::chrono::seconds>(now - first_msg_time).count() >= 10) {
+                if (started && std::chrono::duration_cast<std::chrono::seconds>(now - first_msg_time).count() >= 10) {
                     LOG(INFO) << "[sender " << i << "] finished after 10 s\n";
                     return;
                 }
