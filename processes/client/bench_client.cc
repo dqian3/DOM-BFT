@@ -12,6 +12,7 @@ DEFINE_int32(workerNum, 1, "The number of worker threads");
 DEFINE_string(receiver, "127.0.0.1", "The addr of this server");
 DEFINE_string(receiverPort, "19832", "The port of this server");
 DEFINE_int32(sleepIntervalUs, 1000, "The interval between sending reqs");
+DEFINE_int32(payload, 32, "The interval between sending reqs");
 
 using namespace rrr;
 using namespace OOO_BFT_RPC;
@@ -38,8 +39,18 @@ void Send(int id)
     OOOBenchRequest req;
     req.clientId_ = id;
     LOG(INFO) << "id=" << req.clientId_;
-    for (uint32_t i = 0; i < 1000000ul; i++) {
+    uint32_t i = 0;
+    // for (uint32_t i = 0; i < 100000000ul; i++) {
+    while (true) {
+        i = (i + 1) % 100000000ul;
         req.reqId_ = i;
+        int paddingLen = FLAGS_payload - sizeof(uint32_t);
+        if (paddingLen > 0) {
+            req.content_ = std::string(paddingLen, 'a' + i % 26);
+        } else {
+            req.content_ = "";
+        }
+
         Future::safe_release(proxies[id]->async_SendOOOBenchRequest(req, fuattr));
         // sleep(1);
         // LOG(INFO) << "id=" << id << "\ti=" << i << "\treplyNum=" << replyNum;
