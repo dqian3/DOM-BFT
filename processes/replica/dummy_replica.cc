@@ -6,7 +6,6 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
-#include <openssl/pem.h>
 #include <sstream>
 
 namespace dombft {
@@ -21,9 +20,9 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     , prot_(prot)
     , batchSize_(batchSize)
     , nextSeq_(batchSize)
-    , sigProvider_()
     , numVerifyThreads_(config.replicaNumVerifyThreads)
     , sendThreadpool_(config.replicaNumSendThreads)
+    , useHMAC_(config.clientUseHMAC)
 {
     LOG(INFO) << "f=" << f_;
 
@@ -47,15 +46,17 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
 
     LOG(INFO) << "Private key loaded";
 
-    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::CLIENT, config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
         LOG(ERROR) << "Unable to load replica public keys!";
         exit(1);
     }
+
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, config.clientIps.size());
 
     // LOG(INFO) << "instantiating log";
 
@@ -200,7 +201,15 @@ void DummyReplica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", request.client_id())) {
+            bool verified = false;
+            if (useHMAC_) {
+                verified = hmacProvider_.verify(hdr, {NodeType::CLIENT, request.client_id()});
+
+            } else {
+                verified = sigProvider_.verify(hdr, {NodeType::CLIENT, request.client_id()});
+            }
+
+            if (!verified) {
                 LOG(INFO) << "Failed to verify client signature from " << request.client_id();
                 continue;
             }
@@ -214,7 +223,7 @@ void DummyReplica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", dummyProtoMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, dummyProtoMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature from " << dummyProtoMsg.replica_id();
                 continue;
             }
@@ -228,7 +237,7 @@ void DummyReplica::verifyMessagesThd()
                     const auto &req = dummyProtoMsg.client_reqs(i).req();
                     const std::string &sig = dummyProtoMsg.client_reqs(i).sig();
 
-                    if (!sigProvider_.verify(req.SerializeAsString(), sig, "client", req.client_id())) {
+                    if (!sigProvider_.verify(req.SerializeAsString(), sig, {NodeType::CLIENT, req.client_id()})) {
                         LOG(INFO) << "Failed to verify client signature from " << req.client_id();
                         clientSigs = false;
                         break;
@@ -480,7 +489,16 @@ template <typename T> void DummyReplica::sendMsgToDst(const T &msg, MessageType 
 {
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        if (useHMAC_ && type == REPLY) {
+            auto it = find(clientAddrs_.begin(), clientAddrs_.end(), dst);
+            assert(it != clientAddrs_.end());
+
+            uint32_t clientId = it - clientAddrs_.begin();
+
+            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::CLIENT, clientId});
+        } else {
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        }
         endpoint_->SendPreparedMsgTo(dst, hdr);
     });
 }

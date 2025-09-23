@@ -99,14 +99,6 @@ git_repository(
 )
 
 http_archive(
-    name = "openssl",
-    build_file = "//third_party/openssl:BUILD.bazel",
-    sha256 = "23011a5cc78e53d0dc98dfa608c51e72bcd350aa57df74c5d5574ba4ffb62e74",
-    strip_prefix = "openssl-OpenSSL_1_1_1d",
-    urls = ["https://github.com/openssl/openssl/archive/OpenSSL_1_1_1d.tar.gz"],
-)
-
-http_archive(
   name = "com_google_googletest",
   urls = ["https://github.com/google/googletest/archive/5ab508a01f9eb089207ee87fd547d290da39d015.zip"],
   strip_prefix = "googletest-5ab508a01f9eb089207ee87fd547d290da39d015",

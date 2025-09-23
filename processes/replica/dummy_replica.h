@@ -1,7 +1,8 @@
 #include "processes/process_config.h"
 
 #include "lib/common.h"
-#include "lib/signature_provider.h"
+#include "lib/crypto/hmac_provider.h"
+#include "lib/crypto/sig_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
@@ -29,6 +30,7 @@ private:
     uint32_t f_;
     uint32_t quorumSize_;
     uint32_t superQuorumSize_;
+    uint32_t useHMAC_;
 
     uint32_t numVerifyThreads_;
     uint32_t batchSize_;
@@ -37,6 +39,7 @@ private:
 
     // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
+    HMACProvider hmacProvider_;
 
     // Control flow/endpoint objects
     BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;

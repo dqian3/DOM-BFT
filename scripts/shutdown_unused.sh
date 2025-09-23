@@ -8,6 +8,6 @@ DIFF="$((CURRENT_TIME-LAST_ACCESS))"
 
 echo $DIFF
 
-if [ $DIFF -ge 600 ];then
+if [ $DIFF -ge 3600 ];then
     sudo shutdown
 fi

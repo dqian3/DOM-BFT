@@ -17,6 +17,7 @@ client:
   sendRate: 100
   runtimeSeconds: 10
   requestSize: 512
+  useHMAC: true
 
 
 # Proxy Info

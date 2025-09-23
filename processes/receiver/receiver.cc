@@ -5,14 +5,13 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
-#include <openssl/pem.h>
-
 namespace dombft {
 using namespace dombft::proto;
 
 Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
     : receiverId_(receiverId)
     , proxyPort_(config.proxyForwardPort)
+    , useHMAC_(config.clientUseHMAC)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
     , running_(true)
@@ -29,15 +28,11 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("proxy", config.proxyKeysDir)) {
-        LOG(ERROR) << "Unable to load proxy public keys!";
-        exit(1);
-    }
-
-    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::CLIENT, config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, receiverId_}, config.clientIps.size());
 
     /** Store replica addrs */
     numReceivers_ = config.receiverIps.size();
@@ -257,7 +252,13 @@ void Receiver::verifyThd(int workerId)
             return;
         }
 
-        bool verified = sigProvider_.verify(clientMsgHdr, "client", request->clientId);
+        bool verified = false;
+        if (useHMAC_) {
+            verified = hmacProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+
+        } else {
+            verified = sigProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+        }
 
         {
             std::lock_guard<std::mutex> guard(deadlineQueueMtx_);

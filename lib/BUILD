@@ -9,7 +9,6 @@ cc_library(
         "@com_github_cameron314_concurrentqueue//:concurrentqueue",
         "@com_github_cameron314_readerwriterqueue//:readerwriterqueue",
         "@com_github_preshing_junction//:libjunction",
-        "@openssl//:openssl",
     ]
 )
 
@@ -31,9 +30,9 @@ cc_library(
 )
 
 cc_library(
-    name = "signature_provider",
-    srcs = ["signature_provider.cc"],
-    hdrs = ["signature_provider.h"],
+    name = "crypto",
+    srcs = glob(["crypto/*.cc"]),
+    hdrs = glob(["crypto/*.h"]),
     visibility = ["//visibility:public"],
     deps = [
         ":address",
@@ -72,12 +71,11 @@ cc_library(
         ":address",
         ":common",
         ":timer",
-        ":signature_provider",
+        ":crypto",
         ":utils",
         "@com_github_enki_libev//:libev",
         "@com_github_google_glog//:glog",
         "@com_google_protobuf//:protobuf",
-        "@openssl//:openssl",
         "@nng//:libnng",
     ],
 )
@@ -102,7 +100,7 @@ cc_library(
         ":common",
         ":utils",
         "@com_github_google_glog//:glog",
-        "@openssl//:openssl",
+        "@cryptopp//:cryptopp",
         "//proto:dombft_proto_cc",
         "//lib:application",
         "//lib:client_record",
@@ -118,7 +116,6 @@ cc_library(
         ":common",
         ":utils",
         "@com_github_google_glog//:glog",
-        "@openssl//:openssl",
         "//lib:log",
         "//proto:dombft_proto_cc",
         "//lib:client_record",
@@ -134,9 +131,9 @@ cc_library(
         "//proto:dombft_apps_cc",
         ":common",
         ":utils",
-        "@openssl//:openssl",
         "@com_github_google_glog//:glog",
         "@com_github_jbeder_yaml_cpp//:yaml-cpp",
+        "@cryptopp//:cryptopp",
     ],
     visibility = ["//visibility:public"],
 )
@@ -146,7 +143,7 @@ cc_library(
     srcs = ["threadpool.cc"],
     hdrs = ["threadpool.h"],
     deps = [
-        ":signature_provider",
+        ":crypto",
         ":utils",
     ],
     visibility = ["//visibility:public"],
@@ -159,6 +156,7 @@ cc_library(
     deps = [
         ":utils",
         ":common",
+        "@cryptopp//:cryptopp",
         "//proto:dombft_proto_cc"
     ],
     visibility = ["//visibility:public"],

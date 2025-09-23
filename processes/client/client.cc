@@ -48,6 +48,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     maxInFlight_ = config.clientMaxInFlight;
     sendRate_ = config.clientSendRate;
     requestSize_ = config.clientRequestSize;
+    useHMAC_ = config.clientUseHMAC;
 
     if (config.clientSendMode == "sendRate") {
         sendMode_ = dombft::RateBased;
@@ -64,10 +65,12 @@ Client::Client(const ProcessConfig &config, size_t id)
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
         LOG(ERROR) << "Error loading replica public keys, exiting...";
         exit(1);
     }
+
+    hmacProvider_.loadClientKeysDev({NodeType::CLIENT, clientId_}, config.replicaIps.size());
 
     /** Setup transport */
     if (config.transport == "nng") {
@@ -297,22 +300,33 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
     Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-    // TODO maybe client should own the memory instead of endpoint.
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+    if (useHMAC_) {
+        // TODO send multiple requests for each replica with their own hmacs
+        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
+    } else {
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    }
 
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // TODO check errors for all of these
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    // TODO check errors for all of these lol
+    // TODO do this while waiting, not in the critical path
+    if (useHMAC_) {
+        // TODO send multiple requests for each replica with their own hmacs
+        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
+    } else {
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    }
 
 #if SEND_TO_LEADER
     VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
 
     endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
 #else
-    VLOG(1) << "Sending request to all replicas " << replicaAddrs_[0];
+    VLOG(1) << "Sending request to all replicas ";
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr, hdr);
     }
@@ -416,8 +430,16 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
+        bool verified = false;
+        if (useHMAC_) {
+            verified = hmacProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()});
+
+        } else {
+            verified = sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()});
+        }
+
+        if (!verified) {
+            LOG(INFO) << "Failed to verify replica signature from " << reply.replica_id();
             return;
         }
 
@@ -438,7 +460,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", certReply.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, certReply.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for CERT_REPLY!";
             return;
         }
@@ -454,7 +476,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for COMMITTED_REPLY!";
             return;
         }
@@ -468,7 +490,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", repairSummary.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, repairSummary.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for REPAIR_SUMMARY!";
             return;
         }

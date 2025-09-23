@@ -2,6 +2,7 @@
 
 #include "zipfian.h"
 
+#include <cryptopp/sha.h>
 #include <random>
 #include <sstream>
 
@@ -10,7 +11,6 @@ using namespace dombft::apps;
 KVStore::KVStore(uint32_t numKeys)
     : committedIdx(0)
 {
-    int width = std::to_string(numKeys - 1).length();
     for (uint32_t i = 0; i < numKeys; i++) {
         data[std::to_string(i)] = "";
         committedData[std::to_string(i)] = "";
@@ -150,16 +150,16 @@ bool KVStore::applySnapshot(const std::string &snapshot, const std::string &dige
     // TODO, could maybe be a bit more fine grained here
     std::unique_lock lock(committedDataMutex_);
 
-    byte computedDigest[SHA256_DIGEST_LENGTH];
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
-    SHA256_Final(computedDigest, &ctx);
+    byte computedDigest[CryptoPP::SHA256::DIGESTSIZE];
+    CryptoPP::SHA256 hash;
+
+    hash.Update(reinterpret_cast<const byte *>(snapshot.data()), snapshot.size());
+    hash.Final(computedDigest);
 
     VLOG(4) << digest_to_hex(digest);
-    VLOG(4) << digest_to_hex(std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH));
+    VLOG(4) << digest_to_hex(std::string(computedDigest, computedDigest + CryptoPP::SHA256::DIGESTSIZE));
 
-    if (std::string(computedDigest, computedDigest + SHA256_DIGEST_LENGTH) != digest) {
+    if (std::string(computedDigest, computedDigest + CryptoPP::SHA256::DIGESTSIZE) != digest) {
         LOG(ERROR) << "Snapshot digest does not match";
         return false;
     }
@@ -236,13 +236,13 @@ void KVStore::takeSnapshot(SnapshotCallback callback)
             snapshot += kv.first + ":" + kv.second + ",";
         }
 
-        byte digestBytes[SHA256_DIGEST_LENGTH];
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, snapshot.c_str(), snapshot.size());
-        SHA256_Final(digestBytes, &ctx);
+        CryptoPP::SHA256 hash;
+        byte digestBytes[CryptoPP::SHA256::DIGESTSIZE];
 
-        digest = std::string(digestBytes, digestBytes + SHA256_DIGEST_LENGTH);
+        hash.Update(reinterpret_cast<const byte *>(snapshot.data()), snapshot.size());
+        hash.Final(digestBytes);
+
+        digest = std::string(reinterpret_cast<const char *>(digestBytes), CryptoPP::SHA256::DIGESTSIZE);
 
         ret.snapshot = std::make_shared<std::string>(snapshot);
         ret.digest = digest;

@@ -154,6 +154,12 @@ def run(
     other_handles = []
 
     c.run("mkdir -p ../logs")
+
+    # Clear out ssh keys to avoid issues with authentication
+    c.run("ssh-add -D")
+    # Run a dummy command with pty to log a session so that the machine doesn't shutdown from being inactive
+    group.run("echo ''", pty=True)
+
     print("Starting replicas")
     for id, ip in enumerate(replicas):
         swap_arg = ""
@@ -365,9 +371,9 @@ def run_rates(
 
         # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
-        cfg["client"]["maxInFlight"] = 200
+        cfg["client"]["maxInFlight"] = 1200
 
-        for send_rate in [500, 750, 1000, 1100, 1200]:
+        for send_rate in [500, 750, 1000, 1250, 1500]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(

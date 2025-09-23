@@ -1,7 +1,7 @@
 #include "lib/application.h"
+#include "lib/crypto/sig_provider.h"
 #include "lib/log.h"
 #include "lib/repair_utils.h"
-#include "lib/signature_provider.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

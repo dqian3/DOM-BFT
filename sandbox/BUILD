@@ -4,5 +4,6 @@ cc_binary(
     deps = [
         "//lib:ooo_rpc_endpoint",
         "//lib:signature_provider",
+        "//lib:hmac_provider",
     ],
 )

@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include <openssl/sha.h>
-
 #include "blockingconcurrentqueue.h"
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"
@@ -29,7 +27,7 @@
 #define NNG_BUFFER_SIZE  (200000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY     1
+#define USE_PROXY     0
 #define FABRIC_CRYPTO 0
 #define SKIP_CRYPTO   0
 
@@ -44,6 +42,10 @@ template <typename T1> using BlockingConcurrentQueue = moodycamel::BlockingConcu
 template <typename T1> using RWQueue = moodycamel::ReaderWriterQueue<T1>;
 template <typename T1> using BlockingRWQueue = moodycamel::BlockingReaderWriterQueue<T1>;
 template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
+
+enum NodeType { CLIENT, REPLICA };
+
+typedef std::pair<NodeType, uint32_t> NodeID;
 
 /**
  * The message types are defined according to the proto files and the

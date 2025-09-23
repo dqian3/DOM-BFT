@@ -6,7 +6,7 @@ cc_library(
         "//proto:dombft_proto_cc",
         "//lib:endpoint",
         "//lib:ooo_rpc_endpoint",
-        "//lib:signature_provider",
+        "//lib:crypto",
         "//lib:utils",
         "//lib:common",
         "//lib:cert_collector",

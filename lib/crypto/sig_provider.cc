@@ -1,4 +1,4 @@
-#include "lib/signature_provider.h"
+#include "lib/crypto/sig_provider.h"
 #include <filesystem>
 #include <glog/logging.h>
 
@@ -24,11 +24,12 @@ bool SignatureProvider::loadPrivateKey(const std::string &privateKeyPath)
 }
 
 // Assumes keys are in directory keyDir with names ending in an _n.pub, where n is the id number
-bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::string &keyDir)
+bool SignatureProvider::loadPublicKeys(NodeType keyType, const std::string &keyDir)
 {
     // Ohh some C++17 stuff, hopefully this is reasonable
     const std::filesystem::path keysPath(keyDir);
 
+    int count = 0;
     for (auto const &dirEntry : std::filesystem::directory_iterator(keysPath)) {
 
         try {
@@ -47,7 +48,7 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
             std::string stem = dirEntry.path().stem();
             // Assumes id is end of name.
             int id = std::stoi(stem.substr(stem.find_first_of("0123456789")));
-            pubKeys_[keyType][id] = pubKey;
+            pubKeys_[{keyType, id}] = pubKey;
 
         } catch (const CryptoPP::Exception &e) {
             LOG(ERROR) << "While loading " << dirEntry << ", encountered crypto++ exception: " << e.what();
@@ -56,9 +57,11 @@ bool SignatureProvider::loadPublicKeys(const std::string &keyType, const std::st
             LOG(ERROR) << e.what();
             return false;
         }
+
+        count++;
     }
 
-    LOG(INFO) << "Loaded " << pubKeys_[keyType].size() << " keys for " << keyType << " from '" << keyDir << "'";
+    LOG(INFO) << "Loaded " << count << " keys for " << keyType << " from '" << keyDir << "'";
 
     return true;
 }
@@ -71,8 +74,6 @@ bool SignatureProvider::appendSignature(MessageHeader *hdr, uint32_t bufLen)
 #if SKIP_CRYPTO
     return true;
 #endif
-
-    size_t sigLen;
 
     if (hdr->msgLen + sizeof(MessageHeader) > bufLen) {
         LOG(ERROR) << "Error signing message, inital message size " << hdr->msgLen + sizeof(MessageHeader)
@@ -102,32 +103,29 @@ std::vector<byte> SignatureProvider::getSignature(MessageHeader *hdr)
     return std::vector<byte>(data + hdr->msgLen, data + hdr->sigLen);
 }
 
-bool SignatureProvider::verify(
-    byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, const std::string &pubKeyType, int pubKeyId
-)
+bool SignatureProvider::verify(byte *data, uint32_t dataLen, byte *sig, uint32_t sigLen, NodeID signer)
 {
 #if SKIP_CRYPTO
     return true;
 #endif
 
-    if (!pubKeys_.count(pubKeyType) || !pubKeys_.at(pubKeyType).count(pubKeyId)) {
-        LOG(ERROR) << "Public key of type " << pubKeyType << " and id " << pubKeyId << " not found!";
+    if (!pubKeys_.count(signer)) {
+        LOG(ERROR) << "Public key of type " << signer.first << " (replica=0, client=1) and id " << signer.second
+                   << " not found!";
         return false;
     }
 
-    ed25519Verifier verifier(pubKeys_.at(pubKeyType).at(pubKeyId));
+    ed25519Verifier verifier(pubKeys_.at(signer));
     return verifier.VerifyMessage(data, dataLen, sig, sigLen);
 }
 
-bool SignatureProvider::verify(MessageHeader *hdr, const std::string &pubKeyType, int pubKeyId)
+bool SignatureProvider::verify(MessageHeader *hdr, NodeID signer)
 {
     byte *data = (byte *) (hdr + 1);
-    return verify(data, hdr->msgLen, data + hdr->msgLen, hdr->sigLen, pubKeyType, pubKeyId);
+    return verify(data, hdr->msgLen, data + hdr->msgLen, hdr->sigLen, signer);
 }
 
-bool SignatureProvider::verify(
-    const std::string &data, const std::string &sig, const std::string &pubKeyType, int pubKeyId
-)
+bool SignatureProvider::verify(const std::string &data, const std::string &sig, NodeID signer)
 {
-    return verify((byte *) data.c_str(), data.size(), (byte *) sig.c_str(), sig.size(), pubKeyType, pubKeyId);
+    return verify((byte *) data.c_str(), data.size(), (byte *) sig.c_str(), sig.size(), signer);
 }

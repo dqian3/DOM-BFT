@@ -60,7 +60,8 @@ int main(int argc, char *argv[])
         LOG(INFO) << "Using Signatures";
 
     } else if (crypto_type == "hmac") {
-        LOG(INFO) << "Using HMAC";
+        LOG(ERROR) << "Using HMAC";
+
     } else {
         LOG(INFO) << "No crypto specificied";
     }
