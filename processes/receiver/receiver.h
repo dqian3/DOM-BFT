@@ -47,7 +47,7 @@ private:
 
     // Static receiver config
     uint32_t receiverId_;
-    uint32_t proxyMeasurementPort_;
+    uint32_t proxyPort_;
     uint32_t numReceivers_;
     Address replicaAddr_;
 

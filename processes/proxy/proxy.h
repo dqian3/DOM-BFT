@@ -44,9 +44,7 @@ private:
      * shard-num).
      *
      */
-    void LaunchThreads();
     void ForwardRequests();
-    void RecvMeasurementsTd();
 
     void sendReq(uint32_t seq);
     void GenerateRequestsTd();
@@ -56,8 +54,7 @@ private:
 
     SignatureProvider sigProvider_;
 
-    std::unique_ptr<Endpoint> measurementEp_;
-    std::unique_ptr<Endpoint> forwardEp_;
+    std::unique_ptr<Endpoint> endpoint_;
 
     /** CalculateLatencyBoundTd updates latencyBound_ and concurrently
      * ForwardRequestsTds read it and included in request messages */

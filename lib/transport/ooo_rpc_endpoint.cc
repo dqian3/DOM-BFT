@@ -83,9 +83,6 @@ int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr
         exit(1);
     }
 
-    VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
-            << " msgLen=" << hdr->msgLen;
-
     // TODO this is a bit of a hack, need a better way to select the proxy
     OOOBFTProxy *proxy = iter->second[rand() % iter->second.size()].proxy_;
 
@@ -95,11 +92,9 @@ int OOORPCEndpoint::SendPreparedMsgTo(const Address &dstAddr, MessageHeader *hdr
     req.length_ = sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen;
     req.content_.resize(req.length_, '\0');
     memcpy(&(req.content_[0]), hdr, req.length_);
-    VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
-            << " msgLen=" << hdr->msgLen;
 
     rrr::Future::safe_release(proxy->async_SendOOOPrepareRequest(req));
-    VLOG(2) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
+    VLOG(6) << "SendPreparedMsgTo " << dstAddr.ip() << ":" << dstAddr.port_ << " msgType=" << (int) hdr->msgType
             << " msgLen=" << hdr->msgLen;
     return ret;
 }
@@ -147,6 +142,8 @@ void OOORPCEndpoint::Connect()
         ConnectTo(targetAddr);
     }
     connected_ = true;
+
+    LOG(INFO) << "OOORPCEndpoint done connecting to all target addresses";
 }
 
 void OOORPCEndpoint::LoopRun()
@@ -159,8 +156,5 @@ void OOORPCEndpoint::LoopRun()
 void OOORPCEndpoint::LoopBreak()
 {
     // Destruct the RPC-related
-    clientPoll_->release();
-    serverPoll_->release();
-    thrpool_->release();
     delete oooServer_;
 }

@@ -1,4 +1,4 @@
-transport: nng 
+transport: simple-rpc 
 resiliency: 5f+1
 app: "counter"
 
@@ -36,11 +36,11 @@ client:
 
   keysDir: keys/client
   port: 33000
-  runtimeSeconds: 60
+  runtimeSeconds: 180
   
   sendMode: sendRate 
-  maxInFlight: 1000
-  sendRate: 1000
+  maxInFlight: 100
+  sendRate: 100
   requestSize: 512
 
   normalPathTimeout: 200000   # 200 ms

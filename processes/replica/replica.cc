@@ -142,6 +142,8 @@ Replica::Replica(
         running_ = false;
         endpoint_->LoopBreak();
     });
+
+    endpoint_->Connect();
 }
 
 Replica::~Replica()

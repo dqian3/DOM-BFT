@@ -1,3 +1,4 @@
+#include "lib/hmac_provider.h"
 #include "lib/signature_provider.h"
 #include "lib/transport/endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
@@ -18,7 +19,7 @@ int main(int argc, char *argv[])
     if (argc < 5) {
         LOG(INFO) << "Usage: " << argv[0]
                   << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type> <send_interval_us> "
-                     "[num_senders]\n";
+                     "<crypto type> [num_senders]\n";
         return 1;
     }
 
@@ -28,6 +29,7 @@ int main(int argc, char *argv[])
     int message_size = std::stoi(argv[4]);
     std::string endpoint_type = argv[5];
     int send_interval_us = std::stoi(argv[6]);
+    std::string crypto_type = argv[6];
 
     int num_senders = 1;
 
@@ -48,6 +50,19 @@ int main(int argc, char *argv[])
     } else {
         LOG(INFO) << "Unknown endpoint type: " << endpoint_type << "\n";
         return 1;
+    }
+
+    SignatureProvider sigProvider;
+    HMACProvider hmacProvider;
+
+    if (crypto_type == "sig") {
+
+        LOG(INFO) << "Using Signatures";
+
+    } else if (crypto_type == "hmac") {
+        LOG(INFO) << "Using HMAC";
+    } else {
+        LOG(INFO) << "No crypto specificied";
     }
 
     // ---- receiver side stats ----
@@ -75,7 +90,7 @@ int main(int argc, char *argv[])
                 double secs =
                     std::chrono::duration_cast<std::chrono::milliseconds>(now - first_msg_time).count() / 1000.0;
                 uint64_t c = recv_count.load();
-                LOG(INFO) << "Received " << c << " messages in " << secs << " s → " << (c / secs) << " msgs/s\n";
+                LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s\n";
                 static_cast<Endpoint *>(ep_void)->LoopBreak();
                 exit(0);
             }
@@ -112,7 +127,7 @@ int main(int argc, char *argv[])
             while (true) {
                 auto now = std::chrono::steady_clock::now();
                 if (started && std::chrono::duration_cast<std::chrono::seconds>(now - first_msg_time).count() >= 10) {
-                    VLOG(1) << "[sender " << i << "] finished after 10 s\n";
+                    LOG(INFO) << "[sender " << i << "] finished after 10 s\n";
                     return;
                 }
                 auto *hdr = endpoint->PrepareMsg(

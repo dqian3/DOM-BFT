@@ -12,7 +12,7 @@ using namespace dombft::proto;
 
 Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipForwarding, bool ignoreDeadlines)
     : receiverId_(receiverId)
-    , proxyMeasurementPort_(config.proxyMeasurementPort)
+    , proxyPort_(config.proxyForwardPort)
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
     , running_(true)
@@ -46,10 +46,19 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
         replicaAddr_ = addrPairs.back().second;
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
     } else if (config.transport == "simple-rpc") {
+        std::vector<Address> addrs;
         replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
+
+        addrs.push_back(Address(config.replicaIps[receiverId], config.replicaPort));
+
         LOG(INFO) << "Replica Address: " << replicaAddr_;
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(receiverIp, receiverPort, std::vector<Address>{replicaAddr_});
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
+            addrs.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        }
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(receiverIp, receiverPort, addrs);
     } else {
         replicaAddr_ = Address(config.replicaIps[receiverId], config.replicaPort);
         LOG(INFO) << "Replica Address: " << replicaAddr_;
@@ -78,6 +87,8 @@ Receiver::Receiver(const ProcessConfig &config, uint32_t receiverId, bool skipFo
     for (int i = 0; i < numVerifyThreads; i++) {
         verifyThds_.emplace_back(&Receiver::verifyThd, this, i);
     }
+
+    endpoint_->Connect();
 
     endpoint_->LoopRun();
     for (std::thread &thd : verifyThds_) {
@@ -154,7 +165,7 @@ void Receiver::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 #if FABRIC_CRYPTO
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
-        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyMeasurementPort_), hdr);
+        endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyPort_), hdr);
     }
 }
 

@@ -85,20 +85,21 @@ Client::Client(const ProcessConfig &config, size_t id)
         for (size_t i = nReplicas; i < addrPairs.size(); i++)
             proxyAddrs_.push_back(addrPairs[i].second);
     } else if (config.transport == "simple-rpc") {
-        /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
+        /** Store all proxy addrs. */
+
+        std::vector<Address> allAddrs;
+
         for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
             LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
             proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+            allAddrs.push_back(proxyAddrs_[i]);
         }
 
         /** Store all replica addrs */
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+            allAddrs.push_back(replicaAddrs_[i]);
         }
-
-        auto allAddrs = replicaAddrs_;
-        allAddrs.insert(allAddrs.begin(), proxyAddrs_.begin(), proxyAddrs_.end());
-
         endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort, allAddrs);
 
     } else {
@@ -127,7 +128,7 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     terminateTimer_ = std::make_unique<Timer>(
         [config](void *ctx, void *endpoint) {
-            LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
+            LOG(INFO) << "Exiting after running for " << config.clientRuntimeSeconds << " seconds";
             // TODO print some stats
             exit(0);
         },
@@ -149,24 +150,11 @@ Client::Client(const ProcessConfig &config, size_t id)
         LOG(ERROR) << "Unknown application type for client!";
         exit(1);
     }
-    if (sendMode_ == dombft::RateBased) {
-        // Kick off sending with a small burst every 5 ms
-        sendTimer_ = std::make_unique<Timer>([&](void *ctx, void *endpoint) { submitRequestsOpenLoop(); }, 5000, this);
-        endpoint_->RegisterTimer(sendTimer_.get());
-
-    } else if (sendMode_ == dombft::MaxInFlightBased) {
-        for (uint32_t i = 0; i < maxInFlight_; i++) {
-            submitRequest();
-        }
-    } else {
-        LOG(ERROR) << "Unknown send mode type for client!";
-        exit(1);
-    }
 
     MessageHandlerFunc replyHandler =
         [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
             if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
-                LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
+                LOG(INFO) << "Exiting after running for " << runtime << " seconds through message handler";
                 // TODO print some stats
                 exit(0);
             }
@@ -182,6 +170,23 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     // Handle interrupt signals properly on main loop
     endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
+
+    if (sendMode_ == dombft::RateBased) {
+        // Kick off sending with a small burst every 5 ms
+        sendTimer_ = std::make_unique<Timer>([&](void *ctx, void *endpoint) { submitRequestsOpenLoop(); }, 5000, this);
+        endpoint_->RegisterTimer(sendTimer_.get());
+
+        endpoint_->Connect();
+
+    } else if (sendMode_ == dombft::MaxInFlightBased) {
+        endpoint_->Connect();
+        for (uint32_t i = 0; i < maxInFlight_; i++) {
+            submitRequest();
+        }
+    } else {
+        LOG(ERROR) << "Unknown send mode type for client!";
+        exit(1);
+    }
 
     LOG(INFO) << "Client main thread starting";
     endpoint_->LoopRun();
@@ -299,8 +304,7 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // TODO check errors for all of these lol
-    // TODO do this while waiting, not in the critical path
+    // TODO check errors for all of these
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
 #if SEND_TO_LEADER

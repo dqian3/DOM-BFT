@@ -1,5 +1,5 @@
-transport: simple-rpc 
-
+transport: nng 
+resiliency: 3f+1
 app: kv_store 
 
 client:
@@ -15,7 +15,7 @@ client:
   sendMode: "sendRate"
   maxInFlight: 10
   sendRate: 100
-  runtimeSeconds: 60
+  runtimeSeconds: 10
   requestSize: 512
 
 

@@ -41,8 +41,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             addrPairs.end() - config.receiverIps.size(), addrPairs.end()
         );
 
-        forwardEp_ = std::make_unique<NngEndpointThreaded>(forwardAddrs, false);
-        measurementEp_ = std::make_unique<NngEndpointThreaded>(measurementAddrs);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(forwardAddrs, false);
 
         for (size_t i = nClients; i < forwardAddrs.size(); i++) {
             receiverAddrs_.push_back(forwardAddrs[i].second);
@@ -54,16 +53,10 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
         }
 
-        forwardEp_ =
-            std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_);
-        measurementEp_ =
-            std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort, receiverAddrs_);
-
+        endpoint_ = std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_);
     } else {
 
-        forwardEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, false);
-
-        measurementEp_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyMeasurementPort);
+        endpoint_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, false);
 
         for (int i = 0; i < numReceivers_; i++) {
             std::string receiverIp = config.receiverIps[i];
@@ -91,14 +84,11 @@ void Proxy::terminate()
 void Proxy::run()
 {
     running_ = true;
-
-    LaunchThreads();
-    for (auto &kv : threads_) {
-        LOG(INFO) << "Join " << kv.first;
-        kv.second->join();
-        LOG(INFO) << "Join Complete " << kv.first;
+    if (selfGenReqs_) {
+        GenerateRequestsTd();
+    } else {
+        ForwardRequests();
     }
-
     LOG(INFO) << "Run Terminated ";
 }
 
@@ -108,71 +98,41 @@ Proxy::~Proxy()
     // TODO Cleanup more
 }
 
-void Proxy::LaunchThreads()
-{
-    // threads_["RecvMeasurementsTd"] = std::make_unique<std::thread>(&Proxy::RecvMeasurementsTd, this);
-    if (selfGenReqs_) {
-        GenerateRequestsTd();
-    } else {
-        ForwardRequests();
-    }
-}
-
-void Proxy::RecvMeasurementsTd()
-{
-    OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 40, 90, maxOWD_);
-    // OWDCalc::MaxCtx context(numReceivers_, maxOWD_);
-
-    MessageHandlerFunc handleMeasurementReply = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
-        MeasurementReply reply;
-
-        if (!reply.ParseFromArray(body, hdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse Measurement_Reply message";
-            return;
-        }
-        uint64_t now = GetMicrosecondTimestamp();
-
-        if (reply.owd() > 0) {
-            context.addMeasure(reply.receiver_id(), reply.owd());
-        } else {
-            // This shouldn't matter too much, since it is ultimately the furthest/max receiver that determines
-            // the deadline
-            VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
-            context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
-        }
-
-        latencyBound_.store(context.getCappedMaxOWD() * offsetCoefficient_);
-        VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
-                << " rtt=" << now - reply.send_time() << " now=" << now << "\nLatency bound is set to be "
-                << latencyBound_.load();
-    };
-
-    /* Checks every 10ms to see if we are done*/
-    auto checkEnd = [](void *ctx, void *ep) {
-        if (!((Proxy *) ctx)->running_) {
-            ((Endpoint *) ep)->LoopBreak();
-        }
-    };
-
-    Timer monitor(checkEnd, 10000, this);
-
-    measurementEp_->RegisterMsgHandler(handleMeasurementReply);
-    measurementEp_->RegisterTimer(&monitor);
-
-    measurementEp_->LoopRun();
-
-    LOG(INFO) << "Measurement thread ending";
-}
-
 void Proxy::ForwardRequests()
 {
-    MessageHandlerFunc handleClientRequest = [this](MessageHeader *hdr, void *body, Address *sender) {
-        ClientRequest inReq;   // Client request we get
-        DOMRequest outReq;     // Outgoing request that we attach a deadline to
+    OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 40, 90, maxOWD_);
 
+    MessageHandlerFunc handleRequest = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
         VLOG(2) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
 
-        if (hdr->msgType == MessageType::CLIENT_REQUEST) {
+        if (hdr->msgType == MessageType::MEASUREMENT_REPLY) {
+            MeasurementReply reply;
+
+            if (!reply.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse Measurement_Reply message";
+                return;
+            }
+            uint64_t now = GetMicrosecondTimestamp();
+
+            if (reply.owd() > 0) {
+                context.addMeasure(reply.receiver_id(), reply.owd());
+            } else {
+                // This shouldn't matter too much, since it is ultimately the furthest/max receiver that determines
+                // the deadline
+                VLOG(4) << "Warning, negative OWD measurement, using RTT / 2";
+                context.addMeasure(reply.receiver_id(), (now - reply.send_time()) / 2);
+            }
+
+            latencyBound_.store(context.getCappedMaxOWD() * offsetCoefficient_);
+            VLOG(1) << "proxy=" << proxyId_ << " replica=" << reply.receiver_id() << " owd=" << reply.owd()
+                    << " rtt=" << now - reply.send_time() << " now=" << now << "\nLatency bound is set to be "
+                    << latencyBound_.load();
+
+        } else if (hdr->msgType == MessageType::CLIENT_REQUEST) {
+
+            ClientRequest inReq;   // Client request we get
+            DOMRequest outReq;     // Outgoing request that we attach a deadline to
+
             // TODO verify and handle signed header better
             if (!inReq.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
@@ -205,7 +165,7 @@ void Proxy::ForwardRequests()
             }
             numForwarded_++;
 
-            MessageHeader *hdr = forwardEp_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+            MessageHeader *hdr = endpoint_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
 #if FABRIC_CRYPTO
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 #endif
@@ -216,7 +176,7 @@ void Proxy::ForwardRequests()
                         << receiverAddrs_[i].ip() << ":" << receiverAddrs_[i].port_ << " msgType=" << (int) hdr->msgType
                         << " msgLen=" << hdr->msgLen;
 
-                forwardEp_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
+                endpoint_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
             }
         } else {
             LOG(ERROR) << "Unknown message type " << hdr->msgType;
@@ -232,10 +192,14 @@ void Proxy::ForwardRequests()
 
     Timer monitor(checkEnd, 10000, this);
 
-    forwardEp_->RegisterMsgHandler(handleClientRequest);
-    forwardEp_->RegisterTimer(&monitor);
+    endpoint_->RegisterMsgHandler(handleRequest);
+    endpoint_->RegisterTimer(&monitor);
 
-    forwardEp_->LoopRun();
+    endpoint_->Connect();
+
+    LOG(INFO) << "Forward loop starting";
+
+    endpoint_->LoopRun();
 
     LOG(INFO) << "Forward loop ending";
 }
@@ -262,8 +226,8 @@ void Proxy::sendReq(uint32_t seq)
             << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
 
     for (int i = 0; i < numReceivers_; i++) {
-        MessageHeader *hdr = forwardEp_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
-        forwardEp_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
+        endpoint_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
     }
 }
 
@@ -347,11 +311,11 @@ void Proxy::GenerateRequestsTd()
 
         Timer monitor(checkEnd, 10000, this);
 
-        forwardEp_->RegisterTimer(&timer);
-        forwardEp_->RegisterTimer(&monitor);
+        endpoint_->RegisterTimer(&timer);
+        endpoint_->RegisterTimer(&monitor);
 
-        forwardEp_->RegisterTimer(&endExperiment);
-        forwardEp_->LoopRun();
+        endpoint_->RegisterTimer(&endExperiment);
+        endpoint_->LoopRun();
     }
 }
 
