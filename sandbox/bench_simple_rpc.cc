@@ -1,5 +1,5 @@
-#include "lib/hmac_provider.h"
-#include "lib/signature_provider.h"
+#include "lib/crypto/hmac_provider.h"
+#include "lib/crypto/sig_provider.h"
 #include "lib/transport/endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
@@ -18,8 +18,8 @@ int main(int argc, char *argv[])
 {
     if (argc < 5) {
         LOG(INFO) << "Usage: " << argv[0]
-                  << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type> <send_interval_us> "
-                     "<crypto type> [num_senders]\n";
+                  << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type> <crypto type> "
+                     "<send_interval_us> [num_senders]\n";
         return 1;
     }
 
@@ -28,14 +28,18 @@ int main(int argc, char *argv[])
     int peer_port = std::stoi(argv[3]);
     int message_size = std::stoi(argv[4]);
     std::string endpoint_type = argv[5];
-    int send_interval_us = std::stoi(argv[6]);
     std::string crypto_type = argv[6];
+
+    int send_interval_us = std::stoi(argv[7]);
 
     int num_senders = 1;
 
     if (endpoint_type == "ooo") {
-        num_senders = std::stoi(argv[7]);
+        num_senders = std::stoi(argv[8]);
     }
+
+    // ignore SIGPIPE
+    signal(SIGPIPE, SIG_IGN);
 
     Address peer_addr(peer_address, peer_port);
 
@@ -56,12 +60,13 @@ int main(int argc, char *argv[])
     HMACProvider hmacProvider;
 
     if (crypto_type == "sig") {
-
         LOG(INFO) << "Using Signatures";
+        sigProvider.loadPrivateKey("keys/client/client0.der");
+        sigProvider.loadPublicKeys(NodeType::CLIENT, "keys/client");
 
     } else if (crypto_type == "hmac") {
         LOG(ERROR) << "Using HMAC";
-
+        hmacProvider.loadClientKeysDev({NodeType::CLIENT, 0}, 1);
     } else {
         LOG(INFO) << "No crypto specificied";
     }
@@ -71,13 +76,26 @@ int main(int argc, char *argv[])
     static std::chrono::steady_clock::time_point first_msg_time;
     static std::atomic<bool> started{false};
 
-    endpoint->RegisterMsgHandler([](MessageHeader * /*msgHdr*/, byte * /*msgBuffer*/, Address * /*sender*/) {
+    endpoint->RegisterMsgHandler([&](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         if (!started.exchange(true)) {
             first_msg_time = std::chrono::steady_clock::now();
 
             started.notify_all();
             LOG(INFO) << "First message received, starting 10-second window\n";
         }
+
+        if (crypto_type == "sig") {
+            if (!sigProvider.verify(msgHdr, {NodeType::CLIENT, 0})) {
+                LOG(INFO) << "Failed to verify signature";
+                return;
+            }
+        } else if (crypto_type == "hmac") {
+            if (!hmacProvider.verify(msgHdr, {NodeType::CLIENT, 0})) {
+                LOG(INFO) << "Failed to verify HMAC";
+                return;
+            }
+        }
+
         ++recv_count;
     });
 
@@ -88,12 +106,7 @@ int main(int argc, char *argv[])
         [](void * /*data*/, void *ep_void) {
             auto now = std::chrono::steady_clock::now();
             if (started && std::chrono::duration_cast<std::chrono::seconds>(now - first_msg_time).count() >= 10) {
-                double secs =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(now - first_msg_time).count() / 1000.0;
-                uint64_t c = recv_count.load();
-                LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s\n";
                 static_cast<Endpoint *>(ep_void)->LoopBreak();
-                exit(0);
             }
         },
         1'000   // check after 10 seconds
@@ -116,6 +129,13 @@ int main(int argc, char *argv[])
             LOG(INFO) << "[sender " << i << "] sending first message\n";
 
             auto *hdr = endpoint->PrepareMsg(reinterpret_cast<const byte *>(msg.data()), msg.size(), 2);
+
+            if (crypto_type == "sig") {
+                bool ret = sigProvider.appendSignature(hdr, sizeof(buf));
+            } else if (crypto_type == "hmac") {
+                bool ret = hmacProvider.appendMAC(hdr, sizeof(buf), {NodeType::CLIENT, 0});
+            }
+
             endpoint->SendPreparedMsgTo(peer_addr, hdr);
 
             // Wait until main thread sets started = true
@@ -139,6 +159,12 @@ int main(int argc, char *argv[])
                     usleep(send_interval_us);
                 }
 
+                if (crypto_type == "sig") {
+                    sigProvider.appendSignature(hdr, sizeof(buf));
+                } else if (crypto_type == "hmac") {
+                    hmacProvider.appendMAC(hdr, sizeof(buf), {NodeType::CLIENT, 0});
+                }
+
                 endpoint->SendPreparedMsgTo(peer_addr, hdr);
             }
         });
@@ -150,5 +176,9 @@ int main(int argc, char *argv[])
 
     loop_thr.join();
 
+    auto now = std::chrono::steady_clock::now();
+    double secs = std::chrono::duration_cast<std::chrono::milliseconds>(now - first_msg_time).count() / 1000.0;
+    uint64_t c = recv_count.load();
+    LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s\n";
     return 0;
 }

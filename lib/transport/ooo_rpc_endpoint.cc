@@ -155,6 +155,7 @@ void OOORPCEndpoint::LoopRun()
 
 void OOORPCEndpoint::LoopBreak()
 {
+    Endpoint::LoopBreak();
     // Destruct the RPC-related
     delete oooServer_;
 }
