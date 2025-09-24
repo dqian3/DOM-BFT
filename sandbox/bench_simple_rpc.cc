@@ -14,12 +14,14 @@
 #include <iostream>
 #include <thread>
 
+static std::atomic<uint64_t> recv_count{0};
+
 int main(int argc, char *argv[])
 {
     if (argc < 5) {
         LOG(INFO) << "Usage: " << argv[0]
                   << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type> <crypto type> "
-                     "<send_interval_us> [num_senders]\n";
+                     "<send_interval_us> <num_verify_threads> <num_senders>\n";
         return 1;
     }
 
@@ -29,13 +31,14 @@ int main(int argc, char *argv[])
     int message_size = std::stoi(argv[4]);
     std::string endpoint_type = argv[5];
     std::string crypto_type = argv[6];
-
     int send_interval_us = std::stoi(argv[7]);
+
+    int num_verify_threads = std::stoi(argv[8]);
 
     int num_senders = 1;
 
     if (endpoint_type == "ooo") {
-        num_senders = std::stoi(argv[8]);
+        num_senders = std::stoi(argv[9]);
     }
 
     // ignore SIGPIPE
@@ -72,9 +75,43 @@ int main(int argc, char *argv[])
     }
 
     // ---- receiver side stats ----
-    static std::atomic<uint64_t> recv_count{0};
     static std::chrono::steady_clock::time_point first_msg_time;
+    static std::chrono::steady_clock::time_point end_time;
     static std::atomic<bool> started{false};
+
+    std::vector<std::thread> verifyThreads_;
+    BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;
+
+    for (int i = 0; i < num_verify_threads; ++i) {
+        verifyThreads_.emplace_back([&] {
+            while (true) {
+                std::vector<byte> msg;
+                if (!verifyQueue_.wait_dequeue_timed(msg, 50000)) {
+                    continue;
+                }
+
+                if (msg.empty()) {
+                    return;
+                }
+
+                MessageHeader *hdr = (MessageHeader *) msg.data();
+
+                if (crypto_type == "sig") {
+                    if (!sigProvider.verify(hdr, {NodeType::CLIENT, 0})) {
+                        LOG(INFO) << "Failed to verify signature";
+                        continue;
+                    }
+                } else if (crypto_type == "hmac") {
+                    if (!hmacProvider.verify(hdr, {NodeType::CLIENT, 0})) {
+                        LOG(INFO) << "Failed to verify HMAC";
+                        continue;
+                    }
+                }
+
+                recv_count++;
+            }
+        });
+    }
 
     endpoint->RegisterMsgHandler([&](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         if (!started.exchange(true)) {
@@ -84,32 +121,30 @@ int main(int argc, char *argv[])
             LOG(INFO) << "First message received, starting 10-second window\n";
         }
 
-        if (crypto_type == "sig") {
-            if (!sigProvider.verify(msgHdr, {NodeType::CLIENT, 0})) {
-                LOG(INFO) << "Failed to verify signature";
-                return;
-            }
-        } else if (crypto_type == "hmac") {
-            if (!hmacProvider.verify(msgHdr, {NodeType::CLIENT, 0})) {
-                LOG(INFO) << "Failed to verify HMAC";
-                return;
-            }
+        if (crypto_type != "hmac" && crypto_type != "sig") {
+            recv_count++;
+            return;
+        } else {
+            byte *rawMsg = (byte *) msgHdr;
+            verifyQueue_.enqueue(
+                std::vector<byte>(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
+            );
         }
-
-        ++recv_count;
     });
 
     endpoint->Connect();
 
     // ---- Timer to stop after 10 seconds from first message ----
     Timer stop_timer(
-        [](void * /*data*/, void *ep_void) {
-            auto now = std::chrono::steady_clock::now();
-            if (started && std::chrono::duration_cast<std::chrono::seconds>(now - first_msg_time).count() >= 10) {
+        [&](void * /*data*/, void *ep_void) {
+            end_time = std::chrono::steady_clock::now();
+
+            if (verifyQueue_.size_approx() == 0 && started &&
+                std::chrono::duration_cast<std::chrono::seconds>(end_time - first_msg_time).count() >= 10) {
                 static_cast<Endpoint *>(ep_void)->LoopBreak();
             }
         },
-        1'000   // check after 10 seconds
+        1'000   // check every 1 seconds
     );
     endpoint->RegisterTimer(&stop_timer);
 
@@ -176,8 +211,14 @@ int main(int argc, char *argv[])
 
     loop_thr.join();
 
-    auto now = std::chrono::steady_clock::now();
-    double secs = std::chrono::duration_cast<std::chrono::milliseconds>(now - first_msg_time).count() / 1000.0;
+    for (int i = 0; i < num_verify_threads; ++i) {
+        verifyQueue_.enqueue(std::vector<byte>{});
+    }
+    for (auto &t : verifyThreads_) {
+        t.join();
+    }
+
+    double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - first_msg_time).count() / 1000.0;
     uint64_t c = recv_count.load();
     LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s\n";
     return 0;
