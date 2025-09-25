@@ -62,10 +62,9 @@ def get_process_ips(config_file, resolve):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     replicas = [resolve(ip) for ip in config["replica"]["ips"]]
-    receivers = [resolve(ip) for ip in config["receiver"]["ips"]]
     proxies = [resolve(ip) for ip in config["proxy"]["ips"]]
     clients = [resolve(ip) for ip in config["client"]["ips"]]
-    return replicas, receivers, proxies, clients
+    return replicas, proxies, clients
 
 
 def get_all_ips(config_file, resolve):
@@ -82,10 +81,9 @@ def get_all_ips(config_file, resolve):
 @task
 def logs(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     # ips of each process
-    replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
+    replicas, proxies, clients = get_process_ips(config_file, resolve)
 
-    get_logs(c, replicas, "replica")
-    get_logs(c, receivers, "receiver")
+    get_logs(c, replicas, "unified_replica")
     get_logs(c, proxies, "proxy")
     get_logs(c, clients, "client")
 
@@ -122,10 +120,9 @@ def run(
     runtime = cfg["client"]["runtimeSeconds"]
     print(f"Running for {runtime} seconds")
 
-    replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
+    replicas, proxies, clients = get_process_ips(config_file, resolve)
 
-    replica_path = "./dombft_replica"
-    receiver_path = "./dombft_receiver"
+    replica_path = "./dombft_unified_replica"
     proxy_path = "./dombft_proxy"
     client_path = "./dombft_client"
 
@@ -139,7 +136,7 @@ def run(
 
     # Kill previous runs
     group.run(
-        "killall dombft_proxy dombft_replica dombft_receiver dombft_client",
+        "killall dombft_proxy dombft_unified_replica dombft_client",
         warn=True,
         hide="both",
     )
@@ -188,19 +185,12 @@ def run(
 
         batch_size_arg = f"--batchSize {batch_size}"
 
-        arun = arun_on(ip, f"replica{id}.log", timeout=10 + runtime, profile=profile)
+        arun = arun_on(ip, f"unified_replica{id}.log", timeout=10 + runtime, profile=profile)
         hdl = arun(
-            f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}"
+            f"{replica_path} -v {v} -config {remote_config_file} -replicaId {id} -receiverId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}"
         )
         other_handles.append(hdl)
 
-    print("Starting receivers")
-    for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", timeout=10 + runtime, profile=profile)
-        hdl = arun(
-            f"{receiver_path} -v {v} -config {remote_config_file} -receiverId {id}"
-        )
-        other_handles.append(hdl)
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
@@ -234,7 +224,7 @@ def run(
 
         # kill these processes and then join
         group.run(
-            "killall -SIGINT dombft_replica dombft_proxy dombft_receiver",
+            "killall -SIGINT dombft_unified_replica dombft_proxy",
             warn=True,
             hide="both",
         )
@@ -247,11 +237,10 @@ def run(
 
         c.run("rm -f ../logs/*.log")
 
-        get_logs(c, replicas, "replica")
+        get_logs(c, replicas, "unified_replica")
         get_logs(c, clients, "client")
 
         if dom_logs:
-            get_logs(c, receivers, "receiver")
             get_logs(c, proxies, "proxy")
 
 
@@ -272,30 +261,29 @@ def reorder_exp(
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
     group.put(config_file)
     group.run(
-        "killall dombft_replica dombft_proxy dombft_receiver dombft_client",
+        "killall dombft_unified_replica dombft_proxy dombft_client",
         warn=True,
         hide="both",
     )
 
     # ips of each process
-    receivers = config["receiver"]["ips"]
+    replicas = config["replica"]["ips"]
     proxies = config["proxy"]["ips"]
 
-    receiver_path = "./dombft_receiver"
+    replica_path = "./dombft_unified_replica"
     proxy_path = "./dombft_proxy"
 
-    _, receivers, proxies, _ = get_process_ips(config_file, resolve)
+    replicas, proxies, _ = get_process_ips(config_file, resolve)
     remote_config_file = os.path.basename(config_file)
 
     proxy_handles = []
     other_handles = []
 
-    print("Starting receivers")
-    for id, ip in enumerate(receivers):
-        arun = arun_on(ip, f"receiver{id}.log", local_log=local_log)
+    print("Starting unified replicas")
+    for id, ip in enumerate(replicas):
+        arun = arun_on(ip, f"unified_replica{id}.log", local_log=local_log)
         hdl = arun(
-            f"{receiver_path}  -v {1} -receiverId {id} -config {remote_config_file}"
-            + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
+            f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} -receiverId {id} -skipForwarding"
         )
 
         other_handles.append(hdl)
@@ -317,7 +305,7 @@ def reorder_exp(
         for hdl in proxy_handles:
             hdl.join()
 
-        print("Proxies done, waiting 5 sec for receivers to finish...")
+        print("Proxies done, waiting 5 sec for unified replicas to finish...")
         time.sleep(5)
 
     finally:
@@ -328,7 +316,7 @@ def reorder_exp(
                 hdl.runner.send_interrupt(KeyboardInterrupt())
                 hdl.join()
         finally:
-            get_logs(c, receivers, "receiver")
+            get_logs(c, replicas, "unified_replica")
             get_logs(c, proxies, "proxy")
 
 
@@ -448,7 +436,7 @@ def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x)
     group.run("rm -rf keys/*")
 
     print("Copying keys over...")
-    for process in ["client", "replica", "receiver", "proxy"]:
+    for process in ["client", "replica", "proxy"]:
         group.run(f"mkdir -p keys/{process}")
         for filename in os.listdir(f"../keys/{process}"):
             group.put(os.path.join(f"../keys/{process}", filename), f"keys/{process}")
@@ -458,7 +446,7 @@ def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x)
 def copy_bin(
     c, config_file="../configs/remote-prod.yaml", upload_once=False, resolve=lambda x: x
 ):
-    replicas, receivers, proxies, clients = get_process_ips(config_file, resolve)
+    replicas, proxies, clients = get_process_ips(config_file, resolve)
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
     if upload_once:
@@ -468,8 +456,7 @@ def copy_bin(
         conn = Connection(clients[0])
 
         conn.run("chmod +w dombft_*", warn=True)
-        conn.put("../bazel-bin/processes/replica/dombft_replica")
-        conn.put("../bazel-bin/processes/receiver/dombft_receiver")
+        conn.put("../bazel-bin/processes/unified/dombft_unified_replica")
         conn.put("../bazel-bin/processes/proxy/dombft_proxy")
         conn.put("../bazel-bin/processes/client/dombft_client")
         conn.run("chmod +w dombft_*", warn=True)
@@ -479,19 +466,14 @@ def copy_bin(
         print(f"Copying to other machines")
         start_time = time.time()
 
-        replicas, receivers, proxies, clients = get_process_ips(
+        replicas, proxies, clients = get_process_ips(
             config_file, lambda x: x
         )
 
         for ip in replicas:
-            print(f"Copying dombft_replica to {ip}")
-            conn.run(f"scp -o StrictHostKeyChecking=no dombft_replica {ip}:", warn=True)
+            print(f"Copying dombft_unified_replica to {ip}")
+            conn.run(f"scp -o StrictHostKeyChecking=no dombft_unified_replica {ip}:", warn=True)
 
-        for ip in receivers:
-            print(f"Copying dombft_receiver to {ip}")
-            conn.run(
-                f"scp -o StrictHostKeyChecking=no dombft_receiver {ip}:", warn=True
-            )
 
         for ip in proxies:
             print(f"Copying dombft_proxy to {ip}")
@@ -507,7 +489,6 @@ def copy_bin(
         # Otherwise, just copy to all machines
 
         replicas = SerialGroup(*replicas)
-        receivers = SerialGroup(*receivers)
         proxies = SerialGroup(*proxies)
         clients = SerialGroup(*clients)
 
@@ -515,11 +496,9 @@ def copy_bin(
 
         print("Copying binaries over...")
 
-        replicas.put("../bazel-bin/processes/replica/dombft_replica")
+        replicas.put("../bazel-bin/processes/unified/dombft_unified_replica")
         print("Copied replica")
 
-        receivers.put("../bazel-bin/processes/receiver/dombft_receiver")
-        print("Copied receiver")
 
         proxies.put("../bazel-bin/processes/proxy/dombft_proxy")
         print("Copied proxy")
@@ -549,8 +528,7 @@ def build(
     )
 
     group.run("rm ~/dombft_*", warn=True)
-    group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
-    group.run("cp ./DOM-BFT/bazel-bin/processes/receiver/dombft_receiver ~")
+    group.run("cp ./DOM-BFT/bazel-bin/processes/unified/dombft_unified_replica ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
     group.run("cp ./DOM-BFT/bazel-bin/processes/client/dombft_client ~")
 

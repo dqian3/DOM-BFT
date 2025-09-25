@@ -58,46 +58,13 @@ vector<pair<Address, Address>> getProxyAddrs(ProcessConfig config, uint32_t id)
 
     // 3. proxyForwardBase + nClients + receiverId <==> receiverBase + proxyId
     proxyBase += config.clientIps.size();
-    uint32_t receiverPort = config.receiverPort + id;
-    addAddrPairs(ret, proxyIp, proxyBase, config.receiverIps, receiverPort);
+    uint32_t receiverPort = config.replicaPort + id;
+    addAddrPairs(ret, proxyIp, proxyBase, config.replicaIps, receiverPort);
 
     // 4. proxyMeasurmentBase + receiverId <==> receiverBase + proxyId + numProxies
     proxyBase = config.proxyMeasurementPort;
-    receiverPort = config.receiverPort + config.proxyIps.size() + id;
-    addAddrPairs(ret, proxyIp, proxyBase, config.receiverIps, receiverPort);
-
-    return ret;
-}
-
-vector<pair<Address, Address>> getReceiverAddrs(ProcessConfig config, uint32_t id)
-{
-    vector<pair<Address, Address>> ret;
-    // 3. proxyForwardBase + nClients + receiverId <==> receiverBase + proxyId
-    std::string receiverIp = config.receiverIps[id];
-    int receiverBase = config.receiverPort;
-
-    uint32_t proxyBase = config.proxyForwardPort + config.clientIps.size();
-    addAddrPairs(ret, receiverIp, receiverBase, config.proxyIps, proxyBase);
-    // 4. proxyMeasurmentBase + receiverId <==> receiverBase + proxyId + numProxies
-    receiverBase += config.proxyIps.size();
-    proxyBase = config.proxyMeasurementPort;
-    addAddrPairs(ret, receiverIp, receiverBase, config.proxyIps, proxyBase);
-
-    // 5a. Each replica/receiver own address (i.e. loopback for local exp.)
-    //      receiverBase + numProxies * 2 <==> replicaBase + numClients
-    // 5b. Each replica/receiver own machine
-    //      (127.0.0.1) receiverBase + numProxies * 2 <==> (127.0.0.2) replicaBase + numClients
-    receiverBase += config.proxyIps.size();
-    uint32_t replicaBase = config.replicaPort + config.clientIps.size();
-
-    if (config.receiverLocal) {
-        // 5b. above
-        // TODO use IPC instead of localhost?
-        addAddrPairs(ret, "127.0.0.1", receiverBase, {"127.0.0.2"}, replicaBase);
-    } else {
-        // Only connect to corresponding replica
-        addAddrPairs(ret, receiverIp, receiverBase, {config.replicaIps[id]}, replicaBase);
-    }
+    receiverPort = config.replicaPort + config.proxyIps.size() + id;
+    addAddrPairs(ret, proxyIp, proxyBase, config.replicaIps, receiverPort);
 
     return ret;
 }
@@ -119,20 +86,11 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
     //      (127.0.0.1) receiverBase + numProxies * 2 <==> (127.0.0.2) replicaBase + numClients
 
     uint32_t replicaPort = config.replicaPort + config.clientIps.size();
-    uint32_t receiverPort = config.receiverPort + 2 * config.proxyIps.size();
+    uint32_t receiverPort = config.replicaPort + 2 * config.proxyIps.size();
 
-    if (config.receiverLocal) {
-        // 5b. above
-        // TODO use IPC instead of localhost?
-        addAddrPairs(ret, "127.0.0.2", replicaPort, {"127.0.0.1"}, receiverPort);
-    } else {
-        // Only connect to corresponding receiver
-        addAddrPairs(ret, replicaIp, replicaPort, {config.receiverIps[id]}, receiverPort);
-    }
+    // For unified process: replica handles both replica and receiver functionality
 
-    // Replica to replicas
-    replicaBase = config.replicaPort + config.clientIps.size() + 1;
-
+    replicaBase = config.replicaPort + config.clientIps.size();
     // Each replica just uses (base + i) to connect with replica i
     for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
         ret.push_back({Address(replicaIp, replicaBase + i), Address(config.replicaIps[i], replicaBase + id)});

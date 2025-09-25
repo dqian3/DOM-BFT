@@ -1,4 +1,4 @@
-transport: nng 
+transport: simple-rpc 
 resiliency: 3f+1
 app: kv_store 
 
@@ -17,7 +17,7 @@ client:
   sendRate: 100
   runtimeSeconds: 600
   requestSize: 512
-  useHMAC: true
+  useHMAC: false
 
 
 # Proxy Info

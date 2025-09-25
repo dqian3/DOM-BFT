@@ -71,11 +71,10 @@ def run(
     with open(config_file) as cfg_file:
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
-    # number of replicas
+    # number of replicas (unified process handles both replica and receiver)
     n_replicas = len(config["replica"]["ips"])
     n_clients = len(config["client"]["ips"])
     n_proxies = len(config["proxy"]["ips"])
-    n_receivers = len(config["receiver"]["ips"])
     client_handles = []
     other_handles = []
 
@@ -86,7 +85,7 @@ def run(
         c.run("rm logs/*", warn=True)
 
         c.run(
-            "killall dombft_replica dombft_proxy dombft_receiver dombft_client",
+            "killall dombft_proxy dombft_client dombft_unified_replica",
             warn=True,
         )
         c.run("mkdir -p logs")
@@ -108,16 +107,9 @@ def run(
             else:
                 crashed_arg = ""
 
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} --batchSize {batch_size} &>logs/replica{id}.log"
+            cmd = f"./bazel-bin/processes/unified/dombft_unified_replica -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} &>logs/unified_replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
-            other_handles.append(hdl)
-
-        for id in range(n_receivers):
-            cmd = f"./bazel-bin/processes/receiver/dombft_receiver -v {v} -config {config_file} -receiverId {id} &>logs/receiver{id}.log"
-            hdl = arun(cmd)
-            print(cmd)
-
             other_handles.append(hdl)
 
         for id in range(n_proxies):
@@ -129,8 +121,7 @@ def run(
         time.sleep(3)
 
         for id in range(n_clients):
-
-            if (filter_client_logs):
+            if filter_client_logs:
                 suffix = " 2>&1 | python3 -u scripts/filter_logs.py "
             else:
                 suffix = " "
@@ -149,7 +140,7 @@ def run(
     finally:
         print("Clients done, waiting for other processes to finish...")
         c.run(
-            "killall -SIGINT dombft_client dombft_replica dombft_proxy dombft_receiver",
+            "killall -SIGINT dombft_client dombft_proxy dombft_unified_replica",
             warn=True,
         )
 
@@ -169,21 +160,21 @@ def reorder_exp(c, config_file, poisson=False):
         config = yaml.load(cfg_file, Loader=yaml.Loader)
 
     n_proxies = len(config["proxy"]["ips"])
-    n_receivers = len(config["receiver"]["ips"])
+    n_replicas = len(config["replica"]["ips"])
     proxy_handles = []
     other_handles = []
 
     with c.cd(".."):
         c.run(
-            "killall dombft_replica dombft_proxy dombft_receiver dombft_client",
+            "killall dombft_replica dombft_proxy  dombft_client dombft_unified_replica",
             warn=True,
         )
         c.run("mkdir -p logs")
 
-        for id in range(n_receivers):
+        for id in range(n_replicas):
             cmd = (
-                f"./bazel-bin/processes/receiver/dombft_receiver -v {5} -config {config_file}"
-                + f" -receiverId {id} -skipForwarding  &>logs/receiver{id}.log"
+                f"./bazel-bin/processes/unified/dombft_unified_replica -v {5} -config {config_file}"
+                + f" -replicaId {id} -skipForwarding  &>logs/unified_replica{id}.log"
             )
             hdl = arun(cmd)
 
@@ -204,12 +195,12 @@ def reorder_exp(c, config_file, poisson=False):
         for hdl in proxy_handles:
             hdl.join()
 
-        print("Proxies done, waiting 5 sec for receivers to finish...")
+        print("Proxies done, waiting 5 sec for unified replicas to finish...")
         time.sleep(5)
 
     finally:
         c.run(
-            "killall dombft_replica dombft_proxy dombft_receiver dombft_client",
+            "killall dombft_replica dombft_proxy dombft_receiver dombft_client dombft_unified_replica",
             warn=True,
         )
 

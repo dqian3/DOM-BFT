@@ -25,7 +25,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         exit(1);
     }
 
-    numReceivers_ = config.receiverIps.size();
+    numReceivers_ = config.replicaIps.size();
 
     if (config.transport == "nng") {
         auto addrPairs = getProxyAddrs(config, proxyId);
@@ -35,10 +35,10 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         size_t nClients = config.clientIps.size();
         size_t nReplicas = config.replicaIps.size();
         std::vector<std::pair<Address, Address>> forwardAddrs(
-            addrPairs.begin(), addrPairs.end() - config.receiverIps.size()
+            addrPairs.begin(), addrPairs.end() - config.replicaIps.size()
         );
         std::vector<std::pair<Address, Address>> measurementAddrs(
-            addrPairs.end() - config.receiverIps.size(), addrPairs.end()
+            addrPairs.end() - config.replicaIps.size(), addrPairs.end()
         );
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(forwardAddrs, false);
@@ -49,8 +49,8 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
 
     } else if (config.transport == "simple-rpc") {
         for (int i = 0; i < numReceivers_; i++) {
-            std::string receiverIp = config.receiverIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            std::string receiverIp = config.replicaIps[i];
+            receiverAddrs_.push_back(Address(receiverIp, config.replicaPort));
         }
 
         endpoint_ = std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_);
@@ -59,8 +59,8 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         endpoint_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, false);
 
         for (int i = 0; i < numReceivers_; i++) {
-            std::string receiverIp = config.receiverIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            std::string receiverIp = config.replicaIps[i];
+            receiverAddrs_.push_back(Address(receiverIp, config.replicaPort));
         }
     }
 }

@@ -45,7 +45,7 @@ Replica::Replica(
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
-    std::string bindAddress = config.receiverLocal ? "0.0.0.0" : replicaIp;
+    std::string bindAddress = replicaIp;
     LOG(INFO) << "bindAddress=" << bindAddress;
 
     int replicaPort = config.replicaPort;
@@ -97,8 +97,6 @@ Replica::Replica(
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
-        receiverAddr_ = addrPairs[nClients].second;
-
         for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
             replicaAddrs_.push_back(addrPairs[i].second);
         }
@@ -108,11 +106,9 @@ Replica::Replica(
 
         size_t nClients = config.clientIps.size();
         for (int i = 0; i < config.clientIps.size(); i++) {
-            std::string receiverIp = config.clientIps[i];
-            clientAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            std::string clientIp = config.clientIps[i];
+            clientAddrs_.push_back(Address(clientIp, config.clientPort));
         }
-
-        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
 
         for (int i = 0; i < config.replicaIps.size(); i++) {
             std::string receiverIp = config.replicaIps[i];
@@ -121,7 +117,6 @@ Replica::Replica(
 
         auto allAddrs = replicaAddrs_;
         allAddrs.insert(allAddrs.begin(), clientAddrs_.begin(), clientAddrs_.end());
-        allAddrs.push_back(receiverAddr_);
 
         endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs);
 
@@ -190,7 +185,7 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
         }
     }
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+    if (*sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);

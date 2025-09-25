@@ -249,8 +249,8 @@ void Client::submitRequestsOpenLoop()
 
     uint64_t numToSend = (startSendTime - lastSendTime_) * sendRate_ / 1000000.0;
 
-    VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
-            << " us since last burst with send interval " << sendIntervalUs << "us";
+    // VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
+    //         << " us since last burst with send interval " << sendIntervalUs << "us";
 
     if (numToSend == 0) {
         return;
@@ -266,7 +266,7 @@ void Client::submitRequestsOpenLoop()
         now = GetMicrosecondTimestamp();
 
         if (numInFlight_ >= maxInFlight_) {
-            VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
+            // VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
             break;
         }
 

@@ -9,27 +9,19 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
+#include <algorithm>
 #include <cryptopp/sha.h>
 #include <sstream>
-#include <unordered_set>
 #include <unordered_map>
-#include <algorithm>
+#include <unordered_set>
 
 namespace dombft {
 using namespace dombft::proto;
 
 UnifiedReplica::UnifiedReplica(
-    const ProcessConfig &config,
-    uint32_t replicaId,
-    uint32_t receiverId,
-    bool crashed,
-    uint32_t swapFreq,
-    uint32_t viewChangeFreq,
-    bool commitLocalInViewChange,
-    uint32_t viewChangeNum,
-    uint32_t checkpointDropFreq,
-    bool skipForwarding,
-    bool ignoreDeadlines
+    const ProcessConfig &config, uint32_t replicaId, uint32_t receiverId, bool crashed, uint32_t swapFreq,
+    uint32_t viewChangeFreq, bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq,
+    bool skipForwarding, bool ignoreDeadlines
 )
     : replicaId_(replicaId)
     , receiverId_(receiverId)
@@ -43,7 +35,7 @@ UnifiedReplica::UnifiedReplica(
     , repairTimeout_(config.replicaRepairTimeout)
     , repairViewTimeout_(config.replicaRepairViewTimeout)
     , proxyPort_(config.proxyForwardPort)
-    , numReceivers_(config.receiverIps.size())
+    , numReceivers_(config.replicaIps.size())
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
     , sigProvider_()
@@ -63,7 +55,7 @@ UnifiedReplica::UnifiedReplica(
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
-    std::string bindAddress = config.receiverLocal ? "0.0.0.0" : replicaIp;
+    std::string bindAddress = replicaIp;
     LOG(INFO) << "bindAddress=" << bindAddress;
 
     int replicaPort = config.replicaPort;
@@ -76,10 +68,7 @@ UnifiedReplica::UnifiedReplica(
         exit(1);
     }
 
-    // Also load receiver key for dual functionality
-    std::string receiverKey = config.receiverKeysDir + "/receiver" + std::to_string(receiverId_) + ".der";
-    LOG(INFO) << "Loading receiver key from " << receiverKey;
-    // For unified process, we'll use the replica key for both functions
+    // For unified process, we use the replica key for both replica and receiver functions
 
     LOG(INFO) << "Private keys loaded";
 
@@ -110,9 +99,8 @@ UnifiedReplica::UnifiedReplica(
 
     // Network setup for unified functionality
     if (config.transport == "nng") {
-        // Set up addresses for both replica and receiver functionality
+        // Use replica addressing for unified process
         auto replicaAddrPairs = getReplicaAddrs(config, replicaId_);
-        auto receiverAddrPairs = getReceiverAddrs(config, receiverId_);
 
         size_t nClients = config.clientIps.size();
         for (size_t i = 0; i < nClients; i++) {
@@ -125,12 +113,7 @@ UnifiedReplica::UnifiedReplica(
             replicaAddrs_.push_back(replicaAddrPairs[nClients + 1 + i].second);
         }
 
-        // Use unified addressing - combine both receiver and replica endpoints
-        std::vector<std::pair<Address, Address>> combinedAddrs;
-        combinedAddrs.insert(combinedAddrs.end(), receiverAddrPairs.begin(), receiverAddrPairs.end());
-        combinedAddrs.insert(combinedAddrs.end(), replicaAddrPairs.begin(), replicaAddrPairs.end());
-
-        endpoint_ = std::make_unique<NngEndpointThreaded>(combinedAddrs, true);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(replicaAddrPairs, true);
 
     } else if (config.transport == "simple-rpc") {
         std::vector<Address> addrs;
@@ -174,9 +157,7 @@ UnifiedReplica::UnifiedReplica(
 
     // Set up timer for receiver deadline checking
     fwdTimer_ = std::make_unique<Timer>(
-        [](void *ctx, void *endpoint) { ((UnifiedReplica *) ctx)->checkDeadlines(); },
-        1000,
-        this
+        [](void *ctx, void *endpoint) { ((UnifiedReplica *) ctx)->checkDeadlines(); }, 1000, this
     );
     ev_set_priority(fwdTimer_->evTimer_, EV_MAXPRI);
     endpoint_->RegisterTimer(fwdTimer_.get());
@@ -184,7 +165,7 @@ UnifiedReplica::UnifiedReplica(
     // Register unified message handler
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender);
-        this->checkDeadlines(); // Check deadlines after each message
+        this->checkDeadlines();   // Check deadlines after each message
     });
 
     endpoint_->RegisterSignalHandler([&]() {
@@ -198,7 +179,7 @@ UnifiedReplica::UnifiedReplica(
     }
 
     LOG(INFO) << "Starting verify threads for receiver functionality";
-    uint32_t numReceiverVerifyThreads = config.numVerifyThreads;
+    uint32_t numReceiverVerifyThreads = config.receiverVerifyThreads;
     for (int i = 0; i < numReceiverVerifyThreads; i++) {
         receiverVerifyThreads_.emplace_back(&UnifiedReplica::receiverVerifyThd, this, i);
     }
@@ -244,6 +225,8 @@ void UnifiedReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Addre
         return;
     }
 
+    LOG(INFO) << "Received message of type " << (int) msgHdr->msgType << " from " << *sender;
+
     // Handle receiver-specific messages (from proxies)
     if (msgHdr->msgType == MessageType::DOM_REQUEST) {
         receiveRequest(msgHdr, msgBuffer, sender);
@@ -278,8 +261,8 @@ void UnifiedReplica::receiveRequest(MessageHeader *hdr, byte *body, Address *sen
     }
 
     int64_t recv_time = GetMicrosecondTimestamp();
-    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq()
-            << " Measured delay " << recv_time - request.send_time() << " usec";
+    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+            << recv_time - request.send_time() << " usec";
 
     if (recv_time > request.deadline()) {
         request.set_late(true);
@@ -1233,14 +1216,13 @@ void UnifiedReplica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_last_checkpoint_seq(log_->getStableCheckpoint().seq);
 
-    VLOG(1) << "REPAIR Sending SNAPSHOT_REQUEST to " << replicaId << " for seq=" << targetSeq
-            << " round=" << round_ << " last_checkpoint_seq=" << log_->getStableCheckpoint().seq;
+    VLOG(1) << "REPAIR Sending SNAPSHOT_REQUEST to " << replicaId << " for seq=" << targetSeq << " round=" << round_
+            << " last_checkpoint_seq=" << log_->getStableCheckpoint().seq;
 
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
 }
 
-template <typename T>
-void UnifiedReplica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
+template <typename T> void UnifiedReplica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
 {
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
 #if FABRIC_CRYPTO
@@ -1249,8 +1231,7 @@ void UnifiedReplica::sendMsgToDst(const T &msg, MessageType type, const Address 
     endpoint_->SendPreparedMsgTo(dst, hdr);
 }
 
-template <typename T>
-void UnifiedReplica::broadcastToReplicas(const T &msg, MessageType type)
+template <typename T> void UnifiedReplica::broadcastToReplicas(const T &msg, MessageType type)
 {
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
 #if FABRIC_CRYPTO
@@ -1771,8 +1752,8 @@ bool UnifiedReplica::verifyRepairReplyProof(const RepairReplyProof &proof)
     }
 
     if (proof.replies().size() != proof.signatures().size()) {
-        LOG(INFO) << "Repair reply proof has " << proof.replies().size() << " replies but "
-                  << proof.signatures().size() << " signatures";
+        LOG(INFO) << "Repair reply proof has " << proof.replies().size() << " replies but " << proof.signatures().size()
+                  << " signatures";
         return false;
     }
 
@@ -1985,8 +1966,8 @@ void UnifiedReplica::finishRepair(const std::vector<::ClientRequest> &abortedReq
     repair_ = false;
     repairViewStart_ = 0;
 
-    VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
-            << " round=" << round_ << " pbft_view=" << pbftView_;
+    VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq() << " round=" << round_
+            << " pbft_view=" << pbftView_;
 
     LOG(INFO) << "Finished repair for round=" << round_ << " pbft_view=" << pbftView_;
 

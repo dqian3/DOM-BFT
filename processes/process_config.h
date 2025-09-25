@@ -48,12 +48,7 @@ struct ProcessConfig {
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
 
-    std::vector<std::string> receiverIps;
-    int receiverPort;
-    std::string receiverKeysDir;
-    int receiverShards;
-    bool receiverLocal;
-    int numVerifyThreads;
+    int receiverVerifyThreads;
 
     std::vector<std::string> replicaIps;
     int replicaPort;
@@ -159,12 +154,7 @@ struct ProcessConfig {
         std::string key;
 
         try {
-            parseStringVector(receiverIps, receiverNode, "ips");
-            receiverPort = parseField<int>(receiverNode, "port");
-            receiverKeysDir = parseField<std::string>(receiverNode, "keysDir");
-            receiverShards = parseField<int>(receiverNode, "shards");
-            receiverLocal = parseField<bool>(receiverNode, "local");
-            numVerifyThreads = parseField<int>(receiverNode, "numVerifyThreads");
+            receiverVerifyThreads = parseField<int>(receiverNode, "numVerifyThreads", 2);
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing receiver " + std::string(e.what()));
         }
