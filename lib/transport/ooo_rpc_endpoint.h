@@ -30,9 +30,13 @@ protected:
     rrr::Server *oooServer_;
     std::thread *serverThread_;
 
-    // concurrent queue for deferred replies
+    // concurrent queue for sending back deferred replies/ack to RPC calls
     ConcurrentQueue<rrr::DeferredReply *> replyQueue_;
     std::vector<std::thread> replyThreads_;
+
+    // async watcher for receiving messages and adding them into the event loop.
+    ev_async recvWatcher_;
+    ConcurrentQueue<std::pair<std::string, Address>> recvQueue_;
 
     std::vector<Address> targetAddrs_;
     std::unordered_map<Address, std::vector<OOOProxyInfo>> proxies_;

@@ -485,19 +485,21 @@ def copy_bin(
 
         for ip in replicas:
             print(f"Copying dombft_replica to {ip}")
-            conn.run(f"scp dombft_replica {ip}:", warn=True)
+            conn.run(f"scp -o StrictHostKeyChecking=no dombft_replica {ip}:", warn=True)
 
         for ip in receivers:
             print(f"Copying dombft_receiver to {ip}")
-            conn.run(f"scp dombft_receiver {ip}:", warn=True)
+            conn.run(
+                f"scp -o StrictHostKeyChecking=no dombft_receiver {ip}:", warn=True
+            )
 
         for ip in proxies:
             print(f"Copying dombft_proxy to {ip}")
-            conn.run(f"scp dombft_proxy {ip}:", warn=True)
+            conn.run(f"scp -o StrictHostKeyChecking=no dombft_proxy {ip}:", warn=True)
 
         for ip in set(clients[1:]):  # Skip own
             print(f"Copying dombft_client to {ip}")
-            conn.run(f"scp dombft_client {ip}:", warn=True)
+            conn.run(f"scp -o StrictHostKeyChecking=no dombft_client {ip}:", warn=True)
 
         print(f"Copying to other machines took {time.time() - start_time:.0f}s")
 

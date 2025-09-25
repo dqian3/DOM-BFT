@@ -15,7 +15,7 @@ client:
   sendMode: "sendRate"
   maxInFlight: 10
   sendRate: 100
-  runtimeSeconds: 10
+  runtimeSeconds: 600
   requestSize: 512
   useHMAC: true
 

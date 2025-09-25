@@ -105,7 +105,39 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
         LOG(INFO) << "handler already set, do not overwrite it (causing data race)";
         return false;
     }
+
     hdlrFunc_ = f;
+    recvWatcher_.data = this;
+
+    auto cb = [](struct ev_loop *loop, ev_async *w, int revents) {
+        OOORPCEndpoint *ep = (OOORPCEndpoint *) w->data;
+        std::pair<std::string, Address> item;
+
+        while (ep->recvQueue_.try_dequeue(item)) {
+            auto &[msg, addr] = item;
+            size_t totalLen = msg.size();
+            size_t offset = 0;
+
+            while (totalLen - offset > sizeof(MessageHeader)) {
+                byte *msgStart = reinterpret_cast<byte *>(msg.data()) + offset;
+                MessageHeader *hdr = (MessageHeader *) (msgStart);
+                size_t msgLen = sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen;
+
+                if (offset + msgLen <= totalLen) {
+                    ep->hdlrFunc_(hdr, msgStart + sizeof(MessageHeader), &addr);
+                } else {
+                    LOG(WARNING) << "Malformed message " << totalLen << " " << offset << " " << msgLen;
+                }
+
+                offset += msgLen;
+            }
+        }
+    };
+
+    // Register the event handler in the endpoint event loop
+    ev_async_init(&recvWatcher_, cb);
+    ev_async_start(evLoop_, &recvWatcher_);
+
     oooHdl_ = [this](const OOOPrepareRequest &req, rrr::DeferredReply *deferred) {
         // Parse the string to MessageHeader style
         uint32_t senderIPInt = req.senderIPInt_;
@@ -116,17 +148,18 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
         Address senderAddr(ipStr, senderPort);
 
         std::string content = req.content_;
-        MessageHeader *header = reinterpret_cast<MessageHeader *>(&(content[0]));
+        MessageHeader *header = reinterpret_cast<MessageHeader *>(content.data());
         assert(req.content_.length() == req.length_);
         assert(req.length_ >= sizeof(MessageHeader));
-        byte *payload = reinterpret_cast<byte *>(&(content[sizeof(MessageHeader)]));
 
         // Queue the deferred reply for processing in another thread
         replyQueue_.enqueue(deferred);
 
         // Delegate to the hdlrFunc_;
-        hdlrFunc_(header, payload, &senderAddr);
+        recvQueue_.enqueue(std::pair<std::string, Address>{content, senderAddr});
     };
+
+    // register the handle to the RPC server
     oooServer_ = new rrr::Server(serverPoll_, thrpool_);
     OOOBFTServiceImpl *oooService_ = new OOOBFTServiceImpl(oooHdl_);
     oooServer_->reg(oooService_);

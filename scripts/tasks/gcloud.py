@@ -140,7 +140,6 @@ def create_prod(c, config_template="../configs/remote-prod.yaml"):
 
     create_vm_template = """
 gcloud compute instances create {} \
-    --project=mythic-veld-419517 \
     --zone={} \
     --machine-type=t2d-standard-16 \
     --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
