@@ -79,10 +79,6 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
 
     print(f"{'Stopped' if stop else 'Started'} all instances!")
 
-    if not stop:
-        print("Sleeping 15 seconds...")
-        time.sleep(15)  # Give time for ssh daemons to start for other tasks
-
 
 @task
 def cmd(c, cmd, config_file="../configs/remote-prod.yaml"):

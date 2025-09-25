@@ -65,6 +65,9 @@ struct ProcessConfig {
     uint32_t replicaCheckpointInterval;
     uint32_t replicaSnapshotInterval;
 
+    // Unified mode configuration
+    bool unifiedMode;
+
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
         if (!parent[key]) {
@@ -189,6 +192,8 @@ struct ProcessConfig {
             if (replicaSnapshotInterval % replicaCheckpointInterval != 0) {
                 throw ConfigParseException("Snapshot interval must be a multiple of checkpoint interval");
             }
+
+            unifiedMode = parseField<bool>(replicaNode, "unifiedMode", false);
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing replica config: " + std::string(e.what()));
