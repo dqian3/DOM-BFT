@@ -103,7 +103,7 @@ Client::Client(const ProcessConfig &config, size_t id)
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
             allAddrs.push_back(replicaAddrs_[i]);
         }
-        endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort, allAddrs);
+        endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort + clientId_, allAddrs);
 
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);

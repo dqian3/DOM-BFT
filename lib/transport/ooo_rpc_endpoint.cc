@@ -157,6 +157,8 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
 
         // Delegate to the hdlrFunc_;
         recvQueue_.enqueue(std::pair<std::string, Address>{content, senderAddr});
+
+        ev_async_send(evLoop_, &recvWatcher_);
     };
 
     // register the handle to the RPC server

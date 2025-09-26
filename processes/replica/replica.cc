@@ -92,8 +92,9 @@ Replica::Replica(
         auto addrPairs = getReplicaAddrs(config, replicaId_);
 
         size_t nClients = config.clientIps.size();
+        LOG(INFO) << "nClients=" << nClients;
+
         for (size_t i = 0; i < nClients; i++) {
-            // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.ip();
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
@@ -108,8 +109,9 @@ Replica::Replica(
 
         size_t nClients = config.clientIps.size();
         for (int i = 0; i < config.clientIps.size(); i++) {
-            std::string receiverIp = config.clientIps[i];
-            clientAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            std::string clientIp = config.clientIps[i];
+            clientAddrs_.push_back(Address(clientIp, config.clientPort + i));
+            LOG(INFO) << "Client " << i << ": " << clientAddrs_.back();
         }
 
         receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);

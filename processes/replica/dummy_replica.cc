@@ -87,7 +87,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     } else if (config.transport == "udp") {
         size_t nClients = config.clientIps.size();
         for (size_t i = 0; i < nClients; i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
+            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort + i));
         }
 
         receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
@@ -102,7 +102,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         size_t nClients = config.clientIps.size();
         for (int i = 0; i < config.clientIps.size(); i++) {
             std::string receiverIp = config.clientIps[i];
-            clientAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort + i));
         }
 
         receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
