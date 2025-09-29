@@ -137,7 +137,7 @@ Replica::Replica(
             clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
         }
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(replicaIp, replicaPort, addrs);
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, addrs);
 
     } else {
         // UDP setup
