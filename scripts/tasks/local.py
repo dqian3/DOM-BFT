@@ -27,26 +27,29 @@ def genkeys(c, config_file, algorithm="ED25519", keysize=2048):
         num_processes[p] = len(pconfig["ips"])
         dirs[p] = pconfig["keysDir"]
 
-    for process in dirs:
-        key_dir = dirs[process]
-        nkeys = num_processes[process]
+    with c.cd(".."):
+        for process in dirs:
+            key_dir = dirs[process]
+            nkeys = num_processes[process]
 
-        c.run("mkdir -p " + key_dir)
+            c.run("mkdir -p " + key_dir)
 
-        print(f"Generating {nkeys} keys for {process}")
-        for i in range(nkeys):
-            key_path = os.path.join(key_dir, process + f"{i}")
-            print(key_path)
+            print(f"Generating {nkeys} keys for {process}")
+            for i in range(nkeys):
+                key_path = os.path.join(key_dir, process + f"{i}")
+                print(key_path)
 
-            if algorithm == "RSA":
-                c.run(f"openssl genrsa -outform der -out {key_path}.der {str(keysize)}")
-            elif algorithm == "ED25519":
+                if algorithm == "RSA":
+                    c.run(
+                        f"openssl genrsa -outform der -out {key_path}.der {str(keysize)}"
+                    )
+                elif algorithm == "ED25519":
+                    c.run(
+                        f"openssl genpkey -outform der -algorithm ed25519 -out {key_path}.der"
+                    )
                 c.run(
-                    f"openssl genpkey -outform der -algorithm ed25519 -out {key_path}.der"
+                    f"openssl pkey -outform der -in {key_path}.der -pubout -out {key_path}.pub"
                 )
-            c.run(
-                f"openssl pkey -outform der -in {key_path}.der -pubout -out {key_path}.pub"
-            )
 
 
 @task

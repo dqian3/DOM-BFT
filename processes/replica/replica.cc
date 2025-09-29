@@ -102,6 +102,8 @@ Replica::Replica(
         auto replicaAddrPairs = getReplicaAddrs(config, replicaId_);
 
         size_t nClients = config.clientIps.size();
+        LOG(INFO) << "nClients=" << nClients;
+
         for (size_t i = 0; i < nClients; i++) {
             clientAddrs_.push_back(replicaAddrPairs[i].second);
         }
@@ -122,6 +124,13 @@ Replica::Replica(
         // Add proxy addresses for receiver functionality
         for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
             addrs.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        }
+
+        size_t nClients = config.clientIps.size();
+        for (int i = 0; i < config.clientIps.size(); i++) {
+            std::string clientIp = config.clientIps[i];
+            clientAddrs_.push_back(Address(clientIp, config.clientPort + i));
+            LOG(INFO) << "Client " << i << ": " << clientAddrs_.back();
         }
 
         // Add replica addresses
@@ -501,7 +510,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, requestMsg.client_id()})) {
+            if (!sigProvider_.verify(hdr, {NodeType::CLIENT, requestMsg.client_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }

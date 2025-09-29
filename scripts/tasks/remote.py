@@ -132,6 +132,9 @@ def run(
         # Otherwise, we assume 3f+1 resiliency
         f = len(replicas) // 3
 
+    # Clear out ssh keys to avoid issues with authentication
+    c.run("ssh-add -D")
+
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
     # Kill previous runs
@@ -152,8 +155,6 @@ def run(
 
     c.run("mkdir -p ../logs")
 
-    # Clear out ssh keys to avoid issues with authentication
-    c.run("ssh-add -D")
     # Run a dummy command with pty to log a session so that the machine doesn't shutdown from being inactive
     group.run("echo ''", pty=True)
 
@@ -359,9 +360,9 @@ def run_rates(
 
         # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
-        cfg["client"]["maxInFlight"] = 1200
+        cfg["client"]["maxInFlight"] = 1500
 
-        for send_rate in [500, 750, 1000, 1250, 1500]:
+        for send_rate in [1000, 1500, 2000, 2500]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
