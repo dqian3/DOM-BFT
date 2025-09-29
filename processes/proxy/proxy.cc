@@ -157,9 +157,6 @@ void Proxy::ForwardRequests()
             numForwarded_++;
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
-#if FABRIC_CRYPTO
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
 
             for (int i = 0; i < numReceivers_; i++) {
 

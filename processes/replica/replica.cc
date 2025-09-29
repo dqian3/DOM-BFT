@@ -115,7 +115,7 @@ Replica::Replica(
         }
 
         replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
-        endpoint_ = std::make_unique<NngEndpointThreaded>(replicaAddrPairs, true);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(replicaAddrPairs, true, Address(replicaIp, replicaPort));
 
     } else if (config.transport == "simple-rpc") {
         std::vector<Address> addrs;
@@ -131,7 +131,8 @@ Replica::Replica(
         for (int i = 0; i < config.clientIps.size(); i++) {
             std::string clientIp = config.clientIps[i];
             clientAddrs_.push_back(Address(clientIp, config.clientPort + i));
-            LOG(INFO) << "Client " << i << ": " << clientAddrs_.back();
+            addrs.push_back(Address(clientIp, config.clientPort + i));
+            LOG(INFO) << "Client " << i << ": " << addrs.back();
         }
 
         // Add replica addresses
@@ -140,11 +141,6 @@ Replica::Replica(
             if (i != replicaId_) {
                 addrs.push_back(Address(config.replicaIps[i], config.replicaPort));
             }
-        }
-
-        // Add client addresses
-        for (uint32_t i = 0; i < config.clientIps.size(); i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
         }
 
         endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, addrs);
@@ -255,12 +251,6 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
 // Receiver functionality implementation
 void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 {
-#if FABRIC_CRYPTO
-    if (!sigProvider_.verify(hdr, "proxy", 0)) {
-        LOG(INFO) << "Failed to verify proxy signature";
-        return;
-    }
-#endif
 
     DOMRequest request;
     if (!request.ParseFromArray(body, hdr->msgLen)) {
@@ -304,9 +294,6 @@ void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         mReply.set_owd(recv_time - request.send_time());
         mReply.set_send_time(request.send_time());
         MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY);
-#if FABRIC_CRYPTO
-        sigProvider_.appendSignature(replyHdr, SEND_BUFFER_SIZE);
-#endif
         endpoint_->SendPreparedMsgTo(Address(sender->ip(), proxyPort_), replyHdr);
     }
 }
@@ -321,14 +308,20 @@ void Replica::forwardRequest(const DOMRequest &request)
     numForwarded_++;
     lastFwdDeadline_ = request.deadline();
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::DOM_REQUEST);
-#if FABRIC_CRYPTO
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
-    if (!skipForwarding_) {
-        // Forward to replica (self)
-        endpoint_->SendPreparedMsgTo(replicaAddr_, hdr);
+    // Serialize DOM request and enqueue to process queue
+    std::string serializedRequest;
+    if (!request.SerializeToString(&serializedRequest)) {
+        LOG(ERROR) << "Failed to serialize DOM request";
+        return;
     }
+
+    MessageHeader header(DOM_REQUEST, serializedRequest.size(), 0);
+
+    std::vector<byte> msg(sizeof(MessageHeader) + serializedRequest.size());
+    memcpy(msg.data(), &header, sizeof(MessageHeader));
+    memcpy(msg.data() + sizeof(MessageHeader), serializedRequest.data(), serializedRequest.size());
+
+    processQueue_.enqueue(msg);
 }
 
 void Replica::checkDeadlines()
@@ -1233,18 +1226,14 @@ void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
 {
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
-#if FABRIC_CRYPTO
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
     endpoint_->SendPreparedMsgTo(dst, hdr);
 }
 
 template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageType type)
 {
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type);
-#if FABRIC_CRYPTO
     sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
 
     for (uint32_t i = 0; i < replicaAddrs_.size(); i++) {
         if (i != replicaId_) {
