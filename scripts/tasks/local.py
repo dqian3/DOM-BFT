@@ -85,7 +85,7 @@ def run(
         c.run("rm logs/*", warn=True)
 
         c.run(
-            "killall dombft_proxy dombft_client dombft_unified_replica",
+            "killall dombft_proxy dombft_client dombft_replica",
             warn=True,
         )
         c.run("mkdir -p logs")
@@ -107,7 +107,7 @@ def run(
             else:
                 crashed_arg = ""
 
-            cmd = f"./bazel-bin/processes/unified/dombft_unified_replica -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} &>logs/unified_replica{id}.log"
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
@@ -140,7 +140,7 @@ def run(
     finally:
         print("Clients done, waiting for other processes to finish...")
         c.run(
-            "killall -SIGINT dombft_client dombft_proxy dombft_unified_replica",
+            "killall -SIGINT dombft_client dombft_proxy dombft_replica",
             warn=True,
         )
 
@@ -166,15 +166,15 @@ def reorder_exp(c, config_file, poisson=False):
 
     with c.cd(".."):
         c.run(
-            "killall dombft_replica dombft_proxy  dombft_client dombft_unified_replica",
+            "killall dombft_replica dombft_proxy  dombft_client",
             warn=True,
         )
         c.run("mkdir -p logs")
 
         for id in range(n_replicas):
             cmd = (
-                f"./bazel-bin/processes/unified/dombft_unified_replica -v {5} -config {config_file}"
-                + f" -replicaId {id} -skipForwarding  &>logs/unified_replica{id}.log"
+                f"./bazel-bin/processes/replica/dombft_replica -v {5} -config {config_file}"
+                + f" -replicaId {id} -skipForwarding  &>logs/replica{id}.log"
             )
             hdl = arun(cmd)
 
@@ -195,12 +195,12 @@ def reorder_exp(c, config_file, poisson=False):
         for hdl in proxy_handles:
             hdl.join()
 
-        print("Proxies done, waiting 5 sec for unified replicas to finish...")
+        print("Proxies done, waiting 5 sec for replicas to finish...")
         time.sleep(5)
 
     finally:
         c.run(
-            "killall dombft_replica dombft_proxy dombft_receiver dombft_client dombft_unified_replica",
+            "killall dombft_replica dombft_proxy dombft_client",
             warn=True,
         )
 

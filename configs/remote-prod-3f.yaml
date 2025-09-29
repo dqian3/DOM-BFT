@@ -61,18 +61,6 @@ proxy:
   shards: 1
   offsetCoefficient: 1.5
 
-receiver:
-  ips:
-  - 10.138.0.14
-  - 10.182.0.12
-  - 10.142.0.13
-  - 10.150.0.11
-
-  keysDir: keys/receiver
-  local: true
-  numVerifyThreads: 6
-  port: 33000
-  shards: 1
 
 replica:
   repairTimeout:      1000000

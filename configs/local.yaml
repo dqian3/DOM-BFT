@@ -31,19 +31,6 @@ proxy:
   keysDir: keys/proxy
   maxOwd: 15000
 
-# Receiver Info
-receiver:
-  ips: 
-    - "127.0.0.5"
-    - "127.0.0.6"
-    - "127.0.0.7"
-    - "127.0.0.8"
-  port: 33000
-  keysDir: keys/receiver
-  shards: 1 # The number of threads to receive threads 
-  local: false # Although it's local, we actually use distinct loopback addresses for localhost experiments
-  numVerifyThreads: 2
-
 # Replica Info
 replica:
   ips: 
