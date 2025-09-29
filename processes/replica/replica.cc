@@ -305,7 +305,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, requestMsg.client_id()})) {
+            if (!sigProvider_.verify(hdr, {NodeType::CLIENT, requestMsg.client_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
