@@ -56,15 +56,10 @@ vector<pair<Address, Address>> getProxyAddrs(ProcessConfig config, uint32_t id)
     uint32_t clientPort = config.clientPort + id;
     addAddrPairsToClient(ret, proxyIp, proxyBase, config.clientIps, clientPort, portRangeWidth);
 
-    // 3. proxyForwardBase + nClients + receiverId <==> receiverBase + proxyId
+    // 3. proxyForwardBase + nClients + replicaId <==> replicaBase + proxyId
     proxyBase += config.clientIps.size();
-    uint32_t receiverPort = config.replicaPort + id;
-    addAddrPairs(ret, proxyIp, proxyBase, config.replicaIps, receiverPort);
-
-    // 4. proxyMeasurmentBase + receiverId <==> receiverBase + proxyId + numProxies
-    proxyBase = config.proxyMeasurementPort;
-    receiverPort = config.replicaPort + config.proxyIps.size() + id;
-    addAddrPairs(ret, proxyIp, proxyBase, config.replicaIps, receiverPort);
+    uint32_t replicaPort = config.replicaPort + id;
+    addAddrPairs(ret, proxyIp, proxyBase, config.replicaIps, replicaPort);
 
     return ret;
 }
@@ -80,20 +75,11 @@ vector<pair<Address, Address>> getReplicaAddrs(ProcessConfig config, uint32_t id
     uint32_t clientPort = config.clientPort + id;
     addAddrPairsToClient(ret, replicaIp, replicaBase, config.clientIps, clientPort, portRangeWidth);
 
-    // 5a. Each replica/receiver own address (i.e. loopback for local exp.)
-    //      receiverBase + numProxies * 2 <==> replicaBase + numClients
-    // 5b. Each replica/receiver own machine
-    //      (127.0.0.1) receiverBase + numProxies * 2 <==> (127.0.0.2) replicaBase + numClients
-
-    uint32_t replicaPort = config.replicaPort + config.clientIps.size();
-    uint32_t receiverPort = config.replicaPort + 2 * config.proxyIps.size();
-
-    // For unified process: replica handles both replica and receiver functionality
-
+    // 3. Replica to replica communication for consensus
     replicaBase = config.replicaPort + config.clientIps.size();
-    // Each replica just uses (base + i) to connect with replica i
+    // Each replica connects to other replicas at (replicaBase + replicaId)
     for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-        ret.push_back({Address(replicaIp, replicaBase + i), Address(config.replicaIps[i], replicaBase + id)});
+        ret.push_back({Address(replicaIp, replicaBase + i), Address(config.replicaIps[i], replicaBase + i)});
     }
 
     return ret;

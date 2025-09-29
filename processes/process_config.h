@@ -136,7 +136,6 @@ struct ProcessConfig {
             parseStringVector(proxyIps, proxyNode, "ips");
             proxyShards = parseField<int>(proxyNode, "shards");
             proxyForwardPort = parseField<int>(proxyNode, "forwardPort");
-            proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
             proxyOffsetCoefficient = parseField<float>(proxyNode, "offsetCoefficient", 1.5);

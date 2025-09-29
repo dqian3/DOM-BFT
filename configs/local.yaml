@@ -27,7 +27,6 @@ proxy:
     - "127.0.1.1"  
   shards: 1
   forwardPort: 31000
-  measurementPort: 32000
   keysDir: keys/proxy
   maxOwd: 15000
 

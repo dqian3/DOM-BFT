@@ -30,21 +30,12 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     if (config.transport == "nng") {
         auto addrPairs = getProxyAddrs(config, proxyId);
 
-        // This is rather messy, but the last nReceivers addresses in this return value are for the measurement
-        // connections
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, false);
+
+        // First nClients addresses are for client connections, rest are for replica connections
         size_t nClients = config.clientIps.size();
-        size_t nReplicas = config.replicaIps.size();
-        std::vector<std::pair<Address, Address>> forwardAddrs(
-            addrPairs.begin(), addrPairs.end() - config.replicaIps.size()
-        );
-        std::vector<std::pair<Address, Address>> measurementAddrs(
-            addrPairs.end() - config.replicaIps.size(), addrPairs.end()
-        );
-
-        endpoint_ = std::make_unique<NngEndpointThreaded>(forwardAddrs, false);
-
-        for (size_t i = nClients; i < forwardAddrs.size(); i++) {
-            receiverAddrs_.push_back(forwardAddrs[i].second);
+        for (size_t i = nClients; i < addrPairs.size(); i++) {
+            receiverAddrs_.push_back(addrPairs[i].second);
         }
 
     } else if (config.transport == "simple-rpc") {

@@ -104,16 +104,17 @@ Replica::Replica(
         size_t nClients = config.clientIps.size();
         LOG(INFO) << "nClients=" << nClients;
 
+        // First nClients addresses are for client connections
         for (size_t i = 0; i < nClients; i++) {
             clientAddrs_.push_back(replicaAddrPairs[i].second);
         }
 
-        receiverAddr_ = replicaAddrPairs[nClients].second;
-
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(replicaAddrPairs[nClients + 1 + i].second);
+        // Remaining addresses are for replica-to-replica connections
+        for (size_t i = nClients; i < replicaAddrPairs.size(); i++) {
+            replicaAddrs_.push_back(replicaAddrPairs[i].second);
         }
 
+        replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
         endpoint_ = std::make_unique<NngEndpointThreaded>(replicaAddrPairs, true);
 
     } else if (config.transport == "simple-rpc") {
@@ -242,7 +243,7 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
 
     // Handle replica-specific messages
     // Skip verification of our own messages and receiver messages
-    if (sender->ip() == replicaAddrs_[replicaId_].ip() || sender->ip() == receiverAddr_.ip()) {
+    if (sender->ip() == replicaAddrs_[replicaId_].ip()) {
         processQueue_.enqueue(std::vector<byte>(msgBuffer, msgBuffer + sizeof(MessageHeader) + msgHdr->msgLen));
         return;
     }

@@ -64,7 +64,6 @@ proxy:
   - 10.182.0.8
   keysDir: keys/proxy
   maxOwd: 150000
-  measurementPort: 32000
   offsetCoefficient: 1.5
   shards: 1
 
