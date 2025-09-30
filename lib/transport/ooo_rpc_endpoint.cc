@@ -14,7 +14,15 @@ OOORPCEndpoint::OOORPCEndpoint(
     thrpool_ = new rrr::ThreadPool(8);
 }
 
-OOORPCEndpoint::~OOORPCEndpoint() {}
+OOORPCEndpoint::~OOORPCEndpoint()
+{
+    serverThread_->join();
+    delete serverThread_;
+
+    for (auto &t : replyThreads_) {
+        t.join();
+    }
+}
 
 void OOORPCEndpoint::ConnectTo(const Address &dstAddr)
 {
