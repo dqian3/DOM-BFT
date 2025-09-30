@@ -44,7 +44,7 @@ protected:
 
 public:
     OOORPCEndpoint(
-        const std::string &ip, const int port, const std::vector<Address> &targetAddrs, int numProxiesPerAddr = 8
+        const std::string &ip, const int port, const std::vector<Address> &targetAddrs, int numProxiesPerAddr = 2
     );
     ~OOORPCEndpoint();
 

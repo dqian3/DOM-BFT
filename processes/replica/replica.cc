@@ -229,7 +229,7 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
         return;
     }
 
-    LOG(INFO) << "Received message of type " << (int) msgHdr->msgType << " from " << *sender;
+    VLOG(6) << "Received message of type " << (int) msgHdr->msgType << " from " << *sender;
 
     // Handle receiver-specific messages (from proxies)
     if (msgHdr->msgType == MessageType::DOM_REQUEST) {
@@ -531,7 +531,7 @@ void Replica::verifyMessagesThd()
                 return;
             }
             if (!sigProvider_.verify(hdr, {NodeType::CLIENT, timeoutMsg.client_id()})) {
-                LOG(INFO) << "Failed to verify replica signature!";
+                LOG(INFO) << "Failed to verify client signature!";
                 continue;
             }
 
