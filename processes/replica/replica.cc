@@ -530,7 +530,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
                 return;
             }
-            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, timeoutMsg.client_id()})) {
+            if (!sigProvider_.verify(hdr, {NodeType::CLIENT, timeoutMsg.client_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
