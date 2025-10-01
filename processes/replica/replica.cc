@@ -143,7 +143,7 @@ Replica::Replica(
             }
         }
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, addrs);
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, addrs, sendThreadpool_.size());
 
     } else {
         // UDP setup
@@ -169,7 +169,7 @@ Replica::Replica(
     // Register unified message handler
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender);
-        this->checkDeadlines();   // Check deadlines after each message
+        // this->checkDeadlines();   // Check deadlines after each message
     });
 
     endpoint_->RegisterSignalHandler([&]() {
@@ -270,7 +270,8 @@ void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
 
     if (recv_time > request.deadline()) {
         request.set_late(true);
-        VLOG(1) << "Request is late by " << recv_time - request.deadline() << "us";
+        VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
+                << recv_time - request.deadline() << "us";
     }
 
     uint64_t deadline = request.deadline();
@@ -278,35 +279,35 @@ void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         deadline = recv_time;
     }
 
-    auto r = std::make_shared<ReceiverRequest>();
-    r->request = request;
-    r->deadline = request.deadline();
-    r->clientId = request.client_id();
-    r->verified = false;
+    // auto r = std::make_shared<ReceiverRequest>();
+    // r->request = request;
+    // r->deadline = request.deadline();
+    // r->clientId = request.client_id();
+    // r->verified = false;
 
-    {
-        std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-        deadlineQueue_[{deadline, request.client_id()}] = r;
-    }
+    // {
+    //     std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+    //     deadlineQueue_[{deadline, request.client_id()}] = r;
+    // }
 
-    receiverVerifyQueue_.enqueue(r);
+    // receiverVerifyQueue_.enqueue(r);
 
-    // Send measurement replies back to the proxy
+    // // Send measurement replies back to the proxy
 
-    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
-        lastMeasurementTimes_[request.proxy_id()] = recv_time;
+    // if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
+    //     lastMeasurementTimes_[request.proxy_id()] = recv_time;
 
-        std::string senderIp = sender->ip();
+    //     std::string senderIp = sender->ip();
 
-        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-            MeasurementReply mReply;
-            mReply.set_receiver_id(replicaId_);
-            mReply.set_owd(recv_time - request.send_time());
-            mReply.set_send_time(request.send_time());
-            MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
-            endpoint_->SendPreparedMsgTo(Address(senderIp, proxyPort_), replyHdr);
-        });
-    }
+    //     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+    //         MeasurementReply mReply;
+    //         mReply.set_receiver_id(replicaId_);
+    //         mReply.set_owd(recv_time - request.send_time());
+    //         mReply.set_send_time(request.send_time());
+    //         MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
+    //         endpoint_->SendPreparedMsgTo(Address(senderIp, proxyPort_), replyHdr);
+    //     });
+    // }
 }
 
 void Replica::forwardRequest(const DOMRequest &request)

@@ -36,6 +36,8 @@ public:
         condition_.notify_one();
     }
 
+    size_t size() const { return threadPoolSize_; }
+
 private:
     size_t threadPoolSize_;
     std::vector<Worker> workers_;

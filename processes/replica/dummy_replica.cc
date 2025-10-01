@@ -108,7 +108,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
             allAddrs.push_back(replicaAddrs_.back());
         }
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs);
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs, sendThreadpool_.size());
 
     } else {
         LOG(ERROR) << "Unsupported transport " << config.transport;
