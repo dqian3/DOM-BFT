@@ -15,6 +15,7 @@
 #include <thread>
 
 static std::atomic<uint64_t> recv_count{0};
+static std::atomic<uint64_t> total_latency_us{0};
 
 int main(int argc, char *argv[])
 {
@@ -108,6 +109,17 @@ int main(int argc, char *argv[])
                     }
                 }
 
+                // Calculate latency from embedded timestamp
+                byte *msgBuffer = msg.data() + sizeof(MessageHeader);
+                if (hdr->msgLen >= sizeof(uint64_t)) {
+                    uint64_t send_time_us = *reinterpret_cast<uint64_t *>(msgBuffer);
+                    auto now = std::chrono::steady_clock::now();
+                    uint64_t recv_time_us =
+                        std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+                    uint64_t latency_us = recv_time_us - send_time_us;
+                    total_latency_us.fetch_add(latency_us);
+                }
+
                 recv_count++;
             }
         });
@@ -119,6 +131,16 @@ int main(int argc, char *argv[])
 
             started.notify_all();
             LOG(INFO) << "First message received, starting 10-second window\n";
+        }
+
+        // Calculate latency from embedded timestamp
+        if (msgHdr->msgLen >= sizeof(uint64_t)) {
+            uint64_t send_time_us = *reinterpret_cast<uint64_t *>(msgBuffer);
+            auto now = std::chrono::steady_clock::now();
+            uint64_t recv_time_us =
+                std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+            uint64_t latency_us = recv_time_us - send_time_us;
+            total_latency_us.fetch_add(latency_us);
         }
 
         if (crypto_type != "hmac" && crypto_type != "sig") {
@@ -160,10 +182,18 @@ int main(int argc, char *argv[])
         senders.emplace_back([&, i] {
             char buf[message_size + 1024];
 
-            std::string msg(message_size, 'a');
+            // Create message with timestamp at the beginning
+            std::vector<byte> msg_with_timestamp(message_size);
+            auto now = std::chrono::steady_clock::now();
+            uint64_t send_time_us =
+                std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+            *reinterpret_cast<uint64_t *>(msg_with_timestamp.data()) = send_time_us;
+            // Fill the rest with 'a'
+            std::fill(msg_with_timestamp.begin() + sizeof(uint64_t), msg_with_timestamp.end(), 'a');
+
             LOG(INFO) << "[sender " << i << "] sending first message\n";
 
-            auto *hdr = endpoint->PrepareMsg(reinterpret_cast<const byte *>(msg.data()), msg.size(), 2);
+            auto *hdr = endpoint->PrepareMsg(msg_with_timestamp.data(), msg_with_timestamp.size(), DUMMY_PROTO);
 
             if (crypto_type == "sig") {
                 bool ret = sigProvider.appendSignature(hdr, sizeof(buf));
@@ -186,8 +216,14 @@ int main(int argc, char *argv[])
                     LOG(INFO) << "[sender " << i << "] finished after 10 s\n";
                     return;
                 }
+
+                // Update timestamp for each message
+                uint64_t send_time_us =
+                    std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+                *reinterpret_cast<uint64_t *>(msg_with_timestamp.data()) = send_time_us;
+
                 auto *hdr = endpoint->PrepareMsg(
-                    reinterpret_cast<const byte *>(msg.data()), msg.size(), 2, (byte *) buf, sizeof(buf)
+                    msg_with_timestamp.data(), msg_with_timestamp.size(), 2, (byte *) buf, sizeof(buf)
                 );
 
                 if (send_interval_us > 0) {
@@ -220,6 +256,15 @@ int main(int argc, char *argv[])
 
     double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - first_msg_time).count() / 1000.0;
     uint64_t c = recv_count.load();
+    uint64_t total_lat = total_latency_us.load();
+
     LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s\n";
+
+    if (c > 0) {
+        double avg_latency_us = (double) total_lat / c;
+        LOG(INFO) << "Average one-way latency: " << avg_latency_us << " microseconds (" << (avg_latency_us / 1000.0)
+                  << " ms)";
+    }
+
     return 0;
 }
