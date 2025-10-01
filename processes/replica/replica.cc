@@ -279,35 +279,35 @@ void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
         deadline = recv_time;
     }
 
-    // auto r = std::make_shared<ReceiverRequest>();
-    // r->request = request;
-    // r->deadline = request.deadline();
-    // r->clientId = request.client_id();
-    // r->verified = false;
+    auto r = std::make_shared<ReceiverRequest>();
+    r->request = request;
+    r->deadline = request.deadline();
+    r->clientId = request.client_id();
+    r->verified = false;
 
-    // {
-    //     std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
-    //     deadlineQueue_[{deadline, request.client_id()}] = r;
-    // }
+    {
+        std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+        deadlineQueue_[{deadline, request.client_id()}] = r;
+    }
 
-    // receiverVerifyQueue_.enqueue(r);
+    receiverVerifyQueue_.enqueue(r);
 
-    // // Send measurement replies back to the proxy
+    // Send measurement replies back to the proxy
 
-    // if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
-    //     lastMeasurementTimes_[request.proxy_id()] = recv_time;
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
+        lastMeasurementTimes_[request.proxy_id()] = recv_time;
 
-    //     std::string senderIp = sender->ip();
+        std::string senderIp = sender->ip();
 
-    //     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-    //         MeasurementReply mReply;
-    //         mReply.set_receiver_id(replicaId_);
-    //         mReply.set_owd(recv_time - request.send_time());
-    //         mReply.set_send_time(request.send_time());
-    //         MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
-    //         endpoint_->SendPreparedMsgTo(Address(senderIp, proxyPort_), replyHdr);
-    //     });
-    // }
+        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+            MeasurementReply mReply;
+            mReply.set_receiver_id(replicaId_);
+            mReply.set_owd(recv_time - request.send_time());
+            mReply.set_send_time(request.send_time());
+            MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
+            endpoint_->SendPreparedMsgTo(Address(senderIp, proxyPort_), replyHdr);
+        });
+    }
 }
 
 void Replica::forwardRequest(const DOMRequest &request)
