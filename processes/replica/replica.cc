@@ -169,7 +169,7 @@ Replica::Replica(
     // Register unified message handler
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender);
-        // this->checkDeadlines();   // Check deadlines after each message
+        this->checkDeadlines();   // Check deadlines after each message
     });
 
     endpoint_->RegisterSignalHandler([&]() {
