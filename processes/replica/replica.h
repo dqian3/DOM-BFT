@@ -140,6 +140,7 @@ private:
     bool holdPrepareOrCommit_ = false;
 
     // ========== Receiver State ==========
+    uint64_t lastCheckTime_ = 0;
     uint64_t lastFwdDeadline_ = 0;
     std::map<uint32_t, uint64_t> lastMeasurementTimes_;
     uint32_t numForwarded_ = 0;
