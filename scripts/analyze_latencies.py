@@ -118,6 +118,11 @@ def print_statistics(sequences, latencies, timestamps):
     for p in percentiles:
         print(f"  P{p}: {np.percentile(latencies_ms, p):.3f} ms")
 
+    # Count high latency requests
+    high_latency_count = sum(1 for lat in latencies_ms if lat > 50.0)
+    high_latency_percent = (high_latency_count / len(latencies_ms)) * 100
+    print(f"\nHigh latency requests (>50ms): {high_latency_count} ({high_latency_percent:.2f}%)")
+
     # Check for packet drops
     if sequences:
         expected_total = max(sequences) - min(sequences) + 1

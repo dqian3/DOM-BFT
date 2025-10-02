@@ -372,7 +372,7 @@ def run_rates(
 
         # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
-        cfg["client"]["maxInFlight"] = 1500
+        cfg["client"]["maxInFlight"] = 2500
 
         for send_rate in [1000, 1500, 2000, 2500]:
             cfg["client"]["sendRate"] = send_rate
