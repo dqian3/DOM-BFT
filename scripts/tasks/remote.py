@@ -544,9 +544,15 @@ def cmd(c, cmd, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
 
 
 @task
-def copy(c, file, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
+def copy(
+    c,
+    file,
+    remote_path=None,
+    config_file="../configs/remote-prod.yaml",
+    resolve=lambda x: x,
+):
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
-    group.put(file)
+    group.put(file, remote_path)
 
 
 @task
