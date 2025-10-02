@@ -86,8 +86,19 @@ def cmd(c, cmd, config_file="../configs/remote-prod.yaml"):
 
 
 @task
-def copy(c, file, config_file="../configs/remote-prod.yaml"):
-    remote.copy(c, file, config_file=config_file, resolve=get_address_resolver(c))
+def copy(
+    c,
+    file,
+    remote_path=None,
+    config_file="../configs/remote-prod.yaml",
+):
+    remote.copy(
+        c,
+        file,
+        remote_path=remote_path,
+        config_file=config_file,
+        resolve=get_address_resolver(c),
+    )
 
 
 @task

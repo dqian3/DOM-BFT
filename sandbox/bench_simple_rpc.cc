@@ -15,10 +15,53 @@
 #include <thread>
 
 static std::atomic<uint64_t> recv_count{0};
+static std::atomic<int64_t> total_latency_us{0};
+
+// Latency histogram buckets (in microseconds)
+static std::atomic<uint64_t> latency_buckets[10] = {
+    0
+};   // 0-100us, 100-500us, 500us-1ms, 1-5ms, 5-10ms, 10-20ms, 20-50ms, 50-100ms, 100-500ms, 500ms+
+static std::atomic<uint64_t> min_latency_us{UINT64_MAX};
+static std::atomic<uint64_t> max_latency_us{0};
+
+void updateLatencyStats(uint64_t latency_us)
+{
+    // Update min/max
+    uint64_t current_min = min_latency_us.load();
+    while (latency_us < current_min && !min_latency_us.compare_exchange_weak(current_min, latency_us)) {
+    }
+
+    uint64_t current_max = max_latency_us.load();
+    while (latency_us > current_max && !max_latency_us.compare_exchange_weak(current_max, latency_us)) {
+    }
+
+    // Update histogram
+    int bucket = 9;   // default to 500ms+ bucket
+    if (latency_us < 100)
+        bucket = 0;   // 0-100us
+    else if (latency_us < 500)
+        bucket = 1;   // 100-500us
+    else if (latency_us < 1000)
+        bucket = 2;   // 500us-1ms
+    else if (latency_us < 5000)
+        bucket = 3;   // 1-5ms
+    else if (latency_us < 10000)
+        bucket = 4;   // 5-10ms
+    else if (latency_us < 20000)
+        bucket = 5;   // 10-20ms
+    else if (latency_us < 50000)
+        bucket = 6;   // 20-50ms
+    else if (latency_us < 100000)
+        bucket = 7;   // 50-100ms
+    else if (latency_us < 500000)
+        bucket = 8;   // 100-500ms
+
+    latency_buckets[bucket].fetch_add(1);
+}
 
 int main(int argc, char *argv[])
 {
-    if (argc < 5) {
+    if (argc < 10) {
         LOG(INFO) << "Usage: " << argv[0]
                   << " <listen_port> <peer_address> <peer_port> <message_size> <endpoint_type> <crypto type> "
                      "<send_interval_us> <num_verify_threads> <num_senders>\n";
@@ -35,11 +78,7 @@ int main(int argc, char *argv[])
 
     int num_verify_threads = std::stoi(argv[8]);
 
-    int num_senders = 1;
-
-    if (endpoint_type == "ooo") {
-        num_senders = std::stoi(argv[9]);
-    }
+    int num_senders = std::stoi(argv[9]);
 
     // ignore SIGPIPE
     signal(SIGPIPE, SIG_IGN);
@@ -75,8 +114,8 @@ int main(int argc, char *argv[])
     }
 
     // ---- receiver side stats ----
-    static std::chrono::steady_clock::time_point first_msg_time;
-    static std::chrono::steady_clock::time_point end_time;
+    static uint64_t first_msg_time;
+    static uint64_t end_time;
     static std::atomic<bool> started{false};
 
     std::vector<std::thread> verifyThreads_;
@@ -107,7 +146,6 @@ int main(int argc, char *argv[])
                         continue;
                     }
                 }
-
                 recv_count++;
             }
         });
@@ -115,10 +153,24 @@ int main(int argc, char *argv[])
 
     endpoint->RegisterMsgHandler([&](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         if (!started.exchange(true)) {
-            first_msg_time = std::chrono::steady_clock::now();
+            first_msg_time = GetMicrosecondTimestamp();
 
             started.notify_all();
             LOG(INFO) << "First message received, starting 10-second window\n";
+        } else if (msgHdr->msgLen >= sizeof(uint64_t)) {
+            // Calculate latency from embedded timestamp, only on non-first messages
+
+            uint64_t send_time_us = *reinterpret_cast<uint64_t *>(msgBuffer);
+            uint64_t recv_time_us = GetMicrosecondTimestamp();
+            uint64_t latency_us = recv_time_us - send_time_us;
+
+            if (recv_time_us < send_time_us)
+                LOG(WARNING) << "Clock skew detected, recv time " << recv_time_us << " < send time " << send_time_us;
+
+            assert(recv_time_us >= send_time_us);
+
+            total_latency_us.fetch_add(latency_us);
+            updateLatencyStats(latency_us);
         }
 
         if (crypto_type != "hmac" && crypto_type != "sig") {
@@ -137,10 +189,9 @@ int main(int argc, char *argv[])
     // ---- Timer to stop after 10 seconds from first message ----
     Timer stop_timer(
         [&](void * /*data*/, void *ep_void) {
-            end_time = std::chrono::steady_clock::now();
+            end_time = GetMicrosecondTimestamp();
 
-            if (verifyQueue_.size_approx() == 0 && started &&
-                std::chrono::duration_cast<std::chrono::seconds>(end_time - first_msg_time).count() >= 10) {
+            if (verifyQueue_.size_approx() == 0 && started && end_time - first_msg_time >= 10'000'000) {
                 static_cast<Endpoint *>(ep_void)->LoopBreak();
             }
         },
@@ -160,10 +211,19 @@ int main(int argc, char *argv[])
         senders.emplace_back([&, i] {
             char buf[message_size + 1024];
 
-            std::string msg(message_size, 'a');
+            // Create message with timestamp at the beginning
+            std::vector<byte> msg_with_timestamp(message_size);
+
+            uint64_t now = GetMicrosecondTimestamp();
+            *reinterpret_cast<uint64_t *>(msg_with_timestamp.data()) = now;
+            // Fill the rest with 'a'
+            std::fill(msg_with_timestamp.begin() + sizeof(uint64_t), msg_with_timestamp.end(), 'a');
+
             LOG(INFO) << "[sender " << i << "] sending first message\n";
 
-            auto *hdr = endpoint->PrepareMsg(reinterpret_cast<const byte *>(msg.data()), msg.size(), 2);
+            auto *hdr = endpoint->PrepareMsg(
+                reinterpret_cast<const byte *>(msg_with_timestamp.data()), msg_with_timestamp.size(), 2
+            );
 
             if (crypto_type == "sig") {
                 bool ret = sigProvider.appendSignature(hdr, sizeof(buf));
@@ -174,20 +234,22 @@ int main(int argc, char *argv[])
             endpoint->SendPreparedMsgTo(peer_addr, hdr);
 
             // Wait until main thread sets started = true
-
             if (endpoint_type != "udp") {
                 started.wait(false);
-                VLOG(1) << "[sender " << i << "] received first message, continuing\n";
+                LOG(INFO) << "[sender " << i << "] received first message, continuing\n";
             }
 
             while (true) {
-                auto now = std::chrono::steady_clock::now();
-                if (started && std::chrono::duration_cast<std::chrono::seconds>(now - first_msg_time).count() >= 10) {
+                now = GetMicrosecondTimestamp();
+                if (started && (now - first_msg_time) >= 10'000'000) {
                     LOG(INFO) << "[sender " << i << "] finished after 10 s\n";
                     return;
                 }
+
+                *reinterpret_cast<uint64_t *>(msg_with_timestamp.data()) = now;
+
                 auto *hdr = endpoint->PrepareMsg(
-                    reinterpret_cast<const byte *>(msg.data()), msg.size(), 2, (byte *) buf, sizeof(buf)
+                    msg_with_timestamp.data(), msg_with_timestamp.size(), DUMMY_PROTO, (byte *) buf, sizeof(buf)
                 );
 
                 if (send_interval_us > 0) {
@@ -218,8 +280,33 @@ int main(int argc, char *argv[])
         t.join();
     }
 
-    double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - first_msg_time).count() / 1000.0;
+    double secs = (end_time - first_msg_time) / 1'000'000.0;
     uint64_t c = recv_count.load();
     LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s\n";
+
+    if (c > 0) {
+        double avg_latency_us = (double) total_latency_us / c;
+        LOG(INFO) << "Average one-way latency: " << (avg_latency_us / 1000.0) << " ms";
+
+        uint64_t min_lat = min_latency_us.load();
+        uint64_t max_lat = max_latency_us.load();
+        if (min_lat != UINT64_MAX) {
+            LOG(INFO) << "Min latency: " << (min_lat / 1000.0) << " ms, Max latency: " << (max_lat / 1000.0) << " ms";
+        }
+
+        // Print distribution
+        const char *bucket_labels[10] = {"0-100us", "100-500us", "500us-1ms", "1-5ms",     "5-10ms",
+                                         "10-20ms", "20-50ms",   "50-100ms",  "100-500ms", "500ms+"};
+
+        LOG(INFO) << "Latency distribution:";
+        for (int i = 0; i < 10; i++) {
+            uint64_t count = latency_buckets[i].load();
+            if (count > 0) {
+                double percentage = (double) count / c * 100.0;
+                LOG(INFO) << "  " << bucket_labels[i] << ": " << count << " (" << percentage << "%)";
+            }
+        }
+    }
+
     return 0;
 }
