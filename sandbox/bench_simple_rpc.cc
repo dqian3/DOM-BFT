@@ -17,6 +17,11 @@
 static std::atomic<uint64_t> recv_count{0};
 static std::atomic<int64_t> total_latency_us{0};
 
+// Sequence number tracking for UDP drop detection (single sender)
+static std::atomic<uint64_t> total_sent{0};
+static std::atomic<uint64_t> expected_seq{1};
+static std::atomic<uint64_t> total_drops{0};
+
 // Latency histogram buckets (in microseconds)
 static std::atomic<uint64_t> latency_buckets[10] = {
     0
@@ -77,8 +82,13 @@ int main(int argc, char *argv[])
     int send_interval_us = std::stoi(argv[7]);
 
     int num_verify_threads = std::stoi(argv[8]);
+    int num_senders = 1;
 
-    int num_senders = std::stoi(argv[9]);
+    if (endpoint_type == "ooo") {
+        num_senders = std::stoi(argv[9]);
+    } else {
+        LOG(INFO) << "num_senders argument is ignored for endpoint type " << endpoint_type << "\n";
+    }
 
     // ignore SIGPIPE
     signal(SIGPIPE, SIG_IGN);
@@ -157,10 +167,24 @@ int main(int argc, char *argv[])
 
             started.notify_all();
             LOG(INFO) << "First message received, starting 10-second window\n";
-        } else if (msgHdr->msgLen >= sizeof(uint64_t)) {
-            // Calculate latency from embedded timestamp, only on non-first messages
-
+        } else if (msgHdr->msgLen >= 2 * sizeof(uint64_t)) {
+            // Extract timestamp and sequence number from message header
             uint64_t send_time_us = *reinterpret_cast<uint64_t *>(msgBuffer);
+            uint64_t recv_seq = *reinterpret_cast<uint64_t *>(msgBuffer + 8);
+
+            // Check for drops (UDP only)
+            if (endpoint_type == "udp") {
+                uint64_t expected = expected_seq.load();
+                if (recv_seq > expected) {
+                    uint64_t dropped = recv_seq - expected;
+                    total_drops.fetch_add(dropped);
+                    VLOG(2) << "Detected " << dropped << " dropped packets. Expected: " << expected
+                            << ", Received: " << recv_seq;
+                }
+                expected_seq.store(recv_seq + 1);
+            }
+
+            // Calculate latency
             uint64_t recv_time_us = GetMicrosecondTimestamp();
             uint64_t latency_us = recv_time_us - send_time_us;
 
@@ -171,6 +195,9 @@ int main(int argc, char *argv[])
 
             total_latency_us.fetch_add(latency_us);
             updateLatencyStats(latency_us);
+
+            // Log individual latency for analysis
+            LOG(INFO) << "LATENCY_SAMPLE seq=" << recv_seq << " latency_us=" << latency_us << " recv_time=" << recv_time_us;
         }
 
         if (crypto_type != "hmac" && crypto_type != "sig") {
@@ -203,7 +230,7 @@ int main(int argc, char *argv[])
     std::thread loop_thr([&] { endpoint->LoopRun(); });
 
     // small delay to ensure receiver is ready
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
     std::vector<std::thread> senders;
 
@@ -211,19 +238,22 @@ int main(int argc, char *argv[])
         senders.emplace_back([&, i] {
             char buf[message_size + 1024];
 
-            // Create message with timestamp at the beginning
-            std::vector<byte> msg_with_timestamp(message_size);
+            // Create message with timestamp and sequence number at the beginning
+            std::vector<byte> msg_with_header(message_size);
+            uint64_t seq_num = 1;
 
             uint64_t now = GetMicrosecondTimestamp();
-            *reinterpret_cast<uint64_t *>(msg_with_timestamp.data()) = now;
+            *reinterpret_cast<uint64_t *>(msg_with_header.data()) = now;           // timestamp
+            *reinterpret_cast<uint64_t *>(msg_with_header.data() + 8) = seq_num;   // sequence number
             // Fill the rest with 'a'
-            std::fill(msg_with_timestamp.begin() + sizeof(uint64_t), msg_with_timestamp.end(), 'a');
+            std::fill(msg_with_header.begin() + 2 * sizeof(uint64_t), msg_with_header.end(), 'a');
 
             LOG(INFO) << "[sender " << i << "] sending first message\n";
 
-            auto *hdr = endpoint->PrepareMsg(
-                reinterpret_cast<const byte *>(msg_with_timestamp.data()), msg_with_timestamp.size(), 2
-            );
+            auto *hdr =
+                endpoint->PrepareMsg(reinterpret_cast<const byte *>(msg_with_header.data()), msg_with_header.size(), 2);
+
+            total_sent.fetch_add(1);
 
             if (crypto_type == "sig") {
                 bool ret = sigProvider.appendSignature(hdr, sizeof(buf));
@@ -246,11 +276,15 @@ int main(int argc, char *argv[])
                     return;
                 }
 
-                *reinterpret_cast<uint64_t *>(msg_with_timestamp.data()) = now;
+                seq_num++;
+                *reinterpret_cast<uint64_t *>(msg_with_header.data()) = now;           // timestamp
+                *reinterpret_cast<uint64_t *>(msg_with_header.data() + 8) = seq_num;   // sequence number
 
                 auto *hdr = endpoint->PrepareMsg(
-                    msg_with_timestamp.data(), msg_with_timestamp.size(), DUMMY_PROTO, (byte *) buf, sizeof(buf)
+                    msg_with_header.data(), msg_with_header.size(), DUMMY_PROTO, (byte *) buf, sizeof(buf)
                 );
+
+                total_sent.fetch_add(1);
 
                 if (send_interval_us > 0) {
                     usleep(send_interval_us);
@@ -282,7 +316,15 @@ int main(int argc, char *argv[])
 
     double secs = (end_time - first_msg_time) / 1'000'000.0;
     uint64_t c = recv_count.load();
-    LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s\n";
+    uint64_t sent = total_sent.load();
+    uint64_t drops = total_drops.load();
+
+    LOG(INFO) << "Received " << c << " messages in " << secs << " s:  " << (c / secs) << " msgs/s";
+
+    if (endpoint_type == "udp" && sent > 0) {
+        double drop_rate = (double) drops / sent * 100.0;
+        LOG(INFO) << "Packet drops: " << drops << " out of " << sent << " sent (" << drop_rate << "% drop rate)";
+    }
 
     if (c > 0) {
         double avg_latency_us = (double) total_latency_us / c;

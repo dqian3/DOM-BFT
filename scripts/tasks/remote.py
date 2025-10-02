@@ -195,7 +195,6 @@ def run(
         )
         other_handles.append(hdl)
 
-<<<<<<< Updated upstream
     print("Starting receivers")
     for id, ip in enumerate(receivers):
         arun = arun_on(ip, f"receiver{id}.log", timeout=10 + runtime, profile=profile)
@@ -204,8 +203,6 @@ def run(
         )
         other_handles.append(hdl)
 
-=======
->>>>>>> Stashed changes
     print("Starting proxies")
     for id, ip in enumerate(proxies):
         arun = arun_on(ip, f"proxy{id}.log", timeout=10 + runtime, profile=profile)
