@@ -170,7 +170,7 @@ Replica::Replica(
     endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender);
 
-        if (GetMicrosecondTimestamp() - lastCheckTime_ > 5000) {
+        if (GetMicrosecondTimestamp() - lastCheckTime_ > 1000) {
             lastCheckTime_ = GetMicrosecondTimestamp();
             this->checkDeadlines();   // Check deadlines after each message
         }
