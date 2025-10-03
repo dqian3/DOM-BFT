@@ -188,10 +188,9 @@ def run(
 
         arun = arun_on(ip, f"replica{id}.log", timeout=10 + runtime, profile=profile)
         hdl = arun(
-            f"{replica_path} -v {v} -config {remote_config_file} -replicaId {id} -receiverId {id} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}"
+            f"{replica_path} -prot {prot} -v {v} -config {remote_config_file} -replicaId {id} {batch_size_arg} {crashed_arg} {swap_arg} {view_change_arg} {drop_checkpoint_arg}"
         )
         other_handles.append(hdl)
-
 
     print("Starting proxies")
     for id, ip in enumerate(proxies):
@@ -284,7 +283,8 @@ def reorder_exp(
     for id, ip in enumerate(replicas):
         arun = arun_on(ip, f"replica{id}.log", local_log=local_log)
         hdl = arun(
-            f"{replica_path} -v {5} -config {remote_config_file} -replicaId {id} -receiverId {id} -skipForwarding"
+            f"{replica_path} -v {1} -receiverId {id} -config {remote_config_file}"
+            + f" -skipForwarding {'-ignoreDeadlines' if ignore_deadlines else ''}"
         )
 
         other_handles.append(hdl)
@@ -362,7 +362,7 @@ def run_rates(
         cfg["client"]["sendMode"] = "sendRate"
         cfg["client"]["maxInFlight"] = 1500
 
-        for send_rate in [1000, 1500, 2000, 2500]:
+        for send_rate in [250, 500, 1000, 1500, 2000]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
@@ -467,14 +467,11 @@ def copy_bin(
         print(f"Copying to other machines")
         start_time = time.time()
 
-        replicas, proxies, clients = get_process_ips(
-            config_file, lambda x: x
-        )
+        replicas, proxies, clients = get_process_ips(config_file, lambda x: x)
 
         for ip in replicas:
             print(f"Copying dombft_replica to {ip}")
             conn.run(f"scp -o StrictHostKeyChecking=no dombft_replica {ip}:", warn=True)
-
 
         for ip in proxies:
             print(f"Copying dombft_proxy to {ip}")
@@ -499,7 +496,6 @@ def copy_bin(
 
         replicas.put("../bazel-bin/processes/replica/dombft_replica")
         print("Copied replica")
-
 
         proxies.put("../bazel-bin/processes/proxy/dombft_proxy")
         print("Copied proxy")

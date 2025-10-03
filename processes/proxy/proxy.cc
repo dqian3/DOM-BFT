@@ -44,7 +44,8 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
             receiverAddrs_.push_back(Address(receiverIp, config.replicaPort));
         }
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_);
+        endpoint_ =
+            std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_, 2);
     } else {
 
         endpoint_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, false);

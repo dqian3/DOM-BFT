@@ -158,18 +158,32 @@ void DummyReplica::run()
 
 void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
-    // First make sure message is well formed
-
-    // We skip verification of our own messages, and any message from the receiver
-    // process (which does its own verification)
     byte *rawMsg = (byte *) msgHdr;
+    dombft::proto::DOMRequest request;
+
+    if (msgHdr->msgType == DOM_REQUEST) {
+        // Remove the DOM_HEADER for these messages
+
+        if (!request.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+            return;
+        }
+
+        rawMsg = (byte *) request.client_req().c_str();
+        msgHdr = (MessageHeader *) rawMsg;
+    }
+
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
 
+    // We skip verification of our own messages
     if (*sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);
     }
+
+    VLOG(6) << verifyQueue_.size_approx() << " messages in verify queue, " << processQueue_.size_approx()
+            << " messages in process queue";
 }
 
 void DummyReplica::verifyMessagesThd()

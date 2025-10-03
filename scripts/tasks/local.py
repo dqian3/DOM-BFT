@@ -110,7 +110,7 @@ def run(
             else:
                 crashed_arg = ""
 
-            cmd = f"./bazel-bin/processes/replica/dombft_replica -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} &>logs/replica{id}.log"
+            cmd = f"./bazel-bin/processes/replica/dombft_replica -prot {prot} -v {v} -config {config_file} -replicaId {id} {crashed_arg} {swap_arg} {view_change_arg} --batchSize {batch_size} &>logs/replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
