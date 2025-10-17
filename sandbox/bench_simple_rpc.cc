@@ -197,7 +197,18 @@ int main(int argc, char *argv[])
             updateLatencyStats(latency_us);
 
             // Log individual latency for analysis
-            LOG(INFO) << "LATENCY_SAMPLE seq=" << recv_seq << " latency_us=" << latency_us << " recv_time=" << recv_time_us;
+            LOG(INFO) << "LATENCY_SAMPLE seq=" << recv_seq << " latency_us=" << latency_us
+                      << " recv_time=" << recv_time_us;
+        }
+
+        // Calculate latency from embedded timestamp
+        if (msgHdr->msgLen >= sizeof(uint64_t)) {
+            uint64_t send_time_us = *reinterpret_cast<uint64_t *>(msgBuffer);
+            auto now = std::chrono::steady_clock::now();
+            uint64_t recv_time_us =
+                std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+            uint64_t latency_us = recv_time_us - send_time_us;
+            total_latency_us.fetch_add(latency_us);
         }
 
         if (crypto_type != "hmac" && crypto_type != "sig") {

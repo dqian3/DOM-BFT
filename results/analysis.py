@@ -1,20 +1,21 @@
 # Basic log parsing
 
 import re
-import datetime 
+import datetime
 import sys
 import numpy as np
+
 
 def parse_time(line):
     match = re.search(f"([0-9]*:[0-9]*:[0-9]*.[0-9]*)", line)
     time_str = match.group(1)
     return datetime.datetime.strptime(time_str, "%H:%M:%S.%f")
 
+
 def parse_tags(line):
     tags = {}
     line = line.split("PERF ")[1]
 
-    
     for token in line.split():
         [tag, value] = token.split("=")
         tags[tag] = value
@@ -22,85 +23,92 @@ def parse_tags(line):
             tags[tag] = int(value)
         except ValueError as verr:
             pass
-            
+
     return tags
-        
+
+
 def parse_line(line):
     time = parse_time(line)
     tags = parse_tags(line)
 
     tags["time"] = time
-    return tags 
-
+    return tags
 
 
 if __name__ == "__main__":
-
     events = []
     with open(sys.argv[1]) as f:
         for line in f:
-            if "DUMP" in line: continue
+            if "DUMP" in line:
+                continue
             events.append(parse_line(line))
-    
-    
-    
-    events = sorted(events, key=lambda x: x['time'])
-    
-    start_time = events[0]['time'] + datetime.timedelta(seconds=10)
-    end_time = events[-1]['time'] - datetime.timedelta(seconds=10)
-    
+
+    events = sorted(events, key=lambda x: x["time"])
+
+    start_time = events[0]["time"] + datetime.timedelta(seconds=10)
+    end_time = events[-1]["time"] - datetime.timedelta(seconds=10)
+
     commits = list(filter(lambda x: x["event"] == "commit", events))
-    
-    n_clients = max(events, key=lambda x: x["client_id"] if "client_id" in x else 0)["client_id"] + 1
-    
-    
-    
-    
+
+    n_clients = (
+        max(events, key=lambda x: x["client_id"] if "client_id" in x else 0)[
+            "client_id"
+        ]
+        + 1
+    )
+
     # Get general stats
-    commits = list(filter(lambda x: x['time'] > start_time and x['time'] < end_time, commits))
-    
-    
+    commits = list(
+        filter(lambda x: x["time"] > start_time and x["time"] < end_time, commits)
+    )
+
     runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
     print(f"Runtime: {runtime:.3f} s")
     print("number of clients: ", n_clients)
     print(f"Total Throughput: {len(commits) / runtime:.0f} req/s")
-    
-    latencies = np.array([c['latency'] for c in commits])
+
+    latencies = np.array([c["latency"] for c in commits])
     print(f"Num commits: {len(commits)}")
     print(f"Average latency: {np.mean(latencies):.0f} us")
     print(f"p95 latency: {np.percentile(latencies, 95):.0f} us")
     print(f"p99 latency: {np.percentile(latencies, 99):.0f} us")
-    
-    
+
     fast = list(filter(lambda x: x["path"] == "fast", commits))
     normal = list(filter(lambda x: x["path"] == "normal", commits))
     slow = list(filter(lambda x: x["path"] == "slow", commits))
-    
+
     print("Fast path:")
     print(f"\tNum commits: {len(fast)}")
     if len(fast) > 0:
-        print(f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us")
-    
-    
+        print(
+            f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us"
+        )
+
     print("Normal path:")
     print(f"\tNum commits: {len(normal)}")
     if len(normal) > 0:
-        print(f"\tAverage latency: {sum(c['latency'] for c in normal) / len(normal):.0f} us")
-    
+        print(
+            f"\tAverage latency: {sum(c['latency'] for c in normal) / len(normal):.0f} us"
+        )
+
     print("Slow path:")
     print(f"\tNum commits: {len(slow)}")
     if len(slow) > 0:
-        print(f"\tAverage latency: {sum(c['latency'] for c in slow) / len(slow):.0f} us")
-    
+        print(
+            f"\tAverage latency: {sum(c['latency'] for c in slow) / len(slow):.0f} us"
+        )
 
+    # Find the highest and lowest rounds (number of repair rounds in window)
+    min_round = min(c["round"] for c in commits if "round" in c)
+    max_round = max(c["round"] for c in commits if "round" in c)
+    print("Number of repair rounds: ", max_round - min_round)
 
     # Peak throughput window
 
-
     import numpy as np
 
-    w_size = 10 #s
-    resolution = 1 #s
+    w_size = 10  # s
+    resolution = 1  # s
 
     end = (commits[-1]["time"] - start_time).total_seconds()
 
@@ -116,9 +124,9 @@ if __name__ == "__main__":
     max_window = None
 
     while w_start + w_size < end:
-        while (commits[i]["t"] < w_start):
+        while commits[i]["t"] < w_start:
             i += 1
-        while (commits[j]["t"] <= w_start + w_size):
+        while commits[j]["t"] <= w_start + w_size:
             j += 1
 
         if j - i > max_commits:
@@ -127,14 +135,11 @@ if __name__ == "__main__":
 
         w_start += resolution
 
-
-    window_latencies = np.array([c['latency'] for c in commits[i:j]])
+    window_latencies = np.array([c["latency"] for c in commits[i:j]])
     print(f"Finding best 30s window")
- 
+
     print(f"Max throughput over window of ten seconds: {max_commits / 10}")
     print(f"Average latency in window: {np.mean(window_latencies):.0f} us")
- 
-
 
     # Analyse percent of time in the fast path
 
@@ -145,9 +150,7 @@ if __name__ == "__main__":
 
     start_time = None
 
-
     for tags in commits:
-
         if start_time is None:
             start_time = tags["time"]
             # Take the nearest minute
@@ -165,10 +168,5 @@ if __name__ == "__main__":
 
         last_commit = tags["path"]
 
-
     runtime = (tags["time"] - start_time).total_seconds()
-    print(f"Percent time in fast path: {(runtime - non_fast_seconds)/ runtime:0.3f}")
-
-
-
-
+    print(f"Percent time in fast path: {(runtime - non_fast_seconds) / runtime:0.3f}")

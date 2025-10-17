@@ -6,6 +6,7 @@
 DEFINE_string(config, "configs/replica.yaml", "The config file for the replica");
 
 DEFINE_int32(replicaId, 0, "replica id");
+DEFINE_int32(receiverId, -1, "receiver id (defaults to same as replicaId if not specified)");
 
 DEFINE_bool(crashed, false, "If true, replica will receive messages but not send any messages");
 DEFINE_int32(swapFreq, 0, "Trigger recovery or slow path with swap every <swapFreq> requests");
@@ -44,6 +45,8 @@ int main(int argc, char *argv[])
         dombft::DummyReplica replica(config, FLAGS_replicaId, DummyProtocol::DUMMY_DOM_BFT);
         replica.run();
     } else {
+        // Use replicaId as receiverId if not specified
+
         dombft::Replica replica(
             config, FLAGS_replicaId, FLAGS_crashed, FLAGS_swapFreq, FLAGS_viewChangeFreq, FLAGS_commitLocalInViewChange,
             FLAGS_viewChangeNum, FLAGS_checkpointDropFreq

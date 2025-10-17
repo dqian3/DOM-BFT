@@ -27,9 +27,8 @@
 #define NNG_BUFFER_SIZE  (200000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY     1
-#define FABRIC_CRYPTO 0
-#define SKIP_CRYPTO   0
+#define USE_PROXY   1
+#define SKIP_CRYPTO 0
 
 // For working with dummy protocols
 #define SEND_TO_LEADER 0

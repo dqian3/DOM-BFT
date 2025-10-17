@@ -31,7 +31,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
-    std::string bindAddress = config.receiverLocal ? "0.0.0.0" : replicaIp;
+    std::string bindAddress = replicaIp;
     LOG(INFO) << "bindAddress=" << bindAddress;
 
     int replicaPort = config.replicaPort;
@@ -77,8 +77,6 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
-        receiverAddr_ = addrPairs[nClients].second;
-
         for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
             replicaAddrs_.push_back(addrPairs[i].second);
         }
@@ -90,8 +88,6 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
             clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort + i));
         }
 
-        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
-
         for (size_t i = nClients + 1; i < config.replicaIps.size(); i++) {
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
         }
@@ -99,24 +95,20 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort);
     } else if (config.transport == "simple-rpc") {
 
+        std::vector<Address> allAddrs;
+
         size_t nClients = config.clientIps.size();
         for (int i = 0; i < config.clientIps.size(); i++) {
-            std::string receiverIp = config.clientIps[i];
             clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort + i));
+            allAddrs.push_back(clientAddrs_.back());
         }
-
-        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
 
         for (int i = 0; i < config.replicaIps.size(); i++) {
-            std::string receiverIp = config.replicaIps[i];
-            replicaAddrs_.push_back(Address(receiverIp, config.replicaPort));
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+            allAddrs.push_back(replicaAddrs_.back());
         }
 
-        auto allAddrs = replicaAddrs_;
-        allAddrs.insert(allAddrs.begin(), clientAddrs_.begin(), clientAddrs_.end());
-        allAddrs.push_back(receiverAddr_);
-
-        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs);
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs, sendThreadpool_.size());
 
     } else {
         LOG(ERROR) << "Unsupported transport " << config.transport;
@@ -166,18 +158,32 @@ void DummyReplica::run()
 
 void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
-    // First make sure message is well formed
-
-    // We skip verification of our own messages, and any message from the receiver
-    // process (which does its own verification)
     byte *rawMsg = (byte *) msgHdr;
+    dombft::proto::DOMRequest request;
+
+    if (msgHdr->msgType == DOM_REQUEST) {
+        // Remove the DOM_HEADER for these messages
+
+        if (!request.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+            return;
+        }
+
+        rawMsg = (byte *) request.client_req().c_str();
+        msgHdr = (MessageHeader *) rawMsg;
+    }
+
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+    // We skip verification of our own messages
+    if (*sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);
     }
+
+    VLOG(6) << verifyQueue_.size_approx() << " messages in verify queue, " << processQueue_.size_approx()
+            << " messages in process queue";
 }
 
 void DummyReplica::verifyMessagesThd()

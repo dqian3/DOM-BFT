@@ -9,15 +9,19 @@
 #include "lib/transport/udp_endpoint.h"
 #include "processes/config_util.h"
 
+#include <algorithm>
 #include <cryptopp/sha.h>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(
     const ProcessConfig &config, uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq,
-    bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq
+    bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq, bool skipForwarding,
+    bool ignoreDeadlines
 )
     : replicaId_(replicaId)
     , f_(config.resiliency == "5f+1" ? config.replicaIps.size() / 5 : config.replicaIps.size() / 3)
@@ -29,8 +33,13 @@ Replica::Replica(
     , useHMAC_(config.clientUseHMAC)
     , repairTimeout_(config.replicaRepairTimeout)
     , repairViewTimeout_(config.replicaRepairViewTimeout)
+    , proxyPort_(config.proxyForwardPort)
+    , numReceivers_(config.replicaIps.size())
+    , skipForwarding_(skipForwarding)
+    , ignoreDeadlines_(ignoreDeadlines)
     , sigProvider_()
     , sendThreadpool_(config.replicaNumSendThreads)
+    , running_(true)
     , round_(1)
     , checkpointCollectors_(replicaId_, quorumSize_)
     , crashed_(crashed)
@@ -41,24 +50,26 @@ Replica::Replica(
     , commitLocalInViewChange_(commitLocalInViewChange)
     , viewChangeNum_(viewChangeNum)
 {
-    // TODO check for config errors
+    // Replica initialization
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
-    std::string bindAddress = config.receiverLocal ? "0.0.0.0" : replicaIp;
+    std::string bindAddress = replicaIp;
     LOG(INFO) << "bindAddress=" << bindAddress;
 
     int replicaPort = config.replicaPort;
     LOG(INFO) << "replicaPort=" << replicaPort;
 
     std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".der";
-    LOG(INFO) << "Loading key from " << replicaKey;
+    LOG(INFO) << "Loading replica key from " << replicaKey;
     if (!sigProvider_.loadPrivateKey(replicaKey)) {
-        LOG(ERROR) << "Unable to load private key!";
+        LOG(ERROR) << "Unable to load replica private key!";
         exit(1);
     }
 
-    LOG(INFO) << "private key loaded";
+    // For unified process, we use the replica key for both replica and receiver functions
+
+    LOG(INFO) << "Private keys loaded";
 
     if (!sigProvider_.loadPublicKeys(NodeType::CLIENT, config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
@@ -66,136 +77,336 @@ Replica::Replica(
     }
 
     if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
-        LOG(ERROR) << "Unable to load receiver public keys!";
+        LOG(ERROR) << "Unable to load replica public keys!";
         exit(1);
     }
 
     hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, config.clientIps.size());
 
-    LOG(INFO) << "Instantiating log";
-
-    LOG(INFO) << "Swapping every " << swapFreq_ << " requests";
+    LOG(INFO) << "Instantiating log and application";
 
     if (config.app == AppType::COUNTER) {
         app_ = std::make_shared<Counter>();
     } else if (config.app == AppType::KV_STORE) {
-        // TODO make keysize configurable
         app_ = std::make_shared<KVStore>();
     } else {
         LOG(ERROR) << "Unrecognized App Type";
         exit(1);
     }
     log_ = std::make_shared<Log>(app_);
-    LOG(INFO) << "log instantiated";
+    LOG(INFO) << "Log instantiated";
 
+    // Network setup for unified functionality
     if (config.transport == "nng") {
-        auto addrPairs = getReplicaAddrs(config, replicaId_);
+        // Use replica addressing for unified process
+        auto replicaAddrPairs = getReplicaAddrs(config, replicaId_);
 
         size_t nClients = config.clientIps.size();
         LOG(INFO) << "nClients=" << nClients;
 
+        // First nClients addresses are for client connections
         for (size_t i = 0; i < nClients; i++) {
-            clientAddrs_.push_back(addrPairs[i].second);
+            clientAddrs_.push_back(replicaAddrPairs[i].second);
         }
 
-        receiverAddr_ = addrPairs[nClients].second;
-
-        for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
-            replicaAddrs_.push_back(addrPairs[i].second);
+        // Remaining addresses are for replica-to-replica connections
+        for (size_t i = nClients; i < replicaAddrPairs.size(); i++) {
+            replicaAddrs_.push_back(replicaAddrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
+        replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(replicaAddrPairs, true, Address(replicaIp, replicaPort));
+
     } else if (config.transport == "simple-rpc") {
+        std::vector<Address> addrs;
+        replicaAddr_ = Address(config.replicaIps[replicaId], config.replicaPort);
+        addrs.push_back(replicaAddr_);
+
+        // Add proxy addresses for receiver functionality
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            addrs.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        }
 
         size_t nClients = config.clientIps.size();
         for (int i = 0; i < config.clientIps.size(); i++) {
             std::string clientIp = config.clientIps[i];
             clientAddrs_.push_back(Address(clientIp, config.clientPort + i));
-            LOG(INFO) << "Client " << i << ": " << clientAddrs_.back();
+            addrs.push_back(Address(clientIp, config.clientPort + i));
+            LOG(INFO) << "Client " << i << ": " << addrs.back();
         }
 
-        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
-
-        for (int i = 0; i < config.replicaIps.size(); i++) {
-            std::string receiverIp = config.replicaIps[i];
-            replicaAddrs_.push_back(Address(receiverIp, config.replicaPort));
+        // Add replica addresses
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+            if (i != replicaId_) {
+                addrs.push_back(Address(config.replicaIps[i], config.replicaPort));
+            }
         }
 
-        auto allAddrs = replicaAddrs_;
-        allAddrs.insert(allAddrs.begin(), clientAddrs_.begin(), clientAddrs_.end());
-        allAddrs.push_back(receiverAddr_);
-
-        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs);
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, addrs, sendThreadpool_.size());
 
     } else {
-        LOG(ERROR) << "Unsupported transport " << config.transport;
+        // UDP setup
+        replicaAddr_ = Address(config.replicaIps[replicaId], config.replicaPort);
+
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        for (uint32_t i = 0; i < config.clientIps.size(); i++) {
+            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
+        }
+
+        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->handleMessage(msgHdr, msgBuffer, sender);
-    };
+    // Set up timer for receiver deadline checking
+    fwdTimer_ =
+        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Replica *) ctx)->checkDeadlines(); }, 1000, this);
+    ev_set_priority(fwdTimer_->evTimer_, EV_MAXPRI);
+    endpoint_->RegisterTimer(fwdTimer_.get());
 
-    endpoint_->RegisterMsgHandler(handler);
+    // Register unified message handler
+    endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+        this->handleMessage(msgHdr, msgBuffer, sender);
+
+        if (GetMicrosecondTimestamp() - lastCheckTime_ > 1000) {
+            lastCheckTime_ = GetMicrosecondTimestamp();
+            this->checkDeadlines();   // Check deadlines after each message
+        }
+    });
 
     endpoint_->RegisterSignalHandler([&]() {
-        LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
     });
 
-    endpoint_->Connect();
+    LOG(INFO) << "Starting verify threads for replica functionality";
+    for (int i = 0; i < numVerifyThreads_; i++) {
+        verifyThreads_.emplace_back(&Replica::verifyMessagesThd, this);
+    }
+
+    LOG(INFO) << "Starting verify threads for receiver functionality";
+    uint32_t numReceiverVerifyThreads = config.replicaNumVerifyThreads;
+    for (int i = 0; i < numReceiverVerifyThreads; i++) {
+        receiverVerifyThreads_.emplace_back(&Replica::receiverVerifyThd, this, i);
+    }
+
+    processThread_ = std::thread(&Replica::processMessagesThd, this);
+
+    LOG(INFO) << "Replica initialized successfully";
 }
 
 Replica::~Replica()
 {
-    // TODO cleanup... though we don't really reuse this
+    running_ = false;
+
+    for (std::thread &thd : verifyThreads_) {
+        if (thd.joinable()) {
+            thd.join();
+        }
+    }
+
+    for (std::thread &thd : receiverVerifyThreads_) {
+        if (thd.joinable()) {
+            thd.join();
+        }
+    }
+
+    if (processThread_.joinable()) {
+        processThread_.join();
+    }
 }
 
 void Replica::run()
 {
-    // Submit first request
-    LOG(INFO) << "Starting " << numVerifyThreads_ << " verify threads";
-    running_ = true;
-    for (uint32_t i = 0; i < numVerifyThreads_; i++) {
-        verifyThreads_.emplace_back(&Replica::verifyMessagesThd, this);
-    }
-
-    LOG(INFO) << "Starting process thread";
-    processThread_ = std::thread(&Replica::processMessagesThd, this);
-
-    LOG(INFO) << "Starting main event loop...";
+    endpoint_->Connect();
+    LOG(INFO) << "Starting unified replica main loop";
     endpoint_->LoopRun();
-    LOG(INFO) << "Finishing main event loop...";
 
-    for (std::thread &thd : verifyThreads_) {
-        thd.join();
-    }
-    processThread_.join();
+    LOG(INFO) << "Replica exited cleanly";
 }
 
 void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
-    // First make sure message is well formed
-
-    // We skip verification of our own messages, and any message from the receiver
-    // process (which does its own verification)
-    byte *rawMsg = (byte *) msgHdr;
-    std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
-
-    // Optimization: drop any messages here during repair that we don't need
-    // TODO this should probably be synchronized better
-    if (repair_) {
-        if (msgHdr->msgType == REPAIR_CLIENT_TIMEOUT || msgHdr->msgType == REPAIR_REPLICA_TIMEOUT ||
-            msgHdr->msgType == REPAIR_REPLY_PROOF || msgHdr->msgType == REPAIR_TIMEOUT_PROOF ||
-            msgHdr->msgType == CERT) {
-            return;
-        }
+    if (msgHdr->msgLen < 0) {
+        return;
     }
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
-        processQueue_.enqueue(msg);
-    } else {
-        verifyQueue_.enqueue(msg);
+    VLOG(6) << "Received message of type " << (int) msgHdr->msgType << " from " << *sender;
+
+    // Handle receiver-specific messages (from proxies)
+    if (msgHdr->msgType == MessageType::DOM_REQUEST) {
+        receiveRequest(msgHdr, msgBuffer, sender);
+        return;
+    }
+
+    byte *msgStart = (byte *) msgHdr;
+
+    // Handle replica-specific messages
+    // Skip verification of our own messages and receiver messages
+    if (sender->ip() == replicaAddrs_[replicaId_].ip()) {
+        processQueue_.enqueue(
+            std::vector<byte>(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
+        );
+        return;
+    }
+
+    // Queue for verification
+    verifyQueue_.enqueue(
+        std::vector<byte>(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
+    );
+}
+
+// Receiver functionality implementation
+void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
+{
+
+    DOMRequest request;
+    if (!request.ParseFromArray(body, hdr->msgLen)) {
+        LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+        return;
+    }
+
+    int64_t recv_time = GetMicrosecondTimestamp();
+    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+            << recv_time - request.send_time() << " usec";
+
+    if (recv_time > request.deadline()) {
+        request.set_late(true);
+        VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
+                << recv_time - request.deadline() << "us";
+    }
+
+    uint64_t deadline = request.deadline();
+    if (ignoreDeadlines_) {
+        deadline = recv_time;
+    }
+
+    auto r = std::make_shared<ReceiverRequest>();
+    r->request = request;
+    r->deadline = request.deadline();
+    r->clientId = request.client_id();
+    r->verified = false;
+
+    {
+        std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+        deadlineQueue_[{deadline, request.client_id()}] = r;
+    }
+
+    receiverVerifyQueue_.enqueue(r);
+
+    // Send measurement replies back to the proxy
+
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
+        lastMeasurementTimes_[request.proxy_id()] = recv_time;
+
+        std::string senderIp = sender->ip();
+
+        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+            MeasurementReply mReply;
+            mReply.set_receiver_id(replicaId_);
+            mReply.set_owd(recv_time - request.send_time());
+            mReply.set_send_time(request.send_time());
+            MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
+            endpoint_->SendPreparedMsgTo(Address(senderIp, proxyPort_), replyHdr);
+        });
+    }
+}
+
+void Replica::forwardRequest(const DOMRequest &request)
+{
+    uint64_t now = GetMicrosecondTimestamp();
+
+    VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline "
+            << "c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+
+    numForwarded_++;
+    lastFwdDeadline_ = request.deadline();
+
+    // Serialize DOM request and enqueue to process queue
+    std::string serializedRequest;
+    if (!request.SerializeToString(&serializedRequest)) {
+        LOG(ERROR) << "Failed to serialize DOM request";
+        return;
+    }
+
+    MessageHeader header(DOM_REQUEST, serializedRequest.size(), 0);
+
+    std::vector<byte> msg(sizeof(MessageHeader) + serializedRequest.size());
+    memcpy(msg.data(), &header, sizeof(MessageHeader));
+    memcpy(msg.data() + sizeof(MessageHeader), serializedRequest.data(), serializedRequest.size());
+
+    processQueue_.enqueue(msg);
+}
+
+void Replica::checkDeadlines()
+{
+    std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+
+    uint64_t now = GetMicrosecondTimestamp();
+    auto it = deadlineQueue_.begin();
+
+    while (it != deadlineQueue_.end() && it->first.first <= now) {
+        VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
+
+        if (!it->second->verified) {
+            VLOG(3) << "Request not verified, waiting for next check";
+            break;
+        }
+
+        forwardRequest(it->second->request);
+        auto temp = std::next(it);
+        deadlineQueue_.erase(it);
+        it = temp;
+    }
+
+    int64_t nextCheck = deadlineQueue_.empty() ? 1000 : (int64_t) deadlineQueue_.begin()->first.first - now;
+    nextCheck = std::max(1000l, nextCheck);
+
+    endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+}
+
+void Replica::receiverVerifyThd(int threadId)
+{
+    LOG(INFO) << "Starting receiver verify thread " << threadId;
+
+    uint32_t numVerified = 0;
+    std::shared_ptr<ReceiverRequest> request;
+    while (running_) {
+        if (!receiverVerifyQueue_.wait_dequeue_timed(request, 10000)) {
+            continue;
+        }
+
+        ClientRequest clientHeader;
+        MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
+        byte *clientBody = (byte *) (clientMsgHdr + 1);
+
+        if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+            continue;
+        }
+
+        bool verified = false;
+        if (useHMAC_) {
+            verified = hmacProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+        } else {
+            verified = sigProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+        }
+
+        {
+            std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+            if (verified) {
+                VLOG(4) << "Verified client signature for c_id=" << request->clientId
+                        << " c_seq=" << request->request.client_seq();
+                request->verified = true;
+            } else {
+                VLOG(1) << "Failed to verify client signature!";
+                deadlineQueue_.erase({request->deadline, request->clientId});
+            }
+        }
+
+        numVerified++;
     }
 }
 
@@ -236,7 +447,7 @@ void Replica::verifyMessagesThd()
             }
 
             if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
-                LOG(INFO) << "Failed to verify replica signature!";
+                LOG(INFO) << "Failed to verify replica signature for REPLY message for replica " << reply.replica_id();
                 continue;
             }
 
@@ -324,8 +535,8 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
                 return;
             }
-            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, timeoutMsg.client_id()})) {
-                LOG(INFO) << "Failed to verify replica signature!";
+            if (!sigProvider_.verify(hdr, {NodeType::CLIENT, timeoutMsg.client_id()})) {
+                LOG(INFO) << "Failed to verify client signature!";
                 continue;
             }
 
@@ -998,7 +1209,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
             // sendSnapshotRequest(replicaId, checkpoint.seq);
 
-            // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far behind
+            // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
+            // behind
             if (!checkpointSnapshotRequested_) {
                 sendSnapshotRequest(replicaId, checkpoint.seq);
             }
@@ -1487,6 +1699,9 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+        assert(sigProvider_.verify(hdr, {NodeType::REPLICA, replicaId_}));
+
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
@@ -1552,8 +1767,8 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
     }
 
     if (proof.replies().size() != proof.signatures().size()) {
-        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to " << "cert signatures size"
-                     << proof.signatures().size();
+        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to "
+                     << "cert signatures size" << proof.signatures().size();
         return false;
     }
 

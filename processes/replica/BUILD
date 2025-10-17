@@ -14,6 +14,7 @@ cc_library(
         "//lib:checkpoint_collector",
         "//lib:repair_utils",
         "//lib:threadpool",
+        "//lib:crypto",
         "//processes:process_config",
         "//processes:config_util"
     ],

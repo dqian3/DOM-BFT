@@ -1,9 +1,8 @@
 #include "processes/process_config.h"
 
-#include "lib/common.h"
-
 #include "lib/application.h"
 #include "lib/checkpoint_collector.h"
+#include "lib/common.h"
 #include "lib/crypto/hmac_provider.h"
 #include "lib/crypto/sig_provider.h"
 #include "lib/log.h"
@@ -14,21 +13,31 @@
 #include "lib/utils.h"
 #include "proto/dombft_proto.pb.h"
 
+#include <condition_variable>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <queue>
 #include <span>
 #include <thread>
 
 #include <yaml-cpp/yaml.h>
 
+// Request structure for receiver functionality
+struct ReceiverRequest {
+    dombft::proto::DOMRequest request;
+    uint64_t deadline;
+    uint32_t clientId;
+    bool verified = false;
+};
+
 namespace dombft {
 class Replica {
 private:
-    // Replica static config
+    // ========== Replica Configuration ==========
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
-    Address receiverAddr_;
     std::vector<Address> clientAddrs_;
     uint32_t f_;
     uint32_t quorumSize_;
@@ -38,29 +47,44 @@ private:
     uint32_t snapshotInterval_;
     uint32_t numVerifyThreads_;
 
-    bool useHMAC_ = false;   // whether to use HMAC for requests
+    bool useHMAC_ = false;
 
     uint64_t repairTimeout_;
     uint64_t repairViewTimeout_;
 
-    // Helper classes for signatures and threading
+    // ========== Receiver Configuration ==========
+    uint32_t proxyPort_;
+    uint32_t numReceivers_;
+    Address replicaAddr_;
+
+    bool skipForwarding_;
+    bool ignoreDeadlines_;
+
+    // ========== Shared Infrastructure ==========
     SignatureProvider sigProvider_;
     HMACProvider hmacProvider_;
 
     // Control flow/endpoint objects
     BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;
     BlockingConcurrentQueue<std::vector<byte>> processQueue_;
-    // integer is round number
     BlockingConcurrentQueue<std::pair<uint32_t, AppSnapshot>> snapshotQueue_;
+
+    // Receiver-specific queues
+    std::mutex deadlineQueueMtx_;
+    std::map<std::pair<uint64_t, uint32_t>, std::shared_ptr<ReceiverRequest>> deadlineQueue_;
+    BlockingConcurrentQueue<std::shared_ptr<ReceiverRequest>> receiverVerifyQueue_;
+
     ThreadPool sendThreadpool_;
 
     bool running_;
     std::vector<std::thread> verifyThreads_;
+    std::vector<std::thread> receiverVerifyThreads_;
     std::thread processThread_;
 
     std::unique_ptr<Endpoint> endpoint_;
+    std::unique_ptr<Timer> fwdTimer_;
 
-    // Replica state
+    // ========== Replica State ==========
     uint32_t round_ = 1;
     std::shared_ptr<Log> log_;
     std::shared_ptr<Application> app_;
@@ -76,16 +100,12 @@ private:
     uint64_t repairTimeoutStart_ = 0;
     uint64_t repairViewStart_ = 0;
 
-    // The sequence of the last request received and processed in the previous round
-    // We do not retry and aborted requests before this point after repair (see getAbortedRequests in repair_utils.cc)
-    // TODO refactor this to be more clean./
     uint64_t curRoundStartSeq_ = 0;
     std::map<std::pair<uint64_t, uint32_t>, dombft::proto::ClientRequest> repairQueuedReqs_;
 
     std::map<uint32_t, dombft::proto::RepairReplicaTimeout> repairReplicaTimeouts_;
     std::map<uint32_t, std::string> repairReplicaTimeoutSigs_;
 
-    // repair proposal is the current PBFT request
     std::optional<dombft::proto::RepairProposal> repairProposal_;
     std::string proposalDigest_;
     std::map<uint32_t, dombft::proto::RepairStart> repairHistorys_;
@@ -94,8 +114,8 @@ private:
 
     // State for PBFT
     bool viewChange_ = false;
-    uint32_t pbftView_ = 0;                 // view num
-    uint32_t preparedRound_ = UINT32_MAX;   // Set to UINT32_MAX to indicate no prepared round
+    uint32_t pbftView_ = 0;
+    uint32_t preparedRound_ = UINT32_MAX;
     bool viewPrepared_ = true;
     PBFTState pbftState_;
 
@@ -106,83 +126,79 @@ private:
     std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
     std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
-    // State for actively triggering repair and other testings
+    // State for testing
     bool crashed_;
     uint32_t swapFreq_;
     uint32_t checkpointDropFreq_;
     std::optional<proto::ClientRequest> heldRequest_;
 
-    // State for triggering view change
     uint32_t viewChangeFreq_;
     uint32_t viewChangeInst_;
-    bool commitLocalInViewChange_ = false;   // when prepared, if send to itself a commit to try to go to next round
+    bool commitLocalInViewChange_ = false;
     uint32_t viewChangeNum_;
     uint32_t viewChangeCounter_ = 0;
-    // hold messages to cause timeout in which phase: true for commit, false for prepare, flip every view change
     bool holdPrepareOrCommit_ = false;
 
-    // Boilerplate for handling/verifying messages
+    // ========== Receiver State ==========
+    uint64_t lastCheckTime_ = 0;
+    uint64_t lastFwdDeadline_ = 0;
+    std::map<uint32_t, uint64_t> lastMeasurementTimes_;
+    uint32_t numForwarded_ = 0;
+    uint64_t lastStatTime_ = 0;
+
+    // ========== Unified Message Handling ==========
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
+    // Replica message handlers
     void verifyMessagesThd();
     void processMessagesThd();
-
     void checkTimeouts();
 
-    // ========== Processing messages ===========
+    // Receiver message handlers
+    void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void checkDeadlines();
+    void forwardRequest(const dombft::proto::DOMRequest &request);
+    void receiverVerifyThd(int threadId);
 
-    // Fast path/normal path
+    // ========== Replica Message Processing ==========
     void processClientRequest(const dombft::proto::ClientRequest &request, bool queued = false);
     void processCert(const dombft::proto::Cert &cert);
-
-    // Checkpointing
     void processReply(const dombft::proto::Reply &reply, std::span<byte> sig);
     void processCommit(const dombft::proto::Commit &commitMsg, std::span<byte> sig);
     void processSnapshot(const AppSnapshot &snapshot, uint32_t round);
-
     void startCheckpoint(bool createSnapshot);
-
-    // State Transfer
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
-
-    // Starting Repair
     void processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig);
     void processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig);
     void processRepairReplyProof(const dombft::proto::RepairReplyProof &msg);
     void processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg);
-
-    // Repair
     void processRepairStart(const dombft::proto::RepairStart &msg, std::span<byte> sig);
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
     void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg, std::span<byte> sig);
-
-    // Internal View Change
     void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
     void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
     void processRepairDone(const dombft::proto::RepairDone &msg);
 
+    // Verification methods
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyRepairReplyProof(const dombft::proto::RepairReplyProof &proof);
     bool verifyRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &proof);
-
     bool verifyCheckpoint(const dombft::proto::LogCheckpoint &checkpoint);
     bool verifyRepairLog(const dombft::proto::RepairStart &log);
     bool verifyRepairProposal(const dombft::proto::RepairProposal &proposal);
     bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
     bool verifyRepairDone(const dombft::proto::RepairDone &done);
 
-    // Repair Helpers
+    // Repair helpers
     void startRepair();
     void finishRepair(const std::vector<::ClientRequest> &abortedReqs);
     void tryFinishRepair();
     void sendRepairSummaryToClients();
     LogSuffix &getRepairLogSuffix();
-
     void holdAndSwapCliReq(const proto::ClientRequest &request);
 
-    // TODO(Hao): test round_== 0, seems problematic but a corner case
     inline bool ifTriggerViewChange() const
     {
         return !viewChange_ && round_ != 0 && round_ == viewChangeInst_ &&
@@ -191,7 +207,6 @@ private:
     inline bool viewChangeByPrepare() const { return ifTriggerViewChange() && !holdPrepareOrCommit_; }
     inline bool viewChangeByCommit() const { return ifTriggerViewChange() && holdPrepareOrCommit_; }
 
-    // More Repair Helpers
     inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
     uint32_t getPrimary() { return pbftView_ % replicaAddrs_.size(); }
     void startViewChange();
@@ -200,9 +215,7 @@ private:
     void doCommitPhase();
     std::string getProposalDigest(const dombft::proto::RepairProposal &proposal);
 
-    // sending helpers
-    // note even though these are templates, we can define them in the cpp file because they are private
-    // to this class.
+    // Sending helpers
     void sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
@@ -211,7 +224,7 @@ public:
     Replica(
         const ProcessConfig &config, uint32_t replicaId, bool crashed = false, uint32_t triggerRepairFreq = 0,
         uint32_t viewChangeFreq = 0, bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0,
-        uint32_t checkpointDropFreq = 0
+        uint32_t checkpointDropFreq = 0, bool skipForwarding = false, bool ignoreDeadlines = false
     );
     ~Replica();
 

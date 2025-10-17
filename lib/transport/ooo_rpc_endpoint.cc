@@ -1,5 +1,8 @@
 #include "ooo_rpc_endpoint.h"
 
+#include "lib/utils.h"
+#include "proto/dombft_proto.pb.h"
+
 OOORPCEndpoint::OOORPCEndpoint(
     const std::string &ip, const int port, const std::vector<Address> &targetAddrs, int numProxiesPerAddr
 )
@@ -14,7 +17,15 @@ OOORPCEndpoint::OOORPCEndpoint(
     thrpool_ = new rrr::ThreadPool(8);
 }
 
-OOORPCEndpoint::~OOORPCEndpoint() {}
+OOORPCEndpoint::~OOORPCEndpoint()
+{
+    serverThread_->join();
+    delete serverThread_;
+
+    for (auto &t : replyThreads_) {
+        t.join();
+    }
+}
 
 void OOORPCEndpoint::ConnectTo(const Address &dstAddr)
 {
@@ -152,6 +163,27 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
         assert(req.content_.length() == req.length_);
         assert(req.length_ >= sizeof(MessageHeader));
 
+        // Check the deadline here for debugging
+
+        if (header->msgType == DOM_REQUEST) {
+            uint64_t now = GetMicrosecondTimestamp();
+            dombft::proto::DOMRequest request;
+
+            if (!request.ParseFromString(content.substr(sizeof(MessageHeader), header->msgLen))) {
+                LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+                return;
+            }
+
+            int64_t recv_time = GetMicrosecondTimestamp();
+            VLOG(3) << "RECEIVE RPC c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+                    << " Measured delay " << recv_time - request.send_time() << " usec";
+
+            if (recv_time > request.deadline()) {
+                request.set_late(true);
+                VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late at RPC by "
+                        << recv_time - request.deadline() << "us";
+            }
+        }
         // Queue the deferred reply for processing in another thread
         replyQueue_.enqueue(deferred);
 

@@ -108,6 +108,7 @@ private:
     uint32_t numCommitted_ = 0;
 
     uint32_t lastCommitted_ = 0;
+    bool firstRequestCommitted_ = false;
 
     uint64_t startTime_ = 0;
 

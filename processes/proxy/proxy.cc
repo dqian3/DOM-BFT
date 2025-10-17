@@ -25,42 +25,34 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         exit(1);
     }
 
-    numReceivers_ = config.receiverIps.size();
+    numReceivers_ = config.replicaIps.size();
 
     if (config.transport == "nng") {
         auto addrPairs = getProxyAddrs(config, proxyId);
 
-        // This is rather messy, but the last nReceivers addresses in this return value are for the measurement
-        // connections
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, false);
+
+        // First nClients addresses are for client connections, rest are for replica connections
         size_t nClients = config.clientIps.size();
-        size_t nReplicas = config.replicaIps.size();
-        std::vector<std::pair<Address, Address>> forwardAddrs(
-            addrPairs.begin(), addrPairs.end() - config.receiverIps.size()
-        );
-        std::vector<std::pair<Address, Address>> measurementAddrs(
-            addrPairs.end() - config.receiverIps.size(), addrPairs.end()
-        );
-
-        endpoint_ = std::make_unique<NngEndpointThreaded>(forwardAddrs, false);
-
-        for (size_t i = nClients; i < forwardAddrs.size(); i++) {
-            receiverAddrs_.push_back(forwardAddrs[i].second);
+        for (size_t i = nClients; i < addrPairs.size(); i++) {
+            receiverAddrs_.push_back(addrPairs[i].second);
         }
 
     } else if (config.transport == "simple-rpc") {
         for (int i = 0; i < numReceivers_; i++) {
-            std::string receiverIp = config.receiverIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            std::string receiverIp = config.replicaIps[i];
+            receiverAddrs_.push_back(Address(receiverIp, config.replicaPort));
         }
 
-        endpoint_ = std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_);
+        endpoint_ =
+            std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_, 2);
     } else {
 
         endpoint_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, false);
 
         for (int i = 0; i < numReceivers_; i++) {
-            std::string receiverIp = config.receiverIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, config.receiverPort));
+            std::string receiverIp = config.replicaIps[i];
+            receiverAddrs_.push_back(Address(receiverIp, config.replicaPort));
         }
     }
 }
@@ -166,9 +158,6 @@ void Proxy::ForwardRequests()
             numForwarded_++;
 
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
-#if FABRIC_CRYPTO
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-#endif
 
             for (int i = 0; i < numReceivers_; i++) {
 

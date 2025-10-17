@@ -51,7 +51,6 @@ proxy:
 
   keysDir: keys/proxy
   maxOwd: 150000
-  measurementPort: 32000
   shards: 1
   offsetCoefficient: 1.5
 

@@ -48,13 +48,6 @@ struct ProcessConfig {
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
 
-    std::vector<std::string> receiverIps;
-    int receiverPort;
-    std::string receiverKeysDir;
-    int receiverShards;
-    bool receiverLocal;
-    int numVerifyThreads;
-
     std::vector<std::string> replicaIps;
     int replicaPort;
     int replicaRepairTimeout;
@@ -64,6 +57,9 @@ struct ProcessConfig {
     int replicaNumVerifyThreads;
     uint32_t replicaCheckpointInterval;
     uint32_t replicaSnapshotInterval;
+
+    // Unified mode configuration
+    bool unifiedMode;
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -140,30 +136,12 @@ struct ProcessConfig {
             parseStringVector(proxyIps, proxyNode, "ips");
             proxyShards = parseField<int>(proxyNode, "shards");
             proxyForwardPort = parseField<int>(proxyNode, "forwardPort");
-            proxyMeasurementPort = parseField<int>(proxyNode, "measurementPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
             proxyOffsetCoefficient = parseField<float>(proxyNode, "offsetCoefficient", 1.5);
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing proxy " + std::string(e.what()));
-        }
-    }
-
-    void parseReceiverConfig(const YAML::Node &root)
-    {
-        const YAML::Node &receiverNode = root["receiver"];
-        std::string key;
-
-        try {
-            parseStringVector(receiverIps, receiverNode, "ips");
-            receiverPort = parseField<int>(receiverNode, "port");
-            receiverKeysDir = parseField<std::string>(receiverNode, "keysDir");
-            receiverShards = parseField<int>(receiverNode, "shards");
-            receiverLocal = parseField<bool>(receiverNode, "local");
-            numVerifyThreads = parseField<int>(receiverNode, "numVerifyThreads");
-        } catch (const ConfigParseException &e) {
-            throw ConfigParseException("Error parsing receiver " + std::string(e.what()));
         }
     }
 
@@ -189,6 +167,8 @@ struct ProcessConfig {
             if (replicaSnapshotInterval % replicaCheckpointInterval != 0) {
                 throw ConfigParseException("Snapshot interval must be a multiple of checkpoint interval");
             }
+
+            unifiedMode = parseField<bool>(replicaNode, "unifiedMode", false);
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing replica config: " + std::string(e.what()));
@@ -223,12 +203,10 @@ struct ProcessConfig {
 
         parseClientConfig(config);
         parseProxyConfig(config);
-        parseReceiverConfig(config);
         parseReplicaConfig(config);
 
         // TODO do some verification
-        // number of receivers = number of replicas
-        // number of replcias > 3f + 1?
+        // number of replicas > 3f + 1?
         // etc.
     }
 };

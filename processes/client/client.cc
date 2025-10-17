@@ -181,6 +181,9 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         endpoint_->Connect();
 
+        // Send first request immediately, since we will wait it to be committed before sending more
+        submitRequest();
+
     } else if (sendMode_ == dombft::MaxInFlightBased) {
         endpoint_->Connect();
         for (uint32_t i = 0; i < maxInFlight_; i++) {
@@ -243,14 +246,18 @@ void Client::submitRequest()
 
 void Client::submitRequestsOpenLoop()
 {
+    // Don't start rate-based sending until first request is committed
+    if (!firstRequestCommitted_) {
+        return;
+    }
 
     uint64_t startSendTime = GetMicrosecondTimestamp();
     double sendIntervalUs = 1000000.0 / sendRate_;
 
     uint64_t numToSend = (startSendTime - lastSendTime_) * sendRate_ / 1000000.0;
 
-    VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
-            << " us since last burst with send interval " << sendIntervalUs << "us";
+    // VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
+    //         << " us since last burst with send interval " << sendIntervalUs << "us";
 
     if (numToSend == 0) {
         return;
@@ -266,7 +273,7 @@ void Client::submitRequestsOpenLoop()
         now = GetMicrosecondTimestamp();
 
         if (numInFlight_ >= maxInFlight_) {
-            VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
+            // VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
             break;
         }
 
@@ -345,6 +352,14 @@ void Client::commitRequest(uint32_t clientSeq)
     requestStates_.erase(clientSeq);
     numCommitted_++;
     numInFlight_--;
+
+    // Enable rate-based sending after first request is committed
+    if (!firstRequestCommitted_) {
+        firstRequestCommitted_ = true;
+        if (sendMode_ == dombft::RateBased) {
+            lastSendTime_ = GetMicrosecondTimestamp();
+        }
+    }
 
     VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
 

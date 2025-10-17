@@ -213,7 +213,9 @@ cc_library(
     hdrs = ["transport/ooo_rpc_endpoint.h"],
     deps= [
         ":ooo_service_implementation",
-        ":endpoint"
+        ":endpoint",
+        # TODO temp for testing
+        "//proto:dombft_proto_cc",
     ],
     visibility = ["//visibility:public"],
 )
