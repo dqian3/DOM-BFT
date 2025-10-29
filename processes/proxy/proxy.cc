@@ -95,7 +95,7 @@ void Proxy::ForwardRequests()
     OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 40, 90, maxOWD_);
 
     MessageHandlerFunc handleRequest = [this, &context](MessageHeader *hdr, void *body, Address *sender) {
-        VLOG(2) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
+        VLOG(5) << "Received message from " << sender->ip() << " " << (int) hdr->msgType << " " << hdr->msgLen;
 
         if (hdr->msgType == MessageType::MEASUREMENT_REPLY) {
             MeasurementReply reply;
@@ -168,7 +168,7 @@ void Proxy::ForwardRequests()
                 endpoint_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
             }
         } else {
-            LOG(ERROR) << "Unknown message type " << hdr->msgType;
+            LOG(ERROR) << "Unknown message type " << (int) hdr->msgType;
         }
     };
 

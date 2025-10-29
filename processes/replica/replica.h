@@ -38,6 +38,8 @@ private:
     // ========== Replica Configuration ==========
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
+
+    std::vector<Address> proxyAddrs_;
     std::vector<Address> clientAddrs_;
     uint32_t f_;
     uint32_t quorumSize_;

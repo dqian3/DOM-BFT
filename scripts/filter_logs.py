@@ -53,7 +53,7 @@ def parse_client():
     last_commit = None
 
     start_time = None
-    interval = 0
+    interval = 1
 
     # TODO add some logging for the first normal path commit to tell when a
     # do some post processing on all the logs (including replica) to figure

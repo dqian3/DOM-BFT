@@ -5,6 +5,8 @@ Worker::Worker(ThreadPool &pool)
 {
     thd = std::thread([&] {
         byte *buffer = ((byte *) malloc(SEND_BUFFER_SIZE));
+        // zero initialize the buffer
+        memset(buffer, 0, SEND_BUFFER_SIZE);
 
         while (true) {
             TaskFunc task;

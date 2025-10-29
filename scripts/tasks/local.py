@@ -92,7 +92,7 @@ def run(
             warn=True,
         )
         c.run("mkdir -p logs")
-        for id in range(n_replicas):
+        for id in range(n_replicas - 1):
             swap_arg = ""
             if normal_path_freq != 0 and id < f:
                 swap_arg = f"-swapFreq {normal_path_freq}"

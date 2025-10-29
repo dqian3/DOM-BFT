@@ -72,16 +72,25 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         auto addrPairs = getReplicaAddrs(config, replicaId_);
 
         size_t nClients = config.clientIps.size();
+        size_t nProxies = config.proxyIps.size();
+        LOG(INFO) << "nClients=" << nClients;
+
+        // First nClients addresses are for client connections
         for (size_t i = 0; i < nClients; i++) {
-            // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.ip();
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
-        for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
+        // Then proxy addresses
+        for (size_t i = nClients; i < nClients + nProxies; i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
+        }
+
+        // Remaining addresses are for replica-to-replica connections
+        for (size_t i = nClients + nProxies; i < addrPairs.size(); i++) {
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, Address(replicaIp, replicaPort));
     } else if (config.transport == "udp") {
         size_t nClients = config.clientIps.size();
         for (size_t i = 0; i < nClients; i++) {

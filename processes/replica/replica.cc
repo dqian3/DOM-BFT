@@ -99,23 +99,28 @@ Replica::Replica(
     // Network setup for unified functionality
     if (config.transport == "nng") {
         // Use replica addressing for unified process
-        auto replicaAddrPairs = getReplicaAddrs(config, replicaId_);
+        auto addrPairs = getReplicaAddrs(config, replicaId_);
 
         size_t nClients = config.clientIps.size();
-        LOG(INFO) << "nClients=" << nClients;
+        size_t nProxies = config.proxyIps.size();
 
         // First nClients addresses are for client connections
         for (size_t i = 0; i < nClients; i++) {
-            clientAddrs_.push_back(replicaAddrPairs[i].second);
+            clientAddrs_.push_back(addrPairs[i].second);
+        }
+
+        // Then proxy addresses
+        for (size_t i = nClients; i < nClients + nProxies; i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
         }
 
         // Remaining addresses are for replica-to-replica connections
-        for (size_t i = nClients; i < replicaAddrPairs.size(); i++) {
-            replicaAddrs_.push_back(replicaAddrPairs[i].second);
+        for (size_t i = nClients + nProxies; i < addrPairs.size(); i++) {
+            replicaAddrs_.push_back(addrPairs[i].second);
         }
 
         replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
-        endpoint_ = std::make_unique<NngEndpointThreaded>(replicaAddrPairs, true, Address(replicaIp, replicaPort));
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, Address(replicaIp, replicaPort));
 
     } else if (config.transport == "simple-rpc") {
         std::vector<Address> addrs;
@@ -144,7 +149,6 @@ Replica::Replica(
         }
 
         endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, addrs, sendThreadpool_.size());
-
     } else {
         // UDP setup
         replicaAddr_ = Address(config.replicaIps[replicaId], config.replicaPort);
@@ -301,15 +305,19 @@ void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
         lastMeasurementTimes_[request.proxy_id()] = recv_time;
 
-        std::string senderIp = sender->ip();
+        VLOG(6) << "Sending measurement reply to proxy " << request.proxy_id() << " "
+                << proxyAddrs_[request.proxy_id()];
 
         sendThreadpool_.enqueueTask([=, this](byte *buffer) {
             MeasurementReply mReply;
             mReply.set_receiver_id(replicaId_);
             mReply.set_owd(recv_time - request.send_time());
             mReply.set_send_time(request.send_time());
+
+            VLOG(6) << "Measurement reply: receiver_id=" << mReply.receiver_id() << " owd=" << mReply.owd()
+                    << " send_time=" << mReply.send_time() << " proxy_addr=" << proxyAddrs_[request.proxy_id()];
             MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
-            endpoint_->SendPreparedMsgTo(Address(senderIp, proxyPort_), replyHdr);
+            endpoint_->SendPreparedMsgTo(proxyAddrs_[request.proxy_id()], replyHdr);
         });
     }
 }

@@ -9,14 +9,20 @@
 
 // Helpers for defining nng endpoints!
 // Need to define pairs for each set of processes that communicate
-// TODO add shards
 /*
- *
  * Connections
- *      1. clientBase + (clientId  * (numProxies + numReplicas) + replicaId <==> replicaBase + clientId
- *      2. clientBase + (clientId  * (numProxies + numReplicas) + nReplicas + proxyId <==> proxyForwardBase + clientId
- *      3. proxyForwardBase + nClients + replicaId <==> replicaBase + proxyId
+ *      1. Client/replica communication
+ *             clientBase + (clientId  * (nProxies + nReplicas)) + replicaId <==> replicaBase + clientId
+ *
+ *      2. Client/proxy communication
+ *             clientBase + (clientId  * (nProxies + nReplicas)) + nReplicas + proxyId <==> proxyForwardBase + clientId
+ *
+ *      3. Proxy/replica communication
+ *             (proxyBase + nClients) + replicaId <==> (replicaBase + nClients) + proxyId
+ *
  *      4. Replica/replica communication
+ *             (Replica A)                                           (Replica B)
+ *             (replicaBase + nClients + nProxies) + replicaIdB <==> (replicaBase + nClients + nProxies) + replicaIdA
  *
  * Note(s): base addresses need to be sufficiently apart to prevent overlap
  * For 1. each client gets its own port range to communicate with proxies and replicas on, so we can
