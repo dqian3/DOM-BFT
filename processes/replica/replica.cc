@@ -120,7 +120,7 @@ Replica::Replica(
         }
 
         replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, Address(replicaIp, replicaPort));
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
 
     } else if (config.transport == "simple-rpc") {
         std::vector<Address> addrs;

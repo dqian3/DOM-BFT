@@ -1,4 +1,8 @@
 app: counter
+resiliency: 5f+1
+transport: nng
+
+
 client:
   ips:
   - 10.138.0.8
@@ -12,27 +16,27 @@ client:
   - 10.182.0.7
   - 10.182.0.8
 
-  - 10.138.0.8
-  - 10.138.0.9
-  - 10.138.0.10
-  - 10.142.0.6
-  - 10.142.0.5
-  - 10.150.0.4
-  - 10.150.0.5
-  - 10.182.0.6
-  - 10.182.0.7
-  - 10.182.0.8
+  # - 10.138.0.8
+  # - 10.138.0.9
+  # - 10.138.0.10
+  # - 10.142.0.6
+  # - 10.142.0.5
+  # - 10.150.0.4
+  # - 10.150.0.5
+  # - 10.182.0.6
+  # - 10.182.0.7
+  # - 10.182.0.8
   
-  - 10.138.0.8
-  - 10.138.0.9
-  - 10.138.0.10
-  - 10.142.0.6
-  - 10.142.0.5
-  - 10.150.0.4
-  - 10.150.0.5
-  - 10.182.0.6
-  - 10.182.0.7
-  - 10.182.0.8
+  # - 10.138.0.8
+  # - 10.138.0.9
+  # - 10.138.0.10
+  # - 10.142.0.6
+  # - 10.142.0.5
+  # - 10.150.0.4
+  # - 10.150.0.5
+  # - 10.182.0.6
+  # - 10.182.0.7
+  # - 10.182.0.8
   keysDir: keys/client
   maxInFlight: 1500
   normalPathTimeout: 1000000
@@ -41,7 +45,7 @@ client:
   requestTimeout: 2000000
   runtimeSeconds: 120
   sendMode: sendRate
-  sendRate: 2500
+  sendRate: 1000
   slowPathTimeout: 500000
   useHMAC: false
 
@@ -60,11 +64,10 @@ proxy:
   - 10.182.0.8
   keysDir: keys/proxy
   maxOwd: 200000
-  offsetCoefficient: 1.25
+  offsetCoefficient: 1.5
   shards: 1
 
 replica:
-  checkpointInterval: 5000
   ips:
   - 10.138.0.6
   - 10.138.0.7
@@ -78,6 +81,5 @@ replica:
   port: 34000
   repairTimeout: 1000000
   repairViewTimeout: 5000000
-  snapshotInterval: 250000
-resiliency: 5f+1
-transport: simple-rpc
+  checkpointInterval: 5000
+  snapshotInterval: 25000
