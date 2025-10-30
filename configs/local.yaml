@@ -14,8 +14,8 @@ client:
 
   sendMode: "sendRate"
   maxInFlight: 10
-  sendRate: 100
-  runtimeSeconds: 20
+  sendRate: 10
+  runtimeSeconds: 45
   requestSize: 512
   useHMAC: false
 
@@ -29,7 +29,7 @@ proxy:
   forwardPort: 31000
   keysDir: keys/proxy
   maxOwd: 15000
-  proxyBatchEnabled: true
+  proxyBatchEnabled: false
   proxyBatchMaxCount: 2
   proxyBatchMaxDelay: 5000 # 5 ms (should be smaller than path timeout)
 

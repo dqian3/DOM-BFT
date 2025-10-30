@@ -371,6 +371,20 @@ void Replica::enqueueReceiverRequest(int64_t recv_time, DOMRequest &request)
     }
 }
 
+void Replica::sendMeasurementReply(const Address &dstAddr, uint64_t owd, uint64_t sendTime){
+    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+        MeasurementReply mReply;
+        mReply.set_receiver_id(replicaId_);
+        mReply.set_owd(owd);
+        mReply.set_send_time(sendTime);
+
+        VLOG(6) << "Measurement reply: receiver_id=" << mReply.receiver_id() << " owd=" << mReply.owd()
+                << " send_time=" << mReply.send_time() << " proxy_addr=" << dstAddr;
+        MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
+        endpoint_->SendPreparedMsgTo(dstAddr, replyHdr);
+    });
+}
+
 void Replica::forwardRequest(const DOMRequest &request)
 {
     uint64_t now = GetMicrosecondTimestamp();
