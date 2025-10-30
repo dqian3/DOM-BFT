@@ -30,6 +30,12 @@ message DOMRequest {
     bytes   client_req = 8; // Bytes of Client Request + Signature
 }
 
+message DOMBatchRequest {
+    uint64  send_time = 1;
+    uint32  proxy_id = 2;
+    repeated DOMRequest requests = 3;
+}
+
 message MeasurementReply {
     uint32 receiver_id = 1;
     int32 owd = 2;

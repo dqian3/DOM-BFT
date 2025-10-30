@@ -250,6 +250,11 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
         return;
     }
 
+    if (msgHdr->msgType == MessageType::DOM_BATCH_REQUEST) {
+        receiveBatchedRequests(msgHdr, msgBuffer, sender);
+        return;
+    }
+
     byte *msgStart = (byte *) msgHdr;
 
     // Handle replica-specific messages
@@ -268,19 +273,58 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
 }
 
 // Receiver functionality implementation
-void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
+void Replica::receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
-
     DOMRequest request;
-    if (!request.ParseFromArray(body, hdr->msgLen)) {
+    if (!request.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
         LOG(ERROR) << "Unable to parse DOM_REQUEST message";
         return;
     }
-
     int64_t recv_time = GetMicrosecondTimestamp();
     VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
             << recv_time - request.send_time() << " usec";
 
+    enqueueReceiverRequest(recv_time, request);
+
+    // Send measurement replies back to the proxy
+
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
+        lastMeasurementTimes_[request.proxy_id()] = recv_time;
+        std::string senderIp = sender->ip();
+        sendMeasurementReply(
+            Address(senderIp, proxyPort_), recv_time - request.send_time(), request.send_time()
+        );
+    }
+}
+
+void Replica::receiveBatchedRequests(MessageHeader *msgHdr, byte *msgBuffer, Address *sender){
+    DOMBatchRequest batchRequest;
+    if (!batchRequest.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+        LOG(ERROR) << "Unable to parse DOM_BATCH_REQUEST message";
+        return;
+    }
+
+    int64_t recv_time = GetMicrosecondTimestamp();
+    VLOG(3) << "RECEIVE BATCH from proxy " << batchRequest.proxy_id() << " with " << batchRequest.requests_size() << " requests";
+
+
+    for (int i = 0; i < batchRequest.requests_size(); i++) {
+        DOMRequest& request = *batchRequest.mutable_requests(i);
+        enqueueReceiverRequest(recv_time, request);
+    }
+
+
+    if (recv_time - lastMeasurementTimes_[batchRequest.proxy_id()] > 5000) {
+        lastMeasurementTimes_[batchRequest.proxy_id()] = recv_time;
+        std::string senderIp = sender->ip();
+        sendMeasurementReply(
+            Address(senderIp, proxyPort_), recv_time - batchRequest.send_time(), batchRequest.send_time()
+        );
+    }
+}
+
+void Replica::enqueueReceiverRequest(int64_t recv_time, DOMRequest &request)
+{
     if (recv_time > request.deadline()) {
         request.set_late(true);
         VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
@@ -291,7 +335,7 @@ void Replica::receiveRequest(MessageHeader *hdr, byte *body, Address *sender)
     if (ignoreDeadlines_) {
         deadline = recv_time;
     }
-
+    
     auto r = std::make_shared<ReceiverRequest>();
     r->request = request;
     r->deadline = request.deadline();

@@ -15,7 +15,7 @@ client:
   sendMode: "sendRate"
   maxInFlight: 10
   sendRate: 100
-  runtimeSeconds: 300
+  runtimeSeconds: 20
   requestSize: 512
   useHMAC: false
 
@@ -29,6 +29,9 @@ proxy:
   forwardPort: 31000
   keysDir: keys/proxy
   maxOwd: 15000
+  proxyBatchEnabled: true
+  proxyBatchMaxCount: 2
+  proxyBatchMaxDelay: 5000 # 5 ms (should be smaller than path timeout)
 
 # Replica Info
 replica:

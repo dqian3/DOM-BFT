@@ -47,6 +47,9 @@ struct ProcessConfig {
     float proxyOffsetCoefficient;
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
+    bool proxyBatchEnabled;
+    uint32_t proxyBatchMaxCount;
+    uint32_t proxyBatchMaxDelay;
 
     std::vector<std::string> replicaIps;
     int replicaPort;
@@ -139,6 +142,10 @@ struct ProcessConfig {
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
             proxyOffsetCoefficient = parseField<float>(proxyNode, "offsetCoefficient", 1.5);
+            proxyBatchEnabled = parseField<bool>(proxyNode, "proxyBatchEnabled", false);
+            proxyBatchMaxCount = parseField<uint32_t>(proxyNode, "proxyBatchMaxCount", 50);
+            proxyBatchMaxDelay = parseField<uint32_t>(proxyNode, "proxyBatchMaxDelay", 5000);
+
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing proxy " + std::string(e.what()));

@@ -47,6 +47,7 @@ private:
 
     void sendReq(uint32_t seq);
     void GenerateRequestsTd();
+    void SetDOMRequest(const dombft::proto::ClientRequest& inReq, dombft::proto::DOMRequest& outReq, MessageHeader* hdr);
 
     /** Flag to Run/Terminate threads */
     std::atomic<bool> running_;
@@ -73,6 +74,14 @@ private:
     uint32_t genReqFreq_;
     uint32_t genReqDuration_;
     bool genReqPoisson_;
+
+    // Batching
+    bool isFirstReq = true; // client starts open loop after the 1st req is commited
+    bool proxyBatchEnabled_;
+    uint32_t proxyBatchMaxCount_;
+    uint32_t proxyBatchMaxDelay_;
+    uint64_t curBatchDelay_ = 0;
+    std::vector<dombft::proto::DOMRequest> domReqBatchBuffer_;
 
 public:
     /** Proxy accepts a config file, which contains all the necessary information
