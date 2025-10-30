@@ -130,6 +130,7 @@ Replica::Replica(
         // Add proxy addresses for receiver functionality
         for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
             addrs.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
         }
 
         size_t nClients = config.clientIps.size();
@@ -155,6 +156,10 @@ Replica::Replica(
 
         for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
             replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
         }
 
         for (uint32_t i = 0; i < config.clientIps.size(); i++) {
@@ -354,7 +359,6 @@ void Replica::checkDeadlines()
 
     uint64_t now = GetMicrosecondTimestamp();
     auto it = deadlineQueue_.begin();
-
     while (it != deadlineQueue_.end() && it->first.first <= now) {
         VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
 

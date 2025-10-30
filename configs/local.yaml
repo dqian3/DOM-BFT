@@ -1,4 +1,4 @@
-transport: nng
+transport: simple-rpc
 resiliency: 5f+1
 app: counter 
 
