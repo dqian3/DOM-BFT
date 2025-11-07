@@ -1,5 +1,7 @@
-transport: simple-rpc
-resiliency: 5f+1
+transport: nng
+resiliency: 
+  f: 1
+  e: 1
 app: counter 
 
 client:
@@ -14,8 +16,8 @@ client:
 
   sendMode: "sendRate"
   maxInFlight: 10
-  sendRate: 100
-  runtimeSeconds: 300
+  sendRate: 10
+  runtimeSeconds: 30
   requestSize: 512
   useHMAC: false
 

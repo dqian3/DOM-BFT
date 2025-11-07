@@ -1,5 +1,7 @@
 app: counter
-resiliency: 5f+1
+resiliency: 
+  f: 1
+  e: 1
 transport: nng
 
 
