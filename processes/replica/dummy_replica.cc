@@ -13,10 +13,6 @@ using namespace dombft::proto;
 
 DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
     : replicaId_(replicaId)
-    , f_(config.resiliency == "5f+1" ? config.replicaIps.size() / 5 : config.replicaIps.size() / 3)
-    , quorumSize_(config.resiliency == "5f+1" ? 4 * f_ + 1 : 2 * f_ + 1)
-    , superQuorumSize_(config.resiliency == "5f+1" ? 4 * f_ + 1 : 3 * f_ + 1)
-
     , prot_(prot)
     , batchSize_(batchSize)
     , nextSeq_(batchSize)
@@ -67,6 +63,12 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     //     exit(1);
     // }
     // LOG(INFO) << "log instantiated";
+
+    f_ = config.resiliencyParams.at("f");
+    int e = config.resiliencyParams.at("e");
+    int n = 3 * f_ + 2 * e + 1;
+    quorumSize_ = n - f_;
+    superQuorumSize_ = n - e;
 
     if (config.transport == "nng") {
         auto addrPairs = getReplicaAddrs(config, replicaId_);

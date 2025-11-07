@@ -24,9 +24,6 @@ Replica::Replica(
     bool ignoreDeadlines
 )
     : replicaId_(replicaId)
-    , f_(config.resiliency == "5f+1" ? config.replicaIps.size() / 5 : config.replicaIps.size() / 3)
-    , quorumSize_(config.resiliency == "5f+1" ? 4 * f_ + 1 : 2 * f_ + 1)
-    , superQuorumSize_(config.resiliency == "5f+1" ? 4 * f_ + 1 : 3 * f_ + 1)
     , checkpointInterval_(config.replicaCheckpointInterval)
     , snapshotInterval_(config.replicaSnapshotInterval)
     , numVerifyThreads_(config.replicaNumVerifyThreads)
@@ -95,6 +92,12 @@ Replica::Replica(
     }
     log_ = std::make_shared<Log>(app_);
     LOG(INFO) << "Log instantiated";
+
+    f_ = config.resiliencyParams.at("f");
+    int e = config.resiliencyParams.at("e");
+    int n = 3 * f_ + 2 * e + 1;
+    quorumSize_ = n - f_;
+    superQuorumSize_ = n - e;
 
     // Network setup for unified functionality
     if (config.transport == "nng") {

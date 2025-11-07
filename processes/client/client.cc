@@ -27,15 +27,22 @@ Client::Client(const ProcessConfig &config, size_t id)
     int clientPort = config.clientPort;
     LOG(INFO) << "clientPort=" << clientPort;
 
-    if (config.resiliency == "5f+1") {
-        f_ = config.replicaIps.size() / 5;
-        quorumSize_ = 4 * f_ + 1;
-        superQuorumSize_ = 4 * f_ + 1;
-    } else {
-        f_ = config.replicaIps.size() / 3;
-        quorumSize_ = 2 * f_ + 1;
-        superQuorumSize_ = 3 * f_ + 1;
-    }
+    // if (config.resiliency == "5f+1") {
+    //     f_ = config.replicaIps.size() / 5;
+    //     quorumSize_ = 4 * f_ + 1;
+    //     superQuorumSize_ = 4 * f_ + 1;
+    // } else {
+    //     f_ = config.replicaIps.size() / 3;
+    //     quorumSize_ = 2 * f_ + 1;
+    //     superQuorumSize_ = 3 * f_ + 1;
+    // }
+    
+    // n = 3f + 2e + 1, p = n - f, q = n - e
+    f_ = config.resiliencyParams.at("f");
+    int e = config.resiliencyParams.at("e");
+    int n = 3 * f_ + 2 * e + 1;
+    quorumSize_ = n - f_;
+    superQuorumSize_ = n - e;
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;

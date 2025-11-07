@@ -1,5 +1,7 @@
-transport: simple-rpc
-resiliency: 5f+1
+transport: nng
+resiliency: 
+  f: 1
+  e: 1
 app: counter 
 
 client:
