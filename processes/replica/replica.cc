@@ -599,7 +599,7 @@ void Replica::verifyMessagesThd()
 #endif
 
         else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
-            RepairReplicaTimeout timeoutMsg;
+            RepairTimeout timeoutMsg;
 
             if (!timeoutMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
@@ -886,14 +886,14 @@ void Replica::processMessagesThd()
         }
 
         else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
-            RepairReplicaTimeout msg;
+            RepairTimeout msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
                 return;
             }
 
-            processRepairReplicaTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+            processRepairTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
         else if (hdr->msgType == REPAIR_REPLY_PROOF) {
@@ -1500,7 +1500,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
     checkpointSnapshotRequested_ = false;
 }
 
-void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig)
+void Replica::processRepairTimeout(const dombft::proto::RepairTimeout &msg, std::span<byte> sig)
 {
     // Note assume msg is verfied here
     if (repair_) {
@@ -1652,7 +1652,7 @@ void Replica::checkTimeouts()
         repairTimeoutStart_ = 0;
         LOG(WARNING) << "repairStartTimer for round=" << round_ << " timed out! Sending timeout message!";
 
-        RepairReplicaTimeout msg;
+        RepairTimeout msg;
         msg.set_round(round_);
         msg.set_replica_id(replicaId_);
 
@@ -1855,7 +1855,7 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
     std::set<int> replicaIds;
 
     for (int i = 0; i < proof.timeouts_size(); i++) {
-        const RepairReplicaTimeout &timeout = proof.timeouts()[i];
+        const RepairTimeout &timeout = proof.timeouts()[i];
         const std::string &sig = proof.signatures()[i];
 
         if (replicaIds.contains(timeout.replica_id())) {

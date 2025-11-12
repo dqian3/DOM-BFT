@@ -92,16 +92,17 @@ message Commit {
 }
 
 
-message RepairReplicaTimeout
-{
-    uint32 round = 1;
-    uint32 replica_id = 2;
+message RepairTimeout
+{    
+    uint32 replica_id = 1;
+    uint32 round = 2;
+    uint32 seq = 3;
 }
 
 message RepairTimeoutProof {
     uint32 round = 1;
 
-    repeated RepairReplicaTimeout timeouts = 2;
+    repeated RepairTimeout timeouts = 2;
     repeated bytes signatures = 3;
 }
 

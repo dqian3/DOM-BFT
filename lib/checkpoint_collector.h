@@ -15,7 +15,9 @@ typedef std::tuple<std::string, uint32_t, uint32_t> ReplyKeyTuple;
 
 struct ReplyCollector {
     uint32_t replicaId_;
+    uint32_t n_;
     uint32_t quorumSize_;
+
     uint32_t round_;
     uint32_t seq_;
 
@@ -25,9 +27,10 @@ struct ReplyCollector {
     std::map<uint32_t, std::string> replySigs_;
     std::optional<dombft::proto::Cert> cert_;
 
-    ReplyCollector(uint32_t replicaId, uint32_t q, uint32_t round, uint32_t seq)
+    ReplyCollector(uint32_t replicaId, uint32_t n, uint32_t quorumSize, uint32_t round, uint32_t seq)
         : replicaId_(replicaId)
-        , quorumSize_(q)
+        , n_(n)
+        , quorumSize_(quorumSize)
         , round_(round)
         , seq_(seq)
     {
@@ -41,7 +44,6 @@ typedef std::tuple<uint32_t, uint32_t, std::string, std::string, std::string> Co
 struct CommitCollector {
     uint32_t quorumSize_;
     uint32_t round_;
-
     uint32_t seq_;
 
     std::optional<dombft::proto::Commit> commitToUse_;
@@ -62,7 +64,7 @@ struct CommitCollector {
 };
 
 class CheckpointCollector {
-    // We only need our own latests state, so don't index by round
+    // We only need our own latest state, so don't index by round
 
     uint32_t replicaId_;
     uint32_t quorumSize_;
@@ -70,23 +72,32 @@ class CheckpointCollector {
     uint32_t round_;
     uint32_t seq_;
 
+    bool timeout_ = false;
+    uint64_t timeoutStart_ = 0;
+
     bool needsSnapshot_ = false;
     std::optional<AppSnapshot> snapshot_;
     std::optional<::ClientRecord> clientRecord_;
     std::optional<std::string> logDigest_;
 
+    std::optional<dombft::proto::RepairTimeoutProof> repairTimeoutProof_;
+
     // Messages
     ReplyCollector replyCollector;
     CommitCollector commitCollector;
 
+    std::map<uint32_t, dombft::proto::RepairTimeout> timeouts_;
+
 public:
-    explicit CheckpointCollector(uint32_t replicaId, uint32_t q, uint32_t round, uint32_t seq, bool needsSnapshot)
+    explicit CheckpointCollector(
+        uint32_t replicaId, uint32_t n, uint32_t q, uint32_t round, uint32_t seq, bool needsSnapshot
+    )
         : replicaId_(replicaId)
         , quorumSize_(q)
         , round_(round)
         , seq_(seq)
         , needsSnapshot_(needsSnapshot)
-        , replyCollector(replicaId, q, round, seq)
+        , replyCollector(replicaId, n, q, round, seq)
         , commitCollector(q, round, seq)
     {
     }
@@ -119,6 +130,10 @@ public:
     // Note checkpoint will only have snapshot field set to valid pointer if we have
     // the pointer from our own log
     void getCheckpoint(::LogCheckpoint &checkpoint) const;
+
+    bool addAndCheckTimeout(const dombft::proto::RepairTimeout &timeoutMsg);
+
+    bool checkSelfTimeout(uint64_t now, uint64_t timeoutMs);
 };
 
 class CheckpointCollectorStore {
@@ -128,12 +143,14 @@ class CheckpointCollectorStore {
     uint32_t stableSeq_ = 0;
     uint32_t committedSeq_ = 0;
 
+    uint32_t n_;
     uint32_t replicaId_;
     uint32_t quorumSize_;
 
 public:
-    explicit CheckpointCollectorStore(uint32_t replicaId, uint32_t q)
+    explicit CheckpointCollectorStore(uint32_t replicaId, uint32_t n, uint32_t q)
         : replicaId_(replicaId)
+        , n_(n)
         , quorumSize_(q)
     {
     }

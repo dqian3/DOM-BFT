@@ -105,7 +105,7 @@ private:
     uint64_t curRoundStartSeq_ = 0;
     std::map<std::pair<uint64_t, uint32_t>, dombft::proto::ClientRequest> repairQueuedReqs_;
 
-    std::map<uint32_t, dombft::proto::RepairReplicaTimeout> repairReplicaTimeouts_;
+    std::map<uint32_t, dombft::proto::RepairTimeout> repairReplicaTimeouts_;
     std::map<uint32_t, std::string> repairReplicaTimeoutSigs_;
 
     std::optional<dombft::proto::RepairProposal> repairProposal_;
@@ -174,7 +174,7 @@ private:
     void startCheckpoint(bool createSnapshot);
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
-    void processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig);
+    void processRepairTimeout(const dombft::proto::RepairTimeout &msg, std::span<byte> sig);
     void processRepairReplyProof(const dombft::proto::RepairReplyProof &msg);
     void processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg);
     void processRepairStart(const dombft::proto::RepairStart &msg, std::span<byte> sig);

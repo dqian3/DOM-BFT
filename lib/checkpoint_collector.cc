@@ -6,9 +6,16 @@ using namespace dombft::proto;
 // Returns true if it is ok to proceed with the commit stage
 bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 {
+    uint32_t nRepliesOld = replies_.size();
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
     hasOwnReply_ = hasOwnReply_ || reply.replica_id() == replicaId_;
+
+    if (replies_.size() == nRepliesOld) {
+        // No new reply added
+        return false;
+    }
+
     // Don't try starting commit if our log hasn't reached the seq being committed
     if (!hasOwnReply_) {
         VLOG(4) << "Skipping processing of reply messages until we receive our own...";
@@ -19,6 +26,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         VLOG(4) << "Checkpoint: already have cert for seq=" << reply.seq() << ", skipping";
         return false;
     }
+
     std::map<ReplyKeyTuple, std::set<uint32_t>> matchingReplies;
 
     // Try to generate a cert among a set of replies
@@ -91,6 +99,7 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
     checkpoint.appDigest = commitToUse_->app_digest();
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
+    // TODO we don't need this anymore...
     for (uint32_t replicaId : matchedReplicas_) {
         VLOG(6) << "Adding replica commit " << replicaId << " to checkpoint";
         assert(commits_.at(replicaId).log_digest() == checkpoint.logDigest);
@@ -103,6 +112,12 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
 bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
     return replyCollector.addAndCheckReply(reply, sig);
+
+    // TODO implement repair proofs
+    // TODO this should be >= n-f
+    if (replyCollector.replies_.size() >= quorumSize_ && timeoutStart_ == 0) {
+        timeoutStart_ = GetMicrosecondTimestamp();
+    }
 }
 
 void CheckpointCollector::addOwnSnapshot(const AppSnapshot &snapshot) { snapshot_ = snapshot; }
@@ -148,6 +163,35 @@ void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
     }
 }
 
+bool CheckpointCollector::addAndCheckTimeout(const dombft::proto::RepairTimeout &timeoutMsg)
+{
+    if (timeouts_.contains(timeoutMsg.replica_id())) {
+        LOG(WARNING) << "Duplicate timeout message from replica " << timeoutMsg.replica_id() << " for checkpoint round "
+                     << round_ << " seq " << seq_;
+    }
+    timeouts_.emplace(timeoutMsg.replica_id(), timeoutMsg);
+
+    // SHould be f + 1
+    if (timeouts_.size() >= 2) {
+
+        return true;
+    }
+}
+
+bool CheckpointCollector::checkSelfTimeout(uint64_t now, uint64_t timeoutMs)
+{
+    if (timeout_ || timeoutStart_ == 0) {
+        return false;
+    }
+
+    if (now - timeoutStart_ >= timeoutMs) {
+        timeout_ = true;
+        return true;
+    }
+
+    return false;
+}
+
 // ================= CheckpointCollectorStore =================
 
 bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool needsSnapshot)
@@ -168,7 +212,7 @@ bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool 
         }
     }
 
-    auto [_, created] = collectors_.try_emplace(key, replicaId_, quorumSize_, round, seq, needsSnapshot);
+    auto [_, created] = collectors_.try_emplace(key, replicaId_, n_, quorumSize_, round, seq, needsSnapshot);
     assert(created);
 
     return true;
