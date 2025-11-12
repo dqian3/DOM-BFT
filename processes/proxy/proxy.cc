@@ -15,8 +15,6 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     offsetCoefficient_ = config.proxyOffsetCoefficient;
     LOG(INFO) << "offsetCoefficient=" << config.proxyOffsetCoefficient;
 
-    selfGenReqs_ = false;
-
     std::string proxyKey = config.proxyKeysDir + "/proxy" + std::to_string(proxyId) + ".der";
     LOG(INFO) << "Loading key from " << proxyKey;
 
@@ -57,40 +55,13 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     }
 }
 
-Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId, uint32_t freq, uint32_t duration, bool poisson)
-    : Proxy(config, proxyId)
-{
-    // Setup experimental parameters
-    selfGenReqs_ = true;
-    genReqFreq_ = freq;
-    genReqDuration_ = duration;
-    genReqPoisson_ = poisson;
-}
-
-void Proxy::terminate()
+void Proxy::Terminate()
 {
     LOG(INFO) << "Terminating...";
     running_ = false;
 }
 
-void Proxy::run()
-{
-    running_ = true;
-    if (selfGenReqs_) {
-        GenerateRequestsTd();
-    } else {
-        ForwardRequests();
-    }
-    LOG(INFO) << "Run Terminated ";
-}
-
-Proxy::~Proxy()
-{
-
-    // TODO Cleanup more
-}
-
-void Proxy::ForwardRequests()
+void Proxy::Run()
 {
     OWDCalc::PercentileCtx context(numReceivers_, maxOWD_, 40, 90, maxOWD_);
 
@@ -172,18 +143,7 @@ void Proxy::ForwardRequests()
         }
     };
 
-    /* Checks every 10ms to see if we are done*/
-    auto checkEnd = [](void *ctx, void *ep) {
-        if (!((Proxy *) ctx)->running_) {
-            ((Endpoint *) ep)->LoopBreak();
-        }
-    };
-
-    Timer monitor(checkEnd, 10000, this);
-
     endpoint_->RegisterMsgHandler(handleRequest);
-    endpoint_->RegisterTimer(&monitor);
-
     endpoint_->Connect();
 
     LOG(INFO) << "Forward loop starting";
@@ -192,6 +152,8 @@ void Proxy::ForwardRequests()
 
     LOG(INFO) << "Forward loop ending";
 }
+
+Proxy::~Proxy() {}
 
 void Proxy::sendReq(uint32_t seq)
 {
@@ -217,94 +179,6 @@ void Proxy::sendReq(uint32_t seq)
     for (int i = 0; i < numReceivers_; i++) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(outReq, MessageType::DOM_REQUEST);
         endpoint_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
-    }
-}
-
-void Proxy::GenerateRequestsTd()
-{
-    uint32_t seq = 0;
-
-    // If we want to generate requests according to a poisson process with an average
-    // rate of genReqFreq_, the lambda parameter should just be 1/avg interval, which
-    // is just the freq.
-    std::random_device rd;    // uniformly-distributed integer random number generator
-    std::mt19937 rng(rd());   // mt19937: Pseudo-random number generation
-    std::exponential_distribution<double> exp(genReqFreq_);
-
-    // If request frequency is high enough, don't rely on event library, and just busy wait for next time
-    // Since at frequencies above 1000/s, the timers don't trigger fast enough
-    if (genReqFreq_ > 1000) {
-
-        uint64_t now = GetMicrosecondTimestamp();
-        uint64_t start = now;
-        uint64_t lastSent = now;
-        uint64_t nextSend = 0;
-
-        while (now - start < genReqDuration_ * 1000000) {
-            now = GetMicrosecondTimestamp();
-
-            if (now - lastSent < nextSend) {
-                continue;
-            }
-
-            sendReq(seq);
-            seq++;
-            lastSent = now;
-
-            // interval in seconds between requests
-            double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
-            // convert to microseconds, but don't let it go to 0
-            uint32_t interval_us = interval * 1000000;
-            interval_us = std::max(1u, interval_us);
-            nextSend = interval_us;
-        }
-
-        running_ = false;
-        LOG(INFO) << "Ending experiment after busy-waiting";
-        LOG(INFO) << "Sent " << seq << " requests";
-
-    } else {
-        Timer timer(
-            [&, this](void *ctx, void *endpoint) {
-                Endpoint *ep = (Endpoint *) endpoint;
-                sendReq(seq);
-                seq++;
-
-                // interval in seconds between requests
-                double interval = genReqPoisson_ ? exp(rng) : 1.0 / genReqFreq_;
-                // convert to microseconds, but don't let it go to 0
-                uint32_t interval_us = interval * 1000000;
-                interval_us = std::max(1u, interval_us);
-
-                ep->ResetTimer(&timer, interval_us);
-            },
-            1000, this
-        );   // initial time doesn't matter, since it's reset
-
-        Timer endExperiment(
-            [&seq, this](void *ctx, void *endpoint) {
-                running_ = false;
-                LOG(INFO) << "Ending experiment";
-                LOG(INFO) << "Sent " << seq << " requests";
-                ((Endpoint *) endpoint)->LoopBreak();
-            },
-            genReqDuration_ * 1000000, this
-        );
-
-        /* Checks every 10ms to see if we are done*/
-        auto checkEnd = [](void *ctx, void *ep) {
-            if (!((Proxy *) ctx)->running_) {
-                ((Endpoint *) ep)->LoopBreak();
-            }
-        };
-
-        Timer monitor(checkEnd, 10000, this);
-
-        endpoint_->RegisterTimer(&timer);
-        endpoint_->RegisterTimer(&monitor);
-
-        endpoint_->RegisterTimer(&endExperiment);
-        endpoint_->LoopRun();
     }
 }
 

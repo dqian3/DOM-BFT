@@ -33,21 +33,6 @@ private:
     /** Each thread is given a unique name (key) */
     std::map<std::string, std::unique_ptr<std::thread>> threads_;
 
-    /** Launch threads:
-     * (1) ForwardRequestsTd, which receives client requests, signs and
-     * multicast to replicas;
-     * (2) RecvMeasurementsTd, which receives OWD measurements from the receivers
-     *
-     * (1) handles the most workload and is parallelized, and the parallism
-     * degree is decided by the parameter defined in proxyConfig_ (i.e.,
-     * shard-num).
-     *
-     */
-    void ForwardRequests();
-
-    void sendReq(uint32_t seq);
-    void GenerateRequestsTd();
-
     /** Flag to Run/Terminate threads */
     std::atomic<bool> running_;
 
@@ -68,26 +53,18 @@ private:
     int numReceivers_;
     std::vector<Address> receiverAddrs_;
 
-    // Reordering Experiments
-    bool selfGenReqs_;
-    uint32_t genReqFreq_;
-    uint32_t genReqDuration_;
-    bool genReqPoisson_;
-
 public:
     /** Proxy accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */
     Proxy(const ProcessConfig &config, uint32_t proxyId_);
-
-    // Create a proxy that generates requests on its own, for DOM experiments
-    Proxy(
-        const ProcessConfig &config, uint32_t proxyId, uint32_t genReqFreq, uint32_t genReqDuration, bool genReqPoisson
-    );
     ~Proxy();
 
-    void run();
-    void terminate();
+    void Run();
+    void Terminate();
+
+private:
+    void sendReq(uint32_t seq);
 };
 
 }   // namespace dombft

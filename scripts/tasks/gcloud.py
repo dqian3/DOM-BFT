@@ -297,26 +297,3 @@ def logs(
     # ips of each process
     resolve = get_address_resolver(c)
     remote.logs(c, config_file=config_file, resolve=resolve)
-
-
-@task
-def gcloud_reorder_exp(
-    c,
-    config_file="../configs/remote-prod.yaml",
-    poisson=False,
-    ignore_deadlines=False,
-    duration=20,
-    rate=100,
-    local_log=False,
-):
-    resolve = get_address_resolver(c)
-    remote.reorder_exp(
-        c,
-        config_file,
-        resolve=resolve,
-        poisson=poisson,
-        ignore_deadlines=ignore_deadlines,
-        duration=duration,
-        rate=rate,
-        local_log=local_log,
-    )

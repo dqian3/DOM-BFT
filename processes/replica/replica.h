@@ -71,6 +71,9 @@ private:
     BlockingConcurrentQueue<std::vector<byte>> processQueue_;
     BlockingConcurrentQueue<std::pair<uint32_t, AppSnapshot>> snapshotQueue_;
 
+    std::unique_ptr<Endpoint> endpoint_;
+    std::unique_ptr<Timer> fwdTimer_;
+
     // Receiver-specific queues
     std::mutex deadlineQueueMtx_;
     std::map<std::pair<uint64_t, uint32_t>, std::shared_ptr<ReceiverRequest>> deadlineQueue_;
@@ -82,9 +85,6 @@ private:
     std::vector<std::thread> verifyThreads_;
     std::vector<std::thread> receiverVerifyThreads_;
     std::thread processThread_;
-
-    std::unique_ptr<Endpoint> endpoint_;
-    std::unique_ptr<Timer> fwdTimer_;
 
     // ========== Replica State ==========
     uint32_t round_ = 1;
