@@ -62,15 +62,11 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     }
 }
 
-void Proxy::Terminate() { LOG(INFO) << "Terminating..."; }
+Proxy::~Proxy() {}
 
-Proxy::~Proxy()
-{
+void Proxy::Terminate() { endpoint_->LoopBreak(); }
 
-    // TODO Cleanup more
-}
-
-void Proxy::SetDOMRequest(const ClientRequest &inReq, DOMRequest &outReq, MessageHeader *hdr)
+void Proxy::setDOMRequest(const ClientRequest &inReq, DOMRequest &outReq, MessageHeader *hdr)
 {
     uint64_t now = GetMicrosecondTimestamp();
     uint64_t deadline = now + latencyBound_;
@@ -130,7 +126,7 @@ void Proxy::Run()
             domReqBatchBuffer_.emplace_back();
             DOMRequest &outReq = domReqBatchBuffer_.back();
 
-            SetDOMRequest(inReq, outReq, hdr);
+            setDOMRequest(inReq, outReq, hdr);
 
             VLOG(2) << "Buffering (" << inReq.client_id() << ", " << inReq.client_seq()
                     << ") deadline=" << outReq.deadline() << " latencyBound=" << latencyBound_
@@ -172,7 +168,7 @@ void Proxy::Run()
                 return;
             }
 
-            SetDOMRequest(inReq, outReq, hdr);
+            setDOMRequest(inReq, outReq, hdr);
 
             isFirstReq = false;
             VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq()
@@ -209,8 +205,6 @@ void Proxy::Run()
 
     LOG(INFO) << "Forward loop ending";
 }
-
-Proxy::~Proxy() {}
 
 void Proxy::sendReq(uint32_t seq)
 {

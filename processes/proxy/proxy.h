@@ -33,10 +33,6 @@ private:
     /** Each thread is given a unique name (key) */
     std::map<std::string, std::unique_ptr<std::thread>> threads_;
 
-    void sendReq(uint32_t seq);
-    void
-    SetDOMRequest(const dombft::proto::ClientRequest &inReq, dombft::proto::DOMRequest &outReq, MessageHeader *hdr);
-
     /** Flag to Run/Terminate threads */
     std::atomic<bool> running_;
 
@@ -76,6 +72,9 @@ public:
     void Terminate();
 
 private:
+    void
+    setDOMRequest(const dombft::proto::ClientRequest &inReq, dombft::proto::DOMRequest &outReq, MessageHeader *hdr);
+
     void sendReq(uint32_t seq);
 };
 

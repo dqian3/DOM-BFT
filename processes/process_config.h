@@ -32,7 +32,6 @@ struct ProcessConfig {
     std::string clientKeysDir;
     int clientRuntimeSeconds;
     int clientNormalPathTimeout;
-    int clientSlowPathTimeout;
     int clientRequestTimeout;
     int clientMaxInFlight;
     int clientSendRate;
@@ -116,7 +115,6 @@ struct ProcessConfig {
             clientKeysDir = parseField<std::string>(clientNode, "keysDir", "keys/client");
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
             clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
-            clientSlowPathTimeout = parseField<int>(clientNode, "slowPathTimeout");
             clientRequestTimeout = parseField<int>(clientNode, "requestTimeout");
             clientMaxInFlight = parseField<int>(clientNode, "maxInFlight");
             clientSendRate = parseField<int>(clientNode, "sendRate");
@@ -145,7 +143,6 @@ struct ProcessConfig {
             proxyBatchEnabled = parseField<bool>(proxyNode, "proxyBatchEnabled", false);
             proxyBatchMaxCount = parseField<uint32_t>(proxyNode, "proxyBatchMaxCount", 50);
             proxyBatchMaxDelay = parseField<uint32_t>(proxyNode, "proxyBatchMaxDelay", 5000);
-
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing proxy " + std::string(e.what()));

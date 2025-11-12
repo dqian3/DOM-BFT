@@ -294,13 +294,12 @@ void Replica::receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *se
     if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
         lastMeasurementTimes_[request.proxy_id()] = recv_time;
         std::string senderIp = sender->ip();
-        sendMeasurementReply(
-            Address(senderIp, proxyPort_), recv_time - request.send_time(), request.send_time()
-        );
+        sendMeasurementReply(Address(senderIp, proxyPort_), recv_time - request.send_time(), request.send_time());
     }
 }
 
-void Replica::receiveBatchedRequests(MessageHeader *msgHdr, byte *msgBuffer, Address *sender){
+void Replica::receiveBatchedRequests(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+{
     DOMBatchRequest batchRequest;
     if (!batchRequest.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
         LOG(ERROR) << "Unable to parse DOM_BATCH_REQUEST message";
@@ -308,14 +307,13 @@ void Replica::receiveBatchedRequests(MessageHeader *msgHdr, byte *msgBuffer, Add
     }
 
     int64_t recv_time = GetMicrosecondTimestamp();
-    VLOG(3) << "RECEIVE BATCH from proxy " << batchRequest.proxy_id() << " with " << batchRequest.requests_size() << " requests";
-
+    VLOG(3) << "RECEIVE BATCH from proxy " << batchRequest.proxy_id() << " with " << batchRequest.requests_size()
+            << " requests";
 
     for (int i = 0; i < batchRequest.requests_size(); i++) {
-        DOMRequest& request = *batchRequest.mutable_requests(i);
+        DOMRequest &request = *batchRequest.mutable_requests(i);
         enqueueReceiverRequest(recv_time, request);
     }
-
 
     if (recv_time - lastMeasurementTimes_[batchRequest.proxy_id()] > 5000) {
         lastMeasurementTimes_[batchRequest.proxy_id()] = recv_time;
@@ -338,7 +336,7 @@ void Replica::enqueueReceiverRequest(int64_t recv_time, DOMRequest &request)
     if (ignoreDeadlines_) {
         deadline = recv_time;
     }
-    
+
     auto r = std::make_shared<ReceiverRequest>();
     r->request = request;
     r->deadline = request.deadline();
@@ -374,7 +372,8 @@ void Replica::enqueueReceiverRequest(int64_t recv_time, DOMRequest &request)
     }
 }
 
-void Replica::sendMeasurementReply(const Address &dstAddr, uint64_t owd, uint64_t sendTime){
+void Replica::sendMeasurementReply(const Address &dstAddr, uint64_t owd, uint64_t sendTime)
+{
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MeasurementReply mReply;
         mReply.set_receiver_id(replicaId_);
@@ -598,23 +597,6 @@ void Replica::verifyMessagesThd()
         }
 
 #endif
-
-        // Repair related
-
-        else if (hdr->msgType == REPAIR_CLIENT_TIMEOUT) {
-            RepairClientTimeout timeoutMsg;
-
-            if (!timeoutMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
-                return;
-            }
-            if (!sigProvider_.verify(hdr, {NodeType::CLIENT, timeoutMsg.client_id()})) {
-                LOG(INFO) << "Failed to verify client signature!";
-                continue;
-            }
-
-            processQueue_.enqueue(msg);
-        }
 
         else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
             RepairReplicaTimeout timeoutMsg;
@@ -901,17 +883,6 @@ void Replica::processMessagesThd()
                 return;
             }
             processSnapshotReply(reply);
-        }
-
-        else if (hdr->msgType == REPAIR_CLIENT_TIMEOUT) {
-            RepairClientTimeout msg;
-
-            if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
-                return;
-            }
-
-            processRepairClientTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
         else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
@@ -1527,29 +1498,6 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
     // Got the snapshot
     repairSnapshotRequested_ = false;
     checkpointSnapshotRequested_ = false;
-}
-
-void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig)
-{
-    if (repair_) {
-        VLOG(7) << "Received repair trigger during a repair from client " << msg.client_id()
-                << " for cseq=" << msg.client_seq();
-        return;
-    }
-
-    if (repairTimeoutStart_ != 0) {
-        VLOG(2) << "Received redundant repair trigger due to client side timeout from client_id=" << msg.client_id()
-                << " for cseq=" << msg.client_seq();
-        return;
-    }
-
-    if (msg.round() != round_) {
-        VLOG(2) << "Received repair trigger for round " << msg.round() << " != " << round_;
-        return;
-    }
-
-    LOG(INFO) << "Received repair trigger from client_id=" << msg.client_id() << " for cseq=" << msg.client_seq();
-    repairTimeoutStart_ = GetMicrosecondTimestamp();
 }
 
 void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig)

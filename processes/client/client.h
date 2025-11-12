@@ -73,7 +73,6 @@ private:
     uint32_t requestSize_ = 0;
 
     uint64_t normalPathTimeout_;
-    uint64_t slowPathTimeout_;
     uint64_t requestTimeout_;
 
     /** The endpoint uses to submit request to proxies and receive replies*/

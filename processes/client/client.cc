@@ -36,7 +36,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     //     quorumSize_ = 2 * f_ + 1;
     //     superQuorumSize_ = 3 * f_ + 1;
     // }
-    
+
     // n = 3f + 2e + 1, p = n - f, q = n - e
     f_ = config.resiliencyParams.at("f");
     int e = config.resiliencyParams.at("e");
@@ -45,7 +45,6 @@ Client::Client(const ProcessConfig &config, size_t id)
     superQuorumSize_ = n - e;
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
-    slowPathTimeout_ = config.clientSlowPathTimeout;
     requestTimeout_ = config.clientRequestTimeout;
 
     LOG(INFO) << "Running for " << config.clientRuntimeSeconds << " seconds";
@@ -394,28 +393,6 @@ void Client::checkTimeouts()
                 endpoint_->SendPreparedMsgTo(addr);
             }
             continue;
-        }
-
-        if (!reqState.triggerSent && reqState.collector.numReceived() >= quorumSize_ &&
-            now - reqState.quorumTime > slowPathTimeout_) {
-            LOG(INFO) << "Client attempting repair on request " << clientSeq << " sendTime=" << reqState.sendTime
-                      << " now=" << now << " due to timeout";
-
-            reqState.triggerSent = true;
-            reqState.triggerRound = reqState.collector.round_;
-            reqState.triggerSendTime = now;
-
-            RepairClientTimeout msg;
-            msg.set_client_id(clientId_);
-            msg.set_client_seq(clientSeq);
-            msg.set_round(reqState.collector.round_);
-
-            // TODO set request data
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, REPAIR_CLIENT_TIMEOUT);
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-            for (const Address &addr : replicaAddrs_) {
-                endpoint_->SendPreparedMsgTo(addr);
-            }
         }
 
         if (reqState.triggerSent && now - reqState.triggerSendTime > requestTimeout_) {

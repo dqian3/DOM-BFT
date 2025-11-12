@@ -174,7 +174,6 @@ private:
     void startCheckpoint(bool createSnapshot);
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
-    void processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig);
     void processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig);
     void processRepairReplyProof(const dombft::proto::RepairReplyProof &msg);
     void processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg);

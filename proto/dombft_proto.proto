@@ -91,16 +91,6 @@ message Commit {
     ClientRecord client_record = 8;
 }
 
-message RepairClientTimeout
-{
-
-    uint32 client_id = 1;
-    uint32 client_seq = 2;
-
-    uint32 round = 3;
-
-    // could add request here too, but we do not
-}
 
 message RepairReplicaTimeout
 {
