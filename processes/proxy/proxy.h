@@ -33,6 +33,10 @@ private:
     /** Each thread is given a unique name (key) */
     std::map<std::string, std::unique_ptr<std::thread>> threads_;
 
+    void sendReq(uint32_t seq);
+    void
+    SetDOMRequest(const dombft::proto::ClientRequest &inReq, dombft::proto::DOMRequest &outReq, MessageHeader *hdr);
+
     /** Flag to Run/Terminate threads */
     std::atomic<bool> running_;
 
@@ -52,6 +56,14 @@ private:
 
     int numReceivers_;
     std::vector<Address> receiverAddrs_;
+
+    // Batching
+    bool isFirstReq = true;   // client starts open loop after the 1st req is commited
+    bool proxyBatchEnabled_;
+    uint32_t proxyBatchMaxCount_;
+    uint32_t proxyBatchMaxDelay_;
+    uint64_t curBatchDelay_ = 0;
+    std::vector<dombft::proto::DOMRequest> domReqBatchBuffer_;
 
 public:
     /** Proxy accepts a config file, which contains all the necessary information

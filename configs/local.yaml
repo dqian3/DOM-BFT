@@ -1,5 +1,7 @@
-transport: simple-rpc
-resiliency: 5f+1
+transport: nng
+resiliency: 
+  f: 1
+  e: 1
 app: counter 
 
 client:
@@ -14,8 +16,8 @@ client:
 
   sendMode: "sendRate"
   maxInFlight: 10
-  sendRate: 100
-  runtimeSeconds: 300
+  sendRate: 10
+  runtimeSeconds: 45
   requestSize: 512
   useHMAC: false
 
@@ -29,6 +31,9 @@ proxy:
   forwardPort: 31000
   keysDir: keys/proxy
   maxOwd: 15000
+  proxyBatchEnabled: false
+  proxyBatchMaxCount: 2
+  proxyBatchMaxDelay: 5000 # 5 ms (should be smaller than path timeout)
 
 # Replica Info
 replica:

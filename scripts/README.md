@@ -28,7 +28,7 @@ from the provided config file and execute the commands on the remote machines.
 
 First you will need to copy the keys over with
 ```
-invoke remote.keys
+invoke remote.copy-keys
 ```
 
 Then, either build the code on each machine with `invoke remote.build` or simply copy the binaries over (if compatible) with `invoke remote.copy-bin`.

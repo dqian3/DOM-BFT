@@ -51,8 +51,10 @@ def arun_on(ip, logfile, timeout, profile=False):
 def get_logs(c, ips, log_prefix):
     for id, ip in enumerate(ips):
         conn = Connection(ip)
-        print(f"Getting {log_prefix}{id}.log")
-        conn.get(f"{log_prefix}{id}.log", "../logs/")
+        print(f"Getting {log_prefix}{id}.log.gz")
+        conn.run(f"rm -f {log_prefix}{id}.log.gz", hide=True)
+        conn.run(f"gzip {log_prefix}{id}.log", hide=True) # original files are too large
+        conn.get(f"{log_prefix}{id}.log.gz", "../logs/")
 
 
 def get_process_ips(config_file, resolve):
@@ -132,8 +134,9 @@ def run(
         # Otherwise, we assume 3f+1 resiliency
         f = len(replicas) // 3
 
-    # Clear out ssh keys to avoid issues with authentication
-    c.run("ssh-add -D")
+    # Clear out ssh keys to avoid issues with authentication 
+    #     -> Hao: this actually causes issues:Could not open a connection to your authentication agent. Why?
+    # c.run("ssh-add -D")
 
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
@@ -235,7 +238,7 @@ def run(
             except invoke.exceptions.CommandTimedOut as e:
                 print(f"{e}")
 
-        c.run("rm -f ../logs/*.log")
+        c.run("rm -f ../logs/*.log.gz", warn=True)
 
         get_logs(c, replicas, "replica")
         get_logs(c, clients, "client")
@@ -373,6 +376,11 @@ def copy_bin(
     replicas, proxies, clients = get_process_ips(config_file, resolve)
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
+    group.run(
+        "killall dombft_proxy dombft_replica dombft_client",
+        warn=True,
+        hide="both",
+    )
     if upload_once:
         # TODO try and check to see if binaries are stale
         print(f"Copying binaries over to one machine {clients[0]}")
@@ -413,6 +421,7 @@ def copy_bin(
         proxies = SerialGroup(*proxies)
         clients = SerialGroup(*clients)
 
+        group.run("rm -f dombft_*", warn=True)
         group.run("chmod +w dombft_*", warn=True)
 
         print("Copying binaries over...")
@@ -444,7 +453,7 @@ def build(
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
     group.run(
-        "cd DOM-BFT && git checkout kvstore_snapshot2 && bazel build //processes/..."
+        "cd DOM-BFT && git checkout main && bazel build //processes/..."
     )
 
     group.run("rm ~/dombft_*", warn=True)

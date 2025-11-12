@@ -25,7 +25,7 @@ struct ProcessConfig {
     std::string transport;
     AppType app;
     std::string appStr;
-    std::string resiliency;
+    std::unordered_map<std::string, int> resiliencyParams;
 
     std::vector<std::string> clientIps;
     int clientPort;
@@ -47,6 +47,9 @@ struct ProcessConfig {
     float proxyOffsetCoefficient;
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
+    bool proxyBatchEnabled;
+    uint32_t proxyBatchMaxCount;
+    uint32_t proxyBatchMaxDelay;
 
     std::vector<std::string> replicaIps;
     int replicaPort;
@@ -139,6 +142,10 @@ struct ProcessConfig {
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
             proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
             proxyOffsetCoefficient = parseField<float>(proxyNode, "offsetCoefficient", 1.5);
+            proxyBatchEnabled = parseField<bool>(proxyNode, "proxyBatchEnabled", false);
+            proxyBatchMaxCount = parseField<uint32_t>(proxyNode, "proxyBatchMaxCount", 50);
+            proxyBatchMaxDelay = parseField<uint32_t>(proxyNode, "proxyBatchMaxDelay", 5000);
+
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing proxy " + std::string(e.what()));
@@ -196,10 +203,7 @@ struct ProcessConfig {
             throw ConfigParseException("Invalid app type " + appStr + ". Must be 'counter' or 'kv_store'");
         }
 
-        resiliency = parseField<std::string>(config, "resiliency", "3f+1");
-        if (resiliency != "3f+1" && resiliency != "5f+1") {
-            throw ConfigParseException("Invalid resiliency type " + resiliency + ". Must be '3f+1' or '5f+1'");
-        }
+        resiliencyParams = parseField<std::unordered_map<std::string, int>>(config, "resiliency", {{"f", 1}, {"e", 1}});
 
         parseClientConfig(config);
         parseProxyConfig(config);

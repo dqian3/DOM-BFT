@@ -158,6 +158,9 @@ private:
 
     // Receiver message handlers
     void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void receiveBatchedRequests(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void enqueueReceiverRequest(int64_t recv_time, dombft::proto::DOMRequest &request);
+    void sendMeasurementReply(const Address &dstAddr, uint64_t owd, uint64_t sendTime);
     void checkDeadlines();
     void forwardRequest(const dombft::proto::DOMRequest &request);
     void receiverVerifyThd(int threadId);

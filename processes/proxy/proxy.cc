@@ -25,6 +25,13 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
 
     numReceivers_ = config.replicaIps.size();
 
+    proxyBatchEnabled_ = config.proxyBatchEnabled;
+    proxyBatchMaxCount_ = config.proxyBatchMaxCount;
+    proxyBatchMaxDelay_ = config.proxyBatchMaxDelay;
+    if (proxyBatchEnabled_) {
+        domReqBatchBuffer_.reserve(proxyBatchMaxCount_);
+    }
+
     if (config.transport == "nng") {
         auto addrPairs = getProxyAddrs(config, proxyId);
 
@@ -55,10 +62,33 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
     }
 }
 
-void Proxy::Terminate()
+void Proxy::Terminate() { LOG(INFO) << "Terminating..."; }
+
+Proxy::~Proxy()
 {
-    LOG(INFO) << "Terminating...";
-    running_ = false;
+
+    // TODO Cleanup more
+}
+
+void Proxy::SetDOMRequest(const ClientRequest &inReq, DOMRequest &outReq, MessageHeader *hdr)
+{
+    uint64_t now = GetMicrosecondTimestamp();
+    uint64_t deadline = now + latencyBound_;
+
+    deadline = std::max(deadline, lastDeadline_ + 1);
+    lastDeadline_ = deadline;
+
+    outReq.set_send_time(now);
+    outReq.set_deadline(deadline);
+    outReq.set_proxy_id(proxyId_);
+
+    // TODO set these properly
+    outReq.set_deadline_set_size(numReceivers_);
+    outReq.set_late(false);
+
+    outReq.set_client_id(inReq.client_id());
+    outReq.set_client_seq(inReq.client_seq());
+    outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
 }
 
 void Proxy::Run()
@@ -91,6 +121,46 @@ void Proxy::Run()
                     << " rtt=" << now - reply.send_time() << " now=" << now << "\nLatency bound is set to be "
                     << latencyBound_.load();
 
+        } else if (!isFirstReq && proxyBatchEnabled_ && hdr->msgType == MessageType::CLIENT_REQUEST) {
+            ClientRequest inReq;
+            if (!inReq.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                return;
+            }
+            domReqBatchBuffer_.emplace_back();
+            DOMRequest &outReq = domReqBatchBuffer_.back();
+
+            SetDOMRequest(inReq, outReq, hdr);
+
+            VLOG(2) << "Buffering (" << inReq.client_id() << ", " << inReq.client_seq()
+                    << ") deadline=" << outReq.deadline() << " latencyBound=" << latencyBound_
+                    << " now=" << GetMicrosecondTimestamp() << " batchSize=" << domReqBatchBuffer_.size();
+
+            uint64_t now = GetMicrosecondTimestamp();
+            uint64_t firstReqSendTime = domReqBatchBuffer_.front().send_time();
+            curBatchDelay_ = now - firstReqSendTime;
+
+            // check the timeout lazily is good enought, no need to set a timer
+            if (domReqBatchBuffer_.size() >= proxyBatchMaxCount_ || curBatchDelay_ >= proxyBatchMaxDelay_) {
+                DOMBatchRequest batchReq;
+                for (auto &domReq : domReqBatchBuffer_) {
+                    DOMRequest *req = batchReq.add_requests();
+                    req->Swap(&domReq);
+                }
+                domReqBatchBuffer_.clear();
+                curBatchDelay_ = 0;
+                batchReq.set_send_time(GetMicrosecondTimestamp());
+                batchReq.set_proxy_id(proxyId_);
+                // TODO(Hao): make sure the BUFFER_SIZE is large enough
+                MessageHeader *hdr = endpoint_->PrepareProtoMsg(batchReq, MessageType::DOM_BATCH_REQUEST);
+                for (int i = 0; i < numReceivers_; i++) {
+
+                    VLOG(1) << "Forwarding batched req to " << receiverAddrs_[i].ip() << ":" << receiverAddrs_[i].port_
+                            << " msgType=" << (int) hdr->msgType << " msgLen=" << hdr->msgLen;
+
+                    endpoint_->SendPreparedMsgTo(receiverAddrs_[i], hdr);
+                }
+            }
         } else if (hdr->msgType == MessageType::CLIENT_REQUEST) {
 
             ClientRequest inReq;   // Client request we get
@@ -102,29 +172,16 @@ void Proxy::Run()
                 return;
             }
 
-            uint64_t now = GetMicrosecondTimestamp();
-            uint64_t deadline = now + latencyBound_;
+            SetDOMRequest(inReq, outReq, hdr);
 
-            deadline = std::max(deadline, lastDeadline_ + 1);
-            lastDeadline_ = deadline;
-
-            outReq.set_send_time(now);
-            outReq.set_deadline(deadline);
-            outReq.set_proxy_id(proxyId_);
-
-            // TODO set these properly
-            outReq.set_deadline_set_size(numReceivers_);
-            outReq.set_late(false);
-
-            outReq.set_client_id(inReq.client_id());
-            outReq.set_client_seq(inReq.client_seq());
-            outReq.set_client_req(hdr, sizeof(MessageHeader) + hdr->msgLen + hdr->sigLen);
-
-            VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq() << ") deadline=" << deadline
-                    << " latencyBound=" << latencyBound_ << " now=" << GetMicrosecondTimestamp();
+            isFirstReq = false;
+            VLOG(2) << "Forwarding (" << inReq.client_id() << ", " << inReq.client_seq()
+                    << ") deadline=" << outReq.deadline() << " latencyBound=" << latencyBound_
+                    << " now=" << GetMicrosecondTimestamp();
 
             if (numForwarded_ % 10000 == 0) {
-                VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time " << now;
+                VLOG(1) << "Forwarding request number " << numForwarded_ + 1 << " at time "
+                        << GetMicrosecondTimestamp();
             }
             numForwarded_++;
 
