@@ -1,4 +1,5 @@
-#include "processes/process_config.h"
+#include "lib/config/config_util.h"
+#include "lib/config/config_manager.h"
 
 #include "lib/application.h"
 #include "lib/checkpoint_collector.h"
@@ -226,7 +227,7 @@ private:
 
 public:
     Replica(
-        const ProcessConfig &config, uint32_t replicaId, bool crashed = false, uint32_t triggerRepairFreq = 0,
+        uint32_t replicaId, bool crashed = false, uint32_t triggerRepairFreq = 0,
         uint32_t viewChangeFreq = 0, bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0,
         uint32_t checkpointDropFreq = 0, bool skipForwarding = false, bool ignoreDeadlines = false
     );

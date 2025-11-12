@@ -10,8 +10,7 @@ cc_library(
         "//lib:ooo_rpc_endpoint",
         "//lib:crypto",
         "//lib:common",
-        "//processes:process_config",
-        "//processes:config_util",
+        "//lib:config"
     ],
 )
 

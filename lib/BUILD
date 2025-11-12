@@ -219,3 +219,10 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+# Alias for config libraries
+alias(
+    name = "config",
+    actual = "//lib/config:config",
+    visibility = ["//visibility:public"],
+)

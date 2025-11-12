@@ -25,7 +25,7 @@ struct ProcessConfig {
     std::string transport;
     AppType app;
     std::string appStr;
-    std::unordered_map<std::string, int> resiliencyParams;
+    std::unordered_map<std::string, u_int32_t> resiliencyParams;
 
     std::vector<std::string> clientIps;
     int clientPort;
@@ -200,7 +200,7 @@ struct ProcessConfig {
             throw ConfigParseException("Invalid app type " + appStr + ". Must be 'counter' or 'kv_store'");
         }
 
-        resiliencyParams = parseField<std::unordered_map<std::string, int>>(config, "resiliency", {{"f", 1}, {"e", 1}});
+        resiliencyParams = parseField<std::unordered_map<std::string, u_int32_t>>(config, "resiliency", {{"f", 1}, {"e", 1}});
 
         parseClientConfig(config);
         parseProxyConfig(config);

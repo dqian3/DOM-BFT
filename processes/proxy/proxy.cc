@@ -6,9 +6,13 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
+Proxy::Proxy(uint32_t proxyId)
 {
     lastDeadline_ = GetMicrosecondTimestamp();
+
+    auto &configManager = ConfigManager::getInstance();
+    const auto &config = configManager.getConfig();
+
     maxOWD_ = config.proxyMaxOwd;
     latencyBound_ = config.proxyMaxOwd;   // Initialize to max to be more conservative
     proxyId_ = proxyId;
@@ -23,7 +27,7 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         exit(1);
     }
 
-    numReceivers_ = config.replicaIps.size();
+    numReceivers_ = configManager.getNumReplicas();
 
     proxyBatchEnabled_ = config.proxyBatchEnabled;
     proxyBatchMaxCount_ = config.proxyBatchMaxCount;
@@ -38,26 +42,28 @@ Proxy::Proxy(const ProcessConfig &config, uint32_t proxyId)
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, false);
 
         // First nClients addresses are for client connections, rest are for replica connections
-        size_t nClients = config.clientIps.size();
+        size_t nClients = configManager.getNumClients();
         for (size_t i = nClients; i < addrPairs.size(); i++) {
             receiverAddrs_.push_back(addrPairs[i].second);
         }
 
     } else if (config.transport == "simple-rpc") {
+        const auto &replicaIps = configManager.getReplicaIps();
         for (int i = 0; i < numReceivers_; i++) {
-            std::string receiverIp = config.replicaIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, config.replicaPort));
+            receiverAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
         }
 
+        const auto &proxyIps = configManager.getProxyIps();
         endpoint_ =
-            std::make_unique<OOORPCEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, receiverAddrs_, 2);
+            std::make_unique<OOORPCEndpoint>(proxyIps[proxyId], configManager.getProxyForwardPort(), receiverAddrs_, 2);
     } else {
 
-        endpoint_ = std::make_unique<UDPEndpoint>(config.proxyIps[proxyId], config.proxyForwardPort, false);
+        const auto &proxyIps = configManager.getProxyIps();
+        endpoint_ = std::make_unique<UDPEndpoint>(proxyIps[proxyId], configManager.getProxyForwardPort(), false);
 
+        const auto &replicaIps = configManager.getReplicaIps();
         for (int i = 0; i < numReceivers_; i++) {
-            std::string receiverIp = config.replicaIps[i];
-            receiverAddrs_.push_back(Address(receiverIp, config.replicaPort));
+            receiverAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
         }
     }
 }

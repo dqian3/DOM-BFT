@@ -4,11 +4,6 @@ resiliency:
   e: 1
 transport: nng
 
-
-resiliency: 5f+1
-transport: nng
-
-
 client:
   ips:
   - 10.138.0.8

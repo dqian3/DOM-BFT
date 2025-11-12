@@ -7,7 +7,7 @@
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "processes/config_util.h"
+#include "lib/config/config_util.h"
 
 #include <algorithm>
 #include <cryptopp/sha.h>
@@ -19,23 +19,23 @@ namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(
-    const ProcessConfig &config, uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq,
+    uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq,
     bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq, bool skipForwarding,
     bool ignoreDeadlines
 )
     : replicaId_(replicaId)
-    , checkpointInterval_(config.replicaCheckpointInterval)
-    , snapshotInterval_(config.replicaSnapshotInterval)
-    , numVerifyThreads_(config.replicaNumVerifyThreads)
-    , useHMAC_(config.clientUseHMAC)
-    , repairTimeout_(config.replicaRepairTimeout)
-    , repairViewTimeout_(config.replicaRepairViewTimeout)
-    , proxyPort_(config.proxyForwardPort)
-    , numReceivers_(config.replicaIps.size())
+    , checkpointInterval_(ConfigManager::getInstance().getConfig().replicaCheckpointInterval)
+    , snapshotInterval_(ConfigManager::getInstance().getConfig().replicaSnapshotInterval)
+    , numVerifyThreads_(ConfigManager::getInstance().getConfig().replicaNumVerifyThreads)
+    , useHMAC_(ConfigManager::getInstance().getConfig().clientUseHMAC)
+    , repairTimeout_(ConfigManager::getInstance().getConfig().replicaRepairTimeout)
+    , repairViewTimeout_(ConfigManager::getInstance().getConfig().replicaRepairViewTimeout)
+    , proxyPort_(ConfigManager::getInstance().getProxyForwardPort())
+    , numReceivers_(ConfigManager::getInstance().getNumReplicas())
     , skipForwarding_(skipForwarding)
     , ignoreDeadlines_(ignoreDeadlines)
     , sigProvider_()
-    , sendThreadpool_(config.replicaNumSendThreads)
+    , sendThreadpool_(ConfigManager::getInstance().getConfig().replicaNumSendThreads)
     , running_(true)
     , round_(1)
     , checkpointCollectors_(replicaId_, quorumSize_)

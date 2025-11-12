@@ -1,4 +1,4 @@
-#include "processes/process_config.h"
+#include "lib/config/config_manager.h"
 
 #include <optional>
 #include <span>
@@ -134,7 +134,7 @@ public:
     /** Client accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */
-    Client(const ProcessConfig &config, const size_t clientId);
+    Client(const size_t clientId);
     ~Client();
 };
 

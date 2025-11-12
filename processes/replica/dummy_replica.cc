@@ -4,33 +4,38 @@
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "processes/config_util.h"
+#include "lib/config/config_util.h"
 
 #include <sstream>
 
 namespace dombft {
 using namespace dombft::proto;
 
-DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
+DummyReplica::DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
     : replicaId_(replicaId)
     , prot_(prot)
     , batchSize_(batchSize)
     , nextSeq_(batchSize)
-    , numVerifyThreads_(config.replicaNumVerifyThreads)
-    , sendThreadpool_(config.replicaNumSendThreads)
-    , useHMAC_(config.clientUseHMAC)
+    , numVerifyThreads_(ConfigManager::getInstance().getConfig().replicaNumVerifyThreads)
+    , sendThreadpool_(ConfigManager::getInstance().getConfig().replicaNumSendThreads)
+    , useHMAC_(ConfigManager::getInstance().getConfig().clientUseHMAC)
 {
+    auto &configManager = ConfigManager::getInstance();
+    const auto &config = configManager.getConfig();
+
+    f_ = configManager.getF();
     LOG(INFO) << "f=" << f_;
 
     LOG(INFO) << "batchSize=" << batchSize_;
 
-    std::string replicaIp = config.replicaIps[replicaId];
+    const auto &replicaIps = configManager.getReplicaIps();
+    std::string replicaIp = replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
     std::string bindAddress = replicaIp;
     LOG(INFO) << "bindAddress=" << bindAddress;
 
-    int replicaPort = config.replicaPort;
+    int replicaPort = configManager.getReplicaPort();
     LOG(INFO) << "replicaPort=" << replicaPort;
 
     std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".der";
@@ -52,7 +57,7 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         exit(1);
     }
 
-    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, config.clientIps.size());
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, configManager.getNumClients());
 
     // LOG(INFO) << "instantiating log";
 
@@ -64,17 +69,16 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     // }
     // LOG(INFO) << "log instantiated";
 
-    f_ = config.resiliencyParams.at("f");
-    int e = config.resiliencyParams.at("e");
-    int n = 3 * f_ + 2 * e + 1;
-    quorumSize_ = n - f_;
-    superQuorumSize_ = n - e;
+    // Use ConfigManager's pre-calculated BFT parameters
+    // f_ was already set above
+    quorumSize_ = configManager.getQuorumSize();
+    superQuorumSize_ = configManager.getSuperQuorumSize();
 
     if (config.transport == "nng") {
         auto addrPairs = getReplicaAddrs(config, replicaId_);
 
-        size_t nClients = config.clientIps.size();
-        size_t nProxies = config.proxyIps.size();
+        size_t nClients = configManager.getNumClients();
+        size_t nProxies = configManager.getNumProxies();
         LOG(INFO) << "nClients=" << nClients;
 
         // First nClients addresses are for client connections
@@ -94,13 +98,15 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, Address(replicaIp, replicaPort));
     } else if (config.transport == "udp") {
-        size_t nClients = config.clientIps.size();
+        size_t nClients = configManager.getNumClients();
+        const auto &clientIps = configManager.getClientIps();
         for (size_t i = 0; i < nClients; i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort + i));
+            clientAddrs_.push_back(Address(clientIps[i], configManager.getClientPort() + i));
         }
 
-        for (size_t i = nClients + 1; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (size_t i = nClients + 1; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
         }
 
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort);
@@ -108,14 +114,16 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
 
         std::vector<Address> allAddrs;
 
-        size_t nClients = config.clientIps.size();
-        for (int i = 0; i < config.clientIps.size(); i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort + i));
+        size_t nClients = configManager.getNumClients();
+        const auto &clientIps = configManager.getClientIps();
+        for (int i = 0; i < clientIps.size(); i++) {
+            clientAddrs_.push_back(Address(clientIps[i], configManager.getClientPort() + i));
             allAddrs.push_back(clientAddrs_.back());
         }
 
-        for (int i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (int i = 0; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
             allAddrs.push_back(replicaAddrs_.back());
         }
 
