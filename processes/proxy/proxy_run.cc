@@ -1,4 +1,5 @@
-#include "processes/process_config.h"
+#include "lib/config/process_config.h"
+#include "lib/config/config_manager.h"
 #include "proxy.h"
 
 #include <memory>
@@ -18,7 +19,8 @@ int main(int argc, char *argv[])
     LOG(INFO) << "Loading config from " << FLAGS_config;
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
-    proxy = std::make_unique<dombft::Proxy>(config, FLAGS_proxyId);
+    dombft::ConfigManager::initialize(config);
+    proxy = std::make_unique<dombft::Proxy>(FLAGS_proxyId);
     signal(SIGINT, terminate);
     signal(SIGTERM, terminate);
 

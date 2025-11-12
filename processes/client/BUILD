@@ -12,8 +12,7 @@ cc_library(
         "//lib:cert_collector",
         "//lib:client_record",
         "//lib:threadpool",
-        "//processes:process_config",
-        "//processes:config_util", 
+        "//lib:config",
     ],
 )
 

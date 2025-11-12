@@ -1,4 +1,5 @@
-#include "processes/process_config.h"
+#include "lib/config/process_config.h"
+#include "lib/config/config_manager.h"
 
 #include "dummy_replica.h"
 #include "replica.h"
@@ -34,21 +35,22 @@ int main(int argc, char *argv[])
     LOG(INFO) << "Loading config information from " << FLAGS_config;
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
+    dombft::ConfigManager::initialize(config);
 
     if (FLAGS_prot == "PBFT") {
-        dombft::DummyReplica replica(config, FLAGS_replicaId, DummyProtocol::PBFT, FLAGS_batchSize);
+        dombft::DummyReplica replica(FLAGS_replicaId, DummyProtocol::PBFT, FLAGS_batchSize);
         replica.run();
     } else if (FLAGS_prot == "ZYZ") {
-        dombft::DummyReplica replica(config, FLAGS_replicaId, DummyProtocol::ZYZ, FLAGS_batchSize);
+        dombft::DummyReplica replica(FLAGS_replicaId, DummyProtocol::ZYZ, FLAGS_batchSize);
         replica.run();
     } else if (FLAGS_prot == "DUMMY_DOMBFT") {
-        dombft::DummyReplica replica(config, FLAGS_replicaId, DummyProtocol::DUMMY_DOM_BFT);
+        dombft::DummyReplica replica(FLAGS_replicaId, DummyProtocol::DUMMY_DOM_BFT);
         replica.run();
     } else {
         // Use replicaId as receiverId if not specified
 
         dombft::Replica replica(
-            config, FLAGS_replicaId, FLAGS_crashed, FLAGS_swapFreq, FLAGS_viewChangeFreq, FLAGS_commitLocalInViewChange,
+            FLAGS_replicaId, FLAGS_crashed, FLAGS_swapFreq, FLAGS_viewChangeFreq, FLAGS_commitLocalInViewChange,
             FLAGS_viewChangeNum, FLAGS_checkpointDropFreq
         );
         replica.run();

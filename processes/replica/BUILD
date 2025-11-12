@@ -15,8 +15,7 @@ cc_library(
         "//lib:repair_utils",
         "//lib:threadpool",
         "//lib:crypto",
-        "//processes:process_config",
-        "//processes:config_util"
+        "//lib/config:config",
     ],
 )
 
@@ -33,8 +32,7 @@ cc_library(
         "//lib:ooo_rpc_endpoint",
         "//lib:common",
         "//lib:threadpool",
-        "//processes:process_config",
-        "//processes:config_util"
+        "//lib:config",
     ],
 )
 

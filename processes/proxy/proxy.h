@@ -14,12 +14,13 @@
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "lib/utils.h"
-#include "processes/config_util.h"
 
 #include "proto/dombft_proto.pb.h"
 
+#include "lib/config/config_util.h"
+#include "lib/config/config_manager.h"
 #include "owd_calc.h"
-#include "processes/process_config.h"
+
 namespace dombft {
 
 /**
@@ -65,7 +66,7 @@ public:
     /** Proxy accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */
-    Proxy(const ProcessConfig &config, uint32_t proxyId_);
+    Proxy(uint32_t proxyId_);
     ~Proxy();
 
     void Run();

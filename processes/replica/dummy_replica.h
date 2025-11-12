@@ -1,4 +1,5 @@
-#include "processes/process_config.h"
+#include "lib/config/config_util.h"
+#include "lib/config/config_manager.h"
 
 #include "lib/common.h"
 #include "lib/crypto/hmac_provider.h"
@@ -72,7 +73,7 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize = 1);
+    DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batchSize = 1);
     ~DummyReplica();
 
     void run();

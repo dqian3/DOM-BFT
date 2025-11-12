@@ -4,7 +4,7 @@
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "processes/config_util.h"
+#include "lib/config/config_util.h"
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
@@ -17,32 +17,25 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Client::Client(const ProcessConfig &config, size_t id)
+Client::Client(size_t id)
     : clientId_(id)
     , threadpool_(4)
 {
     LOG(INFO) << "clientId=" << clientId_;
-    std::string clientIp = config.clientIps[clientId_];
+
+    auto &configManager = ConfigManager::getInstance();
+    const auto &config = configManager.getConfig();
+    const auto &clientIps = configManager.getClientIps();
+
+    std::string clientIp = clientIps[clientId_];
     LOG(INFO) << "clientIp=" << clientIp;
-    int clientPort = config.clientPort;
+    int clientPort = configManager.getClientPort();
     LOG(INFO) << "clientPort=" << clientPort;
 
-    // if (config.resiliency == "5f+1") {
-    //     f_ = config.replicaIps.size() / 5;
-    //     quorumSize_ = 4 * f_ + 1;
-    //     superQuorumSize_ = 4 * f_ + 1;
-    // } else {
-    //     f_ = config.replicaIps.size() / 3;
-    //     quorumSize_ = 2 * f_ + 1;
-    //     superQuorumSize_ = 3 * f_ + 1;
-    // }
-
-    // n = 3f + 2e + 1, p = n - f, q = n - e
-    f_ = config.resiliencyParams.at("f");
-    int e = config.resiliencyParams.at("e");
-    int n = 3 * f_ + 2 * e + 1;
-    quorumSize_ = n - f_;
-    superQuorumSize_ = n - e;
+    // Use ConfigManager's pre-calculated BFT parameters
+    f_ = configManager.getF();
+    quorumSize_ = configManager.getQuorumSize();
+    superQuorumSize_ = configManager.getSuperQuorumSize();
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
     requestTimeout_ = config.clientRequestTimeout;
@@ -76,7 +69,7 @@ Client::Client(const ProcessConfig &config, size_t id)
         exit(1);
     }
 
-    hmacProvider_.loadClientKeysDev({NodeType::CLIENT, clientId_}, config.replicaIps.size());
+    hmacProvider_.loadClientKeysDev({NodeType::CLIENT, clientId_}, configManager.getNumReplicas());
 
     /** Setup transport */
     if (config.transport == "nng") {
@@ -87,7 +80,7 @@ Client::Client(const ProcessConfig &config, size_t id)
         for (size_t i = 0; i < addrPairs.size(); i++) {
         }
 
-        size_t nReplicas = config.replicaIps.size();
+        size_t nReplicas = configManager.getNumReplicas();
         for (size_t i = 0; i < nReplicas; i++)
             replicaAddrs_.push_back(addrPairs[i].second);
 
@@ -98,15 +91,17 @@ Client::Client(const ProcessConfig &config, size_t id)
 
         std::vector<Address> allAddrs;
 
-        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
-            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        const auto &proxyIps = configManager.getProxyIps();
+        for (uint32_t i = 0; i < proxyIps.size(); i++) {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << proxyIps[i] << ", " << configManager.getProxyForwardPort();
+            proxyAddrs_.push_back(Address(proxyIps[i], configManager.getProxyForwardPort()));
             allAddrs.push_back(proxyAddrs_[i]);
         }
 
         /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (uint32_t i = 0; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
             allAddrs.push_back(replicaAddrs_[i]);
         }
         endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort + clientId_, allAddrs);
@@ -115,14 +110,16 @@ Client::Client(const ProcessConfig &config, size_t id)
         endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
 
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
-        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
-            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        const auto &proxyIps = configManager.getProxyIps();
+        for (uint32_t i = 0; i < proxyIps.size(); i++) {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << proxyIps[i] << ", " << configManager.getProxyForwardPort();
+            proxyAddrs_.push_back(Address(proxyIps[i], configManager.getProxyForwardPort()));
         }
 
         /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (uint32_t i = 0; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
         }
     }
 
@@ -135,13 +132,14 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
+    uint32_t runtimeSeconds = config.clientRuntimeSeconds;
     terminateTimer_ = std::make_unique<Timer>(
-        [config](void *ctx, void *endpoint) {
-            LOG(INFO) << "Exiting after running for " << config.clientRuntimeSeconds << " seconds";
+        [runtimeSeconds](void *ctx, void *endpoint) {
+            LOG(INFO) << "Exiting after running for " << runtimeSeconds << " seconds";
             // TODO print some stats
             exit(0);
         },
-        config.clientRuntimeSeconds * 1000000,   // timer is in us.
+        runtimeSeconds * 1000000,   // timer is in us.
         this
     );
 
