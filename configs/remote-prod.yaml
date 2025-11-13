@@ -6,47 +6,32 @@ transport: nng
 
 client:
   ips:
-  - 10.138.0.8
-  # - 10.138.0.9
-  # - 10.138.0.10
+  - 10.138.0.12
   - 10.142.0.6
-  # - 10.142.0.5
   - 10.150.0.4
-  # - 10.150.0.5
   - 10.182.0.6
-  # - 10.182.0.7
-  # - 10.182.0.8
+  - 10.138.0.9
+  - 10.182.0.7
+  - 10.142.0.5
+  - 10.150.0.5
 
-  # - 10.138.0.8
-  # # - 10.138.0.9
-  # # - 10.138.0.10
+  # - 10.138.0.12
   # - 10.142.0.6
-  # # - 10.142.0.5
   # - 10.150.0.4
-  # # - 10.150.0.5
   # - 10.182.0.6
-  # # - 10.182.0.7
-  # # - 10.182.0.8
-  
-  # - 10.138.0.8
-  # # - 10.138.0.9
-  # # - 10.138.0.10
-  # - 10.142.0.6
-  # # - 10.142.0.5
-  # - 10.150.0.4
-  # # - 10.150.0.5
-  # - 10.182.0.6
-  # # - 10.182.0.7
-  # # - 10.182.0.8
+  # - 10.138.0.9
+  # - 10.182.0.7
+  # - 10.142.0.5
+  # - 10.150.0.5
   keysDir: keys/client
-  maxInFlight: 1500
+  maxInFlight: 100
   normalPathTimeout: 1000000
   port: 33000
   requestSize: 512
   requestTimeout: 2000000
-  runtimeSeconds: 45
+  runtimeSeconds: 300
   sendMode: sendRate
-  sendRate: 1000
+  sendRate: 100
   slowPathTimeout: 500000
   useHMAC: false
   sendProofs: false
@@ -54,16 +39,10 @@ client:
 proxy:
   forwardPort: 31000
   ips:
-  - 10.138.0.8
-  # - 10.138.0.9
-  # - 10.138.0.10
+  - 10.138.0.12
   - 10.142.0.6
-  # - 10.142.0.5
   - 10.150.0.4
-  # - 10.150.0.5
   - 10.182.0.6
-  # - 10.182.0.7
-  # - 10.182.0.8
   keysDir: keys/proxy
   maxOwd: 200000
   offsetCoefficient: 1.5
@@ -81,11 +60,15 @@ replica:
   - 10.150.0.3
   - 10.182.0.4
   - 10.182.0.5
+  # - 10.138.0.11
+  # - 10.182.0.9
+  # - 10.142.0.7
+  # - 10.150.0.6
   keysDir: keys/replica
   numSendThreads: 6
   numVerifyThreads: 6
   port: 34000
-  repairTimeout:      100000
+  repairTimeout:      500000
   checkpointTimeout: 1000000 
   repairViewTimeout: 5000000
   checkpointInterval: 5000

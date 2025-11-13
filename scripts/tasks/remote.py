@@ -53,7 +53,9 @@ def get_logs(c, ips, log_prefix):
         conn = Connection(ip)
         print(f"Getting {log_prefix}{id}.log.gz")
         conn.run(f"rm -f {log_prefix}{id}.log.gz", hide=True)
-        conn.run(f"gzip {log_prefix}{id}.log", hide=True) # original files are too large
+        conn.run(
+            f"gzip {log_prefix}{id}.log", hide=True
+        )  # original files are too large
         conn.get(f"{log_prefix}{id}.log.gz", "../logs/")
 
 
@@ -83,11 +85,15 @@ def get_all_ips(config_file, resolve):
 @task
 def logs(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     # ips of each process
+    c.run("rm -f ../logs/*.log")
+
     replicas, proxies, clients = get_process_ips(config_file, resolve)
 
     get_logs(c, replicas, "replica")
     get_logs(c, proxies, "proxy")
     get_logs(c, clients, "client")
+
+    c.run("gzip -d ../logs*.gz")
 
 
 @task
@@ -134,7 +140,7 @@ def run(
         # Otherwise, we assume 3f+1 resiliency
         f = len(replicas) // 3
 
-    # Clear out ssh keys to avoid issues with authentication 
+    # Clear out ssh keys to avoid issues with authentication
     #     -> Hao: this actually causes issues:Could not open a connection to your authentication agent. Why?
     # c.run("ssh-add -D")
 
@@ -452,9 +458,7 @@ def build(
     print("Cloning/building repo...")
 
     group.run("git clone https://github.com/dqian3/DOM-BFT", warn=True)
-    group.run(
-        "cd DOM-BFT && git checkout main && bazel build //processes/..."
-    )
+    group.run("cd DOM-BFT && git checkout main && bazel build //processes/...")
 
     group.run("rm ~/dombft_*", warn=True)
     group.run("cp ./DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")

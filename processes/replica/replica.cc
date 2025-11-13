@@ -1059,7 +1059,7 @@ void Replica::processClientRequest(const ClientRequest &request, bool queued)
         checkpointTimeoutStart_ = GetMicrosecondTimestamp();
     }
 
-    if (checkpointTimeoutStart_ == 0) {
+    if (seq == 1) {
         checkpointTimeoutStart_ = GetMicrosecondTimestamp();
     }
 }
@@ -1130,10 +1130,19 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
 
-    // TODO keep track to ensure this doesn't repeat
+    // If we receive a reply for a checkpoint for a sequence number that is not a multiple of the
+    // checkpoint interval, some replica has timed waiting to reach the checkpoint interval.
     if (reply.seq() % checkpointInterval_ != 0) {
-        if (!checkpointCollectors_.hasCollector(round_, reply.seq())) {
-            startCheckpoint(reply.seq());
+        bool alreadyStarted = checkpointCollectors_.hasCollector(round_, reply.seq());
+        bool alreadyCommitted = reply.seq() <= log_->getCommittedCheckpoint().seq;
+
+        auto [round, seq] = checkpointTimeoutSeqs_[reply.replica_id()];
+        bool alreadyTried = round == round_ && reply.seq() % checkpointInterval_ == seq % checkpointInterval_;
+
+        if (!alreadyStarted && !alreadyCommitted && !alreadyTried) {
+            VLOG(1) << "PERF event=checkpoint_timeout_reply" << " seq=" << reply.seq() << " round=" << round_
+                    << " replica_id=" << reply.replica_id() << " self_id=" << replicaId_;
+            startCheckpoint(false);
         }
     }
 
@@ -1690,7 +1699,11 @@ void Replica::checkTimeouts()
         LOG(INFO) << "Starting checkpoint for round=" << round_ << " seq=" << log_->getNextSeq() - 1
                   << " due to timeout!";
 
+        VLOG(1) << "PERF event=checkpoint_timeout_self" << " seq=" << log_->getNextSeq() - 1 << " round=" << round_
+                << " replica_id=" << replicaId_;
+
         startCheckpoint(false);
+        checkpointTimeoutStart_ = 0;
     }
 
     if (repairViewStart_ != 0 && now - repairViewStart_ > repairViewTimeout_) {
@@ -2347,6 +2360,9 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         processClientRequest(req, true);
     }
     repairQueuedReqs_.clear();
+
+    // Start timer for next checkpoint
+    checkpointTimeoutStart_ = GetMicrosecondTimestamp();
 
     VLOG(2) << "PERF_DUMP post repair round=" << round_ - 1 << " " << *log_;
 }

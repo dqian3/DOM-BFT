@@ -126,6 +126,7 @@ def copy_bin(c, config_file="../configs/remote-prod.yaml", upload_once=False):
     resolve = get_address_resolver(c)
     remote.copy_bin(c, config_file, upload_once=upload_once, resolve=resolve)
 
+
 def get_gcloud_process_ips(c, filter):
     gcloud_output = c.run(
         f"gcloud compute instances list | grep {filter}"
@@ -180,9 +181,11 @@ gcloud compute instances create {} \
 
 
 @task
-def gcloud_run_largen(
+def run_largen(
     c,
-    config_file="../configs/remote-large-n.yaml",
+    config_file="../configs/remote-prod.yaml",
+    f=1,
+    e=1,
     v=5,
     prot="dombft",
 ):
@@ -193,32 +196,35 @@ def gcloud_run_largen(
             original_contents = cfg_file.read()
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
-        for n_replicas in [7, 10, 13, 16]:
+        f = 1
+        for e in [1, 2, 3]:
             vm(
                 c, config_file=config_file
             )  # This should only start the vms that are needed, not all
-            time.sleep(10)
+            time.sleep(20)
+
+            n = 3 * f + 2 * e + 1
 
             cfg = deepcopy(original_cfg)
+
+            assert n <= len(cfg["replica"]["ips"])
 
             cfg["client"]["maxInFlight"] = 200
             cfg["client"]["sendMode"] = "sendRate"
 
-            cfg["client"]["ips"] = cfg["client"]["ips"][:n_replicas]
+            cfg["replica"]["ips"] = cfg["replica"]["ips"][:n]
+            cfg["resiliency"]["f"] = f
+            cfg["resiliency"]["e"] = e
 
-            cfg["replica"]["ips"] = cfg["replica"]["ips"][:n_replicas]
-            cfg["receiver"]["ips"] = cfg["receiver"]["ips"][:n_replicas]
+            send_rate = cfg["client"]["sendRate"] * len(cfg["client"]["ips"])
 
-            for total_send_rate in [12000, 16000, 20000]:
-                send_rate = total_send_rate // n_replicas
+            yaml.dump(cfg, open(config_file, "w"))
+            c.run("rm -f ../logs/*")
+            run(c, config_file=config_file, v=v, prot=prot)
 
-                cfg["client"]["sendRate"] = send_rate
-
-                yaml.dump(cfg, open(config_file, "w"))
-                run(c, config_file=config_file, v=v, prot=prot)
-                c.run(
-                    f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n_replicas}_sr{send_rate}.out"
-                )
+            c.run(
+                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n}_sr{send_rate}.out"
+            )
 
             vm(c, config_file=config_file, stop=True)
 

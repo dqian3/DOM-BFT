@@ -277,6 +277,8 @@ void NngEndpointThreaded::LoopBreak()
 
     ev_async_send(recvThread_->evLoop_, &recvThread_->stopWatcher_);
 
+    LOG(INFO) << sendThreads_.size() << " send threads to join";
+
     for (auto &t : sendThreads_) {
         t->thread_.join();
         LOG(INFO) << "Join send thread " << t->addr_;
@@ -285,5 +287,5 @@ void NngEndpointThreaded::LoopBreak()
     recvThread_->thread_.join();
     LOG(INFO) << "Join recv thread";
 
-    Endpoint::LoopBreak();
+    ev_break(evLoop_, EVBREAK_ALL);
 }

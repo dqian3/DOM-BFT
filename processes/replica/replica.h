@@ -96,6 +96,8 @@ private:
     CheckpointCollectorStore checkpointCollectors_;
     bool checkpointSnapshotRequested_ = false;
     uint64_t checkpointTimeoutStart_ = 0;
+    std::map<uint32_t, std::pair<uint32_t, uint32_t>>
+        checkpointTimeoutSeqs_;   // replicaId -> (round, seq) of last non-interval checkpoint
 
     // State for repair
     bool repair_ = false;
