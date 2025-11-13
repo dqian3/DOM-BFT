@@ -15,7 +15,7 @@ client:
   requestTimeout: 10000000    # 10 s
 
   sendMode: "sendRate"
-  maxInFlight: 10
+  maxInFlight: 100
   sendRate: 100
   runtimeSeconds: 300
   requestSize: 512
@@ -52,8 +52,8 @@ replica:
   repairViewTimeout: 5000000
   numVerifyThreads: 1
   numSendThreads: 2
-  checkpointInterval: 100
-  snapshotInterval: 500
+  checkpointInterval: 5000
+  snapshotInterval: 25000
 
 
 

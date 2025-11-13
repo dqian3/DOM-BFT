@@ -54,7 +54,7 @@ def get_logs(c, ips, log_prefix):
         print(f"Getting {log_prefix}{id}.log.gz")
         conn.run(f"rm -f {log_prefix}{id}.log.gz", hide=True)
         conn.run(
-            f"gzip {log_prefix}{id}.log", hide=True
+            f"gzip {log_prefix}{id}.log", hide=True, warn=True
         )  # original files are too large
         conn.get(f"{log_prefix}{id}.log.gz", "../logs/")
 
@@ -92,8 +92,6 @@ def logs(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     get_logs(c, replicas, "replica")
     get_logs(c, proxies, "proxy")
     get_logs(c, clients, "client")
-
-    c.run("gzip -d ../logs*.gz")
 
 
 @task
@@ -244,7 +242,7 @@ def run(
             except invoke.exceptions.CommandTimedOut as e:
                 print(f"{e}")
 
-        c.run("rm -f ../logs/*.log.gz", warn=True)
+        c.run("rm -f ../logs/*", warn=True)
 
         get_logs(c, replicas, "replica")
         get_logs(c, clients, "client")

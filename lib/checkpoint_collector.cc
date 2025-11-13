@@ -31,6 +31,8 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 
     std::map<ReplyKeyTuple, std::set<uint32_t>> matchingReplies;
 
+    bool ret = false;
+
     // Try to generate a cert among a set of replies
     for (const auto &entry : replies_) {
         uint32_t replicaId = entry.first;
@@ -53,10 +55,13 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
                 (*cert_->add_replies()) = replies_[repId];
             }
 
-            return true;
+            ret = true;
         }
     }
-    return false;
+
+    // See if we can form a repair proof
+
+    return ret;
 }
 
 bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span<byte> sig)

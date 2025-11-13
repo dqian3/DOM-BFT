@@ -1137,11 +1137,13 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         bool alreadyCommitted = reply.seq() <= log_->getCommittedCheckpoint().seq;
 
         auto [round, seq] = checkpointTimeoutSeqs_[reply.replica_id()];
-        bool alreadyTried = round == round_ && reply.seq() % checkpointInterval_ == seq % checkpointInterval_;
+        bool alreadyTried = (round == round_) && ((reply.seq() % checkpointInterval_) == (seq % checkpointInterval_));
 
         if (!alreadyStarted && !alreadyCommitted && !alreadyTried) {
             VLOG(1) << "PERF event=checkpoint_timeout_reply" << " seq=" << reply.seq() << " round=" << round_
                     << " replica_id=" << reply.replica_id() << " self_id=" << replicaId_;
+
+            checkpointTimeoutSeqs_[reply.replica_id()] = {round_, reply.seq()};
             startCheckpoint(false);
         }
     }

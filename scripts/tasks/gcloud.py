@@ -185,7 +185,6 @@ def run_largen(
     c,
     config_file="../configs/remote-prod.yaml",
     f=1,
-    e=1,
     v=5,
     prot="dombft",
 ):
@@ -197,7 +196,7 @@ def run_largen(
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
         f = 1
-        for e in [1, 2, 3]:
+        for e in [0, 1, 2, 3]:
             vm(
                 c, config_file=config_file
             )  # This should only start the vms that are needed, not all
@@ -208,9 +207,6 @@ def run_largen(
             cfg = deepcopy(original_cfg)
 
             assert n <= len(cfg["replica"]["ips"])
-
-            cfg["client"]["maxInFlight"] = 200
-            cfg["client"]["sendMode"] = "sendRate"
 
             cfg["replica"]["ips"] = cfg["replica"]["ips"][:n]
             cfg["resiliency"]["f"] = f
