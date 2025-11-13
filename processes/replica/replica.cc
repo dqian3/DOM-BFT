@@ -1195,6 +1195,24 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         }
 
         return;
+    } else if (coll.hasConflictProof()) {
+        VLOG(1) << "PERF event=checkpoint_conflict"
+                << " seq=" << rSeq << " round=" << round_ << " self_id=" << replicaId_;
+
+        dombft::proto::RepairReplyProof replyProof;
+        coll.getConflictProof(replyProof);
+
+        std::ostringstream oss;
+        oss << "round=" << round_ << "\n";
+        for (int i = 0; i < replyProof.replies().size(); i++) {
+            const auto &reply = replyProof.replies(i);
+            oss << reply.replica_id() << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " "
+                << reply.round() << "\n";
+        }
+
+        broadcastToReplicas(replyProof, MessageType::REPAIR_REPLY_PROOF);
+
+        startRepair();
     }
 }
 
@@ -1568,8 +1586,7 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 {
     // Ignore repeated repair triggers
     if (repair_) {
-        VLOG(6) << "Received repair trigger during a repair from client " << msg.client_id()
-                << " for cseq=" << msg.client_seq();
+        VLOG(6) << "Received repair trigger during a repair";
         return;
     }
 
@@ -1583,9 +1600,6 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
         VLOG(6) << "Received repair trigger proof for round " << msg.round() << " > " << round_;
         return;
     }
-
-    LOG(INFO) << "Repair trigger for round " << msg.round() << " client_id=" << msg.client_id()
-              << " cseq=" << msg.client_seq() << " has a proof, starting repair!";
 
     // Print out proof
 
@@ -1837,7 +1851,7 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
 
     if (proof.replies().size() != proof.signatures().size()) {
         LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to "
-                     << "cert signatures size" << proof.signatures().size();
+                     << "proof signatures size" << proof.signatures().size();
         return false;
     }
 
@@ -1874,6 +1888,9 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
         LOG(WARNING) << "Proof does not have non-matching replies!";
         return false;
     }
+
+    // TODO verify the math
+
     uint32_t sum = 0;
     for (auto &[_, s] : matchingReplies) {
         sum += s.size();

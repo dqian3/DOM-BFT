@@ -565,8 +565,6 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 
         RepairReplyProof proofMsg;
 
-        proofMsg.set_client_id(clientId_);
-        proofMsg.set_client_seq(clientSeq);
         proofMsg.set_round(reqState.collector.round_);
 
         for (auto &[replicaId, r] : reqState.collector.replies_) {

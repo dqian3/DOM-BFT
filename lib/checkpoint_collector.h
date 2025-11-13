@@ -24,6 +24,9 @@ struct ReplyCollector {
     std::map<uint32_t, dombft::proto::Reply> replies_;
     std::map<uint32_t, std::string> replySigs_;
     std::optional<dombft::proto::Cert> cert_;
+    std::optional<dombft::proto::RepairReplyProof> repairReplyProof_;
+
+    std::optional<dombft::proto::Cert> getCert() const { return cert_; }
 
     ReplyCollector(uint32_t replicaId, uint32_t round, uint32_t seq)
         : replicaId_(replicaId)
@@ -97,6 +100,12 @@ public:
     // Add a reply to the collector and check if we have enough replies to form a cert
     // Can call getCert once addAndCheckReply returns true
     bool addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig);
+    // TODO this pattern does not match above, fix
+    bool hasConflictProof() const { return replyCollector.repairReplyProof_.has_value(); }
+    void getConflictProof(dombft::proto::RepairReplyProof &replyProof) const
+    {
+        replyProof = replyCollector.repairReplyProof_.value();
+    }
     bool hasCert() const { return replyCollector.cert_.has_value(); }
     void getCert(dombft::proto::Cert &cert) const { cert = replyCollector.cert_.value(); }
 
@@ -124,6 +133,8 @@ public:
     bool addAndCheckTimeout(const dombft::proto::RepairTimeout &timeoutMsg, std::span<byte> sig);
 
     bool checkSelfTimeout(uint64_t now, uint64_t timeoutMs);
+
+    bool hasRepairProof() const { return repairTimeoutProof_.has_value(); }
     void getRepairTimeoutProof(dombft::proto::RepairTimeoutProof &timeoutProof) const;
 };
 

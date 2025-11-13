@@ -31,6 +31,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 
     std::map<ReplyKeyTuple, std::set<uint32_t>> matchingReplies;
 
+    uint32_t maxMatch = 0;
     bool ret = false;
 
     // Try to generate a cert among a set of replies
@@ -43,6 +44,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         ReplyKeyTuple key = {reply.digest(), reply.round(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
+        maxMatch = std::max(maxMatch, static_cast<uint32_t>(matchingReplies[key].size()));
 
         uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
 
@@ -59,7 +61,23 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         }
     }
 
-    // See if we can form a repair proof
+    uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
+    uint32_t n = ConfigManager::getInstance().getNumReplicas();
+
+    // Remaining messages can't get maxMAtch to quorum size
+    if (n - replies_.size() < quorumSize_ - maxMatch) {
+        repairReplyProof_ = RepairReplyProof();
+
+        for (const auto &entry : replies_) {
+            uint32_t replicaId = entry.first;
+            const Reply &reply = entry.second;
+
+            repairReplyProof_->set_round(reply.round());
+
+            (*repairReplyProof_->add_replies()) = reply;
+            repairReplyProof_->add_signatures(replySigs_[replicaId]);
+        }
+    }
 
     return ret;
 }
