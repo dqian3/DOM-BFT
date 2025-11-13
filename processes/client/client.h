@@ -19,8 +19,8 @@
 
 namespace dombft {
 struct RequestState {
-    RequestState(uint32_t f, uint32_t q, dombft::proto::ClientRequest &req, uint64_t sendT)
-        : collector(f, q)
+    RequestState(dombft::proto::ClientRequest &req, uint64_t sendT)
+        : collector()
         , request(req)
         , clientSeq(req.client_seq())
         , firstSendTime(sendT)

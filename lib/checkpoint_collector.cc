@@ -1,12 +1,14 @@
 #include "checkpoint_collector.h"
+#include "config/config_manager.h"
 
 using namespace dombft::proto;
+using namespace dombft;
 
 // Collects the reply from peers for the same seq num
 // Returns true if it is ok to proceed with the commit stage
 bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 {
-    uint32_t nRepliesOld = replies_.size();
+    size_t nRepliesOld = replies_.size();
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
     hasOwnReply_ = hasOwnReply_ || reply.replica_id() == replicaId_;
@@ -40,7 +42,8 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 
         matchingReplies[key].insert(replicaId);
 
-        // Need 2f + 1 and own reply
+        uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
+
         if (matchingReplies[key].size() >= quorumSize_ && matchingReplies[key].contains(replicaId_)) {
             cert_ = Cert();
             cert_->set_seq(std::get<2>(key));
@@ -80,7 +83,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
 
                 << digest_to_hex(commit.app_digest());
 
-        if (matchingCommits[key].size() >= quorumSize_) {
+        if (matchingCommits[key].size() >= ConfigManager::getInstance().getConfig().f + 1) {
             matchedReplicas_ = matchingCommits[key];
             commitToUse_ = commit;
             return true;
@@ -111,13 +114,16 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
 
 bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
-    return replyCollector.addAndCheckReply(reply, sig);
+    bool ret = replyCollector.addAndCheckReply(reply, sig);
 
     // TODO implement repair proofs
     // TODO this should be >= n-f
-    if (replyCollector.replies_.size() >= quorumSize_ && timeoutStart_ == 0) {
+    uint32_t n = ConfigManager::getInstance().getNumReplicas();
+    uint32_t f = ConfigManager::getInstance().getConfig().f;
+    if (replyCollector.replies_.size() >= n - f && timeoutStart_ == 0) {
         timeoutStart_ = GetMicrosecondTimestamp();
     }
+    return ret;
 }
 
 void CheckpointCollector::addOwnSnapshot(const AppSnapshot &snapshot) { snapshot_ = snapshot; }
@@ -163,19 +169,35 @@ void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
     }
 }
 
-bool CheckpointCollector::addAndCheckTimeout(const dombft::proto::RepairTimeout &timeoutMsg)
+bool CheckpointCollector::addAndCheckTimeout(const dombft::proto::RepairTimeout &timeoutMsg, std::span<byte> sig)
 {
-    if (timeouts_.contains(timeoutMsg.replica_id())) {
+    if (repairTimeouts_.contains(timeoutMsg.replica_id())) {
         LOG(WARNING) << "Duplicate timeout message from replica " << timeoutMsg.replica_id() << " for checkpoint round "
                      << round_ << " seq " << seq_;
     }
-    timeouts_.emplace(timeoutMsg.replica_id(), timeoutMsg);
+    repairTimeouts_[timeoutMsg.replica_id()] = timeoutMsg;
+    repairTimeoutSigs_[timeoutMsg.replica_id()] = std::string(sig.begin(), sig.end());
 
-    // SHould be f + 1
-    if (timeouts_.size() >= 2) {
+    uint32_t f = ConfigManager::getInstance().getConfig().f;
+
+    VLOG(4) << "Collected " << repairTimeouts_.size() << " timeout messages for checkpoint round " << round_ << " seq "
+            << seq_;
+
+    // TODO this is a bit weird for it to return false afterwards
+    if (repairTimeouts_.size() == f + 1) {
+        repairTimeoutProof_ = RepairTimeoutProof();
+
+        for (auto &[repId, msg] : repairTimeouts_) {
+            if (msg.round() != round_)
+                continue;
+
+            (*repairTimeoutProof_->add_timeouts()) = msg;
+            repairTimeoutProof_->add_signatures(repairTimeoutSigs_[repId]);
+        }
 
         return true;
     }
+    return false;
 }
 
 bool CheckpointCollector::checkSelfTimeout(uint64_t now, uint64_t timeoutMs)
@@ -190,6 +212,12 @@ bool CheckpointCollector::checkSelfTimeout(uint64_t now, uint64_t timeoutMs)
     }
 
     return false;
+}
+
+void CheckpointCollector::getRepairTimeoutProof(dombft::proto::RepairTimeoutProof &timeoutProof) const
+{
+    assert(repairTimeoutProof_.has_value());
+    timeoutProof = *repairTimeoutProof_;
 }
 
 // ================= CheckpointCollectorStore =================
@@ -212,7 +240,7 @@ bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool 
         }
     }
 
-    auto [_, created] = collectors_.try_emplace(key, replicaId_, n_, quorumSize_, round, seq, needsSnapshot);
+    auto [_, created] = collectors_.try_emplace(key, replicaId_, round, seq, needsSnapshot);
     assert(created);
 
     return true;

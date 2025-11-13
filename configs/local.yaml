@@ -15,8 +15,8 @@ client:
   requestTimeout: 10000000    # 10 s
 
   sendMode: "sendRate"
-  maxInFlight: 10
-  sendRate: 10
+  maxInFlight: 100
+  sendRate: 100
   runtimeSeconds: 45
   requestSize: 512
   useHMAC: false
@@ -47,8 +47,9 @@ replica:
   port: 34000
   app: "counter"
   keysDir: "keys/replica"
+  repairTimeout:      100000
+  checkpointTimeout: 1000000 
   repairViewTimeout: 5000000
-  repairTimeout: 1000000
   numVerifyThreads: 1
   numSendThreads: 2
   checkpointInterval: 100

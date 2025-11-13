@@ -1,5 +1,5 @@
-#include "lib/config/config_util.h"
 #include "lib/config/config_manager.h"
+#include "lib/config/config_util.h"
 
 #include "lib/common.h"
 #include "lib/crypto/hmac_provider.h"
@@ -28,7 +28,6 @@ private:
     std::vector<Address> replicaAddrs_;
     std::vector<Address> proxyAddrs_;
     std::vector<Address> clientAddrs_;
-    uint32_t f_;
     uint32_t quorumSize_;
     uint32_t superQuorumSize_;
     uint32_t useHMAC_;

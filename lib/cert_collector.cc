@@ -1,4 +1,5 @@
 #include "lib/cert_collector.h"
+#include "lib/config/config_manager.h"
 #include "lib/utils.h"
 
 #include "proto/dombft_apps.pb.h"
@@ -11,13 +12,14 @@
 #include <tuple>
 
 using namespace dombft::proto;
+using namespace dombft;
 
-CertCollector::CertCollector(int f, int q)
-    : f_(f)
-    , quorumSize_(q)
-    , maxMatchSize_(0)
+CertCollector::CertCollector()
+    : maxMatchSize_(0)
     , round_(0)
 {
+    f_ = ConfigManager::getInstance().getConfig().f;
+    quorumSize_ = ConfigManager::getInstance().getQuorumSize();
 }
 
 size_t CertCollector::insertReply(Reply &reply, std::vector<byte> &&sig)

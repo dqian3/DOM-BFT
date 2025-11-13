@@ -1,5 +1,5 @@
-#include "lib/config/config_util.h"
 #include "lib/config/config_manager.h"
+#include "lib/config/config_util.h"
 
 #include "lib/application.h"
 #include "lib/checkpoint_collector.h"
@@ -95,6 +95,7 @@ private:
     // State for commit/checkpoint protocol
     CheckpointCollectorStore checkpointCollectors_;
     bool checkpointSnapshotRequested_ = false;
+    uint64_t checkpointTimeoutStart_ = 0;
 
     // State for repair
     bool repair_ = false;
@@ -105,9 +106,6 @@ private:
 
     uint64_t curRoundStartSeq_ = 0;
     std::map<std::pair<uint64_t, uint32_t>, dombft::proto::ClientRequest> repairQueuedReqs_;
-
-    std::map<uint32_t, dombft::proto::RepairTimeout> repairReplicaTimeouts_;
-    std::map<uint32_t, std::string> repairReplicaTimeoutSigs_;
 
     std::optional<dombft::proto::RepairProposal> repairProposal_;
     std::string proposalDigest_;
@@ -227,9 +225,9 @@ private:
 
 public:
     Replica(
-        uint32_t replicaId, bool crashed = false, uint32_t triggerRepairFreq = 0,
-        uint32_t viewChangeFreq = 0, bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0,
-        uint32_t checkpointDropFreq = 0, bool skipForwarding = false, bool ignoreDeadlines = false
+        uint32_t replicaId, bool crashed = false, uint32_t triggerRepairFreq = 0, uint32_t viewChangeFreq = 0,
+        bool commitLocalInViewChange = false, uint32_t viewChangeNum = 0, uint32_t checkpointDropFreq = 0,
+        bool skipForwarding = false, bool ignoreDeadlines = false
     );
     ~Replica();
 

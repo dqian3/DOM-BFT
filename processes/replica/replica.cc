@@ -4,10 +4,10 @@
 #include "lib/apps/counter.h"
 #include "lib/apps/kv_store.h"
 #include "lib/common.h"
+#include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "lib/config/config_util.h"
 
 #include <algorithm>
 #include <cryptopp/sha.h>
@@ -19,9 +19,8 @@ namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(
-    uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq,
-    bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq, bool skipForwarding,
-    bool ignoreDeadlines
+    uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq, bool commitLocalInViewChange,
+    uint32_t viewChangeNum, uint32_t checkpointDropFreq, bool skipForwarding, bool ignoreDeadlines
 )
     : replicaId_(replicaId)
     , checkpointInterval_(ConfigManager::getInstance().getConfig().replicaCheckpointInterval)
@@ -38,7 +37,7 @@ Replica::Replica(
     , sendThreadpool_(ConfigManager::getInstance().getConfig().replicaNumSendThreads)
     , running_(true)
     , round_(1)
-    , checkpointCollectors_(replicaId_, quorumSize_)
+    , checkpointCollectors_(replicaId_)
     , crashed_(crashed)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
@@ -47,6 +46,8 @@ Replica::Replica(
     , commitLocalInViewChange_(commitLocalInViewChange)
     , viewChangeNum_(viewChangeNum)
 {
+    const auto &config = ConfigManager::getInstance().getConfig();
+
     // Replica initialization
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
@@ -93,11 +94,9 @@ Replica::Replica(
     log_ = std::make_shared<Log>(app_);
     LOG(INFO) << "Log instantiated";
 
-    f_ = config.resiliencyParams.at("f");
-    int e = config.resiliencyParams.at("e");
-    int n = 3 * f_ + 2 * e + 1;
-    quorumSize_ = n - f_;
-    superQuorumSize_ = n - e;
+    f_ = config.f;
+    quorumSize_ = ConfigManager::getInstance().getQuorumSize();
+    superQuorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
 
     // Network setup for unified functionality
     if (config.transport == "nng") {
@@ -598,11 +597,11 @@ void Replica::verifyMessagesThd()
 
 #endif
 
-        else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
+        else if (hdr->msgType == REPAIR_TIMEOUT) {
             RepairTimeout timeoutMsg;
 
             if (!timeoutMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
+                LOG(ERROR) << "Unable to parse REPAIR_TIMEOUT message";
                 return;
             }
 
@@ -885,11 +884,11 @@ void Replica::processMessagesThd()
             processSnapshotReply(reply);
         }
 
-        else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
+        else if (hdr->msgType == REPAIR_TIMEOUT) {
             RepairTimeout msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
+                LOG(ERROR) << "Unable to parse REPAIR_TIMEOUT message";
                 return;
             }
 
@@ -1056,6 +1055,12 @@ void Replica::processClientRequest(const ClientRequest &request, bool queued)
     if (seq % checkpointInterval_ == 0) {
         // Save a digest of the application state and also save a snapshot
         startCheckpoint(seq % snapshotInterval_ == 0);
+
+        checkpointTimeoutStart_ = GetMicrosecondTimestamp();
+    }
+
+    if (checkpointTimeoutStart_ == 0) {
+        checkpointTimeoutStart_ = GetMicrosecondTimestamp();
     }
 }
 
@@ -1124,6 +1129,13 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         return;
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
+
+    // TODO keep track to ensure this doesn't repeat
+    if (reply.seq() % checkpointInterval_ != 0) {
+        if (!checkpointCollectors_.hasCollector(round_, reply.seq())) {
+            startCheckpoint(reply.seq());
+        }
+    }
 
     auto &checkpoint = log_->getCommittedCheckpoint();
 
@@ -1311,7 +1323,10 @@ void Replica::startCheckpoint(bool createSnapshot)
         VLOG(4) << "Checkpoint collector already exists for seq=" << seq << " round=" << round_
                 << " since we received messages from other replicas";
     } else {
-        checkpointCollectors_.initCollector(round_, seq, createSnapshot);
+
+        if (!checkpointCollectors_.initCollector(round_, seq, createSnapshot)) {
+            return;
+        }
     }
 
     checkpointCollectors_.at(round_, seq).addOwnState(log_->getDigest(seq), log_->getClientRecord());
@@ -1508,24 +1523,30 @@ void Replica::processRepairTimeout(const dombft::proto::RepairTimeout &msg, std:
         return;
     }
 
-    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for round " << msg.round();
+    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for round " << msg.round() << " seq "
+            << msg.seq();
 
     uint32_t repId = msg.replica_id();
+    uint32_t seq = msg.seq();
 
-    repairReplicaTimeouts_[repId] = msg;
-    repairReplicaTimeoutSigs_[repId] = std::string(sig.begin(), sig.end());
-
-    dombft::proto::RepairTimeoutProof proof;
-    for (auto &[repId, msg] : repairReplicaTimeouts_) {
-        if (msg.round() != round_)
-            continue;
-
-        (*proof.add_timeouts()) = msg;
-        proof.add_signatures(repairReplicaTimeoutSigs_[repId]);
+    if (msg.round() < round_) {
+        VLOG(4) << "Received repair timeout for previous round " << msg.round() << " < " << round_;
+        return;
     }
 
-    if (proof.timeouts_size() == f_ + 1) {
+    if (!checkpointCollectors_.hasCollector(round_, seq)) {
+        VLOG(4) << "No checkpoint collector for round " << round_ << " seq " << seq << ", creating one now";
+        return;
+    }
+
+    auto &cc = checkpointCollectors_.at(round_, seq);
+    if (cc.addAndCheckTimeout(msg, sig)) {
+        dombft::proto::RepairTimeoutProof proof;
+
+        cc.getRepairTimeoutProof(proof);
         LOG(INFO) << "Gathered timeout proof for round " << round_ << ", starting repair and broadcasting!";
+
+        // Reset timeouts
         broadcastToReplicas(proof, REPAIR_TIMEOUT_PROOF);
         startRepair();
     }
@@ -1648,18 +1669,29 @@ void Replica::checkTimeouts()
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    if (repairTimeoutStart_ != 0 && now - repairTimeoutStart_ > repairTimeout_) {
-        repairTimeoutStart_ = 0;
-        LOG(WARNING) << "repairStartTimer for round=" << round_ << " timed out! Sending timeout message!";
+    // TODO direct access here is wrong
+    for (auto &coll : checkpointCollectors_.collectors_) {
 
-        RepairTimeout msg;
-        msg.set_round(round_);
-        msg.set_replica_id(replicaId_);
+        uint64_t replicaCheckpointTimeout = ConfigManager::getInstance().getConfig().replicaCheckpointTimeout;
+        if (coll.second.checkSelfTimeout(now, replicaCheckpointTimeout)) {
+            dombft::proto::RepairTimeout timeout;
+            timeout.set_replica_id(replicaId_);
+            timeout.set_round(round_);
+            timeout.set_seq(coll.first.second);
 
-        broadcastToReplicas(msg, MessageType::REPAIR_REPLICA_TIMEOUT);
-    };
+            broadcastToReplicas(timeout, MessageType::REPAIR_TIMEOUT);
+        }
+    }
 
-    now = GetMicrosecondTimestamp();
+    uint64_t checkpointTimeout = ConfigManager::getInstance().getConfig().replicaCheckpointTimeout;
+    if (checkpointTimeoutStart_ != 0 && now - checkpointTimeoutStart_ > checkpointTimeout &&
+        !checkpointCollectors_.hasCollector(round_, log_->getNextSeq() - 1)) {
+
+        LOG(INFO) << "Starting checkpoint for round=" << round_ << " seq=" << log_->getNextSeq() - 1
+                  << " due to timeout!";
+
+        startCheckpoint(false);
+    }
 
     if (repairViewStart_ != 0 && now - repairViewStart_ > repairViewTimeout_) {
         repairViewStart_ = now;

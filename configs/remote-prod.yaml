@@ -49,6 +49,7 @@ client:
   sendRate: 1000
   slowPathTimeout: 500000
   useHMAC: false
+  sendProofs: false
 
 proxy:
   forwardPort: 31000
@@ -84,9 +85,8 @@ replica:
   numSendThreads: 6
   numVerifyThreads: 6
   port: 34000
-  repairTimeout: 1000000
+  repairTimeout:      100000
+  checkpointTimeout: 1000000 
   repairViewTimeout: 5000000
-  checkpointInterval: 5000
-  snapshotInterval: 25000
   checkpointInterval: 5000
   snapshotInterval: 25000

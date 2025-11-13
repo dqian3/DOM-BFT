@@ -11,7 +11,7 @@
 class CertCollector {
 
 public:
-    CertCollector(int f, int q);
+    CertCollector();
 
     // Inserts reply/signature with move semantics
     // Assumes that reply has already been verified

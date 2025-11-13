@@ -1,10 +1,10 @@
 #include "client.h"
 
+#include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "lib/config/config_util.h"
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
@@ -33,7 +33,7 @@ Client::Client(size_t id)
     LOG(INFO) << "clientPort=" << clientPort;
 
     // Use ConfigManager's pre-calculated BFT parameters
-    f_ = configManager.getF();
+    f_ = config.f;
     quorumSize_ = configManager.getQuorumSize();
     superQuorumSize_ = configManager.getSuperQuorumSize();
 
@@ -237,7 +237,7 @@ void Client::submitRequest()
 
     fillRequestData(request);
 
-    requestStates_.emplace(nextSeq_, RequestState(f_, quorumSize_, request, now));
+    requestStates_.emplace(nextSeq_, RequestState(request, now));
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
@@ -291,7 +291,7 @@ void Client::submitRequestsOpenLoop()
 
         fillRequestData(request);
 
-        requestStates_.emplace(nextSeq_, RequestState(f_, quorumSize_, request, now));
+        requestStates_.emplace(nextSeq_, RequestState(request, now));
         VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
                 << " in_flight=" << numInFlight_;
 
@@ -550,9 +550,11 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         }
     }
 
+    bool sendProofs = ConfigManager::getInstance().getConfig().clientSendProofs;
+
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (!reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_ &&
+    if (sendProofs && !reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_ &&
         reqState.collector.round_ == reply.round()) {
         LOG(INFO) << "Client detected cert is impossible, triggering repair with proof for cseq=" << clientSeq
                   << " for round=" << reqState.collector.round_;

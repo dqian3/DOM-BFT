@@ -1,10 +1,10 @@
 #include "dummy_replica.h"
 
 #include "lib/common.h"
+#include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "lib/config/config_util.h"
 
 #include <sstream>
 
@@ -22,9 +22,6 @@ DummyReplica::DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batc
 {
     auto &configManager = ConfigManager::getInstance();
     const auto &config = configManager.getConfig();
-
-    f_ = configManager.getF();
-    LOG(INFO) << "f=" << f_;
 
     LOG(INFO) << "batchSize=" << batchSize_;
 

@@ -17,10 +17,6 @@ private:
     static std::unique_ptr<ConfigManager> instance_;
     ProcessConfig config_;
 
-    // Derived BFT parameters
-    uint32_t f_;
-    uint32_t e_;
-
     uint32_t quorumSize_;
     uint32_t superQuorumSize_;
     uint32_t numReplicas_;
@@ -63,7 +59,6 @@ public:
     static void reset();
 
     // BFT parameter accessors
-    uint32_t getF() const { return f_; }
     uint32_t getQuorumSize() const { return quorumSize_; }
     uint32_t getSuperQuorumSize() const { return superQuorumSize_; }
     uint32_t getNumReplicas() const { return numReplicas_; }

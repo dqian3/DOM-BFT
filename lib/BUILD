@@ -52,6 +52,7 @@ cc_library(
         ":address",
         ":common",
         ":utils",
+        ":config",
         "//proto:dombft_proto_cc",
         "//proto:dombft_apps_cc",
         "@com_github_google_glog//:glog",
@@ -171,7 +172,8 @@ cc_library(
         ":log",
         ":common",
         ":client_record",
-        "//proto:dombft_proto_cc"
+        "//proto:dombft_proto_cc",
+        ":config",
     ],
     visibility = ["//visibility:public"],
 )

@@ -25,7 +25,9 @@ struct ProcessConfig {
     std::string transport;
     AppType app;
     std::string appStr;
-    std::unordered_map<std::string, u_int32_t> resiliencyParams;
+
+    uint32_t f;
+    uint32_t e;
 
     std::vector<std::string> clientIps;
     int clientPort;
@@ -38,6 +40,7 @@ struct ProcessConfig {
     std::string clientSendMode;
     int clientRequestSize;
     bool clientUseHMAC;
+    bool clientSendProofs;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -52,8 +55,10 @@ struct ProcessConfig {
 
     std::vector<std::string> replicaIps;
     int replicaPort;
+    int replicaCheckpointTimeout;
     int replicaRepairTimeout;
     int replicaRepairViewTimeout;
+
     std::string replicaKeysDir;
     int replicaNumSendThreads;
     int replicaNumVerifyThreads;
@@ -121,6 +126,7 @@ struct ProcessConfig {
             clientSendMode = parseField<std::string>(clientNode, "sendMode");
             clientRequestSize = parseField<int>(clientNode, "requestSize");
             clientUseHMAC = parseField<bool>(clientNode, "useHMAC", false);
+            clientSendProofs = parseField<bool>(clientNode, "sendProofs", false);
         }
 
         catch (const ConfigParseException &e) {
@@ -160,6 +166,7 @@ struct ProcessConfig {
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
 
             replicaRepairTimeout = parseField<int>(replicaNode, "repairTimeout");
+            replicaCheckpointTimeout = parseField<int>(replicaNode, "checkpointTimeout");
             replicaRepairViewTimeout = parseField<int>(replicaNode, "repairViewTimeout");
 
             replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads");
@@ -200,7 +207,10 @@ struct ProcessConfig {
             throw ConfigParseException("Invalid app type " + appStr + ". Must be 'counter' or 'kv_store'");
         }
 
-        resiliencyParams = parseField<std::unordered_map<std::string, u_int32_t>>(config, "resiliency", {{"f", 1}, {"e", 1}});
+        auto resiliencyParams =
+            parseField<std::unordered_map<std::string, u_int32_t>>(config, "resiliency", {{"f", 1}, {"e", 1}});
+        f = resiliencyParams.at("f");
+        e = resiliencyParams.at("e");
 
         parseClientConfig(config);
         parseProxyConfig(config);
