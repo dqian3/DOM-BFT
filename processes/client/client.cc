@@ -43,6 +43,8 @@ Client::Client(const ProcessConfig &config, size_t id)
     int n = 3 * f_ + 2 * e + 1;
     quorumSize_ = n - f_;
     superQuorumSize_ = n - e;
+    LOG(INFO) << "Resiliency parameters: f=" << f_ << ", quorumSize=" << quorumSize_
+              << ", superQuorumSize=" << superQuorumSize_;
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
     slowPathTimeout_ = config.clientSlowPathTimeout;

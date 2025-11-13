@@ -86,8 +86,8 @@ def logs(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     replicas, proxies, clients = get_process_ips(config_file, resolve)
 
     get_logs(c, replicas, "replica")
-    get_logs(c, proxies, "proxy")
-    get_logs(c, clients, "client")
+    #get_logs(c, proxies, "proxy")
+    #get_logs(c, clients, "client")
 
 
 @task
@@ -115,7 +115,7 @@ def run(
     max_view_change=0,
 ):
     config_file = os.path.abspath(config_file)
-
+    
     with open(config_file) as f:
         cfg = yaml.load(f, Loader=yaml.Loader)
 
@@ -128,11 +128,8 @@ def run(
     proxy_path = "./dombft_proxy"
     client_path = "./dombft_client"
 
-    if cfg.get("resiliency") == "5f+1":
-        f = len(replicas) // 5
-    else:
-        # Otherwise, we assume 3f+1 resiliency
-        f = len(replicas) // 3
+    resiliency = cfg.get("resiliency")
+    f = resiliency["f"]
 
     # Clear out ssh keys to avoid issues with authentication 
     #     -> Hao: this actually causes issues:Could not open a connection to your authentication agent. Why?
@@ -160,6 +157,8 @@ def run(
 
     # Run a dummy command with pty to log a session so that the machine doesn't shutdown from being inactive
     group.run("echo ''", pty=True)
+    group.run("rm -f ./*.log.gz", warn=True)
+    group.run("rm -f ./*.log", warn=True)
 
     print("Starting replicas")
     for id, ip in enumerate(replicas):
@@ -240,7 +239,7 @@ def run(
 
         c.run("rm -f ../logs/*.log.gz", warn=True)
 
-        get_logs(c, replicas, "replica")
+        #get_logs(c, replicas, "replica")
         get_logs(c, clients, "client")
 
         if dom_logs:

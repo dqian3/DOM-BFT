@@ -38,7 +38,7 @@ Replica::Replica(
     , sendThreadpool_(config.replicaNumSendThreads)
     , running_(true)
     , round_(1)
-    , checkpointCollectors_(replicaId_, quorumSize_)
+    , checkpointCollectors_(replicaId_, 0)
     , crashed_(crashed)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
@@ -98,6 +98,7 @@ Replica::Replica(
     int n = 3 * f_ + 2 * e + 1;
     quorumSize_ = n - f_;
     superQuorumSize_ = n - e;
+    checkpointCollectors_.setQuorumSize(quorumSize_);
 
     // Network setup for unified functionality
     if (config.transport == "nng") {
@@ -1786,7 +1787,7 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
 bool Replica::verifyCert(const Cert &cert)
 {
     if (cert.replies().size() < quorumSize_) {
-        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_
+        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than quorum of f=" << f_
                   << " quorumSize_=" << quorumSize_;
         return false;
     }
@@ -2100,7 +2101,8 @@ bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
 bool Replica::verifyRepairDone(const RepairDone &done)
 {
     if (done.commits().size() < quorumSize_) {
-        LOG(WARNING) << "Number of commits is " << done.commits().size() << ", which is smaller than 2f + 1, f=" << f_;
+        LOG(WARNING) << "Number of commits is " << done.commits().size() << ", which is smaller than quorum size of "
+                     << quorumSize_ << " f = " << f_;
         return false;
     }
 
@@ -2587,7 +2589,8 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
                curMsg.second.proposal_digest() == proposalDigest_ && curMsg.second.pbft_view() == pbftView_;
     });
     if (numMsgs < quorumSize_) {
-        LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for 2f + 1 to proceed";
+        LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for quorum size of " 
+                  << quorumSize_ << " to proceed";
         return;
     }
     // Store PBFT states for potential view change
@@ -2602,7 +2605,7 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
             pbftState_.prepareSigs[repId] = repairPrepareSigs_[repId];
         }
     }
-    LOG(INFO) << "Prepare received from 2f + 1 replicas, agreement reached for round=" << preparedRound_
+    LOG(INFO) << "Prepare received from quorum size of "<< quorumSize_ << " replicas, agreement reached for round=" << preparedRound_
               << " pbft_view=" << pbftView_;
 
     VLOG(1) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
@@ -2672,7 +2675,7 @@ void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
             << " log_digest=" << digest_to_hex(msg.log_digest())
             << " proposal_digest=" << digest_to_hex(msg.proposal_digest());
 
-    LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
+    LOG(INFO) << "Commit received from quorum size of "<< quorumSize_ << " replicas, Committed!";
     tryFinishRepair();
 }
 
@@ -2742,7 +2745,7 @@ void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> s
     if (numMsgs != quorumSize_) {
         return;
     }
-    LOG(INFO) << "ViewChange for view " << inViewNum << " received from 2f + 1 replicas!";
+    LOG(INFO) << "ViewChange for view " << inViewNum << " received from quorum size of "<< quorumSize_ << " replicas!";
 
     // non-primary replicas collect view change msgs for
     // 1. delaying timer setting for better liveness (avoid frequent view changes)
@@ -2815,7 +2818,7 @@ void Replica::processPBFTNewView(const PBFTNewView &msg)
                   << " and pbft_view=" << maxVC.pbft_view() << ", " << msg.pbft_view();
     }
     if (views[maxVC.pbft_view()] < quorumSize_) {
-        LOG(INFO) << "The view number " << maxVC.pbft_view() << " does not have a 2f + 1 quorum";
+        LOG(INFO) << "The view number " << maxVC.pbft_view() << " does not have a quorum size of " << quorumSize_;
         return;
     }
     LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared round=" << msg.round();

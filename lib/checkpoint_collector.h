@@ -132,7 +132,7 @@ class CheckpointCollectorStore {
     uint32_t quorumSize_;
 
 public:
-    explicit CheckpointCollectorStore(uint32_t replicaId, uint32_t q)
+    CheckpointCollectorStore(uint32_t replicaId, uint32_t q)
         : replicaId_(replicaId)
         , quorumSize_(q)
     {
@@ -144,6 +144,7 @@ public:
     CheckpointCollector &at(uint32_t round, uint32_t seq);
 
     void cleanStaleCollectors(uint32_t stableSeq, uint32_t committedSeq);
+    void setQuorumSize(uint32_t q) { quorumSize_ = q; }
 };
 
 #endif   // DOM_BFT_CHECKPOINT_H
