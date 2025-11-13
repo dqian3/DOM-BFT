@@ -70,8 +70,6 @@ Proxy::Proxy(uint32_t proxyId)
 
 Proxy::~Proxy() {}
 
-void Proxy::Terminate() { endpoint_->LoopBreak(); }
-
 void Proxy::setDOMRequest(const ClientRequest &inReq, DOMRequest &outReq, MessageHeader *hdr)
 {
     uint64_t now = GetMicrosecondTimestamp();
@@ -202,6 +200,7 @@ void Proxy::Run()
         }
     };
 
+    endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
     endpoint_->RegisterMsgHandler(handleRequest);
     endpoint_->Connect();
 

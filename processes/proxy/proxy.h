@@ -17,8 +17,8 @@
 
 #include "proto/dombft_proto.pb.h"
 
-#include "lib/config/config_util.h"
 #include "lib/config/config_manager.h"
+#include "lib/config/config_util.h"
 #include "owd_calc.h"
 
 namespace dombft {
@@ -70,7 +70,6 @@ public:
     ~Proxy();
 
     void Run();
-    void Terminate();
 
 private:
     void
