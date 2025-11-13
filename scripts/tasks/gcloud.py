@@ -197,10 +197,10 @@ def run_largen(
 
         f = 1
         for e in [0, 1, 2, 3]:
-            vm(
-                c, config_file=config_file
-            )  # This should only start the vms that are needed, not all
-            time.sleep(20)
+            # vm(
+            #     c, config_file=config_file
+            # )  # This should only start the vms that are needed, not all
+            # time.sleep(20)
 
             n = 3 * f + 2 * e + 1
 
@@ -222,7 +222,7 @@ def run_largen(
                 f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n}_sr{send_rate}.out"
             )
 
-            vm(c, config_file=config_file, stop=True)
+            # vm(c, config_file=config_file, stop=True)
 
     finally:
         with open(config_file, "w") as cfg_file:
