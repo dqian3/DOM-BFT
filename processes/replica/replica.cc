@@ -1795,7 +1795,9 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
 
 bool Replica::verifyCert(const Cert &cert)
 {
-    if (cert.replies().size() < quorumSize_) {
+
+    // TODO fix, if superQuorum size is smaller, than we don't need to do any checks
+    if (cert.replies().size() < std::min(superQuorumSize_, quorumSize_)) {
         LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_
                   << " quorumSize_=" << quorumSize_;
         return false;
@@ -1953,7 +1955,7 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         return false;
     }
 
-    if (!(checkpoint.commits().size() != quorumSize_ || checkpoint.repair_commits().size() != quorumSize_)) {
+    if (!(checkpoint.commits().size() != superQuorumSize_ || checkpoint.repair_commits().size() != quorumSize_)) {
 
         LOG(INFO) << "Checkpoint commits not the right size!!";
         return false;
