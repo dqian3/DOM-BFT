@@ -15,7 +15,7 @@ client:
   requestTimeout: 10000000    # 10 s
 
   sendMode: "sendRate"
-  maxInFlight: 100
+  maxInFlight: 10
   sendRate: 100
   runtimeSeconds: 300
   requestSize: 512

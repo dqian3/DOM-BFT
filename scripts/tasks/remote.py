@@ -291,8 +291,9 @@ def run_rates(
         # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
         cfg["client"]["maxInFlight"] = 2500
+        nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [250, 500, 1000, 1500, 2000]:
+        for send_rate in [500, 1500, 1800, 2000]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
@@ -304,7 +305,7 @@ def run_rates(
                 batch_size=batch_size,
             )
             c.run(
-                f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{send_rate}.out"
+                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{nClients * send_rate}.out"
             )
 
         # # Normal Path Swapped

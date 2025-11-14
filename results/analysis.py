@@ -69,6 +69,7 @@ if __name__ == "__main__":
 
     latencies = np.array([c["latency"] for c in commits])
     print(f"Num commits: {len(commits)}")
+    print(f"p5 latency: {np.percentile(latencies, 5):.0f} us")
     print(f"Average latency: {np.mean(latencies):.0f} us")
     print(f"p95 latency: {np.percentile(latencies, 95):.0f} us")
     print(f"p99 latency: {np.percentile(latencies, 99):.0f} us")
