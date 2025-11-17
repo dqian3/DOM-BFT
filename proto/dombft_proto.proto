@@ -96,29 +96,26 @@ message RepairTimeout
 {    
     uint32 replica_id = 1;
     uint32 round = 2;
-    uint32 seq = 3;
+    uint32 view = 3;
+    uint32 seq = 4;
 }
 
 message RepairTimeoutProof {
-    uint32 round = 1;
-
-    repeated RepairTimeout timeouts = 2;
-    repeated bytes signatures = 3;
-}
-
-message RepairReplyProof {
-    uint32 round = 3;
-
-    repeated Reply replies = 4;
+    uint32 replica_id = 1;
+    uint32 round = 2;
+    uint32 view = 3;
+    
+    repeated RepairTimeout timeouts = 4;
     repeated bytes signatures = 5;
 }
 
-message RepairReplicaReplyProof {
-    uint32 seq = 1;
+message RepairReplyProof {
+    uint32 replica_id = 1;
     uint32 round = 2;
-    
-    repeated Reply replies = 3;
-    repeated bytes signatures = 4;
+    uint32 view = 3;
+
+    repeated Reply replies = 4;
+    repeated bytes signatures = 5;
 }
 
 
@@ -166,25 +163,39 @@ message LogCheckpoint
 }
 
 
+
+message RepairLog {
+    repeated LogEntry entries = 1;
+    LogCheckpoint checkpoint = 2;
+    optional Cert cert = 3;
+}
+
+message PreparedHistory {
+    repeated PBFTPrepare prepares = 1;
+    repeated bytes prepare_sigs = 2; 
+}
+
 message RepairStart
 {
     uint32 pbft_view = 1;
     uint32 round = 2;
     uint32 replica_id = 3;
 
-    repeated LogEntry log_entries = 4;
-    LogCheckpoint checkpoint = 5;
-    
-    optional Cert cert = 7;
+    RepairLog log = 4;
+
+
+    // If this is present, functions as a view change
+    optional PreparedHistory prepared_history = 5;
 }
 
 message RepairProposal
 {
     uint32 round = 1;
-    uint32 replica_id = 2; //primary id
+    uint32 view = 2;
+    uint32 replica_id = 3; //primary id
 
-    repeated RepairStart logs = 3;
-    repeated bytes signatures = 4;
+    repeated RepairStart start_msgs = 4;
+    repeated bytes signatures = 5;
 }
 
 
@@ -238,46 +249,12 @@ message PBFTCommit
     bytes log_digest = 5;
 }
 
-
-message RepairDone 
-{
+message ViewUpdate {
     uint32 round = 1;
     uint32 replica_id = 2;
-    bytes proposal_digest = 4;
-
-    repeated PBFTCommit commits = 5;
-    repeated bytes commit_sigs = 6;
+    uint32 view = 3;
 }
 
-
-message PBFTViewChange
-{
-    uint32 round = 1;
-    uint32 replica_id = 2;
-    uint32 pbft_view = 3;
-    repeated  PBFTPrepare prepares = 4;
-    repeated  bytes prepare_sigs = 5;
-    // we add the "request" for simplicity though PBFT use fetching when the request is missing
-    RepairProposal proposal = 6;
-    bytes proposal_digest = 7;
-}
-
-message PBFTViewChangeNotif
-{
-    uint32 round = 1;
-    uint32 replica_id = 2;
-    uint32 pbft_view = 3;
-}
-
-
-message PBFTNewView
-{
-    uint32 primary_id = 1;
-    uint32 pbft_view= 2;
-    uint32 round = 3;
-    repeated PBFTViewChange view_changes = 4;
-    repeated bytes view_change_sigs = 5;
-}
 
 message SnapshotRequest {
     uint32 round = 1;
