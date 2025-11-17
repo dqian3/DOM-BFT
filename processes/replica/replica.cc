@@ -2296,11 +2296,18 @@ void Replica::tryFinishRepair()
 
 LogSuffix &Replica::getRepairLogSuffix()
 {
-    // TODO cache the repair log suffix per round,
-    repairProposalLogSuffix_ = LogSuffix();
-    repairProposalLogSuffix_->replicaId = replicaId_;
-    repairProposalLogSuffix_->round = round_;
-    getLogSuffixFromProposal(repairProposal_.value(), repairProposalLogSuffix_.value());
+    // This is just to cache the processing of the repairProposal
+
+    // TODO cache across view changes, if the proposal digest is the same. For now we just recompute every time
+    // siince trying to use the wrong proposal can lead to memory issues, since LogSuffix contains pointers into the
+    // proposal
+
+    if (!repairProposalLogSuffix_.has_value() || repairProposalLogSuffix_.value().round != round_) {
+        repairProposalLogSuffix_ = LogSuffix();
+        repairProposalLogSuffix_->replicaId = replicaId_;
+        repairProposalLogSuffix_->round = round_;
+        getLogSuffixFromProposal(repairProposal_.value(), repairProposalLogSuffix_.value());
+    }
     return repairProposalLogSuffix_.value();
 }
 
@@ -2428,6 +2435,7 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
 
     // accepts the proposal as long as it's from the primary
     repairProposal_ = msg.proposal();
+    repairProposalLogSuffix_.reset();
     proposalDigest_ = msg.proposal_digest();
 
     if (viewChangeByPrepare()) {
