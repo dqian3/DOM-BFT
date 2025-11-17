@@ -64,7 +64,7 @@ def run(
     slow_path_freq=0,
     normal_path_freq=0,
     view_change_freq=0,
-    commit_local_in_view_change=False,
+    view_change_type="leader",
 ):
     def arun(*args, **kwargs):
         return c.run(*args, **kwargs, asynchronous=True, warn=True)
@@ -98,12 +98,10 @@ def run(
                 swap_arg = f"-swapFreq {normal_path_freq}"
             if slow_path_freq != 0 and (id % 2) == 0:
                 swap_arg = f"-swapFreq {slow_path_freq}"
+
             view_change_arg = ""
-            if (id % 2) == 0:
-                if view_change_freq != 0:
-                    view_change_arg = f"-viewChangeFreq {view_change_freq}"
-                if commit_local_in_view_change and view_change_freq == 0:
-                    view_change_arg += " -commitLocalInViewChange"
+            if view_change_freq != 0:
+                view_change_arg = f"-viewChangeFreq {view_change_freq}"
 
             if id < num_crashed:
                 crashed_arg = "-crashed"

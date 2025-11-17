@@ -7,17 +7,17 @@ typedef std::map<RequestId, const dombft::proto::LogEntry *> ClientReqs;
 
 ClientReqs getValidClientRequests(const dombft::proto::RepairProposal &repairProposal, uint32_t checkpointSeq)
 {
-    uint32_t f = repairProposal.logs().size() / 2;
+    uint32_t f = repairProposal.start_msgs().size() / 2;
 
     // Compute all client requests in the proposal, so we can add them to the log suffix deterministically
     ClientReqs ret;
 
     std::map<RequestId, std::map<std::string, uint32_t>> requestCounts;
 
-    for (int i = 0; i < repairProposal.logs().size(); i++) {
-        auto &log = repairProposal.logs()[i];
+    for (int i = 0; i < repairProposal.start_msgs().size(); i++) {
+        auto &log = repairProposal.start_msgs()[i].log();
 
-        for (const dombft::proto::LogEntry &entry : log.log_entries()) {
+        for (const dombft::proto::LogEntry &entry : log.entries()) {
             if (entry.seq() <= checkpointSeq) {
                 continue;
             }
@@ -41,22 +41,26 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     if (VLOG_IS_ON(4)) {
         std::string replicaIds;
-        for (auto &log : repairProposal.logs()) {
+        for (auto &log : repairProposal.start_msgs()) {
             replicaIds += std::to_string(log.replica_id()) + " ";
         }
         VLOG(4) << "Replica ids in repairProposal: " << replicaIds;
     }
 
-    uint32_t f = repairProposal.logs().size() / 2;
+    uint32_t f = repairProposal.start_msgs().size() / 2;
 
     // TODO verify messages so this isn't unsafe
     uint32_t maxCheckpointSeq = 0;
 
     // First find highest checkpoint
-    for (auto &log : repairProposal.logs()) {
+    for (auto &startMsg : repairProposal.start_msgs()) {
+        assert(startMsg.has_log());
+
+        auto &log = startMsg.log();
+
         if (log.checkpoint().seq() >= maxCheckpointSeq) {
             logSuffix.checkpoint = &log.checkpoint();
-            logSuffix.checkpointReplica = log.replica_id();
+            logSuffix.checkpointReplica = startMsg.replica_id();
             maxCheckpointSeq = log.checkpoint().seq();
         }
     }
@@ -73,8 +77,8 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
     // get the max cert seq by comparing the seq in each of the included cert.
     // we have already verified these certs, so we can trust their seq numbers.
-    for (int i = 0; i < repairProposal.logs().size(); i++) {
-        const dombft::proto::RepairStart &repairLog = repairProposal.logs()[i];
+    for (int i = 0; i < repairProposal.start_msgs().size(); i++) {
+        const dombft::proto::RepairLog &repairLog = repairProposal.start_msgs()[i].log();
 
         // Already included in checkpoint
         if (!repairLog.has_cert() || repairLog.cert().seq() <= logSuffix.checkpoint->seq())
@@ -95,7 +99,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     }
 
     // Add entries up to cert
-    for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
+    for (const dombft::proto::LogEntry &entry : repairProposal.start_msgs()[logToUseIdx].log().entries()) {
         if (entry.seq() <= logSuffix.checkpoint->seq())
             continue;
 
@@ -109,10 +113,11 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     std::map<uint32_t, std::map<std::string, uint32_t>> matchingEntries;
 
     // Find the common suffix after the max cert position
-    for (int i = 0; i < repairProposal.logs().size(); i++) {
-        auto &log = repairProposal.logs()[i];
+    for (int i = 0; i < repairProposal.start_msgs().size(); i++) {
+        auto &log = repairProposal.start_msgs()[i].log();
+
         // TODO verify each checkpoint
-        for (const dombft::proto::LogEntry &entry : log.log_entries()) {
+        for (const dombft::proto::LogEntry &entry : log.entries()) {
             if (entry.seq() <= maxCertSeq || entry.seq() <= logSuffix.checkpoint->seq())
                 continue;
 
@@ -131,7 +136,7 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
     VLOG(4) << "f + 1 matching digests found from maxCertSeq=" << maxCertSeq << " to seq=" << logToUseSeq;
 
     // Add entries with f + 1 entries
-    for (const dombft::proto::LogEntry &entry : repairProposal.logs()[logToUseIdx].log_entries()) {
+    for (const dombft::proto::LogEntry &entry : repairProposal.start_msgs()[logToUseIdx].log().entries()) {
         if (entry.seq() <= maxCertSeq || entry.seq() <= logSuffix.checkpoint->seq())
             continue;
 

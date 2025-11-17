@@ -17,10 +17,12 @@ struct LogSuffix {
     const dombft::proto::LogCheckpoint *checkpoint;
     std::vector<const dombft::proto::LogEntry *> entries;
 
-        std::string logDigest;
+    std::string logDigest;
 };
 
-struct PBFTState {
+struct PreparedState {
+    uint32_t round = 0;
+    uint32_t pbftView = 0;
     dombft::proto::RepairProposal proposal;
     std::string proposalDigest;
     std::map<uint32_t, dombft::proto::PBFTPrepare> prepares;

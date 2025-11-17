@@ -109,25 +109,28 @@ private:
     uint64_t curRoundStartSeq_ = 0;
     std::map<std::pair<uint64_t, uint32_t>, dombft::proto::ClientRequest> repairQueuedReqs_;
 
+    std::optional<dombft::proto::RepairStart> repairStart_;
     std::optional<dombft::proto::RepairProposal> repairProposal_;
     std::string proposalDigest_;
-    std::map<uint32_t, dombft::proto::RepairStart> repairHistorys_;
+    std::map<uint32_t, dombft::proto::RepairStart> repairStartMsgs_;
     std::map<uint32_t, std::string> repairHistorySigs_;
     std::optional<LogSuffix> repairProposalLogSuffix_;
 
     // State for PBFT
     bool viewChange_ = false;
     uint32_t pbftView_ = 0;
-    uint32_t preparedRound_ = UINT32_MAX;
+    uint32_t preparedRound_ = 0;
     bool viewPrepared_ = true;
-    PBFTState pbftState_;
+    uint32_t numConsecutiveViewChanges_ = 0;
+
+    PreparedState lastPreparedState_;
+
+    std::map<uint32_t, std::pair<uint32_t, uint32_t>> replicaViews_;
 
     std::map<uint32_t, dombft::proto::PBFTPrepare> repairPrepares_;
     std::map<uint32_t, std::string> repairPrepareSigs_;
     std::map<uint32_t, dombft::proto::PBFTCommit> repairPBFTCommits_;
     std::map<uint32_t, std::string> repairCommitSigs_;
-    std::map<uint32_t, dombft::proto::PBFTViewChange> pbftViewChanges_;
-    std::map<uint32_t, std::string> pbftViewChangeSigs_;
 
     // State for testing
     bool crashed_;
@@ -182,19 +185,14 @@ private:
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
     void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg, std::span<byte> sig);
-    void processPBFTViewChange(const dombft::proto::PBFTViewChange &msg, std::span<byte> sig);
-    void processPBFTNewView(const dombft::proto::PBFTNewView &msg);
-    void processRepairDone(const dombft::proto::RepairDone &msg);
 
     // Verification methods
     bool verifyCert(const dombft::proto::Cert &cert);
     bool verifyRepairReplyProof(const dombft::proto::RepairReplyProof &proof);
     bool verifyRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &proof);
     bool verifyCheckpoint(const dombft::proto::LogCheckpoint &checkpoint);
-    bool verifyRepairLog(const dombft::proto::RepairStart &log);
+    bool verifyRepairStart(const dombft::proto::RepairStart &log);
     bool verifyRepairProposal(const dombft::proto::RepairProposal &proposal);
-    bool verifyViewChange(const dombft::proto::PBFTViewChange &viewChange);
-    bool verifyRepairDone(const dombft::proto::RepairDone &done);
 
     // Repair helpers
     void startRepair();
@@ -214,7 +212,10 @@ private:
 
     inline bool isPrimary() { return pbftView_ % replicaAddrs_.size() == replicaId_; }
     uint32_t getPrimary() { return pbftView_ % replicaAddrs_.size(); }
-    void startViewChange();
+
+    void updateReplicaView(uint32_t replicaId, uint32_t view, uint32_t round);
+
+    void startViewChange(uint32_t newView);
     void doPrePreparePhase(uint32_t round);
     void doPreparePhase();
     void doCommitPhase();
