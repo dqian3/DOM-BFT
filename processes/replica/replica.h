@@ -117,7 +117,6 @@ private:
     std::optional<LogSuffix> repairProposalLogSuffix_;
 
     // State for PBFT
-    bool viewChange_ = false;
     uint32_t pbftView_ = 0;
     uint32_t preparedRound_ = 0;
     bool viewPrepared_ = true;
@@ -139,7 +138,7 @@ private:
     std::optional<proto::ClientRequest> heldRequest_;
 
     uint32_t viewChangeFreq_;
-    uint32_t viewChangeInst_;
+    uint32_t viewChangeRound_;
     bool commitLocalInViewChange_ = false;
     uint32_t viewChangeNum_;
     uint32_t viewChangeCounter_ = 0;
@@ -204,7 +203,7 @@ private:
 
     inline bool ifTriggerViewChange() const
     {
-        return !viewChange_ && round_ != 0 && round_ == viewChangeInst_ &&
+        return round_ != 0 && round_ == viewChangeRound_ &&
                (viewChangeNum_ == 0 || viewChangeCounter_ < viewChangeNum_);
     }
     inline bool viewChangeByPrepare() const { return ifTriggerViewChange() && !holdPrepareOrCommit_; }

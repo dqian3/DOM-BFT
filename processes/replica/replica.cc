@@ -42,7 +42,7 @@ Replica::Replica(
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
     , viewChangeFreq_(viewChangeFreq)
-    , viewChangeInst_(viewChangeFreq_)
+    , viewChangeRound_(viewChangeFreq_)
     , commitLocalInViewChange_(commitLocalInViewChange)
     , viewChangeNum_(viewChangeNum)
 {
@@ -2111,13 +2111,12 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     round_++;
     VLOG(2) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
 
-    if (viewChange_) {
-        viewChangeInst_ += viewChangeFreq_;
-        viewChange_ = false;
+    if (numConsecutiveViewChanges_ > 0) {
+        LOG(INFO) << "Repair for round=" << round_ - 1 << " pbft_view=" << pbftView_ << " finished after "
+                  << numConsecutiveViewChanges_ << " view changes.";
         viewChangeCounter_ += 1;
+        numConsecutiveViewChanges_ = 0;
     }
-
-    numConsecutiveViewChanges_ = 0;
 
     // Send repair summary to clients to allow commits in the slow path..
     // NOTE: there was a bug where this was after the checkpointing and so was empty
@@ -2253,7 +2252,6 @@ void Replica::tryFinishRepair()
     if (repairProposal_.value().round() == round_ - 1) {
         // This happens if the repair round is already committed on the current replica, but other replicas
         // initiated a view change.
-        assert(viewChange_);
         LOG(INFO) << "Repair on round " << round_ - 1 << " already committed on current replica, skipping";
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
@@ -2298,14 +2296,11 @@ void Replica::tryFinishRepair()
 
 LogSuffix &Replica::getRepairLogSuffix()
 {
-    // This is just to cache the processing of the repairProposal
-    // TODO make sure this works during view change as well.
-    if (!repairProposalLogSuffix_.has_value() || repairProposalLogSuffix_.value().round != round_) {
-        repairProposalLogSuffix_ = LogSuffix();
-        repairProposalLogSuffix_->replicaId = replicaId_;
-        repairProposalLogSuffix_->round = round_;
-        getLogSuffixFromProposal(repairProposal_.value(), repairProposalLogSuffix_.value());
-    }
+    // TODO cache the repair log suffix per round,
+    repairProposalLogSuffix_ = LogSuffix();
+    repairProposalLogSuffix_->replicaId = replicaId_;
+    repairProposalLogSuffix_->round = round_;
+    getLogSuffixFromProposal(repairProposal_.value(), repairProposalLogSuffix_.value());
     return repairProposalLogSuffix_.value();
 }
 
@@ -2438,6 +2433,7 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
     if (viewChangeByPrepare()) {
         holdPrepareOrCommit_ = !holdPrepareOrCommit_;
         LOG(INFO) << "Prepare message held to cause timeout in prepare phase for view change";
+        viewChangeRound_ += viewChangeFreq_;
         return;
     }
     doPreparePhase();
@@ -2491,6 +2487,8 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
     // Store PBFT states for potential view change
     preparedRound_ = repairProposal_.value().round();
     viewPrepared_ = true;
+    lastPreparedState_.round = preparedRound_;
+    lastPreparedState_.pbftView = pbftView_;
     lastPreparedState_.proposal = repairProposal_.value();
     lastPreparedState_.proposalDigest = proposalDigest_;
     lastPreparedState_.prepares.clear();
@@ -2514,6 +2512,8 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         } else {
             LOG(INFO) << "Commit message held to cause timeout in commit phase for view change";
         }
+        viewChangeRound_ += viewChangeFreq_;
+
         return;
     }
     doCommitPhase();
@@ -2521,38 +2521,38 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
 
 void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
 {
-    uint32_t inInst = msg.round();
+    uint32_t inRound = msg.round();
     if (msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for round=" << inInst
+        LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for round=" << inRound
                   << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if (inInst < round_ && !viewChange_) {
-        LOG(INFO) << "Received old repair commit from round=" << inInst << " own round is " << round_;
+    if (inRound < round_) {
+        LOG(INFO) << "Received old repair commit from round=" << inRound << " own round is " << round_;
         return;
     }
 
-    if (inInst > round_) {
-        LOG(INFO) << "Received future repair commit from round=" << inInst << " own round is " << round_;
+    if (inRound > round_) {
+        LOG(INFO) << "Received future repair commit from round=" << inRound << " own round is " << round_;
         return;
     }
 
-    if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].round() > inInst &&
+    if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].round() > inRound &&
         repairPBFTCommits_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
-        LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for round=" << inInst;
+        LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for round=" << inRound;
         return;
     }
     repairPBFTCommits_[msg.replica_id()] = msg;
     repairCommitSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
 
-    LOG(INFO) << "PBFTCommit RECEIVED for round=" << inInst << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "PBFTCommit RECEIVED for round=" << inRound << " from replicaId=" << msg.replica_id();
 
-    if (!repairProposal_.has_value() || repairProposal_.value().round() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().round() < inRound) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process commit";
         return;
     }
 
-    if (preparedRound_ == UINT32_MAX || preparedRound_ != inInst || !viewPrepared_) {
+    if (preparedRound_ == UINT32_MAX || preparedRound_ != inRound || !viewPrepared_) {
         LOG(INFO) << "Not prepared for it, skipping commit!";
         // TODO get the proposal from another replica...
         return;
@@ -2607,7 +2607,7 @@ void Replica::updateReplicaView(uint32_t replicaId, uint32_t view, uint32_t roun
 
     for (const auto &v : replicaViews_) {
 
-        VLOG(5) << "Replica view status: replicaId=" << v.first << " view=" << v.second.first
+        VLOG(7) << "Replica view status: replicaId=" << v.first << " view=" << v.second.first
                 << " round=" << v.second.second;
 
         if (v.second.first > pbftView_) {
@@ -2615,7 +2615,7 @@ void Replica::updateReplicaView(uint32_t replicaId, uint32_t view, uint32_t roun
             minHigherView = std::min(minHigherView, v.second.first);
         }
     }
-    VLOG(5) << "------------------";
+    VLOG(7) << "------------------";
     assert(numHigher == 0 || (minHigherView > pbftView_ && minHigherView != UINT32_MAX));
 
     uint32_t numReplicas = ConfigManager::getInstance().getNumReplicas();
