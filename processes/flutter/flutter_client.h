@@ -19,7 +19,7 @@
 
 #include <yaml-cpp/yaml.h>
 
-namespace dombft {
+namespace flutter {
 
 struct FlutterRequestState {
     flutter::proto::FlutterClientRequest request;
@@ -44,6 +44,8 @@ struct FlutterRequestState {
     }
 };
 
+enum ClientSendMode { RateBased = 0, MaxInFlightBased = 1 };
+
 class FlutterClient {
 private:
     uint32_t clientId_;
@@ -65,12 +67,28 @@ private:
     // Configuration
     uint64_t baseBetOffset_;
     uint64_t betIncrement_;
+    uint32_t f_;
+
+    // Send control
+    ClientSendMode sendMode_;
+    uint32_t sendRate_;
+    uint32_t maxInFlight_;
+    uint32_t numInFlight_ = 0;
+    uint64_t lastSendTime_ = 0;
+    bool firstRequestCommitted_ = false;
+    uint64_t startTime_ = 0;
+
+    // Timers
+    std::unique_ptr<Timer> sendTimer_;
+    std::unique_ptr<Timer> terminateTimer_;
 
     bool running_;
 
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void processFlutterReply(const flutter::proto::FlutterReply &reply);
     void sendRequest(FlutterRequestState &state);
+    void submitRequestsOpenLoop();
+    void commitRequest(uint32_t clientSeq);
 
 public:
     FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t betIncrement);
@@ -81,4 +99,4 @@ public:
     void stop();
 };
 
-}   // namespace dombft
+}   // namespace flutter

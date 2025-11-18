@@ -42,7 +42,6 @@ cc_binary(
     deps = [
         ":replica_class",
         ":dummy_replica_class",
-        ":flutter_replica_class"
     ],
 )
 

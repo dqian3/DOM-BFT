@@ -25,17 +25,8 @@ int main(int argc, char *argv[])
     LOG(INFO) << "Starting Flutter Client " << FLAGS_clientId << " with base bet " << FLAGS_baseBetOffset
               << " and bet offset increment " << FLAGS_betIncrement;
 
-    dombft::FlutterClient client(FLAGS_clientId, FLAGS_baseBetOffset, FLAGS_betIncrement);
+    flutter::FlutterClient client(FLAGS_clientId, FLAGS_baseBetOffset, FLAGS_betIncrement);
 
-    // Start client in background thread
-    std::thread clientThread([&client]() { client.run(); });
-
-    LOG(INFO) << "Flutter client exiting";
-    client.stop();
-
-    if (clientThread.joinable()) {
-        clientThread.join();
-    }
-
+    client.run();
     return 0;
 }

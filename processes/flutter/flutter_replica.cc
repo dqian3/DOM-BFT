@@ -13,7 +13,7 @@
 #include <sstream>
 
 namespace dombft {
-using namespace dombft::proto;
+using namespace flutter::proto;
 
 FlutterReplica::FlutterReplica(uint32_t replicaId)
     : replicaId_(replicaId)
@@ -138,6 +138,16 @@ FlutterReplica::FlutterReplica(uint32_t replicaId)
         endpoint_->LoopBreak();
     });
 
+    // Setup clock broadcast timer
+    clockTimer_ = std::make_unique<Timer>(
+        [this](void *ctx, void *endpoint) {
+            this->broadcastClock();
+        },
+        CLOCK_BROADCAST_INTERVAL_MS * 1000,   // Convert ms to microseconds
+        this
+    );
+    endpoint_->RegisterTimer(clockTimer_.get());
+
     endpoint_->Connect();
 
     // Initialize clock management state
@@ -146,6 +156,9 @@ FlutterReplica::FlutterReplica(uint32_t replicaId)
 
     // Initialize our own clock in the replica clocks map
     replicaClocks_[replicaId_] = GetMicrosecondTimestamp();
+
+    LOG(INFO) << "Flutter replica " << replicaId_ << " initialized with clock broadcast interval "
+              << CLOCK_BROADCAST_INTERVAL_MS << "ms";
 }
 
 FlutterReplica::~FlutterReplica()
@@ -185,6 +198,12 @@ void FlutterReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Addre
         verifyQueue_.enqueue(msg);
     }
 
+    // Check if we need to broadcast our clock
+    uint64_t now = GetMicrosecondTimestamp();
+    if (now - lastClockBroadcast_ >= CLOCK_BROADCAST_INTERVAL_MS * 1000) {
+        broadcastClock();
+    }
+
     VLOG(6) << verifyQueue_.size_approx() << " messages in verify queue, " << processQueue_.size_approx()
             << " messages in process queue";
 }
@@ -201,8 +220,8 @@ void FlutterReplica::verifyMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        if (hdr->msgType == CLIENT_REQUEST) {
-            ClientRequest request;
+        if (hdr->msgType == FLUTTER_CLIENT_REQUEST) {
+            FlutterClientRequest request;
 
             if (!request.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
@@ -223,7 +242,32 @@ void FlutterReplica::verifyMessagesThd()
 
             processQueue_.enqueue(msg);
         }
-        // TODO: Add Flutter protocol message verification
+
+        else if (hdr->msgType == FLUTTER_REPLICA_MSG) {
+            flutter::proto::FlutterMessage flutterMsg;
+            if (!flutterMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Failed to parse FlutterMessage";
+                continue;
+            }
+
+            bool verified = false;
+            if (useHMAC_) {
+                verified = hmacProvider_.verify(hdr, {NodeType::REPLICA, flutterMsg.sender_id()});
+            } else {
+                verified = sigProvider_.verify(hdr, {NodeType::REPLICA, flutterMsg.sender_id()});
+            }
+
+            if (!verified) {
+                LOG(INFO) << "Failed to verify replica signature from " << flutterMsg.sender_id();
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+        else {
+            LOG(ERROR) << "Unknown message type " << (int) hdr->msgType << " for verification";
+        }
     }
 }
 
@@ -240,21 +284,14 @@ void FlutterReplica::processMessagesThd()
         byte *body = (byte *) (hdr + 1);
 
         if (hdr->msgType == FLUTTER_CLIENT_REQUEST) {
-            ClientRequest clientRequestMsg;
+            FlutterClientRequest clientRequestMsg;
 
             if (!clientRequestMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                 continue;
             }
 
-            // Convert to FlutterClientRequest
-            flutter::proto::FlutterClientRequest flutterRequest;
-            flutterRequest.set_client_id(clientRequestMsg.client_id());
-            flutterRequest.set_client_seq(clientRequestMsg.client_seq());
-            flutterRequest.set_bet(clientRequestMsg.deadline());
-            flutterRequest.set_req_data(clientRequestMsg.req_data());
-
-            processClientRequest(flutterRequest, std::span{body + hdr->msgLen, hdr->sigLen});
+            processClientRequest(clientRequestMsg);
         }
 
         if (hdr->msgType == FLUTTER_REPLICA_MSG) {
@@ -269,7 +306,7 @@ void FlutterReplica::processMessagesThd()
     }
 }
 
-void FlutterReplica::processClientRequest(const flutter::proto::FlutterClientRequest &request, std::span<byte> sig)
+void FlutterReplica::processClientRequest(const flutter::proto::FlutterClientRequest &request)
 {
     uint64_t bet = request.bet();
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
@@ -317,10 +354,20 @@ void FlutterReplica::processFlutterMessage(const flutter::proto::FlutterMessage 
 
 void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequest &request, uint64_t bet)
 {
+    uint32_t clientId = request.client_id();
+    uint32_t clientSeq = request.client_seq();
+
+    // Check if this request has already been committed
+    if (clientSeqTrackers_[clientId].isCommitted(clientSeq)) {
+        VLOG(3) << "FLUTTER: Ignoring already-committed request from client " << clientId
+                << " seq " << clientSeq;
+        return;
+    }
+
     // Create candidate
     Candidate candidate;
-    candidate.clientId = request.client_id();
-    candidate.clientSeq = request.client_seq();
+    candidate.clientId = clientId;
+    candidate.clientSeq = clientSeq;
     candidate.bet = bet;
     candidate.request = request;
 
@@ -356,6 +403,13 @@ void FlutterReplica::broadcastClock()
 {
     uint64_t currentTime = GetMicrosecondTimestamp();
 
+    // Check if enough time has elapsed since last broadcast
+    if (currentTime - lastClockBroadcast_ < CLOCK_BROADCAST_INTERVAL_MS * 1000) {
+        VLOG(5) << "FLUTTER: Skipping clock broadcast, last broadcast was "
+                << (currentTime - lastClockBroadcast_) / 1000 << "ms ago";
+        return;
+    }
+
     // Update our own clock
     replicaClocks_[replicaId_] = currentTime;
 
@@ -368,12 +422,12 @@ void FlutterReplica::broadcastClock()
     flutterMsg.set_sender_id(replicaId_);
     *flutterMsg.mutable_time() = timeMsg;
 
-    // Broadcast to all replicas using DUMMY_PROTO type
-    broadcastToReplicas(flutterMsg, MessageType::DUMMY_PROTO);
+    // Broadcast to all replicas using FLUTTER_REPLICA_MSG type
+    broadcastToReplicas(flutterMsg, MessageType::FLUTTER_REPLICA_MSG);
 
     lastClockBroadcast_ = currentTime;
 
-    LOG(INFO) << "FLUTTER: Broadcasted clock time " << currentTime;
+    VLOG(3) << "FLUTTER: Broadcasted clock time " << currentTime;
 }
 
 void FlutterReplica::processFlutterTime(uint32_t senderId, uint64_t clockTime)
@@ -427,7 +481,7 @@ void FlutterReplica::broadcastRBCProposal(uint32_t clientId, uint64_t bet, bool 
     *flutterMsg.mutable_rbc_proposal() = rbcProposal;
 
     // Broadcast to all replicas
-    broadcastToReplicas(flutterMsg, MessageType::DUMMY_PROTO);
+    broadcastToReplicas(flutterMsg, MessageType::FLUTTER_REPLICA_MSG);
 
     LOG(INFO) << "FLUTTER: Broadcasted RBC proposal for client " << clientId << " bet " << bet << " accept=" << accept;
 }
@@ -502,7 +556,7 @@ void FlutterReplica::broadcastObserve(const flutter::proto::FlutterClientRequest
     *flutterMsg.mutable_observe() = observeMsg;
 
     // Broadcast to all replicas
-    broadcastToReplicas(flutterMsg, MessageType::DUMMY_PROTO);
+    broadcastToReplicas(flutterMsg, MessageType::FLUTTER_REPLICA_MSG);
 
     LOG(INFO) << "FLUTTER: Broadcasted observe message for client " << request.client_id() << " with bet " << bet;
 }
@@ -559,6 +613,10 @@ void FlutterReplica::checkCandidatesForCommit()
             LOG(INFO) << "FLUTTER: Candidate ready for commit - client " << clientId << " bet " << bet << " "
                       << (accepted ? "ACCEPTED" : "REJECTED") << " (accept votes: " << candidate.acceptVotes
                       << ", reject votes: " << candidate.rejectVotes << ", lock time: " << lockTime_ << ")";
+
+            // Mark sequence as committed to prevent reprocessing
+            clientSeqTrackers_[clientId].commit(candidate.clientSeq);
+            VLOG(2) << "FLUTTER: Marked client " << clientId << " seq " << candidate.clientSeq << " as committed";
 
             if (accepted) {
                 // TODO: Execute the request and send reply to client
@@ -679,7 +737,7 @@ void FlutterReplica::sendRBCSlowValue(uint32_t clientId, uint64_t bet, bool acce
     flutterMsg.set_sender_id(replicaId_);
     *flutterMsg.mutable_rbc_slow_value() = slowValue;
 
-    broadcastToReplicas(flutterMsg, MessageType::DUMMY_PROTO);
+    broadcastToReplicas(flutterMsg, MessageType::FLUTTER_REPLICA_MSG);
 
     LOG(INFO) << "FLUTTER: Leader broadcasted RBC slow value for client " << clientId << " bet " << bet << " "
               << (accept ? "ACCEPT" : "REJECT");

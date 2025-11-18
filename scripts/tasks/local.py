@@ -150,3 +150,84 @@ def run(
         #  stop other processes and then join
         for hdl in other_handles:
             hdl.join()
+
+
+@task
+def flutter(
+    c,
+    config_file="../configs/flutter_local.yaml",
+    v=5,
+    filter_client_logs=False,
+    num_crashed=0,
+):
+    def arun(*args, **kwargs):
+        return c.run(*args, **kwargs, asynchronous=True, warn=True)
+
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    # Flutter requires 5f+1 replicas
+    n_replicas = len(config["replica"]["ips"])
+    n_clients = len(config["client"]["ips"])
+    client_handles = []
+    other_handles = []
+
+    f = config["resiliency"]["f"]
+    expected_replicas = 5 * f + 1
+
+    if n_replicas != expected_replicas:
+        print(
+            f"Warning: Flutter requires 5f+1 replicas. For f={f}, expected {expected_replicas} but got {n_replicas}"
+        )
+
+    with c.cd(".."):
+        c.run("rm logs/*", warn=True)
+
+        c.run(
+            "killall flutter_client flutter_replica",
+            warn=True,
+        )
+        c.run("mkdir -p logs")
+
+        # Start Flutter replicas
+        for id in range(n_replicas):
+            crashed_arg = "-crashed" if id < num_crashed else ""
+
+            cmd = f"./bazel-bin/processes/flutter/flutter_replica -v {v} -config {config_file} -replicaId {id} {crashed_arg} &>logs/flutter_replica{id}.log"
+            hdl = arun(cmd)
+            print(cmd)
+            other_handles.append(hdl)
+
+        # Give replicas time to start up
+        time.sleep(3)
+
+        # Start Flutter clients
+        for id in range(n_clients):
+            if filter_client_logs:
+                suffix = " 2>&1 | python3 -u scripts/filter_logs.py "
+            else:
+                suffix = " "
+
+            cmd = f"./bazel-bin/processes/flutter/flutter_client -v {v} -config {config_file} -clientId {id} {suffix} &>logs/flutter_client{id}.log"
+            hdl = arun(cmd)
+            print(cmd)
+
+            client_handles.append(hdl)
+
+    try:
+        # Join on the client processes, which should end
+        for hdl in client_handles:
+            hdl.join()
+
+    finally:
+        print("Clients done, waiting for replicas to finish...")
+        c.run(
+            "killall -SIGINT flutter_client flutter_replica",
+            warn=True,
+        )
+
+        # Stop other processes and then join
+        for hdl in other_handles:
+            hdl.join()

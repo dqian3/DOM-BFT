@@ -7,7 +7,7 @@
 
 #include <chrono>
 
-namespace dombft {
+namespace flutter {
 
 FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t betIncrement)
     : clientId_(clientId)
@@ -16,10 +16,24 @@ FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t
     , betIncrement_(betIncrement)
     , running_(false)
 {
-    auto &configManager = ConfigManager::getInstance();
+    auto &configManager = dombft::ConfigManager::getInstance();
     const auto &config = configManager.getConfig();
 
     useHMAC_ = config.clientUseHMAC;
+    f_ = config.f;
+    maxInFlight_ = config.clientMaxInFlight;
+    sendRate_ = config.clientSendRate;
+
+    if (config.clientSendMode == "sendRate") {
+        sendMode_ = flutter::RateBased;
+        LOG(INFO) << "Flutter Client using rate-based sending at " << sendRate_ << " req/s";
+    } else if (config.clientSendMode == "maxInFlight") {
+        sendMode_ = flutter::MaxInFlightBased;
+        LOG(INFO) << "Flutter Client using maxInFlight-based sending with " << maxInFlight_ << " in flight";
+    } else {
+        LOG(ERROR) << "Unknown send mode: " << config.clientSendMode;
+        exit(1);
+    }
 
     // Load cryptographic keys
     std::string clientKey = config.clientKeysDir + "/client" + std::to_string(clientId_) + ".der";
@@ -79,10 +93,47 @@ FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t
     // Setup message handler
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender);
-        };
+        if (sendMode_ == flutter::RateBased) {
+            submitRequestsOpenLoop();
+        }
+    };
 
     endpoint_->RegisterMsgHandler(handler);
+
+    // Setup timers
+    startTime_ = GetMicrosecondTimestamp();
+
+    uint32_t runtimeSeconds = config.clientRuntimeSeconds;
+    terminateTimer_ = std::make_unique<Timer>(
+        [runtimeSeconds](void *ctx, void *endpoint) {
+            LOG(INFO) << "Exiting after running for " << runtimeSeconds << " seconds";
+            exit(0);
+        },
+        runtimeSeconds * 1000000, this
+    );
+    ev_set_priority(terminateTimer_->evTimer_, EV_MAXPRI);
+    endpoint_->RegisterTimer(terminateTimer_.get());
+
+    if (sendMode_ == flutter::RateBased) {
+        // Kick off sending with a small burst every 5 ms
+        sendTimer_ = std::make_unique<Timer>([&](void *ctx, void *endpoint) { submitRequestsOpenLoop(); }, 5000, this);
+        endpoint_->RegisterTimer(sendTimer_.get());
+    }
+
+    // Handle interrupt signals properly on main loop
+    endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
+
     endpoint_->Connect();
+
+    // Initial sending
+    if (sendMode_ == flutter::RateBased) {
+        // Send first request immediately
+        submitRequest("request_data");
+    } else if (sendMode_ == flutter::MaxInFlightBased) {
+        for (uint32_t i = 0; i < maxInFlight_; i++) {
+            submitRequest("request_data");
+        }
+    }
 
     LOG(INFO) << "Flutter Client " << clientId_ << " initialized with base bet offset " << baseBetOffset_
               << " and increment " << betIncrement_;
@@ -108,20 +159,49 @@ void FlutterClient::submitRequest(const std::string &data)
 
     auto state = std::make_unique<FlutterRequestState>(request, GetMicrosecondTimestamp() + baseBetOffset_);
 
-    LOG(INFO) << "Flutter Client " << clientId_ << " submitting request seq " << nextSeq_ << " with bet " << state->bet;
+    VLOG(1) << "Flutter Client " << clientId_ << " submitting request seq " << nextSeq_ << " with bet " << state->bet
+            << " in_flight=" << numInFlight_;
 
     pendingRequests_[nextSeq_] = std::move(state);
-    // TODO this is questionable in terms of memory safety
-    sendRequest(*state);
+    sendRequest(*pendingRequests_[nextSeq_]);
 
     nextSeq_++;
+    numInFlight_++;
+}
+
+void FlutterClient::submitRequestsOpenLoop()
+{
+    // Don't start rate-based sending until first request is committed
+    if (!firstRequestCommitted_) {
+        return;
+    }
+
+    uint64_t startSendTime = GetMicrosecondTimestamp();
+    double sendIntervalUs = 1000000.0 / sendRate_;
+
+    uint64_t numToSend = (startSendTime - lastSendTime_) * sendRate_ / 1000000.0;
+
+    if (numToSend == 0) {
+        return;
+    }
+
+    // Update lastSendTime accounting for accumulating errors
+    lastSendTime_ += numToSend * sendIntervalUs;
+
+    for (uint32_t i = 0; i < numToSend; i++) {
+        if (numInFlight_ >= maxInFlight_) {
+            break;
+        }
+        submitRequest("request_data");
+    }
 }
 
 void FlutterClient::sendRequest(FlutterRequestState &state)
 {
     // Update bet and send time
-    state.bet = GetMicrosecondTimestamp() + (state.numRetries) * betIncrement_;
+    state.bet = GetMicrosecondTimestamp() + baseBetOffset_ + (state.numRetries) * betIncrement_;
     state.request.set_bet(state.bet);
+    state.sendTime = GetMicrosecondTimestamp();
 
     // Send FlutterClientRequest directly to all replicas
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
@@ -138,8 +218,8 @@ void FlutterClient::sendRequest(FlutterRequestState &state)
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
 
-        LOG(INFO) << "Flutter Client " << clientId_ << " sent request seq " << state.clientSeq << " with bet "
-                  << state.bet;
+        VLOG(1) << "Flutter Client " << clientId_ << " sent request seq " << state.clientSeq << " with bet "
+                << state.bet;
     });
 }
 
@@ -157,36 +237,89 @@ void FlutterClient::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Addres
     }
 }
 
+void FlutterClient::commitRequest(uint32_t clientSeq)
+{
+    auto it = pendingRequests_.find(clientSeq);
+    if (it == pendingRequests_.end()) {
+        return;
+    }
+
+    FlutterRequestState &state = *it->second;
+    state.completed = true;
+
+    pendingRequests_.erase(it);
+    numInFlight_--;
+
+    // Enable rate-based sending after first request is committed
+    if (!firstRequestCommitted_) {
+        firstRequestCommitted_ = true;
+        if (sendMode_ == flutter::RateBased) {
+            lastSendTime_ = GetMicrosecondTimestamp();
+        }
+    }
+
+    VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
+
+    if (sendMode_ == flutter::MaxInFlightBased) {
+        submitRequest("request_data");
+    }
+}
+
 void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &reply)
 {
     uint32_t seq = reply.client_seq();
 
     auto it = pendingRequests_.find(seq);
     if (it == pendingRequests_.end()) {
-        LOG(WARNING) << "Received reply for unknown request seq " << seq;
+        VLOG(2) << "Received reply for unknown request seq " << seq;
         return;
     }
 
     FlutterRequestState &state = *it->second;
+    uint32_t replicaId = reply.replica_id();
+
+    // Check if we already received a vote from this replica
+    if (state.votedReplicas.count(replicaId) > 0) {
+        VLOG(2) << "Already received vote from replica " << replicaId << " for seq " << seq;
+        return;
+    }
+
+    // Record the vote
+    state.votedReplicas.insert(replicaId);
 
     if (reply.accepted()) {
-        LOG(INFO) << "Flutter Client " << clientId_ << " request seq " << seq << " ACCEPTED with bet " << reply.bet();
+        state.acceptVotes++;
+        VLOG(1) << "Flutter Client " << clientId_ << " request seq " << seq << " received ACCEPT vote from replica "
+                << replicaId << " (" << state.acceptVotes << "/" << (f_ + 1) << " needed)";
 
-        LOG(INFO) << "PERF" << " event=flutter_commit"
-                  << " clientId=" << clientId_ << " clientSeq=" << seq
-                  << " latency=" << (GetMicrosecondTimestamp() - state.sendTime) << " numRetries=" << state.numRetries;
-        state.completed = true;
-        pendingRequests_.erase(it);
+        // Check if we have f+1 accept votes
+        if (state.acceptVotes >= f_ + 1) {
+            LOG(INFO) << "PERF event=flutter_commit path=accept"
+                      << " clientId=" << clientId_ << " clientSeq=" << seq
+                      << " latency=" << (GetMicrosecondTimestamp() - state.sendTime)
+                      << " numRetries=" << state.numRetries;
 
+            commitRequest(seq);
+        }
     } else {
-        LOG(INFO) << "Flutter Client " << clientId_ << " request seq " << seq << " REJECTED with bet " << reply.bet()
-                  << " - retrying";
+        state.rejectVotes++;
+        VLOG(1) << "Flutter Client " << clientId_ << " request seq " << seq << " received REJECT vote from replica "
+                << replicaId << " (" << state.rejectVotes << "/" << (f_ + 1) << " needed)";
 
-        // TODO this is questionable in terms of memory safety
-        state.numRetries++;
+        // Check if we have f+1 reject votes
+        if (state.rejectVotes >= f_ + 1) {
+            LOG(INFO) << "Flutter Client " << clientId_ << " request seq " << seq
+                      << " REJECTED with f+1 votes - retrying with higher bet";
 
-        sendRequest(state);
+            // Reset vote tracking for retry
+            state.acceptVotes = 0;
+            state.rejectVotes = 0;
+            state.votedReplicas.clear();
+            state.numRetries++;
+
+            sendRequest(state);
+        }
     }
 }
 
-}   // namespace dombft
+}   // namespace flutter
