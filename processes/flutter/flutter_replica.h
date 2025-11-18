@@ -27,7 +27,7 @@
 namespace dombft {
 
 struct Candidate {
-    uint64_t timestamp;
+    uint64_t bet;
     uint32_t clientId;
     uint32_t clientSeq;
     flutter::proto::FlutterClientRequest request;
@@ -45,7 +45,7 @@ struct Candidate {
     // Slow path leader state
     std::map<uint32_t, bool> slowProposals;   // replica_id -> accept/reject
 
-    bool operator<(const Candidate &other) const { return timestamp < other.timestamp; }
+    bool operator<(const Candidate &other) const { return bet < other.bet; }
 };
 
 class FlutterReplica {

@@ -9,8 +9,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <sstream>
 #include <cryptopp/sha.h>
+#include <sstream>
 
 namespace dombft {
 using namespace dombft::proto;
@@ -239,7 +239,7 @@ void FlutterReplica::processMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        if (hdr->msgType == CLIENT_REQUEST) {
+        if (hdr->msgType == FLUTTER_CLIENT_REQUEST) {
             ClientRequest clientRequestMsg;
 
             if (!clientRequestMsg.ParseFromArray(body, hdr->msgLen)) {
@@ -255,6 +255,15 @@ void FlutterReplica::processMessagesThd()
             flutterRequest.set_req_data(clientRequestMsg.req_data());
 
             processClientRequest(flutterRequest, std::span{body + hdr->msgLen, hdr->sigLen});
+        }
+
+        if (hdr->msgType == FLUTTER_REPLICA_MSG) {
+            flutter::proto::FlutterMessage flutterMsg;
+            if (!flutterMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Failed to parse FlutterMessage";
+                continue;
+            }
+            processFlutterMessage(flutterMsg);
         }
         // TODO: Add Flutter protocol message handling
     }
@@ -274,21 +283,53 @@ void FlutterReplica::processClientRequest(const flutter::proto::FlutterClientReq
     }
 }
 
+void FlutterReplica::processFlutterMessage(const flutter::proto::FlutterMessage &msg)
+{
+    // Handle different types of Flutter protocol messages
+    if (msg.has_time()) {
+        processFlutterTime(msg.sender_id(), msg.time().local_time());
+    } else if (msg.has_observe()) {
+        // Handle observe messages (relay client requests)
+        flutter::proto::FlutterClientRequest observedRequest;
+        if (observedRequest.ParseFromString(msg.observe().message())) {
+            processObserve(msg.sender_id(), observedRequest, msg.observe().bet());
+        } else {
+            LOG(ERROR) << "FLUTTER: Failed to parse client request from observe message";
+        }
+    } else if (msg.has_rbc_proposal()) {
+        // Handle RBC proposal messages
+        processRBCProposal(
+            msg.sender_id(), msg.rbc_proposal().client_id(), msg.rbc_proposal().bet(), msg.rbc_proposal().accept()
+        );
+    } else if (msg.has_rbc_slow_proposal()) {
+        // Handle RBC slow proposal messages
+        processRBCSlowProposal(
+            msg.sender_id(), msg.rbc_slow_proposal().client_id(), msg.rbc_slow_proposal().bet(),
+            msg.rbc_slow_proposal().accept()
+        );
+    } else if (msg.has_rbc_slow_value()) {
+        // Handle RBC slow value messages
+        processRBCSlowValue(
+            msg.sender_id(), msg.rbc_slow_value().client_id(), msg.rbc_slow_value().bet(), msg.rbc_slow_value().accept()
+        );
+    }
+}
+
 void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequest &request, uint64_t bet)
 {
     // Create candidate
     Candidate candidate;
     candidate.clientId = request.client_id();
     candidate.clientSeq = request.client_seq();
-    candidate.timestamp = bet;
+    candidate.bet = bet;
     candidate.request = request;
 
     // Compute digest of the request
     std::string reqSerialized = request.SerializeAsString();
     CryptoPP::SHA256 hash;
     byte digest[CryptoPP::SHA256::DIGESTSIZE];
-    hash.CalculateDigest(digest, (const byte*)reqSerialized.c_str(), reqSerialized.size());
-    candidate.digest = std::string(reinterpret_cast<const char*>(digest), CryptoPP::SHA256::DIGESTSIZE);
+    hash.CalculateDigest(digest, (const byte *) reqSerialized.c_str(), reqSerialized.size());
+    candidate.digest = std::string(reinterpret_cast<const char *>(digest), CryptoPP::SHA256::DIGESTSIZE);
 
     // Add to candidate pool
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
@@ -369,38 +410,6 @@ void FlutterReplica::updateLockTime()
         if (lockTime_ > oldLockTime) {
             checkCandidatesForCommit();
         }
-    }
-}
-
-void FlutterReplica::processFlutterMessage(const flutter::proto::FlutterMessage &msg)
-{
-    // Handle different types of Flutter protocol messages
-    if (msg.has_time()) {
-        processFlutterTime(msg.sender_id(), msg.time().local_time());
-    } else if (msg.has_observe()) {
-        // Handle observe messages (relay client requests)
-        flutter::proto::FlutterClientRequest observedRequest;
-        if (observedRequest.ParseFromString(msg.observe().message())) {
-            processObserve(msg.sender_id(), observedRequest, msg.observe().bet());
-        } else {
-            LOG(ERROR) << "FLUTTER: Failed to parse client request from observe message";
-        }
-    } else if (msg.has_rbc_proposal()) {
-        // Handle RBC proposal messages
-        processRBCProposal(
-            msg.sender_id(), msg.rbc_proposal().client_id(), msg.rbc_proposal().bet(), msg.rbc_proposal().accept()
-        );
-    } else if (msg.has_rbc_slow_proposal()) {
-        // Handle RBC slow proposal messages
-        processRBCSlowProposal(
-            msg.sender_id(), msg.rbc_slow_proposal().client_id(), msg.rbc_slow_proposal().bet(),
-            msg.rbc_slow_proposal().accept()
-        );
-    } else if (msg.has_rbc_slow_value()) {
-        // Handle RBC slow value messages
-        processRBCSlowValue(
-            msg.sender_id(), msg.rbc_slow_value().client_id(), msg.rbc_slow_value().bet(), msg.rbc_slow_value().accept()
-        );
     }
 }
 
@@ -523,7 +532,7 @@ void FlutterReplica::checkCandidatesForCommit()
     std::vector<std::pair<uint64_t, uint32_t>> candidatesToRemove;
 
     for (auto &[key, candidate] : candidatePool_) {
-        uint64_t bet = candidate.timestamp;
+        uint64_t bet = candidate.bet;
         uint32_t clientId = candidate.clientId;
 
         // Check if candidate has converged (lock time > bet)
@@ -556,15 +565,14 @@ void FlutterReplica::checkCandidatesForCommit()
                 LOG(INFO) << "FLUTTER: Executing request for client " << clientId << " seq " << candidate.clientSeq;
 
                 // Send reply to client
-                Reply reply;
+                flutter::proto::FlutterReply reply;
                 reply.set_replica_id(replicaId_);
                 reply.set_client_id(clientId);
                 reply.set_client_seq(candidate.clientSeq);
-                reply.set_round(0);   // TODO: Use actual round if needed
-                reply.set_seq(0);     // TODO: Use actual sequence if needed
-                reply.set_digest(candidate.digest);
-
-                sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
+                reply.set_bet(candidate.bet);
+                reply.set_accepted(accepted);
+                reply.set_result("Request executed successfully");
+                sendMsgToDst(reply, MessageType::FLUTTER_REPLY, clientAddrs_[clientId]);
 
                 LOG(INFO) << "FLUTTER: Sent reply to client " << clientId;
             } else {
@@ -597,7 +605,7 @@ void FlutterReplica::sendRBCSlowProposal(uint32_t clientId, uint64_t bet, bool a
     flutterMsg.set_sender_id(replicaId_);
     *flutterMsg.mutable_rbc_slow_proposal() = slowProposal;
 
-    sendMsgToDst(flutterMsg, MessageType::DUMMY_PROTO, replicaAddrs_[leaderId_]);
+    sendMsgToDst(flutterMsg, MessageType::FLUTTER_REPLICA_MSG, replicaAddrs_[leaderId_]);
 
     LOG(INFO) << "FLUTTER: Sent RBC slow proposal to leader " << leaderId_ << " for client " << clientId << " bet "
               << bet << " " << (accept ? "ACCEPT" : "REJECT");

@@ -11,6 +11,17 @@ message FlutterClientRequest {
     bytes req_data = 4;                 // Request payload data
 }
 
+// Flutter Reply - response from replica to client indicating accept/reject
+message FlutterReply {
+    uint32 replica_id = 1;          // ID of the replying replica
+    uint32 client_id = 2;           // Client ID
+    uint32 client_seq = 3;          // Client sequence number
+    uint64 bet = 4;                 // The bet (timestamp) that was processed
+    bool accepted = 5;              // Whether the request was accepted or rejected
+    bytes result = 6;               // Result data (if accepted)
+}
+
+
 // Time message - servers announce their local time to other servers
 message FlutterTime {
     uint64 local_time = 1;          // Current local time of the sending server
@@ -43,6 +54,7 @@ message FlutterRBCSlowValue {
     uint64 bet = 2;                 // Bet (timestamp)
     bool accept = 3;                // Leader's decision based on f+1 threshold
 }
+
 
 // Container for all Flutter server-to-server messages
 message FlutterMessage {
