@@ -9,12 +9,11 @@
 
 namespace dombft {
 
-FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBet, uint64_t betIncrement, uint32_t maxRetries)
+FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t betIncrement)
     : clientId_(clientId)
     , sendThreadpool_(4)   // 4 threads for sending
-    , baseBet_(baseBet)
+    , baseBetOffset_(baseBetOffset)
     , betIncrement_(betIncrement)
-    , maxRetries_(maxRetries)
     , running_(false)
 {
     auto &configManager = ConfigManager::getInstance();
@@ -80,16 +79,16 @@ FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBet, uint64_t betIn
     // Setup message handler
     MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
         this->handleMessage(msgHdr, msgBuffer, sender);
-    };
+        };
 
     endpoint_->RegisterMsgHandler(handler);
     endpoint_->Connect();
 
-    LOG(INFO) << "Flutter Client " << clientId_ << " initialized with base bet " << baseBet_ << " and increment "
-              << betIncrement_;
+    LOG(INFO) << "Flutter Client " << clientId_ << " initialized with base bet offset " << baseBetOffset_
+              << " and increment " << betIncrement_;
 }
 
-FlutterClient::~FlutterClient() { stop(); }
+FlutterClient::~FlutterClient() {}
 
 void FlutterClient::run()
 {
@@ -98,47 +97,36 @@ void FlutterClient::run()
     endpoint_->LoopRun();
 }
 
-void FlutterClient::stop()
-{
-    if (running_) {
-        running_ = false;
-        endpoint_->LoopBreak();
-
-        for (auto &thread : threads_) {
-            if (thread.joinable()) {
-                thread.join();
-            }
-        }
-    }
-}
+void FlutterClient::stop() { endpoint_->LoopBreak(); }
 
 void FlutterClient::submitRequest(const std::string &data)
 {
     flutter::proto::FlutterClientRequest request;
     request.set_client_id(clientId_);
     request.set_client_seq(nextSeq_);
-    request.set_bet(baseBet_);
     request.set_req_data(data);
 
-    auto state = std::make_unique<FlutterRequestState>(request, baseBet_, betIncrement_);
+    auto state = std::make_unique<FlutterRequestState>(request, GetMicrosecondTimestamp() + baseBetOffset_);
 
-    LOG(INFO) << "Flutter Client " << clientId_ << " submitting request seq " << nextSeq_ << " with bet " << baseBet_;
+    LOG(INFO) << "Flutter Client " << clientId_ << " submitting request seq " << nextSeq_ << " with bet " << state->bet;
 
-    sendRequest(*state);
     pendingRequests_[nextSeq_] = std::move(state);
+    // TODO this is questionable in terms of memory safety
+    sendRequest(*state);
+
     nextSeq_++;
 }
 
 void FlutterClient::sendRequest(FlutterRequestState &state)
 {
     // Update bet and send time
-    state.currentBet = state.baseBet + (state.clientSeq - 1) * state.betIncrement;
-    state.request.set_bet(state.currentBet);
-    state.sendTime = GetMicrosecondTimestamp();
+    state.bet = GetMicrosecondTimestamp() + (state.numRetries) * betIncrement_;
+    state.request.set_bet(state.bet);
 
     // Send FlutterClientRequest directly to all replicas
-    for (const auto &addr : replicaAddrs_) {
-        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+        for (const auto &addr : replicaAddrs_) {
+
             MessageHeader *hdr = endpoint_->PrepareProtoMsg(state.request, MessageType::FLUTTER_CLIENT_REQUEST, buffer);
 
             if (useHMAC_) {
@@ -148,11 +136,11 @@ void FlutterClient::sendRequest(FlutterRequestState &state)
             }
 
             endpoint_->SendPreparedMsgTo(addr, hdr);
-        });
-    }
+        }
 
-    LOG(INFO) << "Flutter Client " << clientId_ << " sent request seq " << state.clientSeq << " with bet "
-              << state.currentBet << " to " << replicaAddrs_.size() << " replicas";
+        LOG(INFO) << "Flutter Client " << clientId_ << " sent request seq " << state.clientSeq << " with bet "
+                  << state.bet;
+    });
 }
 
 void FlutterClient::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
@@ -183,40 +171,22 @@ void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &repl
 
     if (reply.accepted()) {
         LOG(INFO) << "Flutter Client " << clientId_ << " request seq " << seq << " ACCEPTED with bet " << reply.bet();
+
+        LOG(INFO) << "PERF" << " event=flutter_commit"
+                  << " clientId=" << clientId_ << " clientSeq=" << seq
+                  << " latency=" << (GetMicrosecondTimestamp() - state.sendTime) << " numRetries=" << state.numRetries;
         state.completed = true;
         pendingRequests_.erase(it);
+
     } else {
         LOG(INFO) << "Flutter Client " << clientId_ << " request seq " << seq << " REJECTED with bet " << reply.bet()
                   << " - retrying";
-        retryRequest(state);
+
+        // TODO this is questionable in terms of memory safety
+        state.numRetries++;
+
+        sendRequest(state);
     }
-}
-
-void FlutterClient::retryRequest(FlutterRequestState &state)
-{
-    uint32_t retryCount = (state.currentBet - state.baseBet) / state.betIncrement;
-
-    if (retryCount >= maxRetries_) {
-        LOG(ERROR) << "Flutter Client " << clientId_ << " request seq " << state.clientSeq << " exceeded max retries ("
-                   << maxRetries_ << ")";
-        state.completed = true;
-        pendingRequests_.erase(state.clientSeq);
-        return;
-    }
-
-    // Increase bet and retry
-    state.baseBet += state.betIncrement;
-
-    LOG(INFO) << "Flutter Client " << clientId_ << " retrying request seq " << state.clientSeq << " with increased bet "
-              << (state.baseBet + retryCount * state.betIncrement);
-
-    // Schedule retry after a small delay
-    std::thread([this, &state]() {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if (running_) {
-            sendRequest(state);
-        }
-    }).detach();
 }
 
 }   // namespace dombft

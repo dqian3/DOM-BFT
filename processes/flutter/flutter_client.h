@@ -14,8 +14,8 @@
 #include "lib/transport/endpoint.h"
 #include "lib/utils.h"
 
-#include "proto/flutter_proto.pb.h"
 #include "proto/dombft_proto.pb.h"
+#include "proto/flutter_proto.pb.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -24,20 +24,24 @@ namespace dombft {
 struct FlutterRequestState {
     flutter::proto::FlutterClientRequest request;
     uint32_t clientSeq;
-    uint64_t currentBet;
-    uint64_t baseBet;
-    uint64_t betIncrement;
+    uint64_t bet;
+
     uint64_t sendTime;
+    uint64_t numRetries = 0;
     bool completed = false;
 
-    FlutterRequestState(const flutter::proto::FlutterClientRequest& req, uint64_t bet, uint64_t increment)
+    // Vote tracking for f+1 consensus
+    uint32_t acceptVotes = 0;
+    uint32_t rejectVotes = 0;
+    std::set<uint32_t> votedReplicas;   // Track which replicas have voted
+
+    FlutterRequestState(const flutter::proto::FlutterClientRequest &req, uint64_t bet)
         : request(req)
         , clientSeq(req.client_seq())
-        , currentBet(bet)
-        , baseBet(bet)
-        , betIncrement(increment)
+        , bet(bet)
         , sendTime(GetMicrosecondTimestamp())
-    {}
+    {
+    }
 };
 
 class FlutterClient {
@@ -59,25 +63,22 @@ private:
     uint32_t nextSeq_ = 1;
 
     // Configuration
-    uint64_t baseBet_;
+    uint64_t baseBetOffset_;
     uint64_t betIncrement_;
-    uint32_t maxRetries_;
 
     bool running_;
-    std::vector<std::thread> threads_;
 
-    void handleMessage(MessageHeader* msgHdr, byte* msgBuffer, Address* sender);
-    void processFlutterReply(const flutter::proto::FlutterReply& reply);
-    void retryRequest(FlutterRequestState& state);
-    void sendRequest(FlutterRequestState& state);
+    void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
+    void processFlutterReply(const flutter::proto::FlutterReply &reply);
+    void sendRequest(FlutterRequestState &state);
 
 public:
-    FlutterClient(uint32_t clientId, uint64_t baseBet, uint64_t betIncrement = 1000, uint32_t maxRetries = 10);
+    FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t betIncrement);
     ~FlutterClient();
 
-    void submitRequest(const std::string& data);
+    void submitRequest(const std::string &data);
     void run();
     void stop();
 };
 
-} // namespace dombft
+}   // namespace dombft
