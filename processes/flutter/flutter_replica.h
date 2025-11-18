@@ -119,7 +119,7 @@ private:
     std::unordered_map<uint32_t, uint64_t> replicaClocks_;   // replica_id -> last known clock time
     uint64_t lockTime_;                                      // 4f + 1 lowest clock among replicas
     uint64_t lastClockBroadcast_;
-    static constexpr uint64_t CLOCK_BROADCAST_INTERVAL_MS = 50;   // Broadcast clock every 50ms
+    uint64_t clockBroadcastInterval_;   // Microseconds between clock broadcasts
 
     // RBC slow path state
     uint32_t leaderId_;   // Fixed leader (replica 0)
@@ -163,7 +163,7 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    FlutterReplica(uint32_t replicaId);
+    FlutterReplica(uint32_t replicaId, uint64_t clockBroadcastInterval);
     ~FlutterReplica();
 
     void run();

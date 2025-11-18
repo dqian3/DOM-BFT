@@ -15,13 +15,14 @@
 namespace dombft {
 using namespace flutter::proto;
 
-FlutterReplica::FlutterReplica(uint32_t replicaId)
+FlutterReplica::FlutterReplica(uint32_t replicaId, uint64_t clockBroadcastInterval)
     : replicaId_(replicaId)
     , numVerifyThreads_(ConfigManager::getInstance().getConfig().replicaNumVerifyThreads)
     , sendThreadpool_(ConfigManager::getInstance().getConfig().replicaNumSendThreads)
     , useHMAC_(ConfigManager::getInstance().getConfig().clientUseHMAC)
     , lockTime_(0)
     , lastClockBroadcast_(0)
+    , clockBroadcastInterval_(clockBroadcastInterval)
     , leaderId_(0)   // Simple fixed leader (replica 0)
 {
     auto &configManager = ConfigManager::getInstance();
@@ -143,7 +144,7 @@ FlutterReplica::FlutterReplica(uint32_t replicaId)
         [this](void *ctx, void *endpoint) {
             this->broadcastClock();
         },
-        CLOCK_BROADCAST_INTERVAL_MS * 1000,   // Convert ms to microseconds
+        clockBroadcastInterval_,   // Already in microseconds
         this
     );
     endpoint_->RegisterTimer(clockTimer_.get());
@@ -158,7 +159,7 @@ FlutterReplica::FlutterReplica(uint32_t replicaId)
     replicaClocks_[replicaId_] = GetMicrosecondTimestamp();
 
     LOG(INFO) << "Flutter replica " << replicaId_ << " initialized with clock broadcast interval "
-              << CLOCK_BROADCAST_INTERVAL_MS << "ms";
+              << clockBroadcastInterval_ << "us";
 }
 
 FlutterReplica::~FlutterReplica()
@@ -200,7 +201,7 @@ void FlutterReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Addre
 
     // Check if we need to broadcast our clock
     uint64_t now = GetMicrosecondTimestamp();
-    if (now - lastClockBroadcast_ >= CLOCK_BROADCAST_INTERVAL_MS * 1000) {
+    if (now - lastClockBroadcast_ >= clockBroadcastInterval_) {
         broadcastClock();
     }
 
@@ -401,7 +402,7 @@ void FlutterReplica::broadcastClock()
     uint64_t currentTime = GetMicrosecondTimestamp();
 
     // Check if enough time has elapsed since last broadcast
-    if (currentTime - lastClockBroadcast_ < CLOCK_BROADCAST_INTERVAL_MS * 1000) {
+    if (currentTime - lastClockBroadcast_ < clockBroadcastInterval_) {
         VLOG(5) << "Skipping clock broadcast, only " << (currentTime - lastClockBroadcast_) / 1000 << "ms elapsed";
         return;
     }

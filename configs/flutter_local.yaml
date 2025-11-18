@@ -21,9 +21,8 @@ client:
   requestSize: 512
 
   # Flutter-specific client settings
-  initialBet: 1000000  # 1ms in microseconds
-  betIncrement: 1000000  # Increase bet by 1ms on rejection
-  requestTimeout: 10000000  # 10s timeout
+  initialBet: 100000        # 100ms in microseconds
+  betIncrement: 100000      # Increase bet by 100ms on rejection
 
 # Replica Info - Flutter requires 5f+1 replicas
 replica:
@@ -40,7 +39,7 @@ replica:
   numSendThreads: 2
 
   # Flutter-specific settings
-  clockBroadcastInterval: 100000  # Broadcast clock every 100ms
+  clockBroadcastInterval: 50000  # Broadcast clock every 50ms
 
 
 # EMpty proxy config, not used
