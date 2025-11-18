@@ -2000,7 +2000,45 @@ bool Replica::verifyRepairStart(const RepairStart &startMsg)
         // TODO verify log entries
     }
 
-    // TODO, verify repairPrepareHistory if needed
+    // Verify repairPrepareHistory if needed
+    if (startMsg.has_prepared_history()) {
+        const auto &preparedHistory = startMsg.prepared_history();
+
+        // Check that we have at least quorum size prepare messages
+        if (preparedHistory.prepares_size() < quorumSize_) {
+            LOG(INFO) << "Prepare history from " << startMsg.replica_id()
+                      << " has insufficient prepares: " << preparedHistory.prepares_size()
+                      << " < quorumSize_=" << quorumSize_;
+            return false;
+        }
+
+        // Check that number of prepares matches number of signatures
+        if (preparedHistory.prepares_size() != preparedHistory.prepare_sigs_size()) {
+            LOG(INFO) << "Prepare history from " << startMsg.replica_id()
+                      << " has mismatched prepare/signature counts: "
+                      << preparedHistory.prepares_size() << " prepares, "
+                      << preparedHistory.prepare_sigs_size() << " signatures";
+            return false;
+        }
+
+        // Verify each prepare message signature
+        for (int i = 0; i < preparedHistory.prepares_size(); i++) {
+            const auto &prepare = preparedHistory.prepares(i);
+            const auto &sig = preparedHistory.prepare_sigs(i);
+
+            std::string serializedPrepare = prepare.SerializeAsString();
+            if (!sigProvider_.verify(
+                    (byte *) serializedPrepare.c_str(), serializedPrepare.size(),
+                    (byte *) sig.c_str(), sig.size(),
+                    {NodeType::REPLICA, prepare.replica_id()}
+                )) {
+                LOG(INFO) << "Failed to verify prepare signature from replica "
+                          << prepare.replica_id() << " in prepared history from "
+                          << startMsg.replica_id();
+                return false;
+            }
+        }
+    }
 
     return true;
 }
