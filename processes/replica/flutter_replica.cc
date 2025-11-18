@@ -23,6 +23,7 @@ FlutterReplica::FlutterReplica(uint32_t replicaId, uint32_t batchSize)
     , useHMAC_(ConfigManager::getInstance().getConfig().clientUseHMAC)
     , lockTime_(0)
     , lastClockBroadcast_(0)
+    , leaderId_(0)   // Simple fixed leader (replica 0)
 {
     auto &configManager = ConfigManager::getInstance();
     const auto &config = configManager.getConfig();
@@ -251,15 +252,22 @@ void FlutterReplica::processMessagesThd()
                 continue;
             }
 
-            processClientRequest(clientRequestMsg, std::span{body + hdr->msgLen, hdr->sigLen});
+            // Convert to FlutterClientRequest
+            flutter::proto::FlutterClientRequest flutterRequest;
+            flutterRequest.set_client_id(clientRequestMsg.client_id());
+            flutterRequest.set_client_seq(clientRequestMsg.client_seq());
+            flutterRequest.set_bet(clientRequestMsg.deadline());
+            flutterRequest.set_req_data(clientRequestMsg.req_data());
+
+            processClientRequest(flutterRequest, std::span{body + hdr->msgLen, hdr->sigLen});
         }
         // TODO: Add Flutter protocol message handling
     }
 }
 
-void FlutterReplica::processClientRequest(const dombft::proto::ClientRequest &request, std::span<byte> sig)
+void FlutterReplica::processClientRequest(const flutter::proto::FlutterClientRequest &request, std::span<byte> sig)
 {
-    uint64_t bet = request.deadline();
+    uint64_t bet = request.bet();
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
     bool isFirstTime = candidatePool_.find(key) == candidatePool_.end();
 
@@ -271,7 +279,7 @@ void FlutterReplica::processClientRequest(const dombft::proto::ClientRequest &re
     }
 }
 
-void FlutterReplica::initializeCandidate(const dombft::proto::ClientRequest& request, uint64_t bet)
+void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequest &request, uint64_t bet)
 {
     // Create candidate
     Candidate candidate;
@@ -287,25 +295,24 @@ void FlutterReplica::initializeCandidate(const dombft::proto::ClientRequest& req
     SHA256_Init(&sha256);
     SHA256_Update(&sha256, reqSerialized.c_str(), reqSerialized.size());
     SHA256_Final(hash, &sha256);
-    candidate.digest = std::string((char*)hash, SHA256_DIGEST_LENGTH);
+    candidate.digest = std::string((char *) hash, SHA256_DIGEST_LENGTH);
 
     // Add to candidate pool
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
     candidatePool_[key] = candidate;
 
-    LOG(INFO) << "FLUTTER: Initialized candidate for client " << request.client_id()
-              << " seq " << request.client_seq() << " with bet " << bet;
+    LOG(INFO) << "FLUTTER: Initialized candidate for client " << request.client_id() << " seq " << request.client_seq()
+              << " with bet " << bet;
 
     // Broadcast observe message
     broadcastObserve(request, bet);
 
     // Determine RBC proposal based on current time vs deadline/bet
     uint64_t currentTime = GetMicrosecondTimestamp();
-    bool acceptProposal = currentTime <= bet;  // Accept if current time is before or at deadline
+    bool acceptProposal = currentTime <= bet;   // Accept if current time is before or at deadline
 
-    LOG(INFO) << "FLUTTER: Proposing " << (acceptProposal ? "ACCEPT" : "REJECT")
-              << " for client " << request.client_id() << " (current: " << currentTime
-              << ", deadline: " << bet << ")";
+    LOG(INFO) << "FLUTTER: Proposing " << (acceptProposal ? "ACCEPT" : "REJECT") << " for client "
+              << request.client_id() << " (current: " << currentTime << ", deadline: " << bet << ")";
 
     // Broadcast RBC proposal
     broadcastRBCProposal(request.client_id(), bet, acceptProposal);
@@ -379,7 +386,7 @@ void FlutterReplica::processFlutterMessage(const flutter::proto::FlutterMessage 
         processFlutterTime(msg.sender_id(), msg.time().local_time());
     } else if (msg.has_observe()) {
         // Handle observe messages (relay client requests)
-        dombft::proto::ClientRequest observedRequest;
+        flutter::proto::FlutterClientRequest observedRequest;
         if (observedRequest.ParseFromString(msg.observe().message())) {
             processObserve(msg.sender_id(), observedRequest, msg.observe().bet());
         } else {
@@ -387,11 +394,20 @@ void FlutterReplica::processFlutterMessage(const flutter::proto::FlutterMessage 
         }
     } else if (msg.has_rbc_proposal()) {
         // Handle RBC proposal messages
-        LOG(INFO) << "FLUTTER: Received RBC proposal for client " << msg.rbc_proposal().client_id() << " bet "
-                  << msg.rbc_proposal().bet() << " accept=" << msg.rbc_proposal().accept();
-        // TODO: Process RBC proposal
-        // Handle RBC proposal messages
-        processRBCProposal(msg.sender_id(), msg.rbc_proposal().client_id(), msg.rbc_proposal().bet(), msg.rbc_proposal().accept());
+        processRBCProposal(
+            msg.sender_id(), msg.rbc_proposal().client_id(), msg.rbc_proposal().bet(), msg.rbc_proposal().accept()
+        );
+    } else if (msg.has_rbc_slow_proposal()) {
+        // Handle RBC slow proposal messages
+        processRBCSlowProposal(
+            msg.sender_id(), msg.rbc_slow_proposal().client_id(), msg.rbc_slow_proposal().bet(),
+            msg.rbc_slow_proposal().accept()
+        );
+    } else if (msg.has_rbc_slow_value()) {
+        // Handle RBC slow value messages
+        processRBCSlowValue(
+            msg.sender_id(), msg.rbc_slow_value().client_id(), msg.rbc_slow_value().bet(), msg.rbc_slow_value().accept()
+        );
     }
 }
 
@@ -411,8 +427,7 @@ void FlutterReplica::broadcastRBCProposal(uint32_t clientId, uint64_t bet, bool 
     // Broadcast to all replicas
     broadcastToReplicas(flutterMsg, MessageType::DUMMY_PROTO);
 
-    LOG(INFO) << "FLUTTER: Broadcasted RBC proposal for client " << clientId << " bet " << bet
-              << " accept=" << accept;
+    LOG(INFO) << "FLUTTER: Broadcasted RBC proposal for client " << clientId << " bet " << bet << " accept=" << accept;
 }
 
 void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept)
@@ -422,17 +437,15 @@ void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, ui
     auto it = candidatePool_.find(key);
 
     if (it == candidatePool_.end()) {
-        LOG(WARNING) << "FLUTTER: Received RBC proposal for unknown candidate client=" << clientId
-                     << " bet=" << bet;
+        LOG(WARNING) << "FLUTTER: Received RBC proposal for unknown candidate client=" << clientId << " bet=" << bet;
         return;
     }
 
-    Candidate& candidate = it->second;
+    Candidate &candidate = it->second;
 
     // Check if this replica has already voted
     if (candidate.votedReplicas.count(senderId) > 0) {
-        LOG(INFO) << "FLUTTER: Replica " << senderId << " already voted for client=" << clientId
-                  << " bet=" << bet;
+        LOG(INFO) << "FLUTTER: Replica " << senderId << " already voted for client=" << clientId << " bet=" << bet;
         return;
     }
 
@@ -444,17 +457,33 @@ void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, ui
         candidate.rejectVotes++;
     }
 
-    LOG(INFO) << "FLUTTER: Processed RBC proposal from replica " << senderId << " for client " << clientId
-              << " bet " << bet << " accept=" << accept << ". Total votes: accept=" << candidate.acceptVotes
+    LOG(INFO) << "FLUTTER: Processed RBC proposal from replica " << senderId << " for client " << clientId << " bet "
+              << bet << " accept=" << accept << ". Total votes: accept=" << candidate.acceptVotes
               << " reject=" << candidate.rejectVotes;
 
     // Check for commits only if we just reached superquorum threshold
     if (candidate.acceptVotes == superQuorumSize_ || candidate.rejectVotes == superQuorumSize_) {
         checkCandidatesForCommit();
     }
+
+    // Check if we should initiate slow path: total votes reached superquorum but no single type has superquorum
+    uint32_t totalVotes = candidate.acceptVotes + candidate.rejectVotes;
+    if (totalVotes == superQuorumSize_ && !candidate.slowPathInitiated && candidate.acceptVotes < superQuorumSize_ &&
+        candidate.rejectVotes < superQuorumSize_) {
+
+        candidate.slowPathInitiated = true;
+
+        // Send slow proposal to leader with majority vote
+        bool majorityAccept = candidate.acceptVotes > candidate.rejectVotes;
+        sendRBCSlowProposal(clientId, bet, majorityAccept);
+
+        LOG(INFO) << "FLUTTER: Initiated slow path for client " << clientId << " bet " << bet
+                  << " (accept: " << candidate.acceptVotes << ", reject: " << candidate.rejectVotes
+                  << ", majority: " << (majorityAccept ? "ACCEPT" : "REJECT") << ")";
+    }
 }
 
-void FlutterReplica::broadcastObserve(const dombft::proto::ClientRequest& request, uint64_t bet)
+void FlutterReplica::broadcastObserve(const flutter::proto::FlutterClientRequest &request, uint64_t bet)
 {
     // Serialize the client request
     std::string serializedRequest = request.SerializeAsString();
@@ -473,19 +502,18 @@ void FlutterReplica::broadcastObserve(const dombft::proto::ClientRequest& reques
     // Broadcast to all replicas
     broadcastToReplicas(flutterMsg, MessageType::DUMMY_PROTO);
 
-    LOG(INFO) << "FLUTTER: Broadcasted observe message for client " << request.client_id()
-              << " with bet " << bet;
+    LOG(INFO) << "FLUTTER: Broadcasted observe message for client " << request.client_id() << " with bet " << bet;
 }
 
-void FlutterReplica::processObserve(uint32_t senderId, const dombft::proto::ClientRequest& request, uint64_t bet)
+void FlutterReplica::processObserve(uint32_t senderId, const flutter::proto::FlutterClientRequest &request, uint64_t bet)
 {
     // Check if this is the first time seeing this request
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
     bool isFirstTime = candidatePool_.find(key) == candidatePool_.end();
 
     if (isFirstTime) {
-        LOG(INFO) << "FLUTTER: Processed observe from replica " << senderId << " for client "
-                  << request.client_id() << " bet " << bet;
+        LOG(INFO) << "FLUTTER: Processed observe from replica " << senderId << " for client " << request.client_id()
+                  << " bet " << bet;
 
         // Use the same initialization logic as for direct client requests
         initializeCandidate(request, bet);
@@ -499,7 +527,7 @@ void FlutterReplica::checkCandidatesForCommit()
 {
     std::vector<std::pair<uint64_t, uint32_t>> candidatesToRemove;
 
-    for (auto& [key, candidate] : candidatePool_) {
+    for (auto &[key, candidate] : candidatePool_) {
         uint64_t bet = candidate.timestamp;
         uint32_t clientId = candidate.clientId;
 
@@ -512,39 +540,40 @@ void FlutterReplica::checkCandidatesForCommit()
             break;
         }
 
-        // Check if we have superquorum votes for either accept or reject
-        bool hasAcceptConsensus = candidate.acceptVotes >= superQuorumSize_;
-        bool hasRejectConsensus = candidate.rejectVotes >= superQuorumSize_;
+        // Check if we have consensus either from fast path (superquorum votes) or slow path (leader decision)
+        bool hasFastConsensus = candidate.acceptVotes >= superQuorumSize_ || candidate.rejectVotes >= superQuorumSize_;
+        bool hasSlowConsensus = candidate.slowDecision != false;   // slowDecision is set when leader broadcasts
 
-        if (hasAcceptConsensus || hasRejectConsensus) {
-            bool accepted = hasAcceptConsensus;
+        if (hasFastConsensus || hasSlowConsensus) {
+            bool accepted;
+            if (hasFastConsensus) {
+                accepted = candidate.acceptVotes >= superQuorumSize_;
+            } else {
+                accepted = candidate.slowDecision;
+            }
 
-            LOG(INFO) << "FLUTTER: Candidate ready for commit - client " << clientId
-                      << " bet " << bet << " " << (accepted ? "ACCEPTED" : "REJECTED")
-                      << " (accept votes: " << candidate.acceptVotes
-                      << ", reject votes: " << candidate.rejectVotes
-                      << ", lock time: " << lockTime_ << ")";
+            LOG(INFO) << "FLUTTER: Candidate ready for commit - client " << clientId << " bet " << bet << " "
+                      << (accepted ? "ACCEPTED" : "REJECTED") << " (accept votes: " << candidate.acceptVotes
+                      << ", reject votes: " << candidate.rejectVotes << ", lock time: " << lockTime_ << ")";
 
             if (accepted) {
                 // TODO: Execute the request and send reply to client
-                LOG(INFO) << "FLUTTER: Executing request for client " << clientId
-                          << " seq " << candidate.clientSeq;
+                LOG(INFO) << "FLUTTER: Executing request for client " << clientId << " seq " << candidate.clientSeq;
 
                 // Send reply to client
                 Reply reply;
                 reply.set_replica_id(replicaId_);
                 reply.set_client_id(clientId);
                 reply.set_client_seq(candidate.clientSeq);
-                reply.set_round(0);  // TODO: Use actual round if needed
-                reply.set_seq(0);    // TODO: Use actual sequence if needed
+                reply.set_round(0);   // TODO: Use actual round if needed
+                reply.set_seq(0);     // TODO: Use actual sequence if needed
                 reply.set_digest(candidate.digest);
 
                 sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
                 LOG(INFO) << "FLUTTER: Sent reply to client " << clientId;
             } else {
-                LOG(INFO) << "FLUTTER: Request rejected for client " << clientId
-                          << " - not executing";
+                LOG(INFO) << "FLUTTER: Request rejected for client " << clientId << " - not executing";
             }
 
             // Mark for removal from candidate pool
@@ -553,16 +582,128 @@ void FlutterReplica::checkCandidatesForCommit()
     }
 
     // Remove committed candidates from the pool
-    for (const auto& key : candidatesToRemove) {
+    for (const auto &key : candidatesToRemove) {
         candidatePool_.erase(key);
     }
 
     if (!candidatesToRemove.empty()) {
-        LOG(INFO) << "FLUTTER: Removed " << candidatesToRemove.size()
-                  << " committed candidates from pool";
+        LOG(INFO) << "FLUTTER: Removed " << candidatesToRemove.size() << " committed candidates from pool";
     }
 }
 
+void FlutterReplica::sendRBCSlowProposal(uint32_t clientId, uint64_t bet, bool accept)
+{
+    flutter::proto::FlutterRBCSlowProposal slowProposal;
+    slowProposal.set_client_id(clientId);
+    slowProposal.set_bet(bet);
+    slowProposal.set_accept(accept);
+
+    flutter::proto::FlutterMessage flutterMsg;
+    flutterMsg.set_sender_id(replicaId_);
+    *flutterMsg.mutable_rbc_slow_proposal() = slowProposal;
+
+    sendMsgToDst(flutterMsg, MessageType::DUMMY_PROTO, replicaAddrs_[leaderId_]);
+
+    LOG(INFO) << "FLUTTER: Sent RBC slow proposal to leader " << leaderId_ << " for client " << clientId << " bet "
+              << bet << " " << (accept ? "ACCEPT" : "REJECT");
+}
+
+void FlutterReplica::processRBCSlowProposal(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept)
+{
+    // Only leader processes slow proposals
+    if (replicaId_ != leaderId_) {
+        LOG(WARNING) << "FLUTTER: Non-leader replica " << replicaId_ << " received RBC slow proposal";
+        return;
+    }
+
+    std::pair<uint64_t, uint32_t> key = {bet, clientId};
+    auto it = candidatePool_.find(key);
+    if (it == candidatePool_.end()) {
+        LOG(WARNING) << "FLUTTER: Leader received slow proposal for unknown candidate "
+                     << "client " << clientId << " bet " << bet;
+        return;
+    }
+
+    Candidate &candidate = it->second;
+
+    // Record the slow proposal
+    candidate.slowProposals[senderId] = accept;
+
+    LOG(INFO) << "FLUTTER: Leader processed RBC slow proposal from replica " << senderId << " for client " << clientId
+              << " bet " << bet << " " << (accept ? "ACCEPT" : "REJECT")
+              << " (slow proposals: " << candidate.slowProposals.size() << "/" << (f_ + 1) << ")";
+
+    // Count accept and reject votes
+    uint32_t acceptCount = 0;
+    uint32_t rejectCount = 0;
+    for (const auto &[replicaId, vote] : candidate.slowProposals) {
+        if (vote) {
+            acceptCount++;
+        } else {
+            rejectCount++;
+        }
+    }
+
+    // Decide based on first threshold reached
+    // If 4f + 1 fast accepts were received by a replica, no correct replica would see a majority of
+    // rejects, so leader only needs f + 1 slow votes to make a decision
+    bool decision;
+    if (acceptCount >= f_ + 1) {
+        decision = true;
+    } else if (rejectCount >= f_ + 1) {
+        decision = false;
+    } else {
+        // Not enough votes yet
+        return;
+    }
+
+    // Broadcast slow value decision to all replicas
+    sendRBCSlowValue(clientId, bet, decision);
+
+    LOG(INFO) << "FLUTTER: Leader made slow decision for client " << clientId << " bet " << bet << " "
+              << (decision ? "ACCEPT" : "REJECT") << " (accepts: " << acceptCount << ", rejects: " << rejectCount
+              << ")";
+}
+
+void FlutterReplica::sendRBCSlowValue(uint32_t clientId, uint64_t bet, bool accept)
+{
+    flutter::proto::FlutterRBCSlowValue slowValue;
+    slowValue.set_client_id(clientId);
+    slowValue.set_bet(bet);
+    slowValue.set_accept(accept);
+
+    flutter::proto::FlutterMessage flutterMsg;
+    flutterMsg.set_sender_id(replicaId_);
+    *flutterMsg.mutable_rbc_slow_value() = slowValue;
+
+    broadcastToReplicas(flutterMsg, MessageType::DUMMY_PROTO);
+
+    LOG(INFO) << "FLUTTER: Leader broadcasted RBC slow value for client " << clientId << " bet " << bet << " "
+              << (accept ? "ACCEPT" : "REJECT");
+}
+
+void FlutterReplica::processRBCSlowValue(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept)
+{
+    // Only accept slow values from the leader
+    if (senderId != leaderId_) {
+        LOG(WARNING) << "FLUTTER: Received RBC slow value from non-leader replica " << senderId;
+        return;
+    }
+
+    std::pair<uint64_t, uint32_t> key = {bet, clientId};
+    auto it = candidatePool_.find(key);
+    if (it == candidatePool_.end()) {
+        LOG(WARNING) << "FLUTTER: Received slow value for unknown candidate "
+                     << "client " << clientId << " bet " << bet;
+        return;
+    }
+
+    Candidate &candidate = it->second;
+    candidate.slowDecision = accept;
+
+    LOG(INFO) << "FLUTTER: Processed RBC slow value from leader for client " << clientId << " bet " << bet << " "
+              << (accept ? "ACCEPT" : "REJECT");
+}
 
 // Template instantiations for sending helpers
 template <typename T> void FlutterReplica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
@@ -594,4 +735,4 @@ template <typename T> void FlutterReplica::broadcastToReplicas(const T &msg, Mes
     });
 }
 
-}
+}   // namespace dombft
