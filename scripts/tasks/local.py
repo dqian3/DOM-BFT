@@ -182,6 +182,14 @@ def flutter(
             f"Warning: Flutter requires 5f+1 replicas. For f={f}, expected {expected_replicas} but got {n_replicas}"
         )
 
+    # Extract Flutter-specific config parameters
+    clock_broadcast_interval = config.get("replica", {}).get("clockBroadcastInterval", 50000)
+    base_bet_offset = config.get("client", {}).get("initialBet", 100000)
+    bet_increment = config.get("client", {}).get("betIncrement", 100000)
+
+    print(f"Flutter config: clockBroadcastInterval={clock_broadcast_interval}us, "
+          f"initialBet={base_bet_offset}us, betIncrement={bet_increment}us")
+
     with c.cd(".."):
         c.run("rm logs/*", warn=True)
 
@@ -195,7 +203,7 @@ def flutter(
         for id in range(n_replicas):
             crashed_arg = "-crashed" if id < num_crashed else ""
 
-            cmd = f"./bazel-bin/processes/flutter/flutter_replica -v {v} -config {config_file} -replicaId {id} {crashed_arg} &>logs/flutter_replica{id}.log"
+            cmd = f"./bazel-bin/processes/flutter/flutter_replica -v {v} -config {config_file} -replicaId {id} -clockBroadcastInterval {clock_broadcast_interval} {crashed_arg} &>logs/flutter_replica{id}.log"
             hdl = arun(cmd)
             print(cmd)
             other_handles.append(hdl)
@@ -210,7 +218,7 @@ def flutter(
             else:
                 suffix = " "
 
-            cmd = f"./bazel-bin/processes/flutter/flutter_client -v {v} -config {config_file} -clientId {id} {suffix} &>logs/flutter_client{id}.log"
+            cmd = f"./bazel-bin/processes/flutter/flutter_client -v {v} -config {config_file} -clientId {id} -baseBetOffset {base_bet_offset} -betIncrement {bet_increment} {suffix} &>logs/flutter_client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 

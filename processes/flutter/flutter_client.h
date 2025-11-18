@@ -68,6 +68,7 @@ private:
     uint64_t baseBetOffset_;
     uint64_t betIncrement_;
     uint32_t f_;
+    uint32_t requestSize_;
 
     // Send control
     ClientSendMode sendMode_;

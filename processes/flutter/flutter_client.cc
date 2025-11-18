@@ -23,6 +23,7 @@ FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t
     f_ = config.f;
     maxInFlight_ = config.clientMaxInFlight;
     sendRate_ = config.clientSendRate;
+    requestSize_ = config.clientRequestSize;
 
     if (config.clientSendMode == "sendRate") {
         sendMode_ = flutter::RateBased;
@@ -128,15 +129,15 @@ FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t
     // Initial sending
     if (sendMode_ == flutter::RateBased) {
         // Send first request immediately
-        submitRequest("request_data");
+        submitRequest(std::string(requestSize_, 'x'));
     } else if (sendMode_ == flutter::MaxInFlightBased) {
         for (uint32_t i = 0; i < maxInFlight_; i++) {
-            submitRequest("request_data");
+            submitRequest(std::string(requestSize_, 'x'));
         }
     }
 
     LOG(INFO) << "Flutter Client " << clientId_ << " initialized with base bet offset " << baseBetOffset_
-              << " and increment " << betIncrement_;
+              << ", bet increment " << betIncrement_ << ", request size " << requestSize_ << " bytes";
 }
 
 FlutterClient::~FlutterClient() {}
@@ -192,7 +193,7 @@ void FlutterClient::submitRequestsOpenLoop()
         if (numInFlight_ >= maxInFlight_) {
             break;
         }
-        submitRequest("request_data");
+        submitRequest(std::string(requestSize_, 'x'));
     }
 }
 

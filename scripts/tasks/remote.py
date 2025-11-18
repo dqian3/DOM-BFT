@@ -289,6 +289,14 @@ def flutter(
     # Flutter requires 5f+1 replicas
     f = len(replicas) // 5
 
+    # Extract Flutter-specific config parameters
+    clock_broadcast_interval = cfg.get("replica", {}).get("clockBroadcastInterval", 50000)
+    base_bet_offset = cfg.get("client", {}).get("initialBet", 100000)
+    bet_increment = cfg.get("client", {}).get("betIncrement", 100000)
+
+    print(f"Flutter config: clockBroadcastInterval={clock_broadcast_interval}us, "
+          f"initialBet={base_bet_offset}us, betIncrement={bet_increment}us")
+
     # Get all unique IPs for Flutter (replicas + clients)
     all_ips = set(replicas) | set(clients)
     group = ThreadingGroup(*all_ips)
@@ -318,7 +326,8 @@ def flutter(
     for id, ip in enumerate(replicas):
         arun = arun_on(ip, f"flutter_replica{id}.log", timeout=10 + runtime, profile=profile)
         hdl = arun(
-            f"{replica_path} -v {v} -config {remote_config_file} -replicaId {id}"
+            f"{replica_path} -v {v} -config {remote_config_file} -replicaId {id} "
+            f"-clockBroadcastInterval {clock_broadcast_interval}"
         )
         replica_handles.append(hdl)
 
@@ -334,7 +343,8 @@ def flutter(
             suffix = " "
 
         hdl = arun(
-            f"{client_path} -v {v} -config {remote_config_file} -clientId {id} {suffix}"
+            f"{client_path} -v {v} -config {remote_config_file} -clientId {id} "
+            f"-baseBetOffset {base_bet_offset} -betIncrement {bet_increment}{suffix}"
         )
         client_handles.append(hdl)
 
