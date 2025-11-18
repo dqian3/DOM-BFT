@@ -4,6 +4,7 @@
 #include "lib/transport/nng_endpoint.h"
 #include "lib/utils.h"
 
+#include <atomic>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -29,6 +30,7 @@ private:
     Address addr_;   // Just for debugging
 
     BlockingConcurrentQueue<std::vector<byte>> queue_;
+    std::atomic<bool> stopping_{false};   // Signal to stop draining queue
 
     friend class NngEndpointThreaded;
 };

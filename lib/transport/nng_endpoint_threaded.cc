@@ -33,6 +33,7 @@ void NngSendThread::run()
 {
     auto stop_cb = [](struct ev_loop *loop, ev_async *w, int revents) {
         // Signal to stop the event loop
+        VLOG(1) << "NngSendThread stopping event loop";
         ev_break(loop, EVBREAK_ALL);
     };
 
@@ -43,7 +44,10 @@ void NngSendThread::run()
         uint32_t BATCH_SIZE = 5;
         std::vector<std::vector<byte>> msgs(BATCH_SIZE);
         size_t numMsgs;
-        while (numMsgs = t->queue_.wait_dequeue_bulk_timed(msgs.begin(), 5, 50000)) {
+        // Check stopping_ flag to allow early exit when LoopBreak() is called
+        while (!t->stopping_ && (numMsgs = t->queue_.wait_dequeue_bulk_timed(msgs.begin(), 5, 50000))) {
+            if (t->stopping_) break;  // Check again after dequeue in case it was set during wait
+
             if (numMsgs > 1) {
 
                 VLOG(6) << "Batching  " << numMsgs << " nng messages to " << t->addr_;
@@ -271,7 +275,9 @@ void NngEndpointThreaded::LoopBreak()
 {
     LOG(INFO) << "NngEndpointThreaded::LoopBreak() called";
 
+    // Now signal the event loops to stop
     for (auto &t : sendThreads_) {
+        t->stopping_ = true;
         ev_async_send(t->evLoop_, &t->stopWatcher_);
     }
 
@@ -281,11 +287,11 @@ void NngEndpointThreaded::LoopBreak()
 
     for (auto &t : sendThreads_) {
         t->thread_.join();
-        LOG(INFO) << "Join send thread " << t->addr_;
+        LOG(INFO) << "Joined send thread " << t->addr_;
     }
 
     recvThread_->thread_.join();
-    LOG(INFO) << "Join recv thread";
+    LOG(INFO) << "Joined recv thread";
 
     ev_break(evLoop_, EVBREAK_ALL);
 }
