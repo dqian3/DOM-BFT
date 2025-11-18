@@ -159,8 +159,8 @@ void FlutterClient::submitRequest(const std::string &data)
 
     auto state = std::make_unique<FlutterRequestState>(request, GetMicrosecondTimestamp() + baseBetOffset_);
 
-    VLOG(1) << "Flutter Client " << clientId_ << " submitting request seq " << nextSeq_ << " with bet " << state->bet
-            << " in_flight=" << numInFlight_;
+    VLOG(1) << "SEND client=" << clientId_ << " seq=" << nextSeq_ << " bet=" << state->bet
+            << " inflight=" << numInFlight_;
 
     pendingRequests_[nextSeq_] = std::move(state);
     sendRequest(*pendingRequests_[nextSeq_]);
@@ -218,8 +218,8 @@ void FlutterClient::sendRequest(FlutterRequestState &state)
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
 
-        VLOG(1) << "Flutter Client " << clientId_ << " sent request seq " << state.clientSeq << " with bet "
-                << state.bet;
+        VLOG(6) << "Sent Flutter request to all replicas: client=" << clientId_ << " seq=" << state.clientSeq
+                << " bet=" << state.bet;
     });
 }
 
@@ -258,7 +258,7 @@ void FlutterClient::commitRequest(uint32_t clientSeq)
         }
     }
 
-    VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
+    VLOG(4) << "After commit: inflight=" << numInFlight_;
 
     if (sendMode_ == flutter::MaxInFlightBased) {
         submitRequest("request_data");
@@ -271,7 +271,7 @@ void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &repl
 
     auto it = pendingRequests_.find(seq);
     if (it == pendingRequests_.end()) {
-        VLOG(2) << "Received reply for unknown request seq " << seq;
+        VLOG(4) << "Received reply for unknown request seq=" << seq;
         return;
     }
 
@@ -280,7 +280,7 @@ void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &repl
 
     // Check if we already received a vote from this replica
     if (state.votedReplicas.count(replicaId) > 0) {
-        VLOG(2) << "Already received vote from replica " << replicaId << " for seq " << seq;
+        VLOG(4) << "Duplicate vote from replica=" << replicaId << " seq=" << seq;
         return;
     }
 
@@ -289,27 +289,26 @@ void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &repl
 
     if (reply.accepted()) {
         state.acceptVotes++;
-        VLOG(1) << "Flutter Client " << clientId_ << " request seq " << seq << " received ACCEPT vote from replica "
-                << replicaId << " (" << state.acceptVotes << "/" << (f_ + 1) << " needed)";
+        VLOG(3) << "Vote ACCEPT replica=" << replicaId << " seq=" << seq << " (" << state.acceptVotes << "/"
+                << (f_ + 1) << ")";
 
         // Check if we have f+1 accept votes
         if (state.acceptVotes >= f_ + 1) {
-            LOG(INFO) << "PERF event=flutter_commit path=accept"
-                      << " clientId=" << clientId_ << " clientSeq=" << seq
-                      << " latency=" << (GetMicrosecondTimestamp() - state.sendTime)
-                      << " numRetries=" << state.numRetries;
+            LOG(INFO) << "COMMIT client=" << clientId_ << " seq=" << seq << " latency="
+                      << (GetMicrosecondTimestamp() - state.sendTime) << " retries=" << state.numRetries
+                      << " decision=accept";
 
             commitRequest(seq);
         }
     } else {
         state.rejectVotes++;
-        VLOG(1) << "Flutter Client " << clientId_ << " request seq " << seq << " received REJECT vote from replica "
-                << replicaId << " (" << state.rejectVotes << "/" << (f_ + 1) << " needed)";
+        VLOG(3) << "Vote REJECT replica=" << replicaId << " seq=" << seq << " (" << state.rejectVotes << "/"
+                << (f_ + 1) << ")";
 
         // Check if we have f+1 reject votes
         if (state.rejectVotes >= f_ + 1) {
-            LOG(INFO) << "Flutter Client " << clientId_ << " request seq " << seq
-                      << " REJECTED with f+1 votes - retrying with higher bet";
+            VLOG(1) << "RETRY client=" << clientId_ << " seq=" << seq << " retries=" << (state.numRetries + 1)
+                    << " reason=rejected";
 
             // Reset vote tracking for retry
             state.acceptVotes = 0;

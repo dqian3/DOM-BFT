@@ -204,8 +204,7 @@ void FlutterReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Addre
         broadcastClock();
     }
 
-    VLOG(6) << verifyQueue_.size_approx() << " messages in verify queue, " << processQueue_.size_approx()
-            << " messages in process queue";
+    VLOG(6) << "Queue sizes: verify=" << verifyQueue_.size_approx() << " process=" << processQueue_.size_approx();
 }
 
 void FlutterReplica::verifyMessagesThd()
@@ -315,8 +314,8 @@ void FlutterReplica::processClientRequest(const flutter::proto::FlutterClientReq
     if (isFirstTime) {
         initializeCandidate(request, bet);
     } else {
-        LOG(INFO) << "FLUTTER: Received request from client " << request.client_id() << " seq " << request.client_seq()
-                  << " with timestamp " << bet << ", already in candidate pool";
+        VLOG(4) << "Duplicate client request: client=" << request.client_id() << " seq=" << request.client_seq()
+                << " bet=" << bet;
     }
 }
 
@@ -359,8 +358,7 @@ void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequ
 
     // Check if this request has already been committed
     if (clientSeqTrackers_[clientId].isCommitted(clientSeq)) {
-        VLOG(3) << "FLUTTER: Ignoring already-committed request from client " << clientId
-                << " seq " << clientSeq;
+        VLOG(4) << "Ignoring already-committed: client=" << clientId << " seq=" << clientSeq;
         return;
     }
 
@@ -382,8 +380,7 @@ void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequ
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
     candidatePool_[key] = candidate;
 
-    LOG(INFO) << "FLUTTER: Initialized candidate for client " << request.client_id() << " seq " << request.client_seq()
-              << " with bet " << bet;
+    VLOG(1) << "RECV_REQUEST client=" << request.client_id() << " seq=" << request.client_seq() << " bet=" << bet;
 
     // Broadcast observe message
     broadcastObserve(request, bet);
@@ -392,8 +389,8 @@ void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequ
     uint64_t currentTime = GetMicrosecondTimestamp();
     bool acceptProposal = currentTime <= bet;   // Accept if current time is before or at deadline
 
-    LOG(INFO) << "FLUTTER: Proposing " << (acceptProposal ? "ACCEPT" : "REJECT") << " for client "
-              << request.client_id() << " (current: " << currentTime << ", deadline: " << bet << ")";
+    VLOG(2) << "Proposal " << (acceptProposal ? "ACCEPT" : "REJECT") << " client=" << request.client_id() << " bet="
+            << bet << " time=" << currentTime;
 
     // Broadcast RBC proposal
     broadcastRBCProposal(request.client_id(), bet, acceptProposal);
@@ -405,8 +402,7 @@ void FlutterReplica::broadcastClock()
 
     // Check if enough time has elapsed since last broadcast
     if (currentTime - lastClockBroadcast_ < CLOCK_BROADCAST_INTERVAL_MS * 1000) {
-        VLOG(5) << "FLUTTER: Skipping clock broadcast, last broadcast was "
-                << (currentTime - lastClockBroadcast_) / 1000 << "ms ago";
+        VLOG(5) << "Skipping clock broadcast, only " << (currentTime - lastClockBroadcast_) / 1000 << "ms elapsed";
         return;
     }
 
@@ -427,7 +423,7 @@ void FlutterReplica::broadcastClock()
 
     lastClockBroadcast_ = currentTime;
 
-    VLOG(3) << "FLUTTER: Broadcasted clock time " << currentTime;
+    VLOG(6) << "Broadcast clock time=" << currentTime;
 }
 
 void FlutterReplica::processFlutterTime(uint32_t senderId, uint64_t clockTime)
@@ -435,7 +431,7 @@ void FlutterReplica::processFlutterTime(uint32_t senderId, uint64_t clockTime)
     // Update the sender's clock time
     replicaClocks_[senderId] = clockTime;
 
-    LOG(INFO) << "FLUTTER: Received clock time " << clockTime << " from replica " << senderId;
+    VLOG(6) << "Recv clock from replica=" << senderId << " time=" << clockTime;
 
     // Update lock time with new clock data
     updateLockTime();
@@ -458,7 +454,10 @@ void FlutterReplica::updateLockTime()
     if (clockTimes.size() >= superQuorumSize_) {
         uint64_t oldLockTime = lockTime_;
         lockTime_ = clockTimes[superQuorumSize_ - 1];   // 4f+1th lowest (0-indexed)
-        LOG(INFO) << "FLUTTER: Updated lock time to " << lockTime_;
+
+        if (lockTime_ != oldLockTime) {
+            VLOG(2) << "Lock time updated: " << oldLockTime << " -> " << lockTime_;
+        }
 
         // If lock time advanced, check for candidates that can now be committed
         if (lockTime_ > oldLockTime) {
@@ -483,7 +482,7 @@ void FlutterReplica::broadcastRBCProposal(uint32_t clientId, uint64_t bet, bool 
     // Broadcast to all replicas
     broadcastToReplicas(flutterMsg, MessageType::FLUTTER_REPLICA_MSG);
 
-    LOG(INFO) << "FLUTTER: Broadcasted RBC proposal for client " << clientId << " bet " << bet << " accept=" << accept;
+    VLOG(6) << "Broadcast RBC proposal: client=" << clientId << " bet=" << bet << " vote=" << (accept ? "ACCEPT" : "REJECT");
 }
 
 void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept)
@@ -513,9 +512,9 @@ void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, ui
         candidate.rejectVotes++;
     }
 
-    LOG(INFO) << "FLUTTER: Processed RBC proposal from replica " << senderId << " for client " << clientId << " bet "
-              << bet << " accept=" << accept << ". Total votes: accept=" << candidate.acceptVotes
-              << " reject=" << candidate.rejectVotes;
+    VLOG(3) << "RBC vote from replica=" << senderId << " client=" << clientId << " bet=" << bet
+            << " vote=" << (accept ? "ACCEPT" : "REJECT") << " totals: accept=" << candidate.acceptVotes
+            << " reject=" << candidate.rejectVotes;
 
     // Check for commits only if we just reached superquorum threshold
     if (candidate.acceptVotes == superQuorumSize_ || candidate.rejectVotes == superQuorumSize_) {
@@ -533,9 +532,8 @@ void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, ui
         bool majorityAccept = candidate.acceptVotes > candidate.rejectVotes;
         sendRBCSlowProposal(clientId, bet, majorityAccept);
 
-        LOG(INFO) << "FLUTTER: Initiated slow path for client " << clientId << " bet " << bet
-                  << " (accept: " << candidate.acceptVotes << ", reject: " << candidate.rejectVotes
-                  << ", majority: " << (majorityAccept ? "ACCEPT" : "REJECT") << ")";
+        VLOG(2) << "SLOW_PATH initiated: client=" << clientId << " bet=" << bet << " accept=" << candidate.acceptVotes
+                << " reject=" << candidate.rejectVotes << " majority=" << (majorityAccept ? "ACCEPT" : "REJECT");
     }
 }
 
@@ -558,7 +556,7 @@ void FlutterReplica::broadcastObserve(const flutter::proto::FlutterClientRequest
     // Broadcast to all replicas
     broadcastToReplicas(flutterMsg, MessageType::FLUTTER_REPLICA_MSG);
 
-    LOG(INFO) << "FLUTTER: Broadcasted observe message for client " << request.client_id() << " with bet " << bet;
+    VLOG(6) << "Broadcast observe: client=" << request.client_id() << " bet=" << bet;
 }
 
 void FlutterReplica::processObserve(
@@ -570,14 +568,12 @@ void FlutterReplica::processObserve(
     bool isFirstTime = candidatePool_.find(key) == candidatePool_.end();
 
     if (isFirstTime) {
-        LOG(INFO) << "FLUTTER: Processed observe from replica " << senderId << " for client " << request.client_id()
-                  << " bet " << bet;
+        VLOG(4) << "Recv observe from replica=" << senderId << " client=" << request.client_id() << " bet=" << bet;
 
         // Use the same initialization logic as for direct client requests
         initializeCandidate(request, bet);
     } else {
-        LOG(INFO) << "FLUTTER: Received observe from replica " << senderId << " for already known client "
-                  << request.client_id() << " bet " << bet;
+        VLOG(5) << "Duplicate observe from replica=" << senderId << " client=" << request.client_id() << " bet=" << bet;
     }
 }
 
@@ -610,17 +606,17 @@ void FlutterReplica::checkCandidatesForCommit()
                 accepted = candidate.slowDecision;
             }
 
-            LOG(INFO) << "FLUTTER: Candidate ready for commit - client " << clientId << " bet " << bet << " "
-                      << (accepted ? "ACCEPTED" : "REJECTED") << " (accept votes: " << candidate.acceptVotes
-                      << ", reject votes: " << candidate.rejectVotes << ", lock time: " << lockTime_ << ")";
+            VLOG(1) << "COMMIT client=" << clientId << " seq=" << candidate.clientSeq << " bet=" << bet << " decision="
+                    << (accepted ? "ACCEPT" : "REJECT") << " path="
+                    << (hasFastConsensus ? "fast" : "slow") << " lock=" << lockTime_;
 
             // Mark sequence as committed to prevent reprocessing
             clientSeqTrackers_[clientId].commit(candidate.clientSeq);
-            VLOG(2) << "FLUTTER: Marked client " << clientId << " seq " << candidate.clientSeq << " as committed";
+            VLOG(4) << "Marked committed: client=" << clientId << " seq=" << candidate.clientSeq;
 
             if (accepted) {
-                // TODO: Execute the request and send reply to client
-                LOG(INFO) << "FLUTTER: Executing request for client " << clientId << " seq " << candidate.clientSeq;
+                // TODO: Execute the request
+                VLOG(2) << "Execute request: client=" << clientId << " seq=" << candidate.clientSeq;
 
                 // Send reply to client
                 flutter::proto::FlutterReply reply;
@@ -632,9 +628,9 @@ void FlutterReplica::checkCandidatesForCommit()
                 reply.set_result("Request executed successfully");
                 sendMsgToDst(reply, MessageType::FLUTTER_REPLY, clientAddrs_[clientId]);
 
-                LOG(INFO) << "FLUTTER: Sent reply to client " << clientId;
+                VLOG(6) << "Sent reply to client=" << clientId << " seq=" << candidate.clientSeq;
             } else {
-                LOG(INFO) << "FLUTTER: Request rejected for client " << clientId << " - not executing";
+                VLOG(2) << "Reject (not executing): client=" << clientId << " seq=" << candidate.clientSeq;
             }
 
             // Mark for removal from candidate pool
@@ -648,7 +644,7 @@ void FlutterReplica::checkCandidatesForCommit()
     }
 
     if (!candidatesToRemove.empty()) {
-        LOG(INFO) << "FLUTTER: Removed " << candidatesToRemove.size() << " committed candidates from pool";
+        VLOG(3) << "Removed " << candidatesToRemove.size() << " committed candidates from pool";
     }
 }
 
@@ -665,8 +661,8 @@ void FlutterReplica::sendRBCSlowProposal(uint32_t clientId, uint64_t bet, bool a
 
     sendMsgToDst(flutterMsg, MessageType::FLUTTER_REPLICA_MSG, replicaAddrs_[leaderId_]);
 
-    LOG(INFO) << "FLUTTER: Sent RBC slow proposal to leader " << leaderId_ << " for client " << clientId << " bet "
-              << bet << " " << (accept ? "ACCEPT" : "REJECT");
+    VLOG(3) << "Sent slow proposal to leader=" << leaderId_ << " client=" << clientId << " bet=" << bet
+            << " vote=" << (accept ? "ACCEPT" : "REJECT");
 }
 
 void FlutterReplica::processRBCSlowProposal(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept)
@@ -690,9 +686,9 @@ void FlutterReplica::processRBCSlowProposal(uint32_t senderId, uint32_t clientId
     // Record the slow proposal
     candidate.slowProposals[senderId] = accept;
 
-    LOG(INFO) << "FLUTTER: Leader processed RBC slow proposal from replica " << senderId << " for client " << clientId
-              << " bet " << bet << " " << (accept ? "ACCEPT" : "REJECT")
-              << " (slow proposals: " << candidate.slowProposals.size() << "/" << (f_ + 1) << ")";
+    VLOG(3) << "Leader recv slow proposal from replica=" << senderId << " client=" << clientId << " bet=" << bet
+            << " vote=" << (accept ? "ACCEPT" : "REJECT") << " total=" << candidate.slowProposals.size() << "/"
+            << (f_ + 1);
 
     // Count accept and reject votes
     uint32_t acceptCount = 0;
@@ -721,9 +717,8 @@ void FlutterReplica::processRBCSlowProposal(uint32_t senderId, uint32_t clientId
     // Broadcast slow value decision to all replicas
     sendRBCSlowValue(clientId, bet, decision);
 
-    LOG(INFO) << "FLUTTER: Leader made slow decision for client " << clientId << " bet " << bet << " "
-              << (decision ? "ACCEPT" : "REJECT") << " (accepts: " << acceptCount << ", rejects: " << rejectCount
-              << ")";
+    VLOG(2) << "Leader slow decision: client=" << clientId << " bet=" << bet << " decision="
+            << (decision ? "ACCEPT" : "REJECT") << " (accept=" << acceptCount << " reject=" << rejectCount << ")";
 }
 
 void FlutterReplica::sendRBCSlowValue(uint32_t clientId, uint64_t bet, bool accept)
@@ -739,8 +734,8 @@ void FlutterReplica::sendRBCSlowValue(uint32_t clientId, uint64_t bet, bool acce
 
     broadcastToReplicas(flutterMsg, MessageType::FLUTTER_REPLICA_MSG);
 
-    LOG(INFO) << "FLUTTER: Leader broadcasted RBC slow value for client " << clientId << " bet " << bet << " "
-              << (accept ? "ACCEPT" : "REJECT");
+    VLOG(3) << "Leader broadcast slow value: client=" << clientId << " bet=" << bet << " decision="
+            << (accept ? "ACCEPT" : "REJECT");
 }
 
 void FlutterReplica::processRBCSlowValue(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept)
@@ -762,8 +757,8 @@ void FlutterReplica::processRBCSlowValue(uint32_t senderId, uint32_t clientId, u
     Candidate &candidate = it->second;
     candidate.slowDecision = accept;
 
-    LOG(INFO) << "FLUTTER: Processed RBC slow value from leader for client " << clientId << " bet " << bet << " "
-              << (accept ? "ACCEPT" : "REJECT");
+    VLOG(3) << "Recv slow value from leader: client=" << clientId << " bet=" << bet << " decision="
+            << (accept ? "ACCEPT" : "REJECT");
 }
 
 // Template instantiations for sending helpers
