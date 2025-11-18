@@ -56,7 +56,9 @@ FlutterReplica::FlutterReplica(uint32_t replicaId, uint64_t clockBroadcastInterv
         exit(1);
     }
 
-    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, configManager.getNumClients());
+    hmacProvider_.loadReplicaKeysDev(
+        {NodeType::REPLICA, replicaId_}, configManager.getNumClients(), configManager.getNumReplicas()
+    );
 
     // Calculate BFT parameters - Flutter requires 5f + 1 replicas
     numReplicas_ = configManager.getNumReplicas();
@@ -765,12 +767,21 @@ template <typename T> void FlutterReplica::sendMsgToDst(const T &msg, MessageTyp
 {
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        if (useHMAC_ && type == REPLY) {
-            auto it = find(clientAddrs_.begin(), clientAddrs_.end(), dst);
-            assert(it != clientAddrs_.end());
+        if (useHMAC_) {
 
-            uint32_t clientId = it - clientAddrs_.begin();
-            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::CLIENT, clientId});
+            if (type == MessageType::FLUTTER_REPLY) {
+                auto it = find(clientAddrs_.begin(), clientAddrs_.end(), dst);
+                assert(it != clientAddrs_.end());
+
+                uint32_t clientId = it - clientAddrs_.begin();
+                hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::CLIENT, clientId});
+            } else {
+                auto it = find(replicaAddrs_.begin(), replicaAddrs_.end(), dst);
+                assert(it != replicaAddrs_.end());
+
+                uint32_t replicaId = it - replicaAddrs_.begin();
+                hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, replicaId});
+            }
         } else {
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         }
@@ -782,9 +793,16 @@ template <typename T> void FlutterReplica::broadcastToReplicas(const T &msg, Mes
 {
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
 
-        for (const Address &addr : replicaAddrs_) {
+        if (!useHMAC_) {
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        }
+
+        for (uint32_t i = 0; i < replicaAddrs_.size(); i++) {
+            const Address &addr = replicaAddrs_[i];
+            if (useHMAC_) {
+                hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, i});
+            }
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
     });

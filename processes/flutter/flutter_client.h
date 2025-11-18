@@ -26,7 +26,7 @@ struct FlutterRequestState {
     uint32_t clientSeq;
     uint64_t bet;
 
-    uint64_t sendTime;
+    uint64_t submitTime;
     uint64_t numRetries = 0;
     bool completed = false;
 
@@ -39,7 +39,7 @@ struct FlutterRequestState {
         : request(req)
         , clientSeq(req.client_seq())
         , bet(bet)
-        , sendTime(GetMicrosecondTimestamp())
+        , submitTime(GetMicrosecondTimestamp())
     {
     }
 };

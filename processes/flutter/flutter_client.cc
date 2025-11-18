@@ -199,10 +199,9 @@ void FlutterClient::submitRequestsOpenLoop()
 
 void FlutterClient::sendRequest(FlutterRequestState &state)
 {
-    // Update bet and send time
+    // Update bet
     state.bet = GetMicrosecondTimestamp() + baseBetOffset_ + (state.numRetries) * betIncrement_;
     state.request.set_bet(state.bet);
-    state.sendTime = GetMicrosecondTimestamp();
 
     // Send FlutterClientRequest directly to all replicas
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
@@ -290,21 +289,21 @@ void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &repl
 
     if (reply.accepted()) {
         state.acceptVotes++;
-        VLOG(3) << "Vote ACCEPT replica=" << replicaId << " seq=" << seq << " (" << state.acceptVotes << "/"
-                << (f_ + 1) << ")";
+        VLOG(3) << "Vote ACCEPT replica=" << replicaId << " seq=" << seq << " (" << state.acceptVotes << "/" << (f_ + 1)
+                << ")";
 
         // Check if we have f+1 accept votes
         if (state.acceptVotes >= f_ + 1) {
-            LOG(INFO) << "COMMIT client=" << clientId_ << " seq=" << seq << " latency="
-                      << (GetMicrosecondTimestamp() - state.sendTime) << " retries=" << state.numRetries
-                      << " decision=accept";
+            LOG(INFO) << "COMMIT client=" << clientId_ << " seq=" << seq
+                      << " latency=" << (GetMicrosecondTimestamp() - state.submitTime)
+                      << " retries=" << state.numRetries << " decision=accept";
 
             commitRequest(seq);
         }
     } else {
         state.rejectVotes++;
-        VLOG(3) << "Vote REJECT replica=" << replicaId << " seq=" << seq << " (" << state.rejectVotes << "/"
-                << (f_ + 1) << ")";
+        VLOG(3) << "Vote REJECT replica=" << replicaId << " seq=" << seq << " (" << state.rejectVotes << "/" << (f_ + 1)
+                << ")";
 
         // Check if we have f+1 reject votes
         if (state.rejectVotes >= f_ + 1) {

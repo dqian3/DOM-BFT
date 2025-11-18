@@ -54,7 +54,9 @@ DummyReplica::DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batc
         exit(1);
     }
 
-    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, configManager.getNumClients());
+    hmacProvider_.loadReplicaKeysDev(
+        {NodeType::REPLICA, replicaId_}, configManager.getNumClients(), configManager.getNumReplicas()
+    );
 
     // LOG(INFO) << "instantiating log";
 
