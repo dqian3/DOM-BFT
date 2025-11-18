@@ -9,15 +9,14 @@
 
 #include <algorithm>
 #include <chrono>
-#include <openssl/sha.h>
 #include <sstream>
+#include <cryptopp/sha.h>
 
 namespace dombft {
 using namespace dombft::proto;
 
-FlutterReplica::FlutterReplica(uint32_t replicaId, uint32_t batchSize)
+FlutterReplica::FlutterReplica(uint32_t replicaId)
     : replicaId_(replicaId)
-    , batchSize_(batchSize)
     , numVerifyThreads_(ConfigManager::getInstance().getConfig().replicaNumVerifyThreads)
     , sendThreadpool_(ConfigManager::getInstance().getConfig().replicaNumSendThreads)
     , useHMAC_(ConfigManager::getInstance().getConfig().clientUseHMAC)
@@ -27,8 +26,6 @@ FlutterReplica::FlutterReplica(uint32_t replicaId, uint32_t batchSize)
 {
     auto &configManager = ConfigManager::getInstance();
     const auto &config = configManager.getConfig();
-
-    LOG(INFO) << "Flutter Replica batchSize=" << batchSize_;
 
     const auto &replicaIps = configManager.getReplicaIps();
     std::string replicaIp = replicaIps[replicaId];
@@ -149,8 +146,6 @@ FlutterReplica::FlutterReplica(uint32_t replicaId, uint32_t batchSize)
 
     // Initialize our own clock in the replica clocks map
     replicaClocks_[replicaId_] = GetMicrosecondTimestamp();
-
-    roundStartTime_ = std::chrono::steady_clock::now();
 }
 
 FlutterReplica::~FlutterReplica()
@@ -290,12 +285,10 @@ void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequ
 
     // Compute digest of the request
     std::string reqSerialized = request.SerializeAsString();
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    SHA256_Update(&sha256, reqSerialized.c_str(), reqSerialized.size());
-    SHA256_Final(hash, &sha256);
-    candidate.digest = std::string((char *) hash, SHA256_DIGEST_LENGTH);
+    CryptoPP::SHA256 hash;
+    byte digest[CryptoPP::SHA256::DIGESTSIZE];
+    hash.CalculateDigest(digest, (const byte*)reqSerialized.c_str(), reqSerialized.size());
+    candidate.digest = std::string(reinterpret_cast<const char*>(digest), CryptoPP::SHA256::DIGESTSIZE);
 
     // Add to candidate pool
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
@@ -505,7 +498,9 @@ void FlutterReplica::broadcastObserve(const flutter::proto::FlutterClientRequest
     LOG(INFO) << "FLUTTER: Broadcasted observe message for client " << request.client_id() << " with bet " << bet;
 }
 
-void FlutterReplica::processObserve(uint32_t senderId, const flutter::proto::FlutterClientRequest &request, uint64_t bet)
+void FlutterReplica::processObserve(
+    uint32_t senderId, const flutter::proto::FlutterClientRequest &request, uint64_t bet
+)
 {
     // Check if this is the first time seeing this request
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};

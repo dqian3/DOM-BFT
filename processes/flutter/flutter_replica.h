@@ -62,7 +62,6 @@ private:
     uint32_t useHMAC_;
 
     uint32_t numVerifyThreads_;
-    uint32_t batchSize_;
 
     // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
@@ -86,7 +85,7 @@ private:
     static constexpr uint64_t CLOCK_BROADCAST_INTERVAL_MS = 50;   // Broadcast clock every 50ms
 
     // RBC slow path state
-    uint32_t leaderId_;  // Fixed leader (replica 0)
+    uint32_t leaderId_;   // Fixed leader (replica 0)
 
     // Candidate pool: (timestamp, clientId) -> Candidate
     std::map<std::pair<uint64_t, uint32_t>, Candidate> candidatePool_;
@@ -124,7 +123,7 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    FlutterReplica(uint32_t replicaId, uint32_t batchSize = 1);
+    FlutterReplica(uint32_t replicaId);
     ~FlutterReplica();
 
     void run();
