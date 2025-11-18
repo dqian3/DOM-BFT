@@ -23,7 +23,7 @@ client:
   requestSize: 512
 
   # Flutter-specific client settings
-  initialBet:   100000      # 100ms
+  initialBet:   50000       
   betIncrement: 100000      # Increase bet by 100ms on rejection
 
 # Replica Info - Flutter requires 5f+1 = 6 replicas for f=1
