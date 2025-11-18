@@ -299,3 +299,30 @@ def logs(
     # ips of each process
     resolve = get_address_resolver(c)
     remote.logs(c, config_file=config_file, resolve=resolve)
+
+
+@task
+def flutter(
+    c,
+    config_file="../configs/flutter_remote.yaml",
+    v=1,
+    profile=False,
+    filter_client_logs=False,
+):
+    """Run Flutter protocol experiments on GCloud"""
+    resolve = get_address_resolver(c)
+    remote.flutter(
+        c,
+        config_file=config_file,
+        resolve=resolve,
+        v=v,
+        profile=profile,
+        filter_client_logs=filter_client_logs,
+    )
+
+
+@task
+def copy_flutter_bin(c, config_file="../configs/flutter_remote.yaml"):
+    """Copy Flutter binaries to GCloud instances"""
+    resolve = get_address_resolver(c)
+    remote.copy_flutter_bin(c, config_file=config_file, resolve=resolve)
