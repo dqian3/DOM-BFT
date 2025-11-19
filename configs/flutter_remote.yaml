@@ -25,6 +25,7 @@ client:
   # Flutter-specific client settings
   initialBet:   50000       
   betIncrement: 100000      # Increase bet by 100ms on rejection
+  useHMAC: true
 
 # Replica Info - Flutter requires 5f+1 = 6 replicas for f=1
 replica:
