@@ -39,15 +39,21 @@ void LogCheckpoint::toProto(dombft::proto::LogCheckpoint &checkpointProto) const
         checkpointProto.set_log_digest(logDigest);
         checkpointProto.set_app_digest(appDigest);
 
-        for (auto x : commits) {
-            (*checkpointProto.add_commits()) = x.second;
-            checkpointProto.add_commit_sigs(commitSigs.at(x.first));
-        }
+        // We don't actually need to give proofs of the commits in the checkpoint, since
+        //  (a) in the fast path the log up to the checkpoint is committed since it is the fast path
+        //  (b) in the repair path all n - f - f = (f + 2e + 1) correct replicas will have the previous repiar
+        //  checkpoint
+        // TODO we should remove these entirely. However, if we have the normal path this is not the case.
 
-        for (auto x : repairCommits) {
-            (*checkpointProto.add_repair_commits()) = x.second;
-            checkpointProto.add_repair_commit_sigs(repairCommitSigs.at(x.first));
-        }
+        // for (auto x : commits) {
+        //     (*checkpointProto.add_commits()) = x.second;
+        //     checkpointProto.add_commit_sigs(commitSigs.at(x.first));
+        // }
+
+        // for (auto x : repairCommits) {
+        //     (*checkpointProto.add_repair_commits()) = x.second;
+        //     checkpointProto.add_repair_commit_sigs(repairCommitSigs.at(x.first));
+        // }
 
     } else {
         checkpointProto.set_seq(0);

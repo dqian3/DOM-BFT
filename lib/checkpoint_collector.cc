@@ -64,7 +64,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
     uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
     uint32_t n = ConfigManager::getInstance().getNumReplicas();
 
-    // Remaining messages can't get maxMAtch to quorum size
+    // Remaining messages can't get maxMatch to quorum size
     if (n - replies_.size() < quorumSize_ - maxMatch) {
         repairReplyProof_ = RepairReplyProof();
 
@@ -94,9 +94,9 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
     sigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
 
     std::map<CommitKeyTuple, std::set<uint32_t>> matchingCommits;
-    // Find a cert among a set of replies
-    for (const auto &[replicaId, commit] : commits_) {
 
+    // Find f + 1 consistent commits among a set of replies
+    for (const auto &[replicaId, commit] : commits_) {
         CommitKeyTuple key = {
             commit.round(), commit.seq(), commit.log_digest(), commit.app_digest(), commit.client_record().digest(),
         };

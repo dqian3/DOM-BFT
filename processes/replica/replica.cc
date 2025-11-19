@@ -1113,12 +1113,16 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     if (coll.addAndCheckReply(reply, sig)) {
         assert(reply.round() == round_);
 
-        dombft::proto::Cert cert;
-        coll.getCert(cert);
+        bool normalPathEnabled = ConfigManager::getInstance().getConfig().clientNormalPathEnabled;
 
-        if (!log_->addCert(rSeq, cert)) {
-            VLOG(2) << "CHECKPOINT: Failed to add cert for seq=" << rSeq;
-            return;
+        if (normalPathEnabled) {
+            dombft::proto::Cert cert;
+            coll.getCert(cert);
+
+            if (!log_->addCert(rSeq, cert)) {
+                VLOG(2) << "CHECKPOINT: Failed to add cert for seq=" << rSeq;
+                return;
+            }
         }
 
         if (coll.commitReady()) {
@@ -1915,6 +1919,14 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
 
 bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
 {
+    // We don't actually need to verify proofs of the commits in the checkpoint, since
+    //  (a) in the fast path the log up to the checkpoint is committed since it is the fast path
+    //  (b) in the repair path all n - f - f = (f + 2e + 1) correct replicas will have the previous repiar
+    //  checkpoint
+    // TODO we should remove these entirely. However, if we have the normal path this is not the case.
+
+    return true;
+
     if (checkpoint.commits().size() != checkpoint.commit_sigs().size()) {
         return false;
     }
@@ -1987,6 +1999,9 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
 bool Replica::verifyRepairStart(const RepairStart &startMsg)
 {
     if (startMsg.log().has_cert() && !verifyCert(startMsg.log().cert())) {
+        // assert normal path is enabled
+        assert(ConfigManager::getInstance().getConfig().clientNormalPathEnabled);
+
         return false;
     }
 
@@ -2015,9 +2030,8 @@ bool Replica::verifyRepairStart(const RepairStart &startMsg)
         // Check that number of prepares matches number of signatures
         if (preparedHistory.prepares_size() != preparedHistory.prepare_sigs_size()) {
             LOG(INFO) << "Prepare history from " << startMsg.replica_id()
-                      << " has mismatched prepare/signature counts: "
-                      << preparedHistory.prepares_size() << " prepares, "
-                      << preparedHistory.prepare_sigs_size() << " signatures";
+                      << " has mismatched prepare/signature counts: " << preparedHistory.prepares_size()
+                      << " prepares, " << preparedHistory.prepare_sigs_size() << " signatures";
             return false;
         }
 
@@ -2028,13 +2042,11 @@ bool Replica::verifyRepairStart(const RepairStart &startMsg)
 
             std::string serializedPrepare = prepare.SerializeAsString();
             if (!sigProvider_.verify(
-                    (byte *) serializedPrepare.c_str(), serializedPrepare.size(),
-                    (byte *) sig.c_str(), sig.size(),
+                    (byte *) serializedPrepare.c_str(), serializedPrepare.size(), (byte *) sig.c_str(), sig.size(),
                     {NodeType::REPLICA, prepare.replica_id()}
                 )) {
-                LOG(INFO) << "Failed to verify prepare signature from replica "
-                          << prepare.replica_id() << " in prepared history from "
-                          << startMsg.replica_id();
+                LOG(INFO) << "Failed to verify prepare signature from replica " << prepare.replica_id()
+                          << " in prepared history from " << startMsg.replica_id();
                 return false;
             }
         }

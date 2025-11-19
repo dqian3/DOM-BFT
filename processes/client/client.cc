@@ -37,6 +37,8 @@ Client::Client(size_t id)
     quorumSize_ = configManager.getQuorumSize();
     superQuorumSize_ = configManager.getSuperQuorumSize();
 
+    normalPathEnabled_ = config.clientNormalPathEnabled;
+
     normalPathTimeout_ = config.clientNormalPathTimeout;
     requestTimeout_ = config.clientRequestTimeout;
 
@@ -381,7 +383,8 @@ void Client::checkTimeouts()
         RequestState &reqState = entry.second;
 
         // Normal path timeout, if we have received cert, and
-        if (reqState.collector.hasCert() && !reqState.certSent && now - reqState.certTime > normalPathTimeout_) {
+        if (reqState.collector.hasCert() && !reqState.certSent && now - reqState.certTime > normalPathTimeout_ &&
+            normalPathEnabled_) {
             VLOG(2) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
             reqState.certSent = true;
 
@@ -539,7 +542,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     // `hasCert() == true` iff maxMatchSize >= quorumSize_
     // TODO handle sending cert in new round better
     if (!reqState.certSent && reqState.collector.hasCert() && reqState.collector.numReceived() > maxMatchSize &&
-        quorumSize_ == 2 * f_ + 1) {
+        normalPathEnabled_) {
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
         reqState.certSent = true;
 
@@ -586,6 +589,8 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
 void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
 {
     uint32_t cseq = certReply.client_seq();
+
+    assert(normalPathEnabled_);
 
     if (requestStates_.count(cseq) == 0) {
         // VLOG(2) << "Received certReply for " << cseq << " not in active requests";
