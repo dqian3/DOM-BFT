@@ -116,6 +116,7 @@ cc_library(
     deps = [
         ":common",
         ":utils",
+        ":config",
         "@com_github_google_glog//:glog",
         "//lib:log",
         "//proto:dombft_proto_cc",
