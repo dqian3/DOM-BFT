@@ -12,9 +12,10 @@ message ClientRequest {
     uint32 client_seq = 2;
 
     uint64 send_time = 5;
-    bool is_write = 6;
+    uint64 deadline = 6;
+    bool is_write = 7;
 
-    bytes req_data = 7;
+    bytes req_data = 8;
 }
 
 message DOMRequest {
@@ -27,6 +28,12 @@ message DOMRequest {
     uint32  client_id = 6; // repeat client_id here for convenience in breaking ties
     uint32  client_seq = 7; // repeat client_seq here for debugging
     bytes   client_req = 8; // Bytes of Client Request + Signature
+}
+
+message DOMBatchRequest {
+    uint64  send_time = 1;
+    uint32  proxy_id = 2;
+    repeated DOMRequest requests = 3;
 }
 
 message MeasurementReply {
@@ -46,6 +53,8 @@ message Reply {
     uint32 replica_id = 6;
     bytes result = 9;
     bytes digest = 10;
+
+    bool queued = 11;
 }
 
 message Cert {
@@ -82,35 +91,28 @@ message Commit {
     ClientRecord client_record = 8;
 }
 
-message RepairClientTimeout
-{
 
-    uint32 client_id = 1;
-    uint32 client_seq = 2;
-
-    uint32 round = 3;
-
-    // could add request here too, but we do not
-}
-
-message RepairReplicaTimeout
-{
-    uint32 round = 1;
-    uint32 replica_id = 2;
+message RepairTimeout
+{    
+    uint32 replica_id = 1;
+    uint32 round = 2;
+    uint32 view = 3;
+    uint32 seq = 4;
 }
 
 message RepairTimeoutProof {
-    uint32 round = 1;
-
-    repeated RepairReplicaTimeout timeouts = 2;
-    repeated bytes signatures = 3;
+    uint32 replica_id = 1;
+    uint32 round = 2;
+    uint32 view = 3;
+    
+    repeated RepairTimeout timeouts = 4;
+    repeated bytes signatures = 5;
 }
 
 message RepairReplyProof {
-    uint32 client_id = 1;
-    uint32 client_seq = 2;
-
-    uint32 round = 3;
+    uint32 replica_id = 1;
+    uint32 round = 2;
+    uint32 view = 3;
 
     repeated Reply replies = 4;
     repeated bytes signatures = 5;
@@ -164,25 +166,39 @@ message LogCheckpoint
 }
 
 
+
+message RepairLog {
+    repeated LogEntry entries = 1;
+    LogCheckpoint checkpoint = 2;
+    optional Cert cert = 3;
+}
+
+message PreparedHistory {
+    repeated PBFTPrepare prepares = 1;
+    repeated bytes prepare_sigs = 2; 
+}
+
 message RepairStart
 {
     uint32 pbft_view = 1;
     uint32 round = 2;
     uint32 replica_id = 3;
 
-    repeated LogEntry log_entries = 4;
-    LogCheckpoint checkpoint = 5;
-    
-    optional Cert cert = 7;
+    RepairLog log = 4;
+
+
+    // If this is present, functions as a view change
+    optional PreparedHistory prepared_history = 5;
 }
 
 message RepairProposal
 {
     uint32 round = 1;
-    uint32 replica_id = 2; //primary id
+    uint32 view = 2;
+    uint32 replica_id = 3; //primary id
 
-    repeated RepairStart logs = 3;
-    repeated bytes signatures = 4;
+    repeated RepairStart start_msgs = 4;
+    repeated bytes signatures = 5;
 }
 
 
@@ -203,6 +219,8 @@ message RepairSummary
     uint32 replica_id = 2;
     repeated CommittedReply replies = 3;
     uint32 pbft_view = 4;
+
+    ClientSequence committed_seqs = 5;
 }
 
 message PBFTPrePrepare
@@ -234,46 +252,12 @@ message PBFTCommit
     bytes log_digest = 5;
 }
 
-
-message RepairDone 
-{
+message ViewUpdate {
     uint32 round = 1;
     uint32 replica_id = 2;
-    bytes proposal_digest = 4;
-
-    repeated PBFTCommit commits = 5;
-    repeated bytes commit_sigs = 6;
+    uint32 view = 3;
 }
 
-
-message PBFTViewChange
-{
-    uint32 round = 1;
-    uint32 replica_id = 2;
-    uint32 pbft_view = 3;
-    repeated  PBFTPrepare prepares = 4;
-    repeated  bytes prepare_sigs = 5;
-    // we add the "request" for simplicity though PBFT use fetching when the request is missing
-    RepairProposal proposal = 6;
-    bytes proposal_digest = 7;
-}
-
-message PBFTViewChangeNotif
-{
-    uint32 round = 1;
-    uint32 replica_id = 2;
-    uint32 pbft_view = 3;
-}
-
-
-message PBFTNewView
-{
-    uint32 primary_id = 1;
-    uint32 pbft_view= 2;
-    uint32 round = 3;
-    repeated PBFTViewChange view_changes = 4;
-    repeated bytes view_change_sigs = 5;
-}
 
 message SnapshotRequest {
     uint32 round = 1;

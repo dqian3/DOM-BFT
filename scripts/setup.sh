@@ -7,7 +7,8 @@ apt-get update && apt-get install -y \
     libssl-dev \
     git \
     build-essential \
-    htop
+    htop \
+    chrony \
 
 curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg \
     && mv bazel.gpg /etc/apt/trusted.gpg.d/ \

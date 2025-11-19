@@ -1,5 +1,7 @@
 #include "client_record.h"
 
+#include <cryptopp/sha.h>
+
 bool ClientSequence::contains(uint32_t seq) const { return seq <= lastSeq_ && !missedSeqs_.contains(seq); }
 
 bool ClientSequence::update(uint32_t newSeq)
@@ -70,18 +72,20 @@ bool ClientRecord::update(uint32_t clientId, uint32_t seq)
 
 std::string ClientRecord::digest() const
 {
-    byte digest[SHA256_DIGEST_LENGTH];
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    for (const auto &[id, sequence] : sequences) {
-        SHA256_Update(&ctx, &id, sizeof(id));
-        SHA256_Update(&ctx, &sequence.lastSeq_, sizeof(sequence.lastSeq_));
-        for (const auto &s : sequence.missedSeqs_)
-            SHA256_Update(&ctx, &s, sizeof(s));
-    }
-    SHA256_Final(digest, &ctx);
+    CryptoPP::SHA256 hash;
 
-    return std::string(digest, digest + SHA256_DIGEST_LENGTH);
+    for (const auto &[id, sequence] : sequences) {
+        hash.Update(reinterpret_cast<const byte *>(&id), sizeof(id));
+        hash.Update(reinterpret_cast<const byte *>(&sequence.lastSeq_), sizeof(sequence.lastSeq_));
+        for (const auto &s : sequence.missedSeqs_) {
+            hash.Update(reinterpret_cast<const byte *>(&s), sizeof(s));
+        }
+    }
+
+    byte digest[CryptoPP::SHA256::DIGESTSIZE];
+    hash.Final(digest);
+
+    return std::string(reinterpret_cast<const char *>(digest), CryptoPP::SHA256::DIGESTSIZE);
 }
 
 void ClientRecord::toProto(dombft::proto::ClientRecord &recordProto) const
@@ -96,6 +100,20 @@ void ClientRecord::toProto(dombft::proto::ClientRecord &recordProto) const
     }
 
     recordProto.set_digest(digest());
+}
+
+void ClientRecord::toProtoSingleClient(uint32_t clientId, dombft::proto::ClientSequence &clientSequence) const
+{
+    if (!sequences.contains(clientId)) {
+        // This could happen if we have not received client requests yet.
+        return;
+    }
+
+    clientSequence.set_client_id(clientId);
+    clientSequence.set_last_seq(sequences.at(clientId).lastSeq_);
+    for (uint32_t s : sequences.at(clientId).missedSeqs_) {
+        clientSequence.add_missed_seqs(s);
+    }
 }
 
 // Computes the number of records in referenceRecord that are misssing in this record

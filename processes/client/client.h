@@ -1,4 +1,4 @@
-#include "processes/process_config.h"
+#include "lib/config/config_manager.h"
 
 #include <optional>
 #include <span>
@@ -6,19 +6,21 @@
 
 #include "lib/cert_collector.h"
 #include "lib/common.h"
-#include "lib/signature_provider.h"
+#include "lib/crypto/hmac_provider.h"
+#include "lib/crypto/sig_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/udp_endpoint.h"
 #include "lib/utils.h"
+
 #include "proto/dombft_proto.pb.h"
 
 #include <yaml-cpp/yaml.h>
 
 namespace dombft {
 struct RequestState {
-    RequestState(uint32_t f, dombft::proto::ClientRequest &req, uint64_t sendT)
-        : collector(f)
+    RequestState(dombft::proto::ClientRequest &req, uint64_t sendT)
+        : collector()
         , request(req)
         , clientSeq(req.client_seq())
         , firstSendTime(sendT)
@@ -41,6 +43,8 @@ struct RequestState {
     // Slow Path state
     bool hasQuorum = false;
     uint64_t quorumTime = 0;   // Time by when we have 2f + 1 replies
+
+    uint32_t triggerRound = 0;
     bool triggerSent = false;
     uint64_t triggerSendTime;
 
@@ -59,6 +63,8 @@ private:
     std::vector<Address> proxyAddrs_;
     std::vector<Address> replicaAddrs_;
     uint32_t f_;
+    uint32_t quorumSize_;
+    uint32_t superQuorumSize_;
 
     /* Sending config */
     dombft::ClientSendMode sendMode_;
@@ -67,7 +73,6 @@ private:
     uint32_t requestSize_ = 0;
 
     uint64_t normalPathTimeout_;
-    uint64_t slowPathTimeout_;
     uint64_t requestTimeout_;
 
     /** The endpoint uses to submit request to proxies and receive replies*/
@@ -86,6 +91,9 @@ private:
     AppType appType_;
 
     SignatureProvider sigProvider_;
+    HMACProvider hmacProvider_;
+    bool useHMAC_ = false;
+
     ThreadPool threadpool_;
     std::mutex clientStateLock;
 
@@ -99,9 +107,7 @@ private:
     uint32_t numCommitted_ = 0;
 
     uint32_t lastCommitted_ = 0;
-    uint32_t lastFastPath_ = 0;
-    uint32_t lastNormalPath_ = 0;
-    uint32_t lastSlowPath_ = 0;
+    bool firstRequestCommitted_ = false;
 
     uint64_t startTime_ = 0;
 
@@ -119,7 +125,6 @@ private:
     void submitRequest();
     void submitRequestsOpenLoop();   // For sending in open loop.
 
-    void retryRequests();
     void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);
     void commitRequest(uint32_t clientSeq);
 
@@ -129,7 +134,7 @@ public:
     /** Client accepts a config file, which contains all the necessary information
      * to instantiate the object, then it can call Run method
      *  */
-    Client(const ProcessConfig &config, const size_t clientId);
+    Client(const size_t clientId);
     ~Client();
 };
 

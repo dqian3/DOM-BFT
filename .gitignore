@@ -12,3 +12,6 @@ logs
 
 .DS_Store
 .idea
+
+output
+__pycache__

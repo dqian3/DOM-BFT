@@ -1,14 +1,23 @@
 #include "checkpoint_collector.h"
+#include "config/config_manager.h"
 
 using namespace dombft::proto;
+using namespace dombft;
 
 // Collects the reply from peers for the same seq num
 // Returns true if it is ok to proceed with the commit stage
 bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 {
+    size_t nRepliesOld = replies_.size();
     replies_[reply.replica_id()] = reply;
     replySigs_[reply.replica_id()] = std::string(sig.begin(), sig.end());
     hasOwnReply_ = hasOwnReply_ || reply.replica_id() == replicaId_;
+
+    if (replies_.size() == nRepliesOld) {
+        // No new reply added
+        return false;
+    }
+
     // Don't try starting commit if our log hasn't reached the seq being committed
     if (!hasOwnReply_) {
         VLOG(4) << "Skipping processing of reply messages until we receive our own...";
@@ -19,7 +28,11 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         VLOG(4) << "Checkpoint: already have cert for seq=" << reply.seq() << ", skipping";
         return false;
     }
+
     std::map<ReplyKeyTuple, std::set<uint32_t>> matchingReplies;
+
+    uint32_t maxMatch = 0;
+    bool ret = false;
 
     // Try to generate a cert among a set of replies
     for (const auto &entry : replies_) {
@@ -31,9 +44,11 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         ReplyKeyTuple key = {reply.digest(), reply.round(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
+        maxMatch = std::max(maxMatch, static_cast<uint32_t>(matchingReplies[key].size()));
 
-        // Need 2f + 1 and own reply
-        if (matchingReplies[key].size() >= 2 * f_ + 1 && matchingReplies[key].contains(replicaId_)) {
+        uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
+
+        if (matchingReplies[key].size() >= quorumSize_ && matchingReplies[key].contains(replicaId_)) {
             cert_ = Cert();
             cert_->set_seq(std::get<2>(key));
 
@@ -42,11 +57,29 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
                 (*cert_->add_replies()) = replies_[repId];
             }
 
-            VLOG(1) << "Checkpoint: created cert for request number " << reply.seq();
-            return true;
+            ret = true;
         }
     }
-    return false;
+
+    uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
+    uint32_t n = ConfigManager::getInstance().getNumReplicas();
+
+    // Remaining messages can't get maxMAtch to quorum size
+    if (n - replies_.size() < quorumSize_ - maxMatch) {
+        repairReplyProof_ = RepairReplyProof();
+
+        for (const auto &entry : replies_) {
+            uint32_t replicaId = entry.first;
+            const Reply &reply = entry.second;
+
+            repairReplyProof_->set_round(reply.round());
+
+            (*repairReplyProof_->add_replies()) = reply;
+            repairReplyProof_->add_signatures(replySigs_[replicaId]);
+        }
+    }
+
+    return ret;
 }
 
 bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span<byte> sig)
@@ -73,7 +106,7 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
 
                 << digest_to_hex(commit.app_digest());
 
-        if (matchingCommits[key].size() >= 2 * f_ + 1) {
+        if (matchingCommits[key].size() >= ConfigManager::getInstance().getConfig().f + 1) {
             matchedReplicas_ = matchingCommits[key];
             commitToUse_ = commit;
             return true;
@@ -92,8 +125,11 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
     checkpoint.appDigest = commitToUse_->app_digest();
     checkpoint.clientRecord_ = ::ClientRecord(commitToUse_->client_record());
 
+    // TODO we don't need this anymore...
     for (uint32_t replicaId : matchedReplicas_) {
         VLOG(6) << "Adding replica commit " << replicaId << " to checkpoint";
+        assert(commits_.at(replicaId).log_digest() == checkpoint.logDigest);
+
         checkpoint.commits[replicaId] = commits_.at(replicaId);
         checkpoint.commitSigs[replicaId] = sigs_.at(replicaId);
     }
@@ -101,7 +137,16 @@ void CommitCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
 
 bool CheckpointCollector::addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig)
 {
-    return replyCollector.addAndCheckReply(reply, sig);
+    bool ret = replyCollector.addAndCheckReply(reply, sig);
+
+    // TODO implement repair proofs
+    // TODO this should be >= n-f
+    uint32_t n = ConfigManager::getInstance().getNumReplicas();
+    uint32_t f = ConfigManager::getInstance().getConfig().f;
+    if (replyCollector.replies_.size() >= n - f && timeoutStart_ == 0) {
+        timeoutStart_ = GetMicrosecondTimestamp();
+    }
+    return ret;
 }
 
 void CheckpointCollector::addOwnSnapshot(const AppSnapshot &snapshot) { snapshot_ = snapshot; }
@@ -147,6 +192,57 @@ void CheckpointCollector::getCheckpoint(::LogCheckpoint &checkpoint) const
     }
 }
 
+bool CheckpointCollector::addAndCheckTimeout(const dombft::proto::RepairTimeout &timeoutMsg, std::span<byte> sig)
+{
+    if (repairTimeouts_.contains(timeoutMsg.replica_id())) {
+        LOG(WARNING) << "Duplicate timeout message from replica " << timeoutMsg.replica_id() << " for checkpoint round "
+                     << round_ << " seq " << seq_;
+    }
+    repairTimeouts_[timeoutMsg.replica_id()] = timeoutMsg;
+    repairTimeoutSigs_[timeoutMsg.replica_id()] = std::string(sig.begin(), sig.end());
+
+    uint32_t f = ConfigManager::getInstance().getConfig().f;
+
+    VLOG(4) << "Collected " << repairTimeouts_.size() << " timeout messages for checkpoint round " << round_ << " seq "
+            << seq_;
+
+    // TODO this is a bit weird for it to return false afterwards
+    if (repairTimeouts_.size() == f + 1) {
+        repairTimeoutProof_ = RepairTimeoutProof();
+
+        for (auto &[repId, msg] : repairTimeouts_) {
+            if (msg.round() != round_)
+                continue;
+
+            (*repairTimeoutProof_->add_timeouts()) = msg;
+            repairTimeoutProof_->add_signatures(repairTimeoutSigs_[repId]);
+        }
+
+        return true;
+    }
+    return false;
+}
+
+bool CheckpointCollector::checkSelfTimeout(uint64_t now, uint64_t timeoutMs)
+{
+    if (timeout_ || timeoutStart_ == 0) {
+        return false;
+    }
+
+    if (now - timeoutStart_ >= timeoutMs) {
+        timeout_ = true;
+        return true;
+    }
+
+    return false;
+}
+
+void CheckpointCollector::getRepairTimeoutProof(dombft::proto::RepairTimeoutProof &timeoutProof) const
+{
+    assert(repairTimeoutProof_.has_value());
+    timeoutProof = *repairTimeoutProof_;
+}
+
 // ================= CheckpointCollectorStore =================
 
 bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool needsSnapshot)
@@ -167,7 +263,7 @@ bool CheckpointCollectorStore::initCollector(uint32_t round, uint32_t seq, bool 
         }
     }
 
-    auto [_, created] = collectors_.try_emplace(key, replicaId_, f_, round, seq, needsSnapshot);
+    auto [_, created] = collectors_.try_emplace(key, replicaId_, round, seq, needsSnapshot);
     assert(created);
 
     return true;
@@ -199,14 +295,14 @@ void CheckpointCollectorStore::cleanStaleCollectors(uint32_t stableSeq, uint32_t
         if (coll.needsSnapshot()) {
             if (stableSeq >= seq) {
                 it = collectors_.erase(it);
-                VLOG(6) << "Cleaning up collector for round=" << round << " seq=" << seq;
+                VLOG(1) << "Cleaning up stable checkpoint collector for round=" << round << " seq=" << seq;
             } else {
                 ++it;
             }
         } else {
             if (committedSeq >= seq) {
                 it = collectors_.erase(it);
-                VLOG(6) << "Cleaning up collector for round=" << round << " seq=" << seq;
+                VLOG(1) << "Cleaning up committed checkpoint collector for round=" << round << " seq=" << seq;
 
             } else {
                 ++it;

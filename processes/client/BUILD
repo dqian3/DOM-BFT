@@ -5,13 +5,14 @@ cc_library(
     deps = [
         "//proto:dombft_proto_cc",
         "//lib:endpoint",
-        "//lib:signature_provider",
+        "//lib:ooo_rpc_endpoint",
+        "//lib:crypto",
         "//lib:utils",
         "//lib:common",
         "//lib:cert_collector",
+        "//lib:client_record",
         "//lib:threadpool",
-        "//processes:process_config",
-        "//processes:config_util", 
+        "//lib:config",
     ],
 )
 
@@ -22,3 +23,7 @@ cc_binary(
         ":client_class",
     ],
 )
+
+
+
+

@@ -1,13 +1,15 @@
 #include "client.h"
 
+#include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "processes/config_util.h"
 
 #include "lib/application.h"
 #include "lib/apps/counter.h"
 #include "lib/apps/kv_store.h"
+#include "lib/client_record.h"
 #include "proto/dombft_apps.pb.h"
 
 #define NUM_CLIENTS 100
@@ -15,19 +17,27 @@
 namespace dombft {
 using namespace dombft::proto;
 
-Client::Client(const ProcessConfig &config, size_t id)
+Client::Client(size_t id)
     : clientId_(id)
     , threadpool_(4)
 {
     LOG(INFO) << "clientId=" << clientId_;
-    std::string clientIp = config.clientIps[clientId_];
+
+    auto &configManager = ConfigManager::getInstance();
+    const auto &config = configManager.getConfig();
+    const auto &clientIps = configManager.getClientIps();
+
+    std::string clientIp = clientIps[clientId_];
     LOG(INFO) << "clientIp=" << clientIp;
-    int clientPort = config.clientPort;
+    int clientPort = configManager.getClientPort();
     LOG(INFO) << "clientPort=" << clientPort;
 
-    f_ = config.replicaIps.size() / 3;
+    // Use ConfigManager's pre-calculated BFT parameters
+    f_ = config.f;
+    quorumSize_ = configManager.getQuorumSize();
+    superQuorumSize_ = configManager.getSuperQuorumSize();
+
     normalPathTimeout_ = config.clientNormalPathTimeout;
-    slowPathTimeout_ = config.clientSlowPathTimeout;
     requestTimeout_ = config.clientRequestTimeout;
 
     LOG(INFO) << "Running for " << config.clientRuntimeSeconds << " seconds";
@@ -37,6 +47,7 @@ Client::Client(const ProcessConfig &config, size_t id)
     maxInFlight_ = config.clientMaxInFlight;
     sendRate_ = config.clientSendRate;
     requestSize_ = config.clientRequestSize;
+    useHMAC_ = config.clientUseHMAC;
 
     if (config.clientSendMode == "sendRate") {
         sendMode_ = dombft::RateBased;
@@ -53,10 +64,12 @@ Client::Client(const ProcessConfig &config, size_t id)
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
         LOG(ERROR) << "Error loading replica public keys, exiting...";
         exit(1);
     }
+
+    hmacProvider_.loadClientKeysDev({NodeType::CLIENT, clientId_}, configManager.getNumReplicas());
 
     /** Setup transport */
     if (config.transport == "nng") {
@@ -67,24 +80,46 @@ Client::Client(const ProcessConfig &config, size_t id)
         for (size_t i = 0; i < addrPairs.size(); i++) {
         }
 
-        size_t nReplicas = config.replicaIps.size();
+        size_t nReplicas = configManager.getNumReplicas();
         for (size_t i = 0; i < nReplicas; i++)
             replicaAddrs_.push_back(addrPairs[i].second);
 
         for (size_t i = nReplicas; i < addrPairs.size(); i++)
             proxyAddrs_.push_back(addrPairs[i].second);
+    } else if (config.transport == "simple-rpc") {
+        /** Store all proxy addrs. */
+
+        std::vector<Address> allAddrs;
+
+        const auto &proxyIps = configManager.getProxyIps();
+        for (uint32_t i = 0; i < proxyIps.size(); i++) {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << proxyIps[i] << ", " << configManager.getProxyForwardPort();
+            proxyAddrs_.push_back(Address(proxyIps[i], configManager.getProxyForwardPort()));
+            allAddrs.push_back(proxyAddrs_[i]);
+        }
+
+        /** Store all replica addrs */
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (uint32_t i = 0; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
+            allAddrs.push_back(replicaAddrs_[i]);
+        }
+        endpoint_ = std::make_unique<OOORPCEndpoint>(clientIp, clientPort + clientId_, allAddrs);
+
     } else {
         endpoint_ = std::make_unique<UDPEndpoint>(clientIp, clientPort, true);
 
         /** Store all proxy addrs. TODO handle mutliple proxy sockets*/
-        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
-            LOG(INFO) << "Proxy " << i + 1 << ": " << config.proxyIps[i] << ", " << config.proxyForwardPort;
-            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        const auto &proxyIps = configManager.getProxyIps();
+        for (uint32_t i = 0; i < proxyIps.size(); i++) {
+            LOG(INFO) << "Proxy " << i + 1 << ": " << proxyIps[i] << ", " << configManager.getProxyForwardPort();
+            proxyAddrs_.push_back(Address(proxyIps[i], configManager.getProxyForwardPort()));
         }
 
         /** Store all replica addrs */
-        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (uint32_t i = 0; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
         }
     }
 
@@ -97,13 +132,14 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     endpoint_->RegisterTimer(timeoutTimer_.get());
 
+    uint32_t runtimeSeconds = config.clientRuntimeSeconds;
     terminateTimer_ = std::make_unique<Timer>(
-        [config](void *ctx, void *endpoint) {
-            LOG(INFO) << "Exiting  after running for " << config.clientRuntimeSeconds << " seconds";
+        [runtimeSeconds](void *ctx, void *endpoint) {
+            LOG(INFO) << "Exiting after running for " << runtimeSeconds << " seconds";
             // TODO print some stats
             exit(0);
         },
-        config.clientRuntimeSeconds * 1000000,   // timer is in us.
+        runtimeSeconds * 1000000,   // timer is in us.
         this
     );
 
@@ -121,25 +157,11 @@ Client::Client(const ProcessConfig &config, size_t id)
         LOG(ERROR) << "Unknown application type for client!";
         exit(1);
     }
-    if (sendMode_ == dombft::RateBased) {
-        // Kick off sending with a small burst every 5 ms
-        lastSendTime_ = GetMicrosecondTimestamp();
-        sendTimer_ = std::make_unique<Timer>([&](void *ctx, void *endpoint) { submitRequestsOpenLoop(); }, 5000, this);
-        endpoint_->RegisterTimer(sendTimer_.get());
-
-    } else if (sendMode_ == dombft::MaxInFlightBased) {
-        for (uint32_t i = 0; i < maxInFlight_; i++) {
-            submitRequest();
-        }
-    } else {
-        LOG(ERROR) << "Unknown send mode type for client!";
-        exit(1);
-    }
 
     MessageHandlerFunc replyHandler =
         [this, runtime = config.clientRuntimeSeconds](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
             if (GetMicrosecondTimestamp() - startTime_ > 1000000 * runtime) {
-                LOG(INFO) << "Exiting  after running for " << runtime << " seconds through message handler";
+                LOG(INFO) << "Exiting after running for " << runtime << " seconds through message handler";
                 // TODO print some stats
                 exit(0);
             }
@@ -155,6 +177,26 @@ Client::Client(const ProcessConfig &config, size_t id)
 
     // Handle interrupt signals properly on main loop
     endpoint_->RegisterSignalHandler([&]() { endpoint_->LoopBreak(); });
+
+    if (sendMode_ == dombft::RateBased) {
+        // Kick off sending with a small burst every 5 ms
+        sendTimer_ = std::make_unique<Timer>([&](void *ctx, void *endpoint) { submitRequestsOpenLoop(); }, 5000, this);
+        endpoint_->RegisterTimer(sendTimer_.get());
+
+        endpoint_->Connect();
+
+        // Send first request immediately, since we will wait it to be committed before sending more
+        submitRequest();
+
+    } else if (sendMode_ == dombft::MaxInFlightBased) {
+        endpoint_->Connect();
+        for (uint32_t i = 0; i < maxInFlight_; i++) {
+            submitRequest();
+        }
+    } else {
+        LOG(ERROR) << "Unknown send mode type for client!";
+        exit(1);
+    }
 
     LOG(INFO) << "Client main thread starting";
     endpoint_->LoopRun();
@@ -195,7 +237,7 @@ void Client::submitRequest()
 
     fillRequestData(request);
 
-    requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
+    requestStates_.emplace(nextSeq_, RequestState(request, now));
 
     threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(request, buffer); });
 
@@ -208,30 +250,25 @@ void Client::submitRequest()
 
 void Client::submitRequestsOpenLoop()
 {
-    // If we are in the slow path, don't submit anymore
-    // if (std::max(lastFastPath_, lastNormalPath_) < lastSlowPath_ && numInFlight_ >= 1) {
-    //     VLOG(6) << "Pause sending because slow path: lastFastPath_=" << lastFastPath_
-    //             << " lastNormalPath_=" << lastNormalPath_ << " lastSlowPath_=" << lastSlowPath_
-    //             << " numInFlight=" << numInFlight_;
-
-    //     return;
-    // }
+    // Don't start rate-based sending until first request is committed
+    if (!firstRequestCommitted_) {
+        return;
+    }
 
     uint64_t startSendTime = GetMicrosecondTimestamp();
-    uint64_t actualSendRate = lastFastPath_ < lastNormalPath_ ? sendRate_ / replicaAddrs_.size() : sendRate_;
-    double sendIntervalUs = 1000000.0 / actualSendRate;
+    double sendIntervalUs = 1000000.0 / sendRate_;
 
-    uint64_t numToSend = (startSendTime - lastSendTime_) * actualSendRate / 1000000.0;
+    uint64_t numToSend = (startSendTime - lastSendTime_) * sendRate_ / 1000000.0;
+
+    // VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
+    //         << " us since last burst with send interval " << sendIntervalUs << "us";
 
     if (numToSend == 0) {
         return;
     }
 
-    VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
-            << " us since last burst with send interval " << sendIntervalUs << "us";
-
-    // Rather than just setting lastSendTime here, add the number of requests sent * sendInterval, so
-    // that we account for rounding errors.
+    // Rather than just setting lastSendTime at the end, add the number of requests sent * sendInterval, so
+    // that we account for accumulating errors from sending
     lastSendTime_ += numToSend * sendIntervalUs;
 
     std::vector<ClientRequest> requests;
@@ -240,7 +277,7 @@ void Client::submitRequestsOpenLoop()
         now = GetMicrosecondTimestamp();
 
         if (numInFlight_ >= maxInFlight_) {
-            VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
+            // VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
             break;
         }
 
@@ -254,7 +291,7 @@ void Client::submitRequestsOpenLoop()
 
         fillRequestData(request);
 
-        requestStates_.emplace(nextSeq_, RequestState(f_, request, now));
+        requestStates_.emplace(nextSeq_, RequestState(request, now));
         VLOG(1) << "PERF event=send" << " client_id=" << clientId_ << " client_seq=" << nextSeq_
                 << " in_flight=" << numInFlight_;
 
@@ -269,43 +306,38 @@ void Client::submitRequestsOpenLoop()
     });
 }
 
-void Client::retryRequests()
-{
-    for (auto &[cseq, reqState] : requestStates_) {
-        uint64_t now = GetMicrosecondTimestamp();
-        ClientRequest &req = reqState.request;
-        req.set_send_time(now);
-        reqState = RequestState(f_, req, now);
-        threadpool_.enqueueTask([=, this](byte *buffer) { sendRequest(req, buffer); });
-        VLOG(1) << "Retrying cseq=" << reqState.clientSeq << " after round/view update";
-    }
-}
-
 void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
 #if USE_PROXY
     // TODO how to choose proxy, perhaps by IP or config
-    // VLOG(4) << "Begin sending request number " << nextReqSeq_;
     Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-    // TODO maybe client should own the memory instead of endpoint.
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // VLOG(4) << "Serialization Done " << nextReqSeq_;
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    // VLOG(4) << "Signature Done " << nextReqSeq_;
+
+    if (useHMAC_) {
+        // TODO send multiple requests for each replica with their own hmacs
+        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
+    } else {
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    }
 
     endpoint_->SendPreparedMsgTo(addr, hdr);
 #else
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
     // TODO check errors for all of these lol
     // TODO do this while waiting, not in the critical path
-    sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    if (useHMAC_) {
+        // TODO send multiple requests for each replica with their own hmacs
+        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
+    } else {
+        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+    }
 
 #if SEND_TO_LEADER
     VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
 
     endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
 #else
-    VLOG(1) << "Sending request to all replicas " << replicaAddrs_[0];
+    VLOG(1) << "Sending request to all replicas ";
     for (const Address &addr : replicaAddrs_) {
         endpoint_->SendPreparedMsgTo(addr, hdr);
     }
@@ -324,6 +356,14 @@ void Client::commitRequest(uint32_t clientSeq)
     requestStates_.erase(clientSeq);
     numCommitted_++;
     numInFlight_--;
+
+    // Enable rate-based sending after first request is committed
+    if (!firstRequestCommitted_) {
+        firstRequestCommitted_ = true;
+        if (sendMode_ == dombft::RateBased) {
+            lastSendTime_ = GetMicrosecondTimestamp();
+        }
+    }
 
     VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
 
@@ -345,36 +385,12 @@ void Client::checkTimeouts()
             VLOG(2) << "Request number " << clientSeq << " fast path timed out! Sending cert!";
             reqState.certSent = true;
 
-            lastNormalPath_ = clientSeq;
-
             // Send cert to replicas;
             endpoint_->PrepareProtoMsg(reqState.collector.getCert(), CERT);
             for (const Address &addr : replicaAddrs_) {
                 endpoint_->SendPreparedMsgTo(addr);
             }
             continue;
-        }
-
-        if (!reqState.triggerSent && reqState.collector.numReceived() >= 2 * f_ + 1 &&
-            now - reqState.quorumTime > slowPathTimeout_) {
-            LOG(INFO) << "Client attempting repair on request " << clientSeq << " sendTime=" << reqState.sendTime
-                      << " now=" << now << " due to timeout";
-
-            reqState.triggerSent = true;
-            reqState.triggerSendTime = now;
-            lastSlowPath_ = clientSeq;
-
-            RepairClientTimeout msg;
-            msg.set_client_id(clientId_);
-            msg.set_client_seq(clientSeq);
-            msg.set_round(reqState.collector.round_);
-
-            // TODO set request data
-            MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, REPAIR_CLIENT_TIMEOUT);
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-            for (const Address &addr : replicaAddrs_) {
-                endpoint_->SendPreparedMsgTo(addr);
-            }
         }
 
         if (reqState.triggerSent && now - reqState.triggerSendTime > requestTimeout_) {
@@ -411,8 +427,16 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature for reply! replica_id=" << reply.replica_id();
+        bool verified = false;
+        if (useHMAC_) {
+            verified = hmacProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()});
+
+        } else {
+            verified = sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()});
+        }
+
+        if (!verified) {
+            LOG(INFO) << "Failed to verify replica signature from " << reply.replica_id();
             return;
         }
 
@@ -433,7 +457,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", certReply.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, certReply.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for CERT_REPLY!";
             return;
         }
@@ -449,7 +473,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for COMMITTED_REPLY!";
             return;
         }
@@ -463,7 +487,7 @@ void Client::handleMessage(MessageHeader *hdr, byte *body, Address *sender)
             return;
         }
 
-        if (!sigProvider_.verify(hdr, "replica", repairSummary.replica_id())) {
+        if (!sigProvider_.verify(hdr, {NodeType::REPLICA, repairSummary.replica_id()})) {
             LOG(INFO) << "Failed to verify replica signature for REPAIR_SUMMARY!";
             return;
         }
@@ -491,7 +515,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
     bool hasCertBefore = reqState.collector.hasCert();
     uint32_t maxMatchSize = reqState.collector.insertReply(reply, std::vector<byte>(sig.begin(), sig.end()));
 
-    if (reqState.collector.numReceived() == 2 * f_ + 1) {
+    if (reqState.collector.numReceived() == quorumSize_) {
         reqState.quorumTime = now;
     }
 
@@ -501,31 +525,23 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         reqState.certTime = now;
     }
 
-    if (maxMatchSize == 3 * f_ + 1) {
+    if (maxMatchSize >= superQuorumSize_) {
         // TODO Deliver to application
         // Request is committed and can be cleaned up.
         VLOG(1) << "PERF event=commit path=fast" << " client_id=" << clientId_ << " client_seq=" << clientSeq
                 << " seq=" << reply.seq() << " round=" << reply.round() << " latency=" << now - reqState.firstSendTime
-                << " digest=" << digest_to_hex(reply.digest());
-
-        lastFastPath_ = clientSeq;
+                << " digest=" << digest_to_hex(reply.digest()) << " queued=" << reply.queued();
 
         commitRequest(clientSeq);
         return;
     }
 
-    // `replies_.size() == maxMatchSize` iff all replies received so far are matching
-    //  and the normal or slow path wouldn't be triggered yet
-    if (reqState.collector.numReceived() == maxMatchSize)
-        return;
-
-    // `hasCert() == true` iff maxMatchSize >= 2 * f_ + 1
+    // `hasCert() == true` iff maxMatchSize >= quorumSize_
     // TODO handle sending cert in new round better
-    if (!reqState.certSent && reqState.collector.hasCert()) {
+    if (!reqState.certSent && reqState.collector.hasCert() && reqState.collector.numReceived() > maxMatchSize &&
+        quorumSize_ == 2 * f_ + 1) {
         LOG(INFO) << "Request number " << clientSeq << " fast path impossible, has cert. Sending cert!";
         reqState.certSent = true;
-
-        lastNormalPath_ = clientSeq;
 
         // Send cert to replicas
         endpoint_->PrepareProtoMsg(reqState.collector.getCert(), CERT);
@@ -534,31 +550,33 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
         }
     }
 
+    bool sendProofs = ConfigManager::getInstance().getConfig().clientSendProofs;
+
     // If the number of potential remaining replies is not enough to reach 2f + 1 for any matching reply,
     // we have a proof of inconsistency.
-    if (!reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_) {
-        LOG(INFO) << "Client detected cert is impossible, triggering repair with proof for cseq=" << clientSeq;
+    if (sendProofs && !reqState.triggerSent && reqState.collector.numReceived() - maxMatchSize > f_ &&
+        reqState.collector.round_ == reply.round()) {
+        LOG(INFO) << "Client detected cert is impossible, triggering repair with proof for cseq=" << clientSeq
+                  << " for round=" << reqState.collector.round_;
 
-        reqState.triggerSendTime = now;
         reqState.triggerSent = true;
-        lastSlowPath_ = clientSeq;
+        reqState.triggerRound = reqState.collector.round_;
+        reqState.triggerSendTime = now;
 
         RepairReplyProof proofMsg;
 
-        proofMsg.set_client_id(clientId_);
-        proofMsg.set_client_seq(clientSeq);
         proofMsg.set_round(reqState.collector.round_);
 
-        for (auto &[replicaId, reply] : reqState.collector.replies_) {
-            if (reply.round() != reqState.collector.round_)
+        for (auto &[replicaId, r] : reqState.collector.replies_) {
+            if (r.round() != reqState.collector.round_)
                 continue;
 
             auto &sig = reqState.collector.signatures_[replicaId];
             proofMsg.add_signatures(std::string(sig.begin(), sig.end()));
-            (*proofMsg.add_replies()) = reply;
+            (*proofMsg.add_replies()) = r;
         }
         reqState.triggerSendTime = GetMicrosecondTimestamp();
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(proofMsg, REPAIR_REPLY_PROOF);   // JK: Unused?
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr);
         }
@@ -580,12 +598,11 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
     VLOG(4) << "Received cert ack client_seq=" << cseq << " seq=" << certReply.seq() << " round=" << certReply.round()
             << " replica_id=" << certReply.replica_id();
 
-    if (reqState.certReplies.size() >= 2 * f_ + 1) {
+    if (reqState.certReplies.size() >= quorumSize_) {
         VLOG(1) << "PERF event=commit path=normal client_id=" << clientId_ << " client_seq=" << cseq
                 << " seq=" << certReply.seq() << " round=" << certReply.round()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest());
-        lastNormalPath_ = cseq;
         commitRequest(cseq);
     }
 }
@@ -615,7 +632,6 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
                     << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime;
         }
 
-        lastSlowPath_ = cseq;
         commitRequest(cseq);
     }
 }
@@ -623,6 +639,23 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
 void Client::handleRepairSummary(const dombft::proto::RepairSummary &summary, std::span<byte> sig)
 {
     VLOG(2) << "Received repair summary for round=" << summary.round() << " from replicaId=" << summary.replica_id();
+
+    ::ClientSequence committed(summary.committed_seqs());
+    for (const auto &[cseq, reqState] : requestStates_) {
+        // TODO this is a hack to make a dummy reply...
+        if (!committed.contains(cseq)) {
+            continue;
+        }
+
+        CommittedReply reply;
+        reply.set_client_id(clientId_);
+        reply.set_client_seq(cseq);
+        reply.set_is_repair(false);   // Missed in this round
+        reply.set_seq(0);             // TODO we do not know the seq
+        reply.set_replica_id(summary.replica_id());
+
+        LOG(INFO) << "DEBUG adding request that was in repair summary checkpoint record";
+    }
 
     for (const CommittedReply &reply : summary.replies()) {
         if (reply.client_id() != clientId_)

@@ -15,7 +15,7 @@ typedef std::tuple<std::string, uint32_t, uint32_t> ReplyKeyTuple;
 
 struct ReplyCollector {
     uint32_t replicaId_;
-    uint32_t f_;
+
     uint32_t round_;
     uint32_t seq_;
 
@@ -24,10 +24,12 @@ struct ReplyCollector {
     std::map<uint32_t, dombft::proto::Reply> replies_;
     std::map<uint32_t, std::string> replySigs_;
     std::optional<dombft::proto::Cert> cert_;
+    std::optional<dombft::proto::RepairReplyProof> repairReplyProof_;
 
-    ReplyCollector(uint32_t replicaId, uint32_t f, uint32_t round, uint32_t seq)
+    std::optional<dombft::proto::Cert> getCert() const { return cert_; }
+
+    ReplyCollector(uint32_t replicaId, uint32_t round, uint32_t seq)
         : replicaId_(replicaId)
-        , f_(f)
         , round_(round)
         , seq_(seq)
     {
@@ -39,9 +41,7 @@ struct ReplyCollector {
 typedef std::tuple<uint32_t, uint32_t, std::string, std::string, std::string> CommitKeyTuple;
 
 struct CommitCollector {
-    uint32_t f_;
     uint32_t round_;
-
     uint32_t seq_;
 
     std::optional<dombft::proto::Commit> commitToUse_;
@@ -50,9 +50,8 @@ struct CommitCollector {
     std::map<uint32_t, std::string> sigs_;
     std::set<uint32_t> matchedReplicas_;
 
-    CommitCollector(uint32_t f, uint32_t round, uint32_t seq)
-        : f_(f)
-        , round_(round)
+    CommitCollector(uint32_t round, uint32_t seq)
+        : round_(round)
         , seq_(seq)
     {
     }
@@ -62,32 +61,37 @@ struct CommitCollector {
 };
 
 class CheckpointCollector {
-    // We only need our own latests state, so don't index by round
+    // We only need our own latest state, so don't index by round
 
     uint32_t replicaId_;
-    uint32_t f_;
-
     uint32_t round_;
     uint32_t seq_;
+
+    bool timeout_ = false;
+    uint64_t timeoutStart_ = 0;
 
     bool needsSnapshot_ = false;
     std::optional<AppSnapshot> snapshot_;
     std::optional<::ClientRecord> clientRecord_;
     std::optional<std::string> logDigest_;
 
+    std::optional<dombft::proto::RepairTimeoutProof> repairTimeoutProof_;
+
     // Messages
     ReplyCollector replyCollector;
     CommitCollector commitCollector;
 
+    std::map<uint32_t, dombft::proto::RepairTimeout> repairTimeouts_;
+    std::map<uint32_t, std::string> repairTimeoutSigs_;
+
 public:
-    explicit CheckpointCollector(uint32_t replicaId, uint32_t f, uint32_t round, uint32_t seq, bool needsSnapshot)
+    explicit CheckpointCollector(uint32_t replicaId, uint32_t round, uint32_t seq, bool needsSnapshot)
         : replicaId_(replicaId)
-        , f_(f)
         , round_(round)
         , seq_(seq)
         , needsSnapshot_(needsSnapshot)
-        , replyCollector(replicaId, f, round, seq)
-        , commitCollector(f, round, seq)
+        , replyCollector(replicaId, round, seq)
+        , commitCollector(round, seq)
     {
     }
 
@@ -96,6 +100,12 @@ public:
     // Add a reply to the collector and check if we have enough replies to form a cert
     // Can call getCert once addAndCheckReply returns true
     bool addAndCheckReply(const dombft::proto::Reply &reply, std::span<byte> sig);
+    // TODO this pattern does not match above, fix
+    bool hasConflictProof() const { return replyCollector.repairReplyProof_.has_value(); }
+    void getConflictProof(dombft::proto::RepairReplyProof &replyProof) const
+    {
+        replyProof = replyCollector.repairReplyProof_.value();
+    }
     bool hasCert() const { return replyCollector.cert_.has_value(); }
     void getCert(dombft::proto::Cert &cert) const { cert = replyCollector.cert_.value(); }
 
@@ -119,22 +129,28 @@ public:
     // Note checkpoint will only have snapshot field set to valid pointer if we have
     // the pointer from our own log
     void getCheckpoint(::LogCheckpoint &checkpoint) const;
+
+    bool addAndCheckTimeout(const dombft::proto::RepairTimeout &timeoutMsg, std::span<byte> sig);
+
+    bool checkSelfTimeout(uint64_t now, uint64_t timeoutMs);
+
+    bool hasRepairProof() const { return repairTimeoutProof_.has_value(); }
+    void getRepairTimeoutProof(dombft::proto::RepairTimeoutProof &timeoutProof) const;
 };
 
 class CheckpointCollectorStore {
-    std::map<std::pair<uint32_t, uint32_t>, CheckpointCollector> collectors_;
-    std::map<std::pair<uint32_t, uint32_t>, CheckpointCollector> snapshotCollectors_;
 
     uint32_t stableSeq_ = 0;
     uint32_t committedSeq_ = 0;
 
     uint32_t replicaId_;
-    uint32_t f_;
 
 public:
-    explicit CheckpointCollectorStore(uint32_t replicaId, uint32_t f)
+    std::map<std::pair<uint32_t, uint32_t>, CheckpointCollector> collectors_;
+    std::map<std::pair<uint32_t, uint32_t>, CheckpointCollector> snapshotCollectors_;
+
+    explicit CheckpointCollectorStore(uint32_t replicaId)
         : replicaId_(replicaId)
-        , f_(f)
     {
     }
 

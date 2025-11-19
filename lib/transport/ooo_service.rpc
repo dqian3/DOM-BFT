@@ -1,0 +1,18 @@
+// clang-format off
+
+// optional %%: marks header section, code above will be copied into begin of generated C++ header
+%%
+
+namespace  OOO_BFT_RPC
+
+
+abstract service OOOBFT {
+    defer SendOOOPrepareRequest(OOOPrepareRequest req);
+};
+
+
+
+
+%%
+// optional %%: marks footer section, code below will be copied into end of generated C++ header
+

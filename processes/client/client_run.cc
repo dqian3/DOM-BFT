@@ -1,4 +1,6 @@
 #include "client.h"
+#include "lib/config/config_manager.h"
+#include "lib/config/process_config.h"
 
 DEFINE_string(config, "configs/config.yaml", "The config file for the client");
 DEFINE_uint32(clientId, 0, "The client id.");
@@ -12,6 +14,7 @@ int main(int argc, char *argv[])
     LOG(INFO) << "Loading config information from " << FLAGS_config;
     ProcessConfig config;
     config.parseConfig(FLAGS_config);
+    dombft::ConfigManager::initialize(config);
 
-    dombft::Client client(config, FLAGS_clientId);
+    dombft::Client client(FLAGS_clientId);
 }

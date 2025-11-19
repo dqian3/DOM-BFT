@@ -7,14 +7,15 @@ cc_library(
         "//lib:utils",
         "//lib:address",
         "//lib:endpoint",
+        "//lib:ooo_rpc_endpoint",
         "//lib:common",
         "//lib:log",
         "//lib:cert_collector",
         "//lib:checkpoint_collector",
         "//lib:repair_utils",
         "//lib:threadpool",
-        "//processes:process_config",
-        "//processes:config_util"
+        "//lib:crypto",
+        "//lib/config:config",
     ],
 )
 
@@ -28,10 +29,10 @@ cc_library(
         "//lib:utils",
         "//lib:address",
         "//lib:endpoint",
+        "//lib:ooo_rpc_endpoint",
         "//lib:common",
         "//lib:threadpool",
-        "//processes:process_config",
-        "//processes:config_util"
+        "//lib:config",
     ],
 )
 

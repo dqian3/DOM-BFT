@@ -11,6 +11,16 @@
 
 // I would put this inside Client Record, but we already have tests that I'm too lazy to rewrite
 struct ClientSequence {
+    ClientSequence() = default;
+
+    ClientSequence(const dombft::proto::ClientSequence &clientSequence)
+    {
+        lastSeq_ = clientSequence.last_seq();
+        for (const auto &s : clientSequence.missed_seqs()) {
+            missedSeqs_.insert(s);
+        }
+    }
+
     uint32_t lastSeq_ = 0;
     std::set<uint32_t> missedSeqs_;
 
@@ -38,6 +48,7 @@ public:
     std::string digest() const;
 
     void toProto(dombft::proto::ClientRecord &records) const;
+    void toProtoSingleClient(uint32_t clientId, dombft::proto::ClientSequence &clientSequence) const;
 
     // Computes the number of records in referenceRecord that are misssing in this record
     // Does not check for extra records in this record

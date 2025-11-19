@@ -1,7 +1,9 @@
-#include "processes/process_config.h"
+#include "lib/config/config_manager.h"
+#include "lib/config/config_util.h"
 
 #include "lib/common.h"
-#include "lib/signature_provider.h"
+#include "lib/crypto/hmac_provider.h"
+#include "lib/crypto/sig_provider.h"
 #include "lib/threadpool.h"
 #include "lib/transport/address.h"
 #include "lib/transport/endpoint.h"
@@ -24,9 +26,12 @@ private:
     // Replica static config
     uint32_t replicaId_;
     std::vector<Address> replicaAddrs_;
-    Address receiverAddr_;
+    std::vector<Address> proxyAddrs_;
     std::vector<Address> clientAddrs_;
-    uint32_t f_;
+    uint32_t quorumSize_;
+    uint32_t superQuorumSize_;
+    uint32_t useHMAC_;
+
     uint32_t numVerifyThreads_;
     uint32_t batchSize_;
 
@@ -34,6 +39,7 @@ private:
 
     // Helper classes for signatures and threading
     SignatureProvider sigProvider_;
+    HMACProvider hmacProvider_;
 
     // Control flow/endpoint objects
     BlockingConcurrentQueue<std::vector<byte>> verifyQueue_;
@@ -66,7 +72,7 @@ private:
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 
 public:
-    DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize = 1);
+    DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batchSize = 1);
     ~DummyReplica();
 
     void run();

@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include <openssl/sha.h>
-
 #include "blockingconcurrentqueue.h"
 #include "concurrentqueue.h"
 #include "readerwriterqueue.h"
@@ -24,14 +22,13 @@
 // as IPs and ports. Generally these will be used for ablation experiments or benchmarks
 // of specific components of the system.
 
-#define SEND_BUFFER_SIZE (20000000)
+#define SEND_BUFFER_SIZE (200000000)
 #define UDP_BUFFER_SIZE  (1024)
-#define NNG_BUFFER_SIZE  (20000000)
+#define NNG_BUFFER_SIZE  (200000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY     1
-#define FABRIC_CRYPTO 0
-#define SKIP_CRYPTO   0
+#define USE_PROXY   1
+#define SKIP_CRYPTO 0
 
 // For working with dummy protocols
 #define SEND_TO_LEADER 0
@@ -45,6 +42,10 @@ template <typename T1> using RWQueue = moodycamel::ReaderWriterQueue<T1>;
 template <typename T1> using BlockingRWQueue = moodycamel::BlockingReaderWriterQueue<T1>;
 template <typename T1, typename T2> using ConcurrentMap = junction::ConcurrentMap_Leapfrog<T1, T2>;
 
+enum NodeType { CLIENT, REPLICA };
+
+typedef std::pair<NodeType, uint32_t> NodeID;
+
 /**
  * The message types are defined according to the proto files and the
  * information will be included in each message to facilitate
@@ -54,37 +55,37 @@ enum MessageType {
     // DOM Sending Messages
     CLIENT_REQUEST = 1,
     DOM_REQUEST = 2,
-    MEASUREMENT_REPLY = 3,
+    DOM_BATCH_REQUEST = 3,
+    MEASUREMENT_REPLY = 4,
 
     // Fast/normal path messages
-    FAST_REPLY = 4,
-    REPLY = 5,
-    CERT = 6,
-    CERT_REPLY = 7,
-    COMMITTED_REPLY = 8,
+    FAST_REPLY = 5,
+    REPLY = 6,
+    CERT = 7,
+    CERT_REPLY = 8,
+    COMMITTED_REPLY = 9,
 
-    COMMIT = 9,
+    COMMIT = 10,
 
-    REPAIR_CLIENT_TIMEOUT = 10,
-    REPAIR_REPLICA_TIMEOUT = 11,
-    REPAIR_REPLY_PROOF = 12,
-    REPAIR_TIMEOUT_PROOF = 13,
+    REPAIR_CLIENT_TIMEOUT = 11,
+    REPAIR_TIMEOUT = 12,
+    REPAIR_REPLY_PROOF = 13,
+    REPAIR_TIMEOUT_PROOF = 14,
 
-    REPAIR_START = 14,
-    REPAIR_PROPOSAL = 15,
-    REPAIR_DONE = 16,
-    REPAIR_SUMMARY = 17,
+    REPAIR_START = 15,
+    REPAIR_PROPOSAL = 16,
+    REPAIR_DONE = 17,
+    REPAIR_SUMMARY = 18,
 
-    PBFT_PREPREPARE = 18,
-    PBFT_PREPARE = 19,
-    PBFT_COMMIT = 20,
-    PBFT_VIEWCHANGE = 21,
-    PBFT_NEWVIEW = 22,
+    PBFT_PREPREPARE = 19,
+    PBFT_PREPARE = 20,
+    PBFT_COMMIT = 21,
+    VIEW_UPDATE = 22,
 
-    SNAPSHOT_REQUEST = 23,
-    SNAPSHOT_REPLY = 24,
+    SNAPSHOT_REQUEST = 24,
+    SNAPSHOT_REPLY = 25,
 
-    DUMMY_PROTO = 25
+    DUMMY_PROTO = 26
 };
 
 /**

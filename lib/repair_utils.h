@@ -23,7 +23,9 @@ struct LogSuffix {
     std::string logDigest;
 };
 
-struct PBFTState {
+struct PreparedState {
+    uint32_t round = 0;
+    uint32_t pbftView = 0;
     dombft::proto::RepairProposal proposal;
     std::string proposalDigest;
     std::map<uint32_t, dombft::proto::PBFTPrepare> prepares;
@@ -35,6 +37,8 @@ struct ClientRequest {
     uint32_t clientSeq;
     std::string requestData;
     std::string padding;
+
+    uint64_t deadline = 0;
 };
 
 bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposal, LogSuffix &logSuffix);

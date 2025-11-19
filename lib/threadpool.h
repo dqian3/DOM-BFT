@@ -1,7 +1,7 @@
 #ifndef VERIFICATION_MANAGER_H
 #define VERIFICATION_MANAGER_H
 
-#include "signature_provider.h"
+#include "lib/crypto/sig_provider.h"
 #include <condition_variable>
 #include <future>
 #include <mutex>
@@ -35,6 +35,8 @@ public:
         }
         condition_.notify_one();
     }
+
+    size_t size() const { return threadPoolSize_; }
 
 private:
     size_t threadPoolSize_;

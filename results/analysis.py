@@ -1,17 +1,21 @@
 # Basic log parsing
 
 import re
-import datetime 
+import datetime
 import sys
+import numpy as np
+
 
 def parse_time(line):
     match = re.search(f"([0-9]*:[0-9]*:[0-9]*.[0-9]*)", line)
-    time_str = match.group(1);
+    time_str = match.group(1)
     return datetime.datetime.strptime(time_str, "%H:%M:%S.%f")
+
 
 def parse_tags(line):
     tags = {}
     line = line.split("PERF ")[1]
+
     for token in line.split():
         [tag, value] = token.split("=")
         tags[tag] = value
@@ -19,108 +23,151 @@ def parse_tags(line):
             tags[tag] = int(value)
         except ValueError as verr:
             pass
-            
+
     return tags
-        
+
+
 def parse_line(line):
     time = parse_time(line)
     tags = parse_tags(line)
 
     tags["time"] = time
-    return tags 
+    return tags
 
 
-# In[3]:
+if __name__ == "__main__":
+    events = []
+    with open(sys.argv[1]) as f:
+        for line in f:
+            if "DUMP" in line:
+                continue
+            events.append(parse_line(line))
 
+    events = sorted(events, key=lambda x: x["time"])
 
-events = []
-with open(sys.argv[1]) as f:
-    for line in f:
-        events.append(parse_line(line))
+    start_time = events[0]["time"] + datetime.timedelta(seconds=10)
+    end_time = events[-1]["time"] - datetime.timedelta(seconds=10)
 
+    commits = list(filter(lambda x: x["event"] == "commit", events))
 
-# In[4]:
+    n_clients = (
+        max(events, key=lambda x: x["client_id"] if "client_id" in x else 0)[
+            "client_id"
+        ]
+        + 1
+    )
 
+    # Get general stats
+    commits = list(
+        filter(lambda x: x["time"] > start_time and x["time"] < end_time, commits)
+    )
 
-events = sorted(events, key=lambda x: x['time'])
+    runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
+    print(f"Runtime: {runtime:.3f} s")
+    print("number of clients: ", n_clients)
+    print(f"Total Throughput: {len(commits) / runtime:.0f} req/s")
 
-start_time = events[0]['time'] + datetime.timedelta(seconds=10)
-end_time = events[-1]['time'] - datetime.timedelta(seconds=10)
+    latencies = np.array([c["latency"] for c in commits])
+    print(f"Num commits: {len(commits)}")
+    print(f"p5 latency: {np.percentile(latencies, 5):.0f} us")
+    print(f"Average latency: {np.mean(latencies):.0f} us")
+    print(f"p95 latency: {np.percentile(latencies, 95):.0f} us")
+    print(f"p99 latency: {np.percentile(latencies, 99):.0f} us")
 
-commits = list(filter(lambda x: x["event"] == "commit", events))
+    fast = list(filter(lambda x: x["path"] == "fast", commits))
+    normal = list(filter(lambda x: x["path"] == "normal", commits))
+    slow = list(filter(lambda x: x["path"] == "slow", commits))
 
-n_clients = max(events, key=lambda x: x["client_id"] if "client_id" in x else 0)["client_id"] + 1
+    print("Fast path:")
+    print(f"\tNum commits: {len(fast)}")
+    if len(fast) > 0:
+        print(
+            f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us"
+        )
 
+    print("Normal path:")
+    print(f"\tNum commits: {len(normal)}")
+    if len(normal) > 0:
+        print(
+            f"\tAverage latency: {sum(c['latency'] for c in normal) / len(normal):.0f} us"
+        )
 
-# In[5]:
+    print("Slow path:")
+    print(f"\tNum commits: {len(slow)}")
+    if len(slow) > 0:
+        print(
+            f"\tAverage latency: {sum(c['latency'] for c in slow) / len(slow):.0f} us"
+        )
 
-# Look at each client commit, make sure there are no two clients ops on the same seq
-from collections import Counter
+    # Find the highest and lowest rounds (number of repair rounds in window)
+    min_round = min(c["round"] for c in commits if "round" in c)
+    max_round = max(c["round"] for c in commits if "round" in c)
+    print("Number of repair rounds: ", max_round - min_round)
 
-counts = Counter(c["seq"] for c in commits)
-for seq in counts:
-    if counts[seq] > 1:
-        print(f"Sequence {seq} has different commits!")
-        print(list(
-            f"c_id={x['client_id']} c_seq={x['client_seq']} path={x['path']}" 
-           for x in filter(lambda x: x["seq"] == seq, commits)
-        ))
+    # Peak throughput window
 
+    import numpy as np
 
-# In[6]:
+    w_size = 10  # s
+    resolution = 1  # s
 
+    end = (commits[-1]["time"] - start_time).total_seconds()
 
-# Ensure all client operations are committed
+    for c in commits:
+        c["t"] = (c["time"] - start_time).total_seconds()
 
-for c_id in range(n_clients):
-    c_commits = filter(lambda x: x["client_id"] == c_id, commits)
-    seq = sorted(c["client_seq"] for c in c_commits)
+    w_start = 0
+    i = 0
+    j = 0
 
-    for x, y in zip(seq, seq[1:]):
-        if (y-x) > 1:
-            print(f"Client {c_id} missed commits between {x + 1}-{y - 1}")
-        
-        if x == y:
-            print(f"Client {c_id} repeated commits {x}")
+    commit_counts = []
+    max_commits = 0
+    max_window = None
 
+    while w_start + w_size < end:
+        while commits[i]["t"] < w_start:
+            i += 1
+        while commits[j]["t"] <= w_start + w_size:
+            j += 1
 
-# In[7]:
+        if j - i > max_commits:
+            max_window = (i, j)
+            max_commits = j - i
 
+        w_start += resolution
 
-# Get general stats
-commits = list(filter(lambda x: x['time'] > start_time and x['time'] < end_time, commits))
+    window_latencies = np.array([c["latency"] for c in commits[i:j]])
+    print(f"Finding best 30s window")
 
+    print(f"Max throughput over window of ten seconds: {max_commits / 10}")
+    print(f"Average latency in window: {np.mean(window_latencies):.0f} us")
 
-runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
-print(f"Runtime: {runtime:.3f} s")
-print("number of clients: ", n_clients)
-print(f"Total Throughput: {len(commits) / runtime:.2f} req/s")
+    # Analyse percent of time in the fast path
 
-print(f"Num commits: {len(commits)}")
-print(f"Average latency: {sum(c['latency'] for c in commits) / len(commits):.0f} us")
+    last_fast_time = None
+    non_fast_seconds = 0
+    non_fast_periods = []
+    last_commit = None
 
-fast = list(filter(lambda x: x["path"] == "fast", commits))
-normal = list(filter(lambda x: x["path"] == "normal", commits))
-slow = list(filter(lambda x: x["path"] == "slow", commits))
+    start_time = None
 
-print("Fast path:")
-print(f"\tNum commits: {len(fast)}")
-if len(fast) > 0:
-    print(f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us")
+    for tags in commits:
+        if start_time is None:
+            start_time = tags["time"]
+            # Take the nearest minute
+            start_time = start_time.replace(second=0, microsecond=0)
+            last_fast_time = tags["time"]
+            last_commit = tags["path"]
 
+        if tags["path"] == "fast":
+            if last_commit != "fast":
+                # TODO Instead of just summing non fast path periods, actually output them so we can get a timeline
+                # Ideally each period should also include the number of types of commits
+                # So for each period here, we should output the counts of each non fast path commit
+                non_fast_seconds += (tags["time"] - last_fast_time).total_seconds()
+            last_fast_time = tags["time"]
 
-print("Normal path:")
-print(f"\tNum commits: {len(normal)}")
-if len(normal) > 0:
-    print(f"\tAverage latency: {sum(c['latency'] for c in normal) / len(normal):.0f} us")
+        last_commit = tags["path"]
 
-print("Slow path:")
-print(f"\tNum commits: {len(slow)}")
-if len(slow) > 0:
-    print(f"\tAverage latency: {sum(c['latency'] for c in slow) / len(slow):.0f} us")
-
-
-
-
-
-
+    runtime = (tags["time"] - start_time).total_seconds()
+    print(f"Percent time in fast path: {(runtime - non_fast_seconds) / runtime:0.3f}")

@@ -1,7 +1,6 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <openssl/sha.h>
 #include <string>
 
 // Third party libs

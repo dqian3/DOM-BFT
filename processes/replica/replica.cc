@@ -4,160 +4,480 @@
 #include "lib/apps/counter.h"
 #include "lib/apps/kv_store.h"
 #include "lib/common.h"
+#include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "processes/config_util.h"
 
-#include <openssl/pem.h>
+#include <algorithm>
+#include <cryptopp/sha.h>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace dombft {
 using namespace dombft::proto;
 
 Replica::Replica(
-    const ProcessConfig &config, uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq,
-    bool commitLocalInViewChange, uint32_t viewChangeNum, uint32_t checkpointDropFreq
+    uint32_t replicaId, bool crashed, uint32_t swapFreq, uint32_t viewChangeFreq, bool commitLocalInViewChange,
+    uint32_t viewChangeNum, uint32_t checkpointDropFreq, bool skipForwarding, bool ignoreDeadlines
 )
     : replicaId_(replicaId)
-    , f_(config.replicaIps.size() / 3)
-    , checkpointInterval_(config.replicaCheckpointInterval)
-    , snapshotInterval_(config.replicaSnapshotInterval)
-    , numVerifyThreads_(config.replicaNumVerifyThreads)
-    , repairTimeout_(config.replicaRepairTimeout)
-    , repairViewTimeout_(config.replicaRepairViewTimeout)
+    , checkpointInterval_(ConfigManager::getInstance().getConfig().replicaCheckpointInterval)
+    , snapshotInterval_(ConfigManager::getInstance().getConfig().replicaSnapshotInterval)
+    , numVerifyThreads_(ConfigManager::getInstance().getConfig().replicaNumVerifyThreads)
+    , useHMAC_(ConfigManager::getInstance().getConfig().clientUseHMAC)
+    , repairTimeout_(ConfigManager::getInstance().getConfig().replicaRepairTimeout)
+    , repairViewTimeout_(ConfigManager::getInstance().getConfig().replicaRepairViewTimeout)
+    , proxyPort_(ConfigManager::getInstance().getProxyForwardPort())
+    , numReceivers_(ConfigManager::getInstance().getNumReplicas())
+    , skipForwarding_(skipForwarding)
+    , ignoreDeadlines_(ignoreDeadlines)
     , sigProvider_()
-    , sendThreadpool_(config.replicaNumSendThreads)
+    , sendThreadpool_(ConfigManager::getInstance().getConfig().replicaNumSendThreads)
+    , running_(true)
     , round_(1)
-    , checkpointCollectors_(replicaId_, f_)
+    , checkpointCollectors_(replicaId_)
     , crashed_(crashed)
     , swapFreq_(swapFreq)
     , checkpointDropFreq_(checkpointDropFreq)
     , viewChangeFreq_(viewChangeFreq)
-    , viewChangeInst_(viewChangeFreq_)
+    , viewChangeRound_(viewChangeFreq_)
     , commitLocalInViewChange_(commitLocalInViewChange)
     , viewChangeNum_(viewChangeNum)
 {
-    // TODO check for config errors
+    const auto &config = ConfigManager::getInstance().getConfig();
+
+    // Replica initialization
     std::string replicaIp = config.replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
-    std::string bindAddress = config.receiverLocal ? "0.0.0.0" : replicaIp;
+    std::string bindAddress = replicaIp;
     LOG(INFO) << "bindAddress=" << bindAddress;
 
     int replicaPort = config.replicaPort;
     LOG(INFO) << "replicaPort=" << replicaPort;
 
     std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".der";
-    LOG(INFO) << "Loading key from " << replicaKey;
+    LOG(INFO) << "Loading replica key from " << replicaKey;
     if (!sigProvider_.loadPrivateKey(replicaKey)) {
-        LOG(ERROR) << "Unable to load private key!";
+        LOG(ERROR) << "Unable to load replica private key!";
         exit(1);
     }
 
-    LOG(INFO) << "private key loaded";
+    // For unified process, we use the replica key for both replica and receiver functions
 
-    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+    LOG(INFO) << "Private keys loaded";
+
+    if (!sigProvider_.loadPublicKeys(NodeType::CLIENT, config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("receiver", config.receiverKeysDir)) {
-        LOG(ERROR) << "Unable to load receiver public keys!";
+    if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
+        LOG(ERROR) << "Unable to load replica public keys!";
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
-        LOG(ERROR) << "Unable to load receiver public keys!";
-        exit(1);
-    }
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, config.clientIps.size());
 
-    LOG(INFO) << "instantiating log";
+    LOG(INFO) << "Instantiating log and application";
 
     if (config.app == AppType::COUNTER) {
         app_ = std::make_shared<Counter>();
     } else if (config.app == AppType::KV_STORE) {
-        // TODO make keysize configurable
         app_ = std::make_shared<KVStore>();
     } else {
         LOG(ERROR) << "Unrecognized App Type";
         exit(1);
     }
     log_ = std::make_shared<Log>(app_);
-    LOG(INFO) << "log instantiated";
+    LOG(INFO) << "Log instantiated";
 
+    f_ = config.f;
+    quorumSize_ = ConfigManager::getInstance().getQuorumSize();
+    superQuorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
+
+    // Network setup for unified functionality
     if (config.transport == "nng") {
+        // Use replica addressing for unified process
         auto addrPairs = getReplicaAddrs(config, replicaId_);
 
         size_t nClients = config.clientIps.size();
+        size_t nProxies = config.proxyIps.size();
+
+        // First nClients addresses are for client connections
         for (size_t i = 0; i < nClients; i++) {
-            // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.ip();
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
-        receiverAddr_ = addrPairs[nClients].second;
+        // Then proxy addresses
+        for (size_t i = nClients; i < nClients + nProxies; i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
+        }
 
-        for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
+        // Remaining addresses are for replica-to-replica connections
+        for (size_t i = nClients + nProxies; i < addrPairs.size(); i++) {
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
+        replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
+
+    } else if (config.transport == "simple-rpc") {
+        std::vector<Address> addrs;
+        replicaAddr_ = Address(config.replicaIps[replicaId], config.replicaPort);
+        addrs.push_back(replicaAddr_);
+
+        // Add proxy addresses for receiver functionality
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            addrs.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        }
+
+        size_t nClients = config.clientIps.size();
+        for (int i = 0; i < config.clientIps.size(); i++) {
+            std::string clientIp = config.clientIps[i];
+            clientAddrs_.push_back(Address(clientIp, config.clientPort + i));
+            addrs.push_back(Address(clientIp, config.clientPort + i));
+            LOG(INFO) << "Client " << i << ": " << addrs.back();
+        }
+
+        // Add replica addresses
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+            if (i != replicaId_) {
+                addrs.push_back(Address(config.replicaIps[i], config.replicaPort));
+            }
+        }
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, addrs, sendThreadpool_.size());
     } else {
-        LOG(ERROR) << "Unsupported transport " << config.transport;
+        // UDP setup
+        replicaAddr_ = Address(config.replicaIps[replicaId], config.replicaPort);
+
+        for (uint32_t i = 0; i < config.replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        }
+
+        for (uint32_t i = 0; i < config.proxyIps.size(); i++) {
+            proxyAddrs_.push_back(Address(config.proxyIps[i], config.proxyForwardPort));
+        }
+
+        for (uint32_t i = 0; i < config.clientIps.size(); i++) {
+            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
+        }
+
+        endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort, true);
     }
 
-    MessageHandlerFunc handler = [this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
-        this->handleMessage(msgHdr, msgBuffer, sender);
-    };
+    // Set up timer for receiver deadline checking
+    fwdTimer_ =
+        std::make_unique<Timer>([](void *ctx, void *endpoint) { ((Replica *) ctx)->checkDeadlines(); }, 1000, this);
+    ev_set_priority(fwdTimer_->evTimer_, EV_MAXPRI);
+    endpoint_->RegisterTimer(fwdTimer_.get());
 
-    endpoint_->RegisterMsgHandler(handler);
+    // Register unified message handler
+    endpoint_->RegisterMsgHandler([this](MessageHeader *msgHdr, byte *msgBuffer, Address *sender) {
+        this->handleMessage(msgHdr, msgBuffer, sender);
+
+        if (GetMicrosecondTimestamp() - lastCheckTime_ > 1000) {
+            lastCheckTime_ = GetMicrosecondTimestamp();
+            this->checkDeadlines();   // Check deadlines after each message
+        }
+    });
 
     endpoint_->RegisterSignalHandler([&]() {
-        LOG(INFO) << "Received interrupt signal!";
         running_ = false;
         endpoint_->LoopBreak();
     });
+
+    LOG(INFO) << "Starting verify threads for replica functionality";
+    for (int i = 0; i < numVerifyThreads_; i++) {
+        verifyThreads_.emplace_back(&Replica::verifyMessagesThd, this);
+    }
+
+    LOG(INFO) << "Starting verify threads for receiver functionality";
+    uint32_t numReceiverVerifyThreads = config.replicaNumVerifyThreads;
+    for (int i = 0; i < numReceiverVerifyThreads; i++) {
+        receiverVerifyThreads_.emplace_back(&Replica::receiverVerifyThd, this, i);
+    }
+
+    processThread_ = std::thread(&Replica::processMessagesThd, this);
+
+    LOG(INFO) << "Replica initialized successfully";
 }
 
 Replica::~Replica()
 {
-    // TODO cleanup... though we don't really reuse this
+    running_ = false;
+
+    for (std::thread &thd : verifyThreads_) {
+        if (thd.joinable()) {
+            thd.join();
+        }
+    }
+
+    for (std::thread &thd : receiverVerifyThreads_) {
+        if (thd.joinable()) {
+            thd.join();
+        }
+    }
+
+    if (processThread_.joinable()) {
+        processThread_.join();
+    }
 }
 
 void Replica::run()
 {
-    // Submit first request
-    LOG(INFO) << "Starting " << numVerifyThreads_ << " verify threads";
-    running_ = true;
-    for (uint32_t i = 0; i < numVerifyThreads_; i++) {
-        verifyThreads_.emplace_back(&Replica::verifyMessagesThd, this);
-    }
-
-    LOG(INFO) << "Starting process thread";
-    processThread_ = std::thread(&Replica::processMessagesThd, this);
-
-    LOG(INFO) << "Starting main event loop...";
+    endpoint_->Connect();
+    LOG(INFO) << "Starting unified replica main loop";
     endpoint_->LoopRun();
-    LOG(INFO) << "Finishing main event loop...";
 
-    for (std::thread &thd : verifyThreads_) {
-        thd.join();
-    }
-    processThread_.join();
+    LOG(INFO) << "Replica exited cleanly";
 }
 
 void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
-    // First make sure message is well formed
+    if (msgHdr->msgLen < 0) {
+        return;
+    }
 
-    // We skip verification of our own messages, and any message from the receiver
-    // process (which does its own verification)
-    byte *rawMsg = (byte *) msgHdr;
-    std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
+    VLOG(6) << "Received message of type " << (int) msgHdr->msgType << " from " << *sender;
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
-        processQueue_.enqueue(msg);
-    } else {
-        verifyQueue_.enqueue(msg);
+    // Handle receiver-specific messages (from proxies)
+    if (msgHdr->msgType == MessageType::DOM_REQUEST) {
+        receiveRequest(msgHdr, msgBuffer, sender);
+        return;
+    }
+
+    if (msgHdr->msgType == MessageType::DOM_BATCH_REQUEST) {
+        receiveBatchedRequests(msgHdr, msgBuffer, sender);
+        return;
+    }
+
+    byte *msgStart = (byte *) msgHdr;
+
+    // Handle replica-specific messages
+    // Skip verification of our own messages and receiver messages
+    if (sender->ip() == replicaAddrs_[replicaId_].ip()) {
+        processQueue_.enqueue(
+            std::vector<byte>(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
+        );
+        return;
+    }
+
+    // Queue for verification
+    verifyQueue_.enqueue(
+        std::vector<byte>(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
+    );
+}
+
+// Receiver functionality implementation
+void Replica::receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+{
+    DOMRequest request;
+    if (!request.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+        LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+        return;
+    }
+    int64_t recv_time = GetMicrosecondTimestamp();
+    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
+            << recv_time - request.send_time() << " usec";
+
+    enqueueReceiverRequest(recv_time, request);
+
+    // Send measurement replies back to the proxy
+
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
+        lastMeasurementTimes_[request.proxy_id()] = recv_time;
+        std::string senderIp = sender->ip();
+        sendMeasurementReply(Address(senderIp, proxyPort_), recv_time - request.send_time(), request.send_time());
+    }
+}
+
+void Replica::receiveBatchedRequests(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+{
+    DOMBatchRequest batchRequest;
+    if (!batchRequest.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+        LOG(ERROR) << "Unable to parse DOM_BATCH_REQUEST message";
+        return;
+    }
+
+    int64_t recv_time = GetMicrosecondTimestamp();
+    VLOG(3) << "RECEIVE BATCH from proxy " << batchRequest.proxy_id() << " with " << batchRequest.requests_size()
+            << " requests";
+
+    for (int i = 0; i < batchRequest.requests_size(); i++) {
+        DOMRequest &request = *batchRequest.mutable_requests(i);
+        enqueueReceiverRequest(recv_time, request);
+    }
+
+    if (recv_time - lastMeasurementTimes_[batchRequest.proxy_id()] > 5000) {
+        lastMeasurementTimes_[batchRequest.proxy_id()] = recv_time;
+        std::string senderIp = sender->ip();
+        sendMeasurementReply(
+            Address(senderIp, proxyPort_), recv_time - batchRequest.send_time(), batchRequest.send_time()
+        );
+    }
+}
+
+void Replica::enqueueReceiverRequest(int64_t recv_time, DOMRequest &request)
+{
+    if (recv_time > request.deadline()) {
+        request.set_late(true);
+        VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
+                << recv_time - request.deadline() << "us";
+    }
+
+    uint64_t deadline = request.deadline();
+    if (ignoreDeadlines_) {
+        deadline = recv_time;
+    }
+
+    auto r = std::make_shared<ReceiverRequest>();
+    r->request = request;
+    r->deadline = request.deadline();
+    r->clientId = request.client_id();
+    r->verified = false;
+
+    {
+        std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+        deadlineQueue_[{deadline, request.client_id()}] = r;
+    }
+
+    receiverVerifyQueue_.enqueue(r);
+
+    // Send measurement replies back to the proxy
+
+    if (recv_time - lastMeasurementTimes_[request.proxy_id()] > 5000) {
+        lastMeasurementTimes_[request.proxy_id()] = recv_time;
+
+        VLOG(6) << "Sending measurement reply to proxy " << request.proxy_id() << " "
+                << proxyAddrs_[request.proxy_id()];
+
+        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+            MeasurementReply mReply;
+            mReply.set_receiver_id(replicaId_);
+            mReply.set_owd(recv_time - request.send_time());
+            mReply.set_send_time(request.send_time());
+
+            VLOG(6) << "Measurement reply: receiver_id=" << mReply.receiver_id() << " owd=" << mReply.owd()
+                    << " send_time=" << mReply.send_time() << " proxy_addr=" << proxyAddrs_[request.proxy_id()];
+            MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
+            endpoint_->SendPreparedMsgTo(proxyAddrs_[request.proxy_id()], replyHdr);
+        });
+    }
+}
+
+void Replica::sendMeasurementReply(const Address &dstAddr, uint64_t owd, uint64_t sendTime)
+{
+    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+        MeasurementReply mReply;
+        mReply.set_receiver_id(replicaId_);
+        mReply.set_owd(owd);
+        mReply.set_send_time(sendTime);
+
+        VLOG(6) << "Measurement reply: receiver_id=" << mReply.receiver_id() << " owd=" << mReply.owd()
+                << " send_time=" << mReply.send_time() << " proxy_addr=" << dstAddr;
+        MessageHeader *replyHdr = endpoint_->PrepareProtoMsg(mReply, MessageType::MEASUREMENT_REPLY, buffer);
+        endpoint_->SendPreparedMsgTo(dstAddr, replyHdr);
+    });
+}
+
+void Replica::forwardRequest(const DOMRequest &request)
+{
+    uint64_t now = GetMicrosecondTimestamp();
+
+    VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline "
+            << "c_id=" << request.client_id() << " c_seq=" << request.client_seq();
+
+    numForwarded_++;
+    lastFwdDeadline_ = request.deadline();
+
+    // Serialize DOM request and enqueue to process queue
+    std::string serializedRequest;
+    if (!request.SerializeToString(&serializedRequest)) {
+        LOG(ERROR) << "Failed to serialize DOM request";
+        return;
+    }
+
+    MessageHeader header(DOM_REQUEST, serializedRequest.size(), 0);
+
+    std::vector<byte> msg(sizeof(MessageHeader) + serializedRequest.size());
+    memcpy(msg.data(), &header, sizeof(MessageHeader));
+    memcpy(msg.data() + sizeof(MessageHeader), serializedRequest.data(), serializedRequest.size());
+
+    processQueue_.enqueue(msg);
+}
+
+void Replica::checkDeadlines()
+{
+    std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+
+    uint64_t now = GetMicrosecondTimestamp();
+    auto it = deadlineQueue_.begin();
+    while (it != deadlineQueue_.end() && it->first.first <= now) {
+        VLOG(3) << "Deadline " << it->first.first << " reached now=" << now;
+
+        if (!it->second->verified) {
+            VLOG(3) << "Request not verified, waiting for next check";
+            break;
+        }
+
+        forwardRequest(it->second->request);
+        auto temp = std::next(it);
+        deadlineQueue_.erase(it);
+        it = temp;
+    }
+
+    int64_t nextCheck = deadlineQueue_.empty() ? 1000 : (int64_t) deadlineQueue_.begin()->first.first - now;
+    nextCheck = std::max(1000l, nextCheck);
+
+    endpoint_->ResetTimer(fwdTimer_.get(), nextCheck);
+}
+
+void Replica::receiverVerifyThd(int threadId)
+{
+    LOG(INFO) << "Starting receiver verify thread " << threadId;
+
+    uint32_t numVerified = 0;
+    std::shared_ptr<ReceiverRequest> request;
+    while (running_) {
+        if (!receiverVerifyQueue_.wait_dequeue_timed(request, 10000)) {
+            continue;
+        }
+
+        ClientRequest clientHeader;
+        MessageHeader *clientMsgHdr = (MessageHeader *) request->request.client_req().c_str();
+        byte *clientBody = (byte *) (clientMsgHdr + 1);
+
+        if (!clientHeader.ParseFromArray(clientBody, clientMsgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+            continue;
+        }
+
+        bool verified = false;
+        if (useHMAC_) {
+            verified = hmacProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+        } else {
+            verified = sigProvider_.verify(clientMsgHdr, {NodeType::CLIENT, request->clientId});
+        }
+
+        {
+            std::lock_guard<std::mutex> guard(deadlineQueueMtx_);
+            if (verified) {
+                VLOG(4) << "Verified client signature for c_id=" << request->clientId
+                        << " c_seq=" << request->request.client_seq();
+                request->verified = true;
+            } else {
+                VLOG(1) << "Failed to verify client signature!";
+                deadlineQueue_.erase({request->deadline, request->clientId});
+            }
+        }
+
+        numVerified++;
     }
 }
 
@@ -197,8 +517,8 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
-                LOG(INFO) << "Failed to verify replica signature!";
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
+                LOG(INFO) << "Failed to verify replica signature for REPLY message for replica " << reply.replica_id();
                 continue;
             }
 
@@ -213,7 +533,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", commitMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, commitMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -227,7 +547,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse SNAPSHOT_REQUEST message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", request.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, request.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -240,7 +560,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse SNAPSHOT_REPLY message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", reply.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, reply.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -267,7 +587,7 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", requestMsg.client_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::CLIENT, requestMsg.client_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -277,32 +597,15 @@ void Replica::verifyMessagesThd()
 
 #endif
 
-        // Repair related
-
-        else if (hdr->msgType == REPAIR_CLIENT_TIMEOUT) {
-            RepairClientTimeout timeoutMsg;
+        else if (hdr->msgType == REPAIR_TIMEOUT) {
+            RepairTimeout timeoutMsg;
 
             if (!timeoutMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
-                return;
-            }
-            if (!sigProvider_.verify(hdr, "client", timeoutMsg.client_id())) {
-                LOG(INFO) << "Failed to verify replica signature!";
-                continue;
-            }
-
-            processQueue_.enqueue(msg);
-        }
-
-        else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
-            RepairReplicaTimeout timeoutMsg;
-
-            if (!timeoutMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
+                LOG(ERROR) << "Unable to parse REPAIR_TIMEOUT message";
                 return;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", timeoutMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, timeoutMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
                 continue;
             }
@@ -319,7 +622,8 @@ void Replica::verifyMessagesThd()
             }
 
             if (!verifyRepairReplyProof(proofMsg)) {
-                LOG(WARNING) << "Failed to verify repair reply proof!";
+                // TODO should be LOG(WARNING)
+                VLOG(2) << "Failed to verify repair reply proof!";
                 continue;
             }
 
@@ -349,23 +653,8 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", repairStartMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, repairStartMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature!";
-                continue;
-            }
-
-            processQueue_.enqueue(msg);
-        }
-
-        else if (hdr->msgType == REPAIR_DONE) {
-            RepairDone repairDoneMsg;
-            if (!repairDoneMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_DONE message";
-                continue;
-            }
-
-            if (!verifyRepairDone(repairDoneMsg)) {
-                LOG(INFO) << "Failed to verify REPAIR_DONE message from " << repairDoneMsg.replica_id();
                 continue;
             }
 
@@ -378,7 +667,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTPrePrepare message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", PBFTPrePrepareMsg.primary_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, PBFTPrePrepareMsg.primary_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
@@ -392,6 +681,7 @@ void Replica::verifyMessagesThd()
 
             if (!verifyRepairProposal(proposal)) {
                 LOG(INFO) << "Failed to verify repair proposal!";
+                assert(false);   // TODO remove later
                 continue;
             }
 
@@ -402,7 +692,7 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTPrepare message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", PBFTPrepareMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, PBFTPrepareMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
@@ -413,49 +703,23 @@ void Replica::verifyMessagesThd()
                 LOG(ERROR) << "Unable to parse PBFTCommit message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", PBFTCommitMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, PBFTCommitMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
             processQueue_.enqueue(msg);
-        } else if (hdr->msgType == PBFT_VIEWCHANGE) {
-            PBFTViewChange viewChangeMsg;
-            if (!viewChangeMsg.ParseFromArray(body, hdr->msgLen)) {
+        } else if (hdr->msgType == VIEW_UPDATE) {
+            ViewUpdate viewUpdateMsg;
+
+            if (!viewUpdateMsg.ParseFromArray(body, hdr->msgLen)) {
                 LOG(ERROR) << "Unable to parse PBFTViewChange message";
                 continue;
             }
-            if (!sigProvider_.verify(hdr, "replica", viewChangeMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, viewUpdateMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify primary replica signature!";
                 continue;
             }
-            if (!verifyViewChange(viewChangeMsg))
-                continue;
-            processQueue_.enqueue(msg);
 
-        } else if (hdr->msgType == PBFT_NEWVIEW) {
-            PBFTNewView newViewMsg;
-            if (!newViewMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse PBFTNewView message";
-                continue;
-            }
-            if (!sigProvider_.verify(hdr, "replica", newViewMsg.primary_id())) {
-                LOG(INFO) << "Failed to verify primary replica signature for PBFTNewView!";
-                continue;
-            }
-            const auto &viewChanges = newViewMsg.view_changes();
-            const auto &sigs = newViewMsg.view_change_sigs();
-            bool success = true;
-            for (int i = 0; i < viewChanges.size(); i++) {
-                if (!sigProvider_.verify(
-                        viewChanges[i].SerializeAsString(), sigs[i], "replica", viewChanges[i].replica_id()
-                    )) {
-                    LOG(INFO) << "Failed to verify replica signature in new view!";
-                    success = false;
-                    break;
-                }
-            }
-            if (!success)
-                continue;
             processQueue_.enqueue(msg);
         } else {
             // DOM_Requests from the receiver skip this step. We should drop
@@ -504,9 +768,12 @@ void Replica::processMessagesThd()
                 continue;
             }
 
+            // TODO Hack to pass through deadline lol
+            clientHeader.set_deadline(domHeader.deadline());
+
             if (repair_) {
                 VLOG(6) << "Queuing request due to repair";
-                repairQueuedReqs_.push_back({domHeader.deadline(), clientHeader});
+                repairQueuedReqs_.insert({{domHeader.deadline(), clientHeader.client_id()}, clientHeader});
                 continue;
             }
 
@@ -576,26 +843,15 @@ void Replica::processMessagesThd()
             processSnapshotReply(reply);
         }
 
-        else if (hdr->msgType == REPAIR_CLIENT_TIMEOUT) {
-            RepairClientTimeout msg;
+        else if (hdr->msgType == REPAIR_TIMEOUT) {
+            RepairTimeout msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_CLIENT_TIMEOUT message";
+                LOG(ERROR) << "Unable to parse REPAIR_TIMEOUT message";
                 return;
             }
 
-            processRepairClientTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
-        }
-
-        else if (hdr->msgType == REPAIR_REPLICA_TIMEOUT) {
-            RepairReplicaTimeout msg;
-
-            if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_REPLICA_TIMEOUT message";
-                return;
-            }
-
-            processRepairReplicaTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
+            processRepairTimeout(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
         else if (hdr->msgType == REPAIR_REPLY_PROOF) {
@@ -628,17 +884,6 @@ void Replica::processMessagesThd()
                 return;
             }
             processRepairStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
-        }
-
-        if (hdr->msgType == REPAIR_DONE) {
-            RepairDone msg;
-
-            if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse REPAIR_DONE message";
-                return;
-            }
-
-            processRepairDone(msg);
         }
 
         if (hdr->msgType == PBFT_PREPREPARE) {
@@ -674,30 +919,20 @@ void Replica::processMessagesThd()
             processPBFTCommit(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == PBFT_VIEWCHANGE) {
-            PBFTViewChange msg;
+        if (hdr->msgType == VIEW_UPDATE) {
+            ViewUpdate viewUpdateMsg;
 
-            if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse PBFT_VIEWCHANGE message";
-                return;
-            }
-            processPBFTViewChange(msg, std::span{body + hdr->msgLen, hdr->sigLen});
-        }
-
-        if (hdr->msgType == PBFT_NEWVIEW) {
-            PBFTNewView msg;
-
-            if (!msg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse PBFT_NEWVIEW message";
-                return;
+            if (!viewUpdateMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PBFTViewChange message";
+                continue;
             }
 
-            processPBFTNewView(msg);
+            updateReplicaView(viewUpdateMsg.replica_id(), viewUpdateMsg.view(), viewUpdateMsg.round());
         }
     }
 }
 
-void Replica::processClientRequest(const ClientRequest &request)
+void Replica::processClientRequest(const ClientRequest &request, bool queued)
 {
     uint32_t clientId = request.client_id();
     uint32_t clientSeq = request.client_seq();
@@ -710,8 +945,8 @@ void Replica::processClientRequest(const ClientRequest &request)
     // 1. Check if client request has been executed in latest checkpoint (i.e. is committed), in which case
     // we should return a CommittedReply, and client only needs f + 1
     if (log_->getCommittedCheckpoint().clientRecord_.contains(clientId, clientSeq)) {
-        LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
-                     << " has been committed in previous checkpoint/repair!, Sending committed reply";
+        VLOG(4) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
+                << " has been committed in previous checkpoint/repair!, Sending committed reply";
 
         CommittedReply reply;
 
@@ -720,7 +955,7 @@ void Replica::processClientRequest(const ClientRequest &request)
         reply.set_client_seq(clientSeq);
         reply.set_is_repair(false);
 
-        LOG(ERROR) << "TODO Cache for client results not implemented, sending blank result!";
+        // TODO Cache for client results not implemented, so blank results are sent that all look the same
 
         sendMsgToDst(reply, MessageType::COMMITTED_REPLY, clientAddrs_[clientId]);
         return;
@@ -730,15 +965,17 @@ void Replica::processClientRequest(const ClientRequest &request)
     uint32_t seq;
 
     if (!log_->addEntry(clientId, clientSeq, request.req_data(), result)) {
-        LOG(WARNING) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
-                     << " is added into log, but not committed, dropping!";
+        VLOG(2) << "DUP request c_id=" << clientId << " c_seq=" << clientSeq
+                << " is added into log, but not committed, dropping!";
         return;
     }
 
     seq = log_->getNextSeq() - 1;
+    log_->getEntry(seq).deadline = request.deadline();
 
     VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
-            << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest());
+            << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest())
+            << " queued=" << queued;
 
     Reply reply;
     reply.set_client_id(clientId);
@@ -748,6 +985,7 @@ void Replica::processClientRequest(const ClientRequest &request)
     reply.set_seq(seq);
     reply.set_round(round_);
     reply.set_digest(log_->getDigest());
+    reply.set_queued(queued);
 
     sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[clientId]);
 
@@ -755,6 +993,12 @@ void Replica::processClientRequest(const ClientRequest &request)
     if (seq % checkpointInterval_ == 0) {
         // Save a digest of the application state and also save a snapshot
         startCheckpoint(seq % snapshotInterval_ == 0);
+
+        checkpointTimeoutStart_ = GetMicrosecondTimestamp();
+    }
+
+    if (seq == 1) {
+        checkpointTimeoutStart_ = GetMicrosecondTimestamp();
     }
 }
 
@@ -824,6 +1068,25 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     }
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
 
+    // If we receive a reply for a checkpoint for a sequence number that is not a multiple of the
+    // checkpoint interval, some replica has timed waiting to reach the checkpoint interval.
+    if (reply.seq() % checkpointInterval_ != 0) {
+        bool alreadyStarted = checkpointCollectors_.hasCollector(round_, reply.seq());
+        bool alreadyCommitted = reply.seq() <= log_->getCommittedCheckpoint().seq;
+
+        auto [round, seq] = checkpointTimeoutSeqs_[reply.replica_id()];
+        bool alreadyTried =
+            seq != 0 && (round == round_) && ((reply.seq() / checkpointInterval_) == (seq / checkpointInterval_));
+
+        if (!alreadyStarted && !alreadyCommitted && !alreadyTried) {
+            VLOG(1) << "PERF event=checkpoint_timeout_reply" << " seq=" << reply.seq() << " round=" << round_
+                    << " replica_id=" << reply.replica_id() << " self_id=" << replicaId_ << " checkpoint_seq=" << seq;
+
+            checkpointTimeoutSeqs_[reply.replica_id()] = {round_, reply.seq()};
+            startCheckpoint(false);
+        }
+    }
+
     auto &checkpoint = log_->getCommittedCheckpoint();
 
     if (rSeq <= checkpoint.seq) {
@@ -870,6 +1133,28 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         }
 
         return;
+    } else if (coll.hasConflictProof()) {
+        VLOG(1) << "PERF event=checkpoint_conflict"
+                << " seq=" << rSeq << " round=" << round_ << " self_id=" << replicaId_;
+
+        dombft::proto::RepairReplyProof replyProof;
+        coll.getConflictProof(replyProof);
+
+        std::ostringstream oss;
+        oss << "round=" << round_ << "\n";
+        for (int i = 0; i < replyProof.replies().size(); i++) {
+            const auto &reply = replyProof.replies(i);
+            oss << reply.replica_id() << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " "
+                << reply.round() << "\n";
+        }
+
+        replyProof.set_replica_id(replicaId_);
+        replyProof.set_round(round_);
+        replyProof.set_view(pbftView_);
+
+        broadcastToReplicas(replyProof, MessageType::REPAIR_REPLY_PROOF);
+
+        startRepair();
     }
 }
 
@@ -908,7 +1193,9 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     if (!checkpointCollectors_.hasCollector(commit.round(), seq)) {
         VLOG(4) << "Checkpoint collector does not exist for seq=" << seq << " round=" << commit.round()
                 << " creating one now";
-        if (!checkpointCollectors_.initCollector(commit.round(), seq, seq % snapshotInterval_ == 0)) {
+        if (!checkpointCollectors_.initCollector(
+                commit.round(), seq, seq % snapshotInterval_ == 0 || commit.has_app_digest()
+            )) {
             return;
         }
     }
@@ -918,10 +1205,10 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
     // use the majority agreed commit message if exists
     if (coll.addAndCheckCommit(commit, sig)) {
         // TODO we can update our round in case commit.round() > round_
-        if (round_ < commit.round()) {
-            LOG(WARNING) << "Ignoring checkpoint for future round " << commit.round() << " current round is " << round_;
-            return;
-        }
+        // if (round_ < commit.round()) {
+        //     LOG(WARNING) << "Ignoring checkpoint for future round " << commit.round() << " current round is " <<
+        //     round_; return;
+        // }
 
         ::LogCheckpoint checkpoint;
         coll.getCheckpoint(checkpoint);
@@ -932,23 +1219,30 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             return;
         }
 
-        LOG(INFO) << "Trying to commit seq=" << seq << " commit_digest=" << digest_to_hex(checkpoint.logDigest);
+        LOG(INFO) << "Trying to commit  seq=" << seq << " commit_digest=" << digest_to_hex(checkpoint.logDigest)
+                  << " in round=" << commit.round();
 
         if (seq >= log_->getNextSeq() || log_->getDigest(seq) != checkpoint.logDigest) {
             // TODO choose a random replica from those that have this
             assert(!checkpoint.commits.empty());
-            uint32_t replicaId = checkpoint.commits.begin()->first;
-
+            uint32_t replicaId =
+                std::next(checkpoint.commits.begin(), GetMicrosecondTimestamp() % checkpoint.commits.size())
+                    ->second.replica_id();
             if (seq >= log_->getNextSeq()) {
-                LOG(INFO) << "My log is behind (nextSeq=" << log_->getNextSeq() << "), requesting snapshot from "
-                          << replicaId;
+                LOG(INFO) << "My log is behind round=" << round_ << " nextSeq=" << log_->getNextSeq();
             } else {
-                LOG(INFO) << "My log digest (" << digest_to_hex(log_->getDigest(seq))
-                          << ") does not match the commit message digest (" << digest_to_hex(checkpoint.logDigest)
-                          << ") requesting snapshot from " << replicaId;
+                LOG(INFO) << "My log digest " << digest_to_hex(log_->getDigest(seq))
+                          << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
-            sendSnapshotRequest(replicaId, checkpoint.seq);
+            // sendSnapshotRequest(replicaId, checkpoint.seq);
+
+            // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
+            // behind
+            if (!checkpointSnapshotRequested_) {
+                sendSnapshotRequest(replicaId, checkpoint.seq);
+            }
+            checkpointSnapshotRequested_ = true;
 
         } else if (!coll.needsSnapshot()) {
             log_->setCheckpoint(checkpoint);
@@ -976,6 +1270,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
         } else {
             VLOG(4) << "CHECKPOINT: Quorum of commits match our log, but we do not have a snapshot yet!"
                     << " Will wait for our snapshot request to finish and then receive our own commit!";
+            // TODO, if a replica needed a snapshot to catch up, this case may happen and then the
+            // snapshot will never be taken. This would get cleaned up next time...
         }
 
         // Unregister repair timer set by client as checkpoint confirms progress
@@ -999,7 +1295,10 @@ void Replica::startCheckpoint(bool createSnapshot)
         VLOG(4) << "Checkpoint collector already exists for seq=" << seq << " round=" << round_
                 << " since we received messages from other replicas";
     } else {
-        checkpointCollectors_.initCollector(round_, seq, createSnapshot);
+
+        if (!checkpointCollectors_.initCollector(round_, seq, createSnapshot)) {
+            return;
+        }
     }
 
     checkpointCollectors_.at(round_, seq).addOwnState(log_->getDigest(seq), log_->getClientRecord());
@@ -1014,7 +1313,7 @@ void Replica::startCheckpoint(bool createSnapshot)
     reply.set_seq(entry.seq);
     reply.set_digest(entry.digest);
 
-    VLOG(2) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round=" << round_
+    VLOG(1) << "PERF event=checkpoint_start seq=" << seq << " createSnapshot=" << createSnapshot << " round=" << round_
             << " log_digest=" << digest_to_hex(log_->getDigest());
 
     broadcastToReplicas(reply, MessageType::REPLY);
@@ -1024,7 +1323,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 {
     uint32_t reqSeq = request.seq();
     uint32_t round = request.round();
-    VLOG(3) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq
+    VLOG(1) << "Processing SNAPSHOT_REQUEST from replica " << request.replica_id() << " for seq " << reqSeq
             << " from sequnece " << request.last_checkpoint_seq();
 
     if (reqSeq > log_->getCommittedCheckpoint().seq) {
@@ -1065,7 +1364,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
         (*snapshotReply.add_log_entries()) = entryProto;
     }
 
-    VLOG(3) << "Sending SNAPSHOT_REPLY to " << request.replica_id() << " round=" << snapshotReply.round() << " from "
+    VLOG(1) << "Sending SNAPSHOT_REPLY to " << request.replica_id() << " round=" << snapshotReply.round() << " from "
             << startSeq << " to " << log_->getCommittedCheckpoint().seq
             << " (app snapshot=" << snapshotReply.has_snapshot() << ")";
 
@@ -1075,16 +1374,35 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply)
 {
     if (snapshotReply.round() < round_) {
-        VLOG(4) << "Snapshot reply round outdated, skipping";
+        VLOG(1) << "Snapshot reply round outdated, skipping";
+
+        // TODO these are probably not necessary
+        repairSnapshotRequested_ = false;
+        checkpointSnapshotRequested_ = false;
         return;
     }
     if (snapshotReply.seq() <= log_->getCommittedCheckpoint().seq) {
-        VLOG(4) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
+        VLOG(1) << "Seq " << snapshotReply.seq() << " is already committed, skipping snapshot reply";
+        repairSnapshotRequested_ = false;
+        checkpointSnapshotRequested_ = false;
+
         return;
     }
     if (repair_) {
-        if (!repairSnapshotRequested_) {
-            LOG(ERROR) << "Received snapshot reply during repair due to previous checkpoint, ignoring... !";
+
+        // Finish applying LogSuffix computed from repair proposal and return to normal processing
+
+        // This prevents us from accidentally ressettiting to some old state
+        if (!repairSnapshotRequested_ && snapshotReply.round() <= round_) {
+            LOG(ERROR) << "Received snapshot reply during repair before repair finishes due to previous checkpoint, "
+                          "ignoring... !";
+            return;
+        }
+        LogSuffix &logSuffix = getRepairLogSuffix();
+        if (snapshotReply.seq() < logSuffix.checkpoint->seq()) {
+            LOG(ERROR) << "Received snapshot reply during repair that is too old, ignoring... !"
+                       << " Previous checkpoint for seq=" << snapshotReply.seq()
+                       << " need seq=" << logSuffix.checkpoint->seq();
             return;
         }
 
@@ -1095,9 +1413,6 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                   << " for seq " << snapshotReply.seq() << " with log from " << startSeq
                   << " has_snapshot=" << snapshotReply.has_snapshot();
 
-        // Finish applying LogSuffix computed from repair proposal and return to normal processing
-        LogSuffix &logSuffix = getRepairLogSuffix();
-
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
 
         if (!log_->resetToSnapshot(snapshotReply)) {
@@ -1106,12 +1421,15 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             throw std::runtime_error("Snapshot digest mismatch");
         }
 
-        if (snapshotReply.checkpoint().seq() > logSuffix.checkpoint->seq()) {
-            VLOG(3) << "Warning, received future checkpoint and applying it before finishRepair!";
-        }
+        // if there is overlapping and later checkpoint commits first, skip earlier ones
+        checkpointCollectors_.cleanStaleCollectors(log_->getStableCheckpoint().seq, log_->getCommittedCheckpoint().seq);
 
-        // Got the snapshot
-        repairSnapshotRequested_ = false;
+        if (snapshotReply.checkpoint().seq() > logSuffix.checkpoint->seq()) {
+            LOG(WARNING) << "Snapshot is from future: seq=" << snapshotReply.seq() << " round=" << snapshotReply.round()
+                         << ". We requested seq=" << logSuffix.checkpoint->seq() << " round=" << round_
+                         << " repair_last_seq=" << logSuffix.checkpoint->seq() + logSuffix.entries.size()
+                         << ". Still applying it before finishRepair, but will likely drop lots of messages";
+        }
 
         std::map<RequestId, std::string> availableReqs;
         for (auto [_, req] : repairQueuedReqs_) {
@@ -1121,6 +1439,8 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         applySuffix(logSuffix, availableReqs, log_);
         finishRepair(abortedRequests);
 
+        // TODO temporary fix for issue #120, this may lead to later issues though
+        round_ = std::max(round_, snapshotReply.round());
     } else {
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
@@ -1137,6 +1457,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             // TODO handle this better by requesting from another replica..
             throw std::runtime_error("Snapshot digest mismatch");
         }
+
+        // TODO temporary fix for issue #120, this may lead to later issues though
+        round_ = std::max(round_, snapshotReply.round());
 
         // if there is overlapping and later checkpoint commits first, skip earlier ones
         checkpointCollectors_.cleanStaleCollectors(log_->getStableCheckpoint().seq, log_->getCommittedCheckpoint().seq);
@@ -1155,38 +1478,22 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             reply.set_round(round_);
             reply.set_digest(entry.digest);
 
-            VLOG(1) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest)
+            VLOG(2) << "PERF event=update_digest seq=" << seq << " digest=" << digest_to_hex(entry.digest)
                     << " c_id=" << entry.client_id << " c_seq=" << entry.client_seq;
 
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
         }
+
+        VLOG(1) << "PERF event=align checkpoint_seq=" << log_->getCommittedCheckpoint().seq
+                << " log_seq=" << log_->getNextSeq() - 1 << " log_digest=" << digest_to_hex(log_->getDigest());
     }
+
+    // Got the snapshot
+    repairSnapshotRequested_ = false;
+    checkpointSnapshotRequested_ = false;
 }
 
-void Replica::processRepairClientTimeout(const dombft::proto::RepairClientTimeout &msg, std::span<byte> sig)
-{
-    if (repair_) {
-        VLOG(7) << "Received repair trigger during a repair from client " << msg.client_id()
-                << " for cseq=" << msg.client_seq();
-        return;
-    }
-
-    if (repairTimeoutStart_ != 0) {
-        LOG(WARNING) << "Received redundant repair trigger due to client side timeout from client_id="
-                     << msg.client_id() << " for cseq=" << msg.client_seq();
-        return;
-    }
-
-    if (msg.round() != round_) {
-        LOG(WARNING) << "Received repair trigger for round " << msg.round() << " != " << round_;
-        return;
-    }
-
-    LOG(INFO) << "Received repair trigger from client_id=" << msg.client_id() << " for cseq=" << msg.client_seq();
-    repairTimeoutStart_ = GetMicrosecondTimestamp();
-}
-
-void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTimeout &msg, std::span<byte> sig)
+void Replica::processRepairTimeout(const dombft::proto::RepairTimeout &msg, std::span<byte> sig)
 {
     // Note assume msg is verfied here
     if (repair_) {
@@ -1194,24 +1501,39 @@ void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTime
         return;
     }
 
-    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for round " << msg.round();
+    VLOG(4) << "Received repair replica timeout from " << msg.replica_id() << " for round " << msg.round() << " seq "
+            << msg.seq() << " view " << msg.view();
 
     uint32_t repId = msg.replica_id();
+    uint32_t seq = msg.seq();
 
-    repairReplicaTimeouts_[repId] = msg;
-    repairReplicaTimeoutSigs_[repId] = std::string(sig.begin(), sig.end());
-
-    dombft::proto::RepairTimeoutProof proof;
-    for (auto &[repId, msg] : repairReplicaTimeouts_) {
-        if (msg.round() != round_)
-            continue;
-
-        (*proof.add_timeouts()) = msg;
-        proof.add_signatures(repairReplicaTimeoutSigs_[repId]);
+    if (msg.round() < round_) {
+        VLOG(4) << "Received repair timeout for previous round " << msg.round() << " < " << round_;
+        return;
     }
 
-    if (proof.timeouts_size() == f_ + 1) {
+    if (msg.view() < pbftView_) {
+        VLOG(4) << "Received repair timeout for previous pbft view " << msg.view() << " < " << pbftView_;
+        return;
+    }
+
+    if (!checkpointCollectors_.hasCollector(round_, seq)) {
+        VLOG(4) << "No checkpoint collector for round " << round_ << " seq " << seq << ", creating one now";
+        return;
+    }
+
+    auto &cc = checkpointCollectors_.at(round_, seq);
+    if (cc.addAndCheckTimeout(msg, sig)) {
+        dombft::proto::RepairTimeoutProof proof;
+
+        cc.getRepairTimeoutProof(proof);
         LOG(INFO) << "Gathered timeout proof for round " << round_ << ", starting repair and broadcasting!";
+
+        // Reset timeouts
+        proof.set_replica_id(replicaId_);
+        proof.set_view(pbftView_);
+        proof.set_round(round_);
+
         broadcastToReplicas(proof, REPAIR_TIMEOUT_PROOF);
         startRepair();
     }
@@ -1219,24 +1541,32 @@ void Replica::processRepairReplicaTimeout(const dombft::proto::RepairReplicaTime
 
 void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg)
 {
-    // Ignore repeated repair triggers
-    if (repair_) {
-        LOG(WARNING) << "Received repair trigger during a repair from client " << msg.client_id()
-                     << " for cseq=" << msg.client_seq();
-        return;
-    }
+    updateReplicaView(msg.replica_id(), msg.view(), msg.round());
 
     // Proof is verified by verify thread
-    if (msg.round() < round_) {
-        LOG(INFO) << "Received repair trigger proof for previous round " << msg.round() << " < " << round_;
+
+    // Ignore repeated repair triggers
+    if (repair_) {
+        VLOG(6) << "Received repair trigger during a repair";
         return;
     }
 
-    LOG(INFO) << "Repair trigger for round " << msg.round() << " client_id=" << msg.client_id()
-              << " cseq=" << msg.client_seq() << " has a proof, starting repair!";
+    if (msg.round() < round_) {
+        VLOG(6) << "Received repair trigger proof for previous round " << msg.round() << " < " << round_;
+        return;
+    }
+
+    if (msg.view() < pbftView_) {
+        VLOG(4) << "Received repair timeout for previous pbft view " << msg.view() << " < " << pbftView_;
+        return;
+    }
+
+    if (msg.round() > round_) {
+        LOG(ERROR) << "Received repair trigger proof for round " << msg.round() << " > " << round_;
+        return;
+    }
 
     // Print out proof
-
     std::ostringstream oss;
     oss << "round=" << round_ << "\n";
     for (int i = 0; i < msg.replies().size(); i++) {
@@ -1249,12 +1579,19 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 
     // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
     // if we already are in fallback.
-    broadcastToReplicas(msg, REPAIR_REPLY_PROOF);
+
+    dombft::proto::RepairReplyProof proofToBroadcast = msg;
+    proofToBroadcast.set_replica_id(replicaId_);
+    proofToBroadcast.set_view(pbftView_);
+
+    broadcastToReplicas(proofToBroadcast, REPAIR_REPLY_PROOF);
     startRepair();
 }
 
 void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg)
 {
+    updateReplicaView(msg.replica_id(), msg.view(), msg.round());
+
     // Ignore repeated repair triggers
     if (repair_) {
         VLOG(5) << "Received timeout proof after I already started repair for round " << round_;
@@ -1264,6 +1601,11 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
     // Proof is verified by verify thread
     if (msg.round() < round_) {
         LOG(INFO) << "Received repair timeout proof for previous round " << msg.round() << " < " << round_;
+        return;
+    }
+
+    if (msg.round() > round_) {
+        VLOG(6) << "Received repair trigger proof for future round " << msg.round() << " > " << round_;
         return;
     }
 
@@ -1292,12 +1634,12 @@ void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
     }
 
     // A corner case where (older round + pbft_view) targets the same primary and overwrite the newer ones
-    if (repairHistorys_.count(repId) && repairHistorys_[repId].round() >= repRound) {
+    if (repairStartMsgs_.count(repId) && repairStartMsgs_[repId].round() >= repRound) {
         LOG(INFO) << "Received REPAIR_START for round " << repRound << " pbft_view " << msg.pbft_view()
                   << " from replica " << repId << " which is outdated";
         return;
     }
-    repairHistorys_[repId] = msg;
+    repairStartMsgs_[repId] = msg;
     repairHistorySigs_[repId] = std::string(sig.begin(), sig.end());
 
     LOG(INFO) << "Received repairStart message from replica " << repId;
@@ -1305,13 +1647,16 @@ void Replica::processRepairStart(const RepairStart &msg, std::span<byte> sig)
     if (!isPrimary()) {
         return;
     }
-
     // First check if we have 2f + 1 repair start messages for the same round
-    auto numStartMsgs = std::count_if(repairHistorys_.begin(), repairHistorys_.end(), [&](auto &startMsg) {
+    auto numStartMsgs = std::count_if(repairStartMsgs_.begin(), repairStartMsgs_.end(), [&](auto &startMsg) {
         return startMsg.second.round() == repRound;
     });
 
-    if (numStartMsgs == 2 * f_ + 1) {
+    if (numStartMsgs == quorumSize_) {
+
+        VLOG(1) << "PERF event=repair_proposal replica_id=" << replicaId_ << " round=" << round_
+                << " pbft_view=" << pbftView_;
+
         doPrePreparePhase(repRound);
     }
 }
@@ -1320,27 +1665,42 @@ void Replica::checkTimeouts()
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    if (repairTimeoutStart_ != 0 && now - repairTimeoutStart_ > repairTimeout_) {
-        repairTimeoutStart_ = 0;
-        LOG(WARNING) << "repairStartTimer for round=" << round_ << " timed out! Sending timeout message!";
+    // TODO direct access here is wrong
+    for (auto &coll : checkpointCollectors_.collectors_) {
 
-        RepairReplicaTimeout msg;
-        msg.set_round(round_);
-        msg.set_replica_id(replicaId_);
+        uint64_t replicaCheckpointTimeout = ConfigManager::getInstance().getConfig().replicaCheckpointTimeout;
+        if (coll.second.checkSelfTimeout(now, replicaCheckpointTimeout)) {
+            dombft::proto::RepairTimeout timeout;
+            timeout.set_replica_id(replicaId_);
+            timeout.set_round(round_);
+            timeout.set_view(pbftView_);
+            timeout.set_seq(coll.first.second);
 
-        broadcastToReplicas(msg, MessageType::REPAIR_REPLICA_TIMEOUT);
-    };
+            broadcastToReplicas(timeout, MessageType::REPAIR_TIMEOUT);
+        }
+    }
 
-    now = GetMicrosecondTimestamp();
+    uint64_t checkpointTimeout = ConfigManager::getInstance().getConfig().replicaCheckpointTimeout;
+    if (checkpointTimeoutStart_ != 0 && now - checkpointTimeoutStart_ > checkpointTimeout &&
+        !checkpointCollectors_.hasCollector(round_, log_->getNextSeq() - 1)) {
 
-    if (repairViewStart_ != 0 && now - repairViewStart_ > repairViewTimeout_) {
+        LOG(INFO) << "Starting checkpoint for round=" << round_ << " seq=" << log_->getNextSeq() - 1
+                  << " due to timeout!";
+
+        VLOG(1) << "PERF event=checkpoint_timeout_self" << " seq=" << log_->getNextSeq() - 1 << " round=" << round_
+                << " replica_id=" << replicaId_;
+
+        startCheckpoint(false);
+        checkpointTimeoutStart_ = 0;
+    }
+
+    if (repairViewStart_ != 0 && now - repairViewStart_ > repairViewTimeout_ * (1 << numConsecutiveViewChanges_)) {
         repairViewStart_ = now;
-        // TODO VC timer should be cancelled and restarted after receiving 2f + 1 VC messages
+        numConsecutiveViewChanges_ += 1;
 
-        LOG(WARNING) << "Repair for round=" << round_ << " pbft_view=" << pbftView_ << " failed (timed out)!";
-        pbftViewChanges_.clear();
-        pbftViewChangeSigs_.clear();
-        this->startViewChange();
+        LOG(WARNING) << "Repair for round=" << round_ << " pbft_view=" << pbftView_ << " failed (timed out)!"
+                     << " numConsecutiveViewChanges=" << numConsecutiveViewChanges_;
+        this->startViewChange(pbftView_ + 1);
     };
 }
 
@@ -1348,13 +1708,14 @@ void Replica::checkTimeouts()
 
 void Replica::sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq)
 {
+    LOG(INFO) << "Sending snapshot request to replica " << replicaId;
+
     SnapshotRequest snapshotRequest;
     snapshotRequest.set_replica_id(replicaId_);
     snapshotRequest.set_seq(targetSeq);
     snapshotRequest.set_round(round_);
     snapshotRequest.set_last_checkpoint_seq(log_->getCommittedCheckpoint().seq);
     sendMsgToDst(snapshotRequest, MessageType::SNAPSHOT_REQUEST, replicaAddrs_[replicaId]);
-    LOG(INFO) << "Sending SNAPSHOT_REQUEST for seq " << targetSeq << "  replica " << replicaId;
 }
 
 template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type, const Address &dst)
@@ -1365,7 +1726,18 @@ template <typename T> void Replica::sendMsgToDst(const T &msg, MessageType type,
 
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+        if (useHMAC_ && type == REPLY) {
+            auto it = find(clientAddrs_.begin(), clientAddrs_.end(), dst);
+            assert(it != clientAddrs_.end());
+
+            uint32_t clientId = it - clientAddrs_.begin();
+
+            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::CLIENT, clientId});
+        } else {
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        }
+
         endpoint_->SendPreparedMsgTo(dst, hdr);
     });
 }
@@ -1380,6 +1752,9 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+
+        assert(sigProvider_.verify(hdr, {NodeType::REPLICA, replicaId_}));
+
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
@@ -1390,8 +1765,11 @@ template <typename T> void Replica::broadcastToReplicas(const T &msg, MessageTyp
 
 bool Replica::verifyCert(const Cert &cert)
 {
-    if (cert.replies().size() < 2 * f_ + 1) {
-        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_;
+
+    // TODO fix, if superQuorum size is smaller, than we don't need to do any checks
+    if (cert.replies().size() < std::min(superQuorumSize_, quorumSize_)) {
+        LOG(INFO) << "Received cert of size " << cert.replies().size() << ", which is smaller than 2f + 1, f=" << f_
+                  << " quorumSize_=" << quorumSize_;
         return false;
     }
 
@@ -1415,8 +1793,8 @@ bool Replica::verifyCert(const Cert &cert)
 
         std::string serializedReply = reply.SerializeAsString();
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                reply.replica_id()
+                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, reply.replica_id()}
             )) {
             LOG(INFO) << "Cert failed to verify!";
             return false;
@@ -1437,14 +1815,15 @@ bool Replica::verifyCert(const Cert &cert)
 bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
 {
     if (proof.replies().size() < f_ + 1) {
-        LOG(INFO) << "Received repair proof of size " << proof.replies().size()
-                  << ", which is smaller than f + 1, f=" << f_;
+        // TODO This is trigering even with correct clients.
+        VLOG(2) << "Received repair proof of size " << proof.replies().size()
+                << ", which is smaller than f + 1, f=" << f_;
         return false;
     }
 
     if (proof.replies().size() != proof.signatures().size()) {
-        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to " << "cert signatures size"
-                     << proof.signatures().size();
+        LOG(WARNING) << "Proof replies size " << proof.replies().size() << " is not equal to "
+                     << "proof signatures size" << proof.signatures().size();
         return false;
     }
 
@@ -1469,8 +1848,8 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
         matchingReplies[key].insert(replicaId);
         std::string serializedReply = proof.replies(i).SerializeAsString();
         if (!sigProvider_.verify(
-                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                reply.replica_id()
+                (byte *) serializedReply.c_str(), serializedReply.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, reply.replica_id()}
             )) {
             LOG(INFO) << "Proof failed to verify!";
             return false;
@@ -1481,6 +1860,9 @@ bool Replica::verifyRepairReplyProof(const RepairReplyProof &proof)
         LOG(WARNING) << "Proof does not have non-matching replies!";
         return false;
     }
+
+    // TODO verify the math
+
     uint32_t sum = 0;
     for (auto &[_, s] : matchingReplies) {
         sum += s.size();
@@ -1510,7 +1892,7 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
     std::set<int> replicaIds;
 
     for (int i = 0; i < proof.timeouts_size(); i++) {
-        const RepairReplicaTimeout &timeout = proof.timeouts()[i];
+        const RepairTimeout &timeout = proof.timeouts()[i];
         const std::string &sig = proof.signatures()[i];
 
         if (replicaIds.contains(timeout.replica_id())) {
@@ -1527,7 +1909,7 @@ bool Replica::verifyRepairTimeoutProof(const RepairTimeoutProof &proof)
         std::string serializedTimeout = timeout.SerializeAsString();
         if (!sigProvider_.verify(
                 (byte *) serializedTimeout.c_str(), serializedTimeout.size(), (byte *) sig.c_str(), sig.size(),
-                "replica", timeout.replica_id()
+                {NodeType::REPLICA, timeout.replica_id()}
             )) {
             LOG(INFO) << "Proof failed to verify!";
             return false;
@@ -1543,7 +1925,9 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         return false;
     }
 
-    if (!(checkpoint.commits().size() != 2 * f_ + 1 || checkpoint.repair_commits().size() != 2 * f_ + 1)) {
+    if (!(checkpoint.commits().size() != superQuorumSize_ || checkpoint.repair_commits().size() != quorumSize_)) {
+
+        LOG(INFO) << "Checkpoint commits not the right size!!";
         return false;
     }
 
@@ -1561,13 +1945,14 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         replicaIds.insert(commit.replica_id());
 
         if (commit.log_digest() != checkpoint.log_digest()) {
-            LOG(INFO) << "Checkpoint commit digest does not match!";
+            LOG(INFO) << "Checkpoint commit digest does not match " << digest_to_hex(commit.log_digest())
+                      << " != " << digest_to_hex(checkpoint.log_digest());
             return false;
         }
 
         if (!sigProvider_.verify(
-                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                commit.replica_id()
+                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, commit.replica_id()}
             )) {
             LOG(INFO) << "Failed to verify replica signature in repair log checkpoint!";
             return false;
@@ -1588,13 +1973,14 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
         replicaIds.insert(commit.replica_id());
 
         if (commit.log_digest() != checkpoint.log_digest()) {
-            LOG(INFO) << "Checkpoint commit digest does not match!";
+            LOG(INFO) << "Checkpoint commit digest does not match Repair commits " << digest_to_hex(commit.log_digest())
+                      << " != " << digest_to_hex(checkpoint.log_digest());
             return false;
         }
 
         if (!sigProvider_.verify(
-                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(), "replica",
-                commit.replica_id()
+                (byte *) serializedCommit.c_str(), serializedCommit.size(), (byte *) sig.c_str(), sig.size(),
+                {NodeType::REPLICA, commit.replica_id()}
             )) {
             LOG(INFO) << "Failed to verify replica signature in repair log checkpoint!";
             return false;
@@ -1604,16 +1990,60 @@ bool Replica::verifyCheckpoint(const LogCheckpoint &checkpoint)
     return true;
 }
 
-bool Replica::verifyRepairLog(const RepairStart &log)
+bool Replica::verifyRepairStart(const RepairStart &startMsg)
 {
-    if (log.has_cert() && !verifyCert(log.cert())) {
+    if (startMsg.log().has_cert() && !verifyCert(startMsg.log().cert())) {
         return false;
     }
 
-    verifyCheckpoint(log.checkpoint());
+    if (!verifyCheckpoint(startMsg.log().checkpoint())) {
+        LOG(INFO) << "Failed to verify checkpoint in log from " << startMsg.replica_id();
 
-    for (auto &entry : log.log_entries()) {
+        return false;
+    }
+
+    for (auto &entry : startMsg.log().entries()) {
         // TODO verify log entries
+    }
+
+    // Verify repairPrepareHistory if needed
+    if (startMsg.has_prepared_history()) {
+        const auto &preparedHistory = startMsg.prepared_history();
+
+        // Check that we have at least quorum size prepare messages
+        if (preparedHistory.prepares_size() < quorumSize_) {
+            LOG(INFO) << "Prepare history from " << startMsg.replica_id()
+                      << " has insufficient prepares: " << preparedHistory.prepares_size()
+                      << " < quorumSize_=" << quorumSize_;
+            return false;
+        }
+
+        // Check that number of prepares matches number of signatures
+        if (preparedHistory.prepares_size() != preparedHistory.prepare_sigs_size()) {
+            LOG(INFO) << "Prepare history from " << startMsg.replica_id()
+                      << " has mismatched prepare/signature counts: "
+                      << preparedHistory.prepares_size() << " prepares, "
+                      << preparedHistory.prepare_sigs_size() << " signatures";
+            return false;
+        }
+
+        // Verify each prepare message signature
+        for (int i = 0; i < preparedHistory.prepares_size(); i++) {
+            const auto &prepare = preparedHistory.prepares(i);
+            const auto &sig = preparedHistory.prepare_sigs(i);
+
+            std::string serializedPrepare = prepare.SerializeAsString();
+            if (!sigProvider_.verify(
+                    (byte *) serializedPrepare.c_str(), serializedPrepare.size(),
+                    (byte *) sig.c_str(), sig.size(),
+                    {NodeType::REPLICA, prepare.replica_id()}
+                )) {
+                LOG(INFO) << "Failed to verify prepare signature from replica "
+                          << prepare.replica_id() << " in prepared history from "
+                          << startMsg.replica_id();
+                return false;
+            }
+        }
     }
 
     return true;
@@ -1627,112 +2057,21 @@ bool Replica::verifyRepairProposal(const RepairProposal &proposal)
     }
     uint32_t ind = 0;
 
-    for (auto &log : proposal.logs()) {
-        std::string logStr = log.SerializeAsString();
-        byte *logBuffer = (byte *) logStr.data();
-        byte *logSig = std::get<0>(logSigs[ind]);
+    for (auto &startMsg : proposal.start_msgs()) {
+        std::string msgStr = startMsg.SerializeAsString();
+        byte *msgBuffer = (byte *) msgStr.data();
+        byte *msgSig = std::get<0>(logSigs[ind]);
         uint32_t logSigLen = std::get<1>(logSigs[ind]);
         ind++;
-        if (!sigProvider_.verify(logBuffer, logStr.length(), logSig, logSigLen, "replica", log.replica_id())) {
-            LOG(INFO) << "Failed to verify replica signature in proposal!";
-            return false;
-        }
-
-        if (!verifyRepairLog(log)) {
-            LOG(INFO) << "Failed to verify repair log from " << log.replica_id();
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool Replica::verifyViewChange(const PBFTViewChange &viewChangeMsg)
-{
-    // verify prepares
-    const auto &prepares = viewChangeMsg.prepares();
-    const auto &sigs = viewChangeMsg.prepare_sigs();
-
-    if (prepares.empty() && viewChangeMsg.round() == UINT32_MAX) {
-        LOG(INFO) << "View Change with no previous agreed prepares";
-        return true;
-    }
-    std::unordered_set<uint32_t> insts;
-    std::unordered_set<std::string> proposal_digests;
-    for (int i = 0; i < prepares.size(); i++) {
         if (!sigProvider_.verify(
-                (byte *) prepares[i].SerializeAsString().c_str(), prepares[i].ByteSizeLong(), (byte *) sigs[i].c_str(),
-                sigs[i].size(), "replica", prepares[i].replica_id()
+                msgBuffer, msgStr.length(), msgSig, logSigLen, {NodeType::REPLICA, startMsg.replica_id()}
             )) {
-            LOG(INFO) << "Failed to verify replica signature in view change!";
-            return false;
-        }
-        insts.emplace(prepares[i].round());
-        proposal_digests.emplace(prepares[i].proposal_digest());
-    }
-    if (insts.size() != 1 || proposal_digests.size() != 1) {
-        LOG(INFO) << "View Change with inconsistent prepares and proposals from replica " << viewChangeMsg.replica_id()
-                  << " round=" << viewChangeMsg.round() << " pbf_view=" << viewChangeMsg.pbft_view();
-        return false;
-    }
-    if (insts.find(viewChangeMsg.round()) == insts.end()) {
-        LOG(INFO) << "View Change with different round";
-        return false;
-    }
-    const RepairProposal &proposal = viewChangeMsg.proposal();
-    if (!verifyRepairProposal(proposal)) {
-        LOG(INFO) << "Failed to verify repair proposal!";
-        return false;
-    }
-    return true;
-}
-
-bool Replica::verifyRepairDone(const RepairDone &done)
-{
-    if (done.commits().size() < 2 * f_ + 1) {
-        LOG(WARNING) << "Number of commits is " << done.commits().size() << ", which is smaller than 2f + 1, f=" << f_;
-        return false;
-    }
-
-    if (done.commits().size() != done.commit_sigs().size()) {
-        LOG(WARNING) << "Number of commits " << done.commits().size() << " is not equal to number of signatures "
-                     << done.commit_sigs().size();
-        return false;
-    }
-
-    // Make sure no replica is repeated
-    std::set<uint32_t> replicaIds;
-
-    // Verify each signature in the done message and check that it matches given fields
-    for (int i = 0; i < done.commits().size(); i++) {
-        const PBFTCommit &commit = done.commits()[i];
-        const std::string &sig = done.commit_sigs()[i];
-
-        if (replicaIds.contains(commit.replica_id())) {
-            LOG(WARNING) << "RepairDone message contains multiple of the same replica " << done.replica_id();
-            return false;
-        }
-        replicaIds.insert(commit.replica_id());
-
-        if (done.round() != commit.round()) {
-
-            LOG(WARNING) << "Repair done rounds do not match! " << done.round() << " != " << commit.round();
-
+            LOG(INFO) << "Failed to verify replica signature from " << startMsg.replica_id() << " in repair proposal!";
             return false;
         }
 
-        if (done.proposal_digest() != commit.proposal_digest()) {
-
-            LOG(WARNING) << "Repair done digests do not match!" << digest_to_hex(done.proposal_digest())
-                         << " != " << digest_to_hex(commit.proposal_digest());
-
-            return false;
-        }
-
-        // Note do not check view, since we accept RepairDone messages in a valid view
-
-        if (!sigProvider_.verify(commit.SerializeAsString(), sig, "replica", commit.replica_id())) {
-            LOG(WARNING) << "Failed to verify replica signature from " << commit.replica_id() << " in repair done!";
+        if (!verifyRepairStart(startMsg)) {
+            LOG(INFO) << "Failed to verify repair start message from " << startMsg.replica_id();
             return false;
         }
     }
@@ -1748,44 +2087,46 @@ void Replica::startRepair()
     repair_ = true;
     LOG(INFO) << "Starting repair on round " << round_;
 
-    // Start repair timer to change primary if timeout
-    repairViewStart_ = GetMicrosecondTimestamp();
-
     VLOG(1) << "PERF event=repair_start replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
             << " round=" << round_ << " pbft_view=" << pbftView_;
 
     // Extract log into start repair message
-    RepairStart repairStartMsg;
-    repairStartMsg.set_round(round_);
-    repairStartMsg.set_replica_id(replicaId_);
-    repairStartMsg.set_pbft_view(pbftView_);
+    repairStart_ = RepairStart();
+    repairStart_->set_round(round_);
+    repairStart_->set_replica_id(replicaId_);
+    repairStart_->set_pbft_view(pbftView_);
 
     // TODO rather than include actual client requests here, only include digest
-    log_->toProto(repairStartMsg);
-
-    // TODO could add requests in DOM queue here to decrease average latency.
+    log_->toProto(*repairStart_);
 
     uint32_t primaryId = getPrimary();
-    LOG(INFO) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
-    sendMsgToDst(repairStartMsg, REPAIR_START, replicaAddrs_[primaryId]);
-    LOG(INFO) << "DUMP start repair round=" << round_ << " " << *log_;
+    VLOG(2) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
+    sendMsgToDst(*repairStart_, REPAIR_START, replicaAddrs_[primaryId]);
+    VLOG(2) << "PERF_DUMP start repair round=" << round_ << " " << *log_;
 }
 
 void Replica::sendRepairSummaryToClients()
 {
-    RepairSummary summary;
-    std::set<int> clients;
-
-    summary.set_round(round_);
-    summary.set_replica_id(replicaId_);
-    summary.set_pbft_view(pbftView_);
+    std::map<uint32_t, RepairSummary> messages;
 
     uint32_t seq = log_->getCommittedCheckpoint().seq + 1;
     for (; seq < log_->getNextSeq(); seq++) {
         const ::LogEntry &entry = log_->getEntry(seq);   // TODO better namespace
-        CommittedReply reply;
 
-        clients.insert(entry.client_id);
+        if (!messages.contains(entry.client_id)) {
+            RepairSummary &summary = messages[entry.client_id];
+            summary.set_round(round_);
+            summary.set_replica_id(replicaId_);
+            summary.set_pbft_view(pbftView_);
+
+            log_->getCommittedCheckpoint().clientRecord_.toProtoSingleClient(
+                entry.client_id, *summary.mutable_committed_seqs()
+            );
+        }
+
+        RepairSummary &summary = messages[entry.client_id];
+
+        CommittedReply reply;
 
         reply.set_replica_id(replicaId_);
         reply.set_client_id(entry.client_id);
@@ -1797,16 +2138,9 @@ void Replica::sendRepairSummaryToClients()
         (*summary.add_replies()) = reply;
     }
 
-    sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(summary, MessageType::REPAIR_SUMMARY, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-
-        // TODO make this only send to clients that need it
-        LOG(INFO) << "Sending repair summary for round=" << round_;
-        for (uint32_t clientId : clients) {
-            endpoint_->SendPreparedMsgTo(clientAddrs_[clientId], hdr);
-        }
-    });
+    for (auto &[clientId, summary] : messages) {
+        sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[clientId]);
+    }
 }
 
 void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
@@ -1814,29 +2148,19 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     VLOG(1) << "PERF event=repair_end replica_id=" << replicaId_ << " seq=" << log_->getNextSeq() << " round=" << round_
             << " pbft_view=" << pbftView_;
 
-    LOG(INFO) << "DUMP finish repair round=" << round_ << " " << *log_;
-    LOG(INFO) << "Current client record" << log_->getClientRecord();
-    LOG(INFO) << "Checkpoint client record" << log_->getCommittedCheckpoint().clientRecord_;
+    VLOG(2) << "PERF_DUMP finish repair round=" << round_ << " " << *log_;
+    // LOG(INFO) << "Current client record" << log_->getClientRecord();
+    // LOG(INFO) << "Checkpoint client record" << log_->getCommittedCheckpoint().clientRecord_;
 
     round_++;
-    LOG(INFO) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
+    VLOG(2) << "Round updated to " << round_ << " and pbft_view to " << pbftView_;
 
-    if (viewChange_) {
-        viewChangeInst_ += viewChangeFreq_;
-        viewChange_ = false;
+    if (numConsecutiveViewChanges_ > 0) {
+        LOG(INFO) << "Repair for round=" << round_ - 1 << " pbft_view=" << pbftView_ << " finished after "
+                  << numConsecutiveViewChanges_ << " view changes.";
         viewChangeCounter_ += 1;
+        numConsecutiveViewChanges_ = 0;
     }
-
-    RepairDone done;
-    done.set_replica_id(replicaId_);
-    done.set_round(round_ - 1);   // For previous round
-    done.set_proposal_digest(proposalDigest_);
-    for (const auto &[repId, commit] : repairPBFTCommits_) {
-        *(done.add_commits()) = commit;
-        done.add_commit_sigs(repairCommitSigs_[repId]);
-    }
-
-    broadcastToReplicas(done, MessageType::REPAIR_DONE);
 
     // Send repair summary to clients to allow commits in the slow path..
     // NOTE: there was a bug where this was after the checkpointing and so was empty
@@ -1858,6 +2182,8 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         // Repair round crosses a snapshot interavl, we should also kick off one
         // The reason we need to do this is because if repair is continuously triggered,
         // replicas may never be able to gather a cert before the next repair is triggered
+
+        // TODO
         if (seq / snapshotInterval_ > startSeq / snapshotInterval_) {
             // TODO this is also a bit hacky...
             // Create a checkpoint with a new stable app digest by doing a commit round!
@@ -1876,7 +2202,9 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             log_->getClientRecord().toProto(*commit.mutable_client_record());
 
-            checkpointCollectors_.initCollector(round_, seq, true);
+            if (!checkpointCollectors_.hasCollector(round_, seq)) {
+                checkpointCollectors_.initCollector(round_, seq, true);
+            }
 
             uint32_t round = round_;
             app_->takeSnapshot([&, round, commit](const AppSnapshot &snapshot) {
@@ -1911,7 +2239,16 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
             VLOG(1) << "PERF event=checkpoint_repair replica_id=" << replicaId_ << " seq=" << seq << " round=" << round_
                     << " pbft_view=" << pbftView_ << " log_digest=" << digest_to_hex(newCheckpoint.logDigest);
 
-            log_->setCheckpoint(newCheckpoint);
+            if (newCheckpoint.logDigest == newCheckpoint.repairCommits.begin()->second.log_digest()) {
+                log_->setCheckpoint(newCheckpoint);
+
+            } else {
+                // TODO this should be an assert, but we will fix this later.
+                LOG(ERROR) << "Reapir commit digests "
+                           << digest_to_hex(newCheckpoint.repairCommits.begin()->second.log_digest())
+                           << " does not match my log digest " << digest_to_hex(newCheckpoint.logDigest)
+                           << " skipping...";
+            }
         }
     }
 
@@ -1930,21 +2267,25 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
         clientReq.set_client_seq(req.clientSeq);
         clientReq.set_req_data(req.requestData);
 
-        VLOG(5) << "Processing aborted request client_id=" << req.clientId << " client_seq=" << req.clientSeq;
+        VLOG(5) << "Adding aborted request client_id=" << req.clientId << " client_seq=" << req.clientSeq;
 
-        processClientRequest(clientReq);
+        repairQueuedReqs_.insert({{req.deadline, req.clientId}, clientReq});
     }
 
     curRoundStartSeq_ = log_->getNextSeq();
 
     // Retry any requests
+
     for (auto &[_, req] : repairQueuedReqs_) {
         VLOG(5) << "Processing queued request client_id=" << req.client_id() << " client_seq=" << req.client_seq();
-        processClientRequest(req);
+        processClientRequest(req, true);
     }
     repairQueuedReqs_.clear();
 
-    LOG(INFO) << "DUMP post repair round=" << round_ - 1 << " " << *log_;
+    // Start timer for next checkpoint
+    checkpointTimeoutStart_ = GetMicrosecondTimestamp();
+
+    VLOG(2) << "PERF_DUMP post repair round=" << round_ - 1 << " " << *log_;
 }
 
 void Replica::tryFinishRepair()
@@ -1955,7 +2296,6 @@ void Replica::tryFinishRepair()
     if (repairProposal_.value().round() == round_ - 1) {
         // This happens if the repair round is already committed on the current replica, but other replicas
         // initiated a view change.
-        assert(viewChange_);
         LOG(INFO) << "Repair on round " << round_ - 1 << " already committed on current replica, skipping";
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
@@ -1970,6 +2310,9 @@ void Replica::tryFinishRepair()
 
     // Check if own checkpoint seq is behind suffix checkpoint seq
     const dombft::proto::LogCheckpoint *checkpoint = logSuffix.checkpoint;
+
+    VLOG(1) << "PERF event=repair_apply replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << round_ << " pbft_view=" << pbftView_;
 
     ::LogCheckpoint &myCheckpoint = log_->getCommittedCheckpoint();   // bad namespace
     if (checkpoint->seq() > myCheckpoint.seq) {
@@ -2008,7 +2351,11 @@ void Replica::tryFinishRepair()
 LogSuffix &Replica::getRepairLogSuffix()
 {
     // This is just to cache the processing of the repairProposal
-    // TODO make sure this works during view change as well.
+
+    // TODO cache across view changes, if the proposal digest is the same. For now we just recompute every time
+    // siince trying to use the wrong proposal can lead to memory issues, since LogSuffix contains pointers into the
+    // proposal
+
     if (!repairProposalLogSuffix_.has_value() || repairProposalLogSuffix_.value().round != round_) {
         repairProposalLogSuffix_ = LogSuffix();
         repairProposalLogSuffix_->replicaId = replicaId_;
@@ -2030,19 +2377,43 @@ void Replica::doPrePreparePhase(uint32_t round)
     prePrepare.set_primary_id(replicaId_);
     prePrepare.set_round(round);
     prePrepare.set_pbft_view(pbftView_);
+
+    // If some replica has a certificate, use the prepared proposal matching it, instead of using the new
+    // history set
+    for (auto &startMsg : repairStartMsgs_) {
+        if (startMsg.second.round() != round && startMsg.second.pbft_view() != pbftView_)
+            continue;
+
+        if (startMsg.second.has_prepared_history()) {
+            *(prePrepare.mutable_proposal()) = lastPreparedState_.proposal;
+            prePrepare.set_proposal_digest(lastPreparedState_.proposalDigest);
+            LOG(INFO) << "Using prepared history due to view change for repair proposal round=" << round
+                      << " replicaId=" << replicaId_ << " view=" << pbftView_;
+            broadcastToReplicas(prePrepare, PBFT_PREPREPARE);
+            return;
+        }
+    }
+
     // Piggyback the repair proposal
+
+    LOG(INFO) << "Creating new repair proposal for round=" << round << " replicaId=" << replicaId_
+              << " view=" << pbftView_;
+
     RepairProposal *proposal = prePrepare.mutable_proposal();
     proposal->set_replica_id(replicaId_);
     proposal->set_round(round);
-    for (auto &startMsg : repairHistorys_) {
-        if (startMsg.second.round() != round)
+    for (auto &startMsg : repairStartMsgs_) {
+        if (startMsg.second.round() != round && startMsg.second.pbft_view() != pbftView_)
             continue;
 
-        *(proposal->add_logs()) = startMsg.second;
+        *(proposal->add_start_msgs()) = startMsg.second;
         *(proposal->add_signatures()) = repairHistorySigs_[startMsg.first];
     }
 
     proposalDigest_ = getProposalDigest(prePrepare.proposal());
+
+    // If the view has not committed yet, we add proof of the new view change necessity
+
     prePrepare.set_proposal_digest(proposalDigest_);
     broadcastToReplicas(prePrepare, PBFT_PREPREPARE);
 }
@@ -2057,6 +2428,7 @@ void Replica::doPreparePhase()
     prepare.set_proposal_digest(proposalDigest_);
 
     LogSuffix &logSuffix = getRepairLogSuffix();
+
     prepare.set_log_digest(logSuffix.logDigest);
 
     broadcastToReplicas(prepare, PBFT_PREPARE);
@@ -2065,7 +2437,6 @@ void Replica::doPreparePhase()
 void Replica::doCommitPhase()
 {
     uint32_t proposalInst = repairProposal_.value().round();
-    LOG(INFO) << "PBFTCommit for round=" << proposalInst << " replicaId=" << replicaId_;
     PBFTCommit cmt;
     cmt.set_replica_id(replicaId_);
     cmt.set_round(proposalInst);
@@ -2081,6 +2452,10 @@ void Replica::doCommitPhase()
         holdPrepareOrCommit_ = !holdPrepareOrCommit_;
         return;
     }
+
+    LOG(INFO) << "PBFTCommit for round=" << proposalInst << " replicaId=" << replicaId_
+              << " log_digest=" << digest_to_hex(logSuffix.logDigest);
+
     broadcastToReplicas(cmt, PBFT_COMMIT);
 }
 
@@ -2090,6 +2465,12 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
         LOG(INFO) << "Received old repair preprepare from round=" << msg.round() << " own round is " << round_;
         return;
     }
+
+    if (msg.round() > round_) {
+        LOG(INFO) << "Received future repair preprepare from round=" << msg.round() << " own round is " << round_;
+        return;
+    }
+
     if (msg.pbft_view() != pbftView_) {
         LOG(INFO) << "Received preprepare from replicaId=" << msg.primary_id() << " for round=" << msg.round()
                   << " with different pbft_view=" << msg.pbft_view();
@@ -2102,13 +2483,19 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
     }
 
     LOG(INFO) << "PrePrepare RECEIVED for round=" << msg.round() << " from replicaId=" << msg.primary_id();
+    VLOG(1) << "PERF event=repair_preprepare replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << msg.round() << " pbft_view=" << pbftView_
+            << " proposal_digest=" << digest_to_hex(msg.proposal_digest());
+
     // accepts the proposal as long as it's from the primary
     repairProposal_ = msg.proposal();
+    repairProposalLogSuffix_.reset();
     proposalDigest_ = msg.proposal_digest();
 
     if (viewChangeByPrepare()) {
         holdPrepareOrCommit_ = !holdPrepareOrCommit_;
         LOG(INFO) << "Prepare message held to cause timeout in prepare phase for view change";
+        viewChangeRound_ += viewChangeFreq_;
         return;
     }
     doPreparePhase();
@@ -2116,32 +2503,37 @@ void Replica::processPrePrepare(const PBFTPrePrepare &msg)
 
 void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
 {
-    uint32_t inInst = msg.round();
+    uint32_t inRound = msg.round();
     if (msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for round=" << inInst
+        LOG(INFO) << "Received prepare from replicaId=" << msg.replica_id() << " for round=" << inRound
                   << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if (inInst < round_ && viewPrepared_) {
-        LOG(INFO) << "Received old repair prepare from round=" << inInst << " own round is " << round_;
+    if (inRound < round_ && viewPrepared_) {
+        LOG(INFO) << "Received old repair prepare from round=" << inRound << " own round is " << round_;
         return;
     }
 
-    if (repairPrepares_.count(msg.replica_id()) && repairPrepares_[msg.replica_id()].round() > inInst &&
+    if (inRound > round_) {
+        LOG(INFO) << "Received future repair prepare from round=" << inRound << " own round is " << round_;
+        return;
+    }
+
+    if (repairPrepares_.count(msg.replica_id()) && repairPrepares_[msg.replica_id()].round() > inRound &&
         repairPrepares_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
-        LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for round=" << inInst;
+        LOG(INFO) << "Old prepare received from replicaId=" << msg.replica_id() << " for round=" << inRound;
         return;
     }
     repairPrepares_[msg.replica_id()] = msg;
     repairPrepareSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
-    LOG(INFO) << "Prepare RECEIVED for round=" << inInst << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "Prepare RECEIVED for round=" << inRound << " from replicaId=" << msg.replica_id();
     // skip if already prepared for it
     // note: if viewPrepared_==false, then viewChange_==true
-    if (viewPrepared_ && preparedRound_ == inInst) {
-        LOG(INFO) << "Already prepared for round=" << inInst << " pbft_view=" << pbftView_;
+    if (viewPrepared_ && preparedRound_ == inRound) {
+        LOG(INFO) << "Already prepared for round=" << inRound << " pbft_view=" << pbftView_;
         return;
     }
-    if (!repairProposal_.has_value() || repairProposal_.value().round() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().round() < inRound) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process prepare";
         return;
     }
@@ -2150,24 +2542,30 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         return curMsg.second.round() == repairProposal_.value().round() &&
                curMsg.second.proposal_digest() == proposalDigest_ && curMsg.second.pbft_view() == pbftView_;
     });
-    if (numMsgs < 2 * f_ + 1) {
+    if (numMsgs < quorumSize_) {
         LOG(INFO) << "Prepare received from " << numMsgs << " replicas, waiting for 2f + 1 to proceed";
         return;
     }
     // Store PBFT states for potential view change
     preparedRound_ = repairProposal_.value().round();
     viewPrepared_ = true;
-    pbftState_.proposal = repairProposal_.value();
-    pbftState_.proposalDigest = proposalDigest_;
-    pbftState_.prepares.clear();
+    lastPreparedState_.round = preparedRound_;
+    lastPreparedState_.pbftView = pbftView_;
+    lastPreparedState_.proposal = repairProposal_.value();
+    lastPreparedState_.proposalDigest = proposalDigest_;
+    lastPreparedState_.prepares.clear();
     for (const auto &[repId, prepare] : repairPrepares_) {
         if (prepare.round() == preparedRound_) {
-            pbftState_.prepares[repId] = prepare;
-            pbftState_.prepareSigs[repId] = repairPrepareSigs_[repId];
+            lastPreparedState_.prepares[repId] = prepare;
+            lastPreparedState_.prepareSigs[repId] = repairPrepareSigs_[repId];
         }
     }
     LOG(INFO) << "Prepare received from 2f + 1 replicas, agreement reached for round=" << preparedRound_
               << " pbft_view=" << pbftView_;
+
+    VLOG(1) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << preparedRound_ << " pbft_view=" << pbftView_
+            << " proposal_digest=" << digest_to_hex(msg.proposal_digest());
 
     if (viewChangeByCommit()) {
         if (commitLocalInViewChange_) {
@@ -2176,6 +2574,8 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
         } else {
             LOG(INFO) << "Commit message held to cause timeout in commit phase for view change";
         }
+        viewChangeRound_ += viewChangeFreq_;
+
         return;
     }
     doCommitPhase();
@@ -2183,32 +2583,38 @@ void Replica::processPrepare(const PBFTPrepare &msg, std::span<byte> sig)
 
 void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
 {
-    uint32_t inInst = msg.round();
+    uint32_t inRound = msg.round();
     if (msg.pbft_view() != pbftView_) {
-        LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for round=" << inInst
+        LOG(INFO) << "Received commit from replicaId=" << msg.replica_id() << " for round=" << inRound
                   << " with different pbft_view=" << msg.pbft_view();
         return;
     }
-    if (inInst < round_ && !viewChange_) {
-        LOG(INFO) << "Received old repair commit from round=" << inInst << " own round is " << round_;
+    if (inRound < round_) {
+        LOG(INFO) << "Received old repair commit from round=" << inRound << " own round is " << round_;
         return;
     }
-    if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].round() > inInst &&
+
+    if (inRound > round_) {
+        LOG(INFO) << "Received future repair commit from round=" << inRound << " own round is " << round_;
+        return;
+    }
+
+    if (repairPBFTCommits_.count(msg.replica_id()) && repairPBFTCommits_[msg.replica_id()].round() > inRound &&
         repairPBFTCommits_[msg.replica_id()].pbft_view() == msg.pbft_view()) {
-        LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for round=" << inInst;
+        LOG(INFO) << "Old commit received from replicaId=" << msg.replica_id() << " for round=" << inRound;
         return;
     }
     repairPBFTCommits_[msg.replica_id()] = msg;
     repairCommitSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
 
-    LOG(INFO) << "PBFTCommit RECEIVED for round=" << inInst << " from replicaId=" << msg.replica_id();
+    LOG(INFO) << "PBFTCommit RECEIVED for round=" << inRound << " from replicaId=" << msg.replica_id();
 
-    if (!repairProposal_.has_value() || repairProposal_.value().round() < inInst) {
+    if (!repairProposal_.has_value() || repairProposal_.value().round() < inRound) {
         LOG(INFO) << "PrePrepare not received yet, wait till it arrives to process commit";
         return;
     }
 
-    if (preparedRound_ == UINT32_MAX || preparedRound_ != inInst || !viewPrepared_) {
+    if (preparedRound_ == UINT32_MAX || preparedRound_ != inRound || !viewPrepared_) {
         LOG(INFO) << "Not prepared for it, skipping commit!";
         // TODO get the proposal from another replica...
         return;
@@ -2217,197 +2623,145 @@ void Replica::processPBFTCommit(const PBFTCommit &msg, std::span<byte> sig)
         return curMsg.second.round() == preparedRound_ && curMsg.second.proposal_digest() == proposalDigest_ &&
                curMsg.second.pbft_view() == pbftView_;
     });
-    if (numMsgs < 2 * f_ + 1) {
+    if (numMsgs < quorumSize_) {
         return;
     }
+
+    VLOG(1) << "PERF event=repair_commit replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
+            << " round=" << preparedRound_ << " pbft_view=" << pbftView_
+            << " log_digest=" << digest_to_hex(msg.log_digest())
+            << " proposal_digest=" << digest_to_hex(msg.proposal_digest());
+
     LOG(INFO) << "Commit received from 2f + 1 replicas, Committed!";
     tryFinishRepair();
 }
 
-void Replica::processRepairDone(const RepairDone &msg)
+void Replica::updateReplicaView(uint32_t replicaId, uint32_t view, uint32_t round)
 {
-    if (msg.round() == round_ && repair_) {
-        LOG(ERROR) << "Processing RepairDone for round=" << round_ << " not implemented!";
+    if (replicaViews_.contains(replicaId) && replicaViews_[replicaId].first == view &&
+        replicaViews_[replicaId].second == round) {
+        // No change
         return;
     }
-    // TODO  finish implementing allowing replica to catch up with a RepairDone
+
+    replicaViews_[replicaId] = {view, round};
+
+    // First check if quorumSize_ replicas have the same view as us; in this case
+    // we can start our view change timer
+
+    auto numSameView = std::count_if(replicaViews_.begin(), replicaViews_.end(), [this](auto &entry) {
+        return entry.second.first == pbftView_ && entry.second.second == round_;
+    });
+
+    if (numSameView >= quorumSize_) {
+        LOG(INFO) << "Detected quorum of replicas in view=" << pbftView_ << " round=" << round_
+                  << ", starting view change timer";
+        repairViewStart_ = GetMicrosecondTimestamp();
+    }
+
+    // Next check if n - quorumSize + 1 replicas have a higher view than us; in this case we should
+    // start a view change immediately
+    // Since quorumSize - f > n - quorumSize + 1 => quorumSize > (n + f + 1) / 2 > 4f + 1 / 2 > 2f + 1
+    // If quorumSize_ triggered above, this will bring any straggler replicas up to speed as well
+
+    uint32_t numHigher = 0;
+    uint32_t minHigherView = UINT32_MAX;
+
+    for (const auto &v : replicaViews_) {
+
+        VLOG(7) << "Replica view status: replicaId=" << v.first << " view=" << v.second.first
+                << " round=" << v.second.second;
+
+        if (v.second.first > pbftView_) {
+            numHigher++;
+            minHigherView = std::min(minHigherView, v.second.first);
+        }
+    }
+    VLOG(7) << "------------------";
+    assert(numHigher == 0 || (minHigherView > pbftView_ && minHigherView != UINT32_MAX));
+
+    uint32_t numReplicas = ConfigManager::getInstance().getNumReplicas();
+    if (numHigher >= (numReplicas - quorumSize_ + 1)) {
+        LOG(INFO) << "Detected that majority of replicas have higher view, starting view change to view "
+                  << minHigherView;
+        startViewChange(minHigherView);
+    }
 }
 
-void Replica::startViewChange()
+void Replica::startViewChange(uint32_t newView)
 {
-    // TODO VC: If view change was already true, double timeout here
 
-    pbftView_++;
+    pbftView_ = newView;
     repair_ = true;
-    viewChange_ = true;
     viewPrepared_ = false;
+    repairViewStart_ = 0;   // Reset view change timer, wait until other replicas have the same view
+
     VLOG(1) << "PERF event=viewchange_start replica_id=" << replicaId_ << " seq=" << log_->getNextSeq()
             << " round=" << round_ << " pbft_view=" << pbftView_;
     LOG(INFO) << "Starting ViewChange on round " << round_ << " pbft_view " << pbftView_;
 
-    PBFTViewChange viewChange;
-    viewChange.set_replica_id(replicaId_);
-    viewChange.set_round(preparedRound_);
-    viewChange.set_pbft_view(pbftView_);
+    // Add the latest quorum of prepares and sigs to the current RepairStartMessage
+    if (lastPreparedState_.round == round_) {
 
-    // Add the latest quorum of prepares and sigs
-    if (preparedRound_ != UINT32_MAX) {
-        for (const auto &[repId, prepare] : pbftState_.prepares) {
-            *(viewChange.add_prepares()) = prepare;
-            *(viewChange.add_prepare_sigs()) = pbftState_.prepareSigs[repId];
+        repairStart_ = RepairStart();
+        repairStart_->set_replica_id(replicaId_);
+        repairStart_->set_pbft_view(pbftView_);
+        repairStart_->set_round(round_);
+
+        dombft::proto::PreparedHistory *preparedHistory = repairStart_->mutable_prepared_history();
+        for (const auto &[repId, prepare] : lastPreparedState_.prepares) {
+            *(preparedHistory->add_prepares()) = prepare;
+            *(preparedHistory->add_prepare_sigs()) = lastPreparedState_.prepareSigs[repId];
         }
-        viewChange.set_proposal_digest(pbftState_.proposalDigest);
-        viewChange.mutable_proposal()->CopyFrom(pbftState_.proposal);
+
+        LOG(INFO) << "Sending REPAIR_START with prepared history to PBFT primary replica " << getPrimary();
+        sendMsgToDst(*repairStart_, REPAIR_START, replicaAddrs_[getPrimary()]);
+
+    } else {
+        // No prepared history for this round, so send normal repair start message that you sent before
+
+        repairStart_->clear_prepared_history();
+        assert(repairStart_.has_value());
+        assert(repairStart_->round() == round_);
+        repairStart_->set_pbft_view(pbftView_);
+        LOG(INFO) << "Sending REPAIR_START without prepared history to PBFT primary replica " << getPrimary();
+        sendMsgToDst(*repairStart_, REPAIR_START, replicaAddrs_[getPrimary()]);
     }
 
-    broadcastToReplicas(viewChange, PBFT_VIEWCHANGE);
-}
+    if (isPrimary()) {
+        // First check if we have 2f + 1 repair start messages for the same round
+        auto numStartMsgs = std::count_if(repairStartMsgs_.begin(), repairStartMsgs_.end(), [&](auto &startMsg) {
+            return startMsg.second.round() == round_ && startMsg.second.pbft_view() == pbftView_;
+        });
 
-void Replica::processPBFTViewChange(const PBFTViewChange &msg, std::span<byte> sig)
-{
-    // No round checking as view change is not about round
-    uint32_t inViewNum = msg.pbft_view();
-    if (inViewNum < pbftView_) {
-        LOG(INFO) << "Received outdated view change from pbft_view=" << inViewNum << " own pbft_view is " << pbftView_;
-        return;
-    }
-
-    if (pbftViewChanges_.count(msg.replica_id()) && pbftViewChanges_[msg.replica_id()].pbft_view() > inViewNum) {
-        LOG(INFO) << "Outdated view change received from replicaId=" << msg.replica_id()
-                  << " for pbft_view=" << inViewNum;
-        return;
-    }
-
-    pbftViewChanges_[msg.replica_id()] = msg;
-    pbftViewChangeSigs_[msg.replica_id()] = std::string(sig.begin(), sig.end());
-
-    LOG(INFO) << "ViewChange RECEIVED for pbft_view=" << inViewNum << " from replicaId=" << msg.replica_id();
-
-    auto numMsgs = std::count_if(pbftViewChanges_.begin(), pbftViewChanges_.end(), [this, inViewNum](auto &curMsg) {
-        return curMsg.second.pbft_view() == inViewNum;
-    });
-
-    if (numMsgs != 2 * f_ + 1) {
-        return;
-    }
-    LOG(INFO) << "ViewChange for view " << inViewNum << " received from 2f + 1 replicas!";
-
-    // non-primary replicas collect view change msgs for
-    // 1. delaying timer setting for better liveness (avoid frequent view changes)
-    // 2. check if the majority has a larger view# and start view change if so (avoid starting view change too late)
-
-    repairViewStart_ = GetMicrosecondTimestamp();   // reset view change timeout (1) above
-
-    // TODO VC: should do this if there are f + 1 VC messages here.
-    // They also don't need to necessarily be in the same view
-    if (inViewNum > pbftView_) {
-        LOG(INFO) << "Majority has a larger view number, starting a new view change for the major view";
-        pbftView_ = inViewNum - 1;   // will add 1 back in startViewChange
-        startViewChange();
-    }
-
-    if (!isPrimary()) {
-        pbftViewChanges_.clear();
-        pbftViewChangeSigs_.clear();
-        return;
-    }
-
-    // primary search for the latest prepared round
-    uint32_t maxRound = UINT32_MAX;
-    // vc.round can be UINT32_MAX if no prepares, which is fine
-    for (const auto &[_, vc] : pbftViewChanges_) {
-        if (vc.pbft_view() != inViewNum) {
-            continue;
-        }
-        if (maxRound == UINT32_MAX && vc.round() < maxRound) {
-            maxRound = vc.round();
-        } else if (maxRound != UINT32_MAX && vc.round() > maxRound) {
-            maxRound = vc.round();
+        if (numStartMsgs >= quorumSize_) {
+            doPrePreparePhase(round_);
         }
     }
-    LOG(INFO) << "Found the latest prepared round=" << maxRound << " for pbft_view=" << inViewNum;
 
-    PBFTNewView newView;
-    newView.set_primary_id(replicaId_);
-    newView.set_pbft_view(inViewNum);
-    newView.set_round(maxRound);
+    dombft::proto::ViewUpdate viewUpdateMsg;
+    viewUpdateMsg.set_replica_id(replicaId_);
+    viewUpdateMsg.set_view(pbftView_);
+    viewUpdateMsg.set_round(round_);
 
-    for (const auto &[repId, vc] : pbftViewChanges_) {
-        newView.add_view_changes()->CopyFrom(vc);
-        *(newView.add_view_change_sigs()) = pbftViewChangeSigs_[repId];
-    }
-
-    broadcastToReplicas(newView, PBFT_NEWVIEW);
-}
-
-void Replica::processPBFTNewView(const PBFTNewView &msg)
-{
-    // TODO(Hao) here should be some checks for view change msgs in NewView, skip for now..
-    if (pbftView_ > msg.pbft_view()) {
-        LOG(INFO) << "Received outdated new view from pbft_view=" << msg.pbft_view() << " own pbft_view is "
-                  << pbftView_;
-        return;
-    }
-
-    const auto &viewChanges = msg.view_changes();
-    std::unordered_map<uint32_t, uint32_t> views;
-    PBFTViewChange maxVC;
-    for (const auto &vc : viewChanges) {
-        views[vc.pbft_view()]++;
-        if (vc.round() > maxVC.round()) {
-            maxVC = vc;
-        }
-    }
-    if (maxVC.pbft_view() != msg.pbft_view() || maxVC.round() != msg.round()) {
-        LOG(INFO) << "Replica obtains a different choice of round=" << maxVC.round() << "," << msg.round()
-                  << " and pbft_view=" << maxVC.pbft_view() << ", " << msg.pbft_view();
-    }
-    if (views[maxVC.pbft_view()] < 2 * f_ + 1) {
-        LOG(INFO) << "The view number " << maxVC.pbft_view() << " does not have a 2f + 1 quorum";
-        return;
-    }
-    LOG(INFO) << "Received NewView for pbft_view=" << msg.pbft_view() << " with prepared round=" << msg.round();
-    if (pbftView_ == msg.pbft_view() && viewPrepared_) {
-        LOG(INFO) << "Already in the same view and prepared for it, skip the new view message";
-        return;
-    }
-    pbftView_ = msg.pbft_view();
-    // in case it is not in view change already. Not quite sure this is correct way tho
-    if (!viewChange_) {
-        viewChange_ = true;
-        repair_ = true;
-        viewPrepared_ = false;
-        repairProposal_.reset();
-        repairPrepares_.clear();
-        repairPBFTCommits_.clear();
-    }
-
-    // TODO(Hao): test this corner case later
-    if (msg.round() == UINT32_MAX) {
-        LOG(INFO) << "No previously prepared round in new view, go back to normal state. EXIT FOR NOW";
-        // assert(msg.round() != UINT32_MAX);
-        // return;
-    }
-    repairProposal_ = maxVC.proposal();
-    proposalDigest_ = maxVC.proposal_digest();
-    // set view change param to true to bypass round check.
-    doPreparePhase();
+    broadcastToReplicas(viewUpdateMsg, VIEW_UPDATE);
 }
 
 std::string Replica::getProposalDigest(const RepairProposal &proposal)
 {
     // use signatures as digest, since signatures are can function as the the digest of each proposal
-    byte digestBuf[SHA256_DIGEST_LENGTH];
+    CryptoPP::SHA256 hash;
+    byte digestBuf[CryptoPP::SHA256::DIGESTSIZE];
     std::string digestStr;
+
     for (const auto &sig : proposal.signatures()) {
         digestStr += sig;
     }
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, digestStr.c_str(), digestStr.size());
-    SHA256_Final(digestBuf, &ctx);
 
-    return std::string((char *) digestBuf, SHA256_DIGEST_LENGTH);
+    hash.Update(reinterpret_cast<const byte *>(digestStr.data()), digestStr.size());
+    hash.Final(digestBuf);
+
+    return std::string(reinterpret_cast<const char *>(digestBuf), CryptoPP::SHA256::DIGESTSIZE);
 }
 
 }   // namespace dombft

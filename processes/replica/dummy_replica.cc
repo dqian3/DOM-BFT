@@ -1,37 +1,38 @@
 #include "dummy_replica.h"
 
 #include "lib/common.h"
+#include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
-#include "processes/config_util.h"
 
-#include <openssl/pem.h>
 #include <sstream>
 
 namespace dombft {
 using namespace dombft::proto;
 
-DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
+DummyReplica::DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batchSize)
     : replicaId_(replicaId)
-    , f_(config.replicaIps.size() / 3)
     , prot_(prot)
     , batchSize_(batchSize)
     , nextSeq_(batchSize)
-    , sigProvider_()
-    , numVerifyThreads_(config.replicaNumVerifyThreads)
-    , sendThreadpool_(config.replicaNumSendThreads)
+    , numVerifyThreads_(ConfigManager::getInstance().getConfig().replicaNumVerifyThreads)
+    , sendThreadpool_(ConfigManager::getInstance().getConfig().replicaNumSendThreads)
+    , useHMAC_(ConfigManager::getInstance().getConfig().clientUseHMAC)
 {
-    LOG(INFO) << "f=" << f_;
+    auto &configManager = ConfigManager::getInstance();
+    const auto &config = configManager.getConfig();
 
     LOG(INFO) << "batchSize=" << batchSize_;
 
-    std::string replicaIp = config.replicaIps[replicaId];
+    const auto &replicaIps = configManager.getReplicaIps();
+    std::string replicaIp = replicaIps[replicaId];
     LOG(INFO) << "replicaIP=" << replicaIp;
 
-    std::string bindAddress = config.receiverLocal ? "0.0.0.0" : replicaIp;
+    std::string bindAddress = replicaIp;
     LOG(INFO) << "bindAddress=" << bindAddress;
 
-    int replicaPort = config.replicaPort;
+    int replicaPort = configManager.getReplicaPort();
     LOG(INFO) << "replicaPort=" << replicaPort;
 
     std::string replicaKey = config.replicaKeysDir + "/replica" + std::to_string(replicaId_) + ".der";
@@ -43,15 +44,17 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
 
     LOG(INFO) << "Private key loaded";
 
-    if (!sigProvider_.loadPublicKeys("client", config.clientKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::CLIENT, config.clientKeysDir)) {
         LOG(ERROR) << "Unable to load client public keys!";
         exit(1);
     }
 
-    if (!sigProvider_.loadPublicKeys("replica", config.replicaKeysDir)) {
+    if (!sigProvider_.loadPublicKeys(NodeType::REPLICA, config.replicaKeysDir)) {
         LOG(ERROR) << "Unable to load replica public keys!";
         exit(1);
     }
+
+    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, configManager.getNumClients());
 
     // LOG(INFO) << "instantiating log";
 
@@ -63,35 +66,66 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
     // }
     // LOG(INFO) << "log instantiated";
 
+    // Use ConfigManager's pre-calculated BFT parameters
+    // f_ was already set above
+    quorumSize_ = configManager.getQuorumSize();
+    superQuorumSize_ = configManager.getSuperQuorumSize();
+
     if (config.transport == "nng") {
         auto addrPairs = getReplicaAddrs(config, replicaId_);
 
-        size_t nClients = config.clientIps.size();
+        size_t nClients = configManager.getNumClients();
+        size_t nProxies = configManager.getNumProxies();
+        LOG(INFO) << "nClients=" << nClients;
+
+        // First nClients addresses are for client connections
         for (size_t i = 0; i < nClients; i++) {
-            // LOG(INFO) << "Client " << i << ": " << addrPairs[i].second.ip();
             clientAddrs_.push_back(addrPairs[i].second);
         }
 
-        receiverAddr_ = addrPairs[nClients].second;
+        // Then proxy addresses
+        for (size_t i = nClients; i < nClients + nProxies; i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
+        }
 
-        for (size_t i = nClients + 1; i < addrPairs.size(); i++) {
+        // Remaining addresses are for replica-to-replica connections
+        for (size_t i = nClients + nProxies; i < addrPairs.size(); i++) {
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId]);
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, Address(replicaIp, replicaPort));
     } else if (config.transport == "udp") {
-        size_t nClients = config.clientIps.size();
+        size_t nClients = configManager.getNumClients();
+        const auto &clientIps = configManager.getClientIps();
         for (size_t i = 0; i < nClients; i++) {
-            clientAddrs_.push_back(Address(config.clientIps[i], config.clientPort));
+            clientAddrs_.push_back(Address(clientIps[i], configManager.getClientPort() + i));
         }
 
-        receiverAddr_ = Address(config.receiverIps[replicaId_], config.receiverPort);
-
-        for (size_t i = nClients + 1; i < config.replicaIps.size(); i++) {
-            replicaAddrs_.push_back(Address(config.replicaIps[i], config.replicaPort));
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (size_t i = nClients + 1; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
         }
 
         endpoint_ = std::make_unique<UDPEndpoint>(bindAddress, replicaPort);
+    } else if (config.transport == "simple-rpc") {
+
+        std::vector<Address> allAddrs;
+
+        size_t nClients = configManager.getNumClients();
+        const auto &clientIps = configManager.getClientIps();
+        for (int i = 0; i < clientIps.size(); i++) {
+            clientAddrs_.push_back(Address(clientIps[i], configManager.getClientPort() + i));
+            allAddrs.push_back(clientAddrs_.back());
+        }
+
+        const auto &replicaIps = configManager.getReplicaIps();
+        for (int i = 0; i < replicaIps.size(); i++) {
+            replicaAddrs_.push_back(Address(replicaIps[i], configManager.getReplicaPort()));
+            allAddrs.push_back(replicaAddrs_.back());
+        }
+
+        endpoint_ = std::make_unique<OOORPCEndpoint>(bindAddress, replicaPort, allAddrs, sendThreadpool_.size());
+
     } else {
         LOG(ERROR) << "Unsupported transport " << config.transport;
     }
@@ -107,6 +141,8 @@ DummyReplica::DummyReplica(const ProcessConfig &config, uint32_t replicaId, Dumm
         running_ = false;
         endpoint_->LoopBreak();
     });
+
+    endpoint_->Connect();
 }
 
 DummyReplica::~DummyReplica()
@@ -138,18 +174,32 @@ void DummyReplica::run()
 
 void DummyReplica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
 {
-    // First make sure message is well formed
-
-    // We skip verification of our own messages, and any message from the receiver
-    // process (which does its own verification)
     byte *rawMsg = (byte *) msgHdr;
+    dombft::proto::DOMRequest request;
+
+    if (msgHdr->msgType == DOM_REQUEST) {
+        // Remove the DOM_HEADER for these messages
+
+        if (!request.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+            LOG(ERROR) << "Unable to parse DOM_REQUEST message";
+            return;
+        }
+
+        rawMsg = (byte *) request.client_req().c_str();
+        msgHdr = (MessageHeader *) rawMsg;
+    }
+
     std::vector<byte> msg(rawMsg, rawMsg + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
 
-    if (*sender == receiverAddr_ || *sender == replicaAddrs_[replicaId_]) {
+    // We skip verification of our own messages
+    if (*sender == replicaAddrs_[replicaId_]) {
         processQueue_.enqueue(msg);
     } else {
         verifyQueue_.enqueue(msg);
     }
+
+    VLOG(6) << verifyQueue_.size_approx() << " messages in verify queue, " << processQueue_.size_approx()
+            << " messages in process queue";
 }
 
 void DummyReplica::verifyMessagesThd()
@@ -173,7 +223,15 @@ void DummyReplica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "client", request.client_id())) {
+            bool verified = false;
+            if (useHMAC_) {
+                verified = hmacProvider_.verify(hdr, {NodeType::CLIENT, request.client_id()});
+
+            } else {
+                verified = sigProvider_.verify(hdr, {NodeType::CLIENT, request.client_id()});
+            }
+
+            if (!verified) {
                 LOG(INFO) << "Failed to verify client signature from " << request.client_id();
                 continue;
             }
@@ -187,7 +245,7 @@ void DummyReplica::verifyMessagesThd()
                 continue;
             }
 
-            if (!sigProvider_.verify(hdr, "replica", dummyProtoMsg.replica_id())) {
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, dummyProtoMsg.replica_id()})) {
                 LOG(INFO) << "Failed to verify replica signature from " << dummyProtoMsg.replica_id();
                 continue;
             }
@@ -201,7 +259,7 @@ void DummyReplica::verifyMessagesThd()
                     const auto &req = dummyProtoMsg.client_reqs(i).req();
                     const std::string &sig = dummyProtoMsg.client_reqs(i).sig();
 
-                    if (!sigProvider_.verify(req.SerializeAsString(), sig, "client", req.client_id())) {
+                    if (!sigProvider_.verify(req.SerializeAsString(), sig, {NodeType::CLIENT, req.client_id()})) {
                         LOG(INFO) << "Failed to verify client signature from " << req.client_id();
                         clientSigs = false;
                         break;
@@ -292,7 +350,7 @@ void DummyReplica::processMessagesThd()
                         reply.set_client_id(req.client_id());
                         reply.set_client_seq(req.client_seq());
                         reply.set_round(0);
-                        reply.set_seq(protoMsg.seq() + 1);
+                        reply.set_seq(protoMsg.seq() + i);
                         reply.set_replica_id(replicaId_);
                         reply.set_digest(std::string(32, '\0'));
 
@@ -312,7 +370,7 @@ void DummyReplica::processMessagesThd()
 
                     VLOG(5) << "PREPARE " << seq << " " << prepareCounts[seq] << " " << protoMsg.replica_id();
 
-                    if (prepareCounts[seq] == 2 * f_ + 1) {
+                    if (prepareCounts[seq] == quorumSize_) {
                         protoMsg.set_phase(2);
                         protoMsg.set_replica_id(replicaId_);
 
@@ -333,7 +391,7 @@ void DummyReplica::processMessagesThd()
 
                     VLOG(5) << "COMMIT " << seq << " " << commitCounts[seq] << " " << protoMsg.replica_id();
 
-                    if (commitCounts[seq] == 2 * f_ + 1) {
+                    if (commitCounts[seq] == quorumSize_) {
 
                         VLOG(2) << "PERF event=committed replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
@@ -365,7 +423,7 @@ void DummyReplica::processMessagesThd()
                             sendMsgToDst(summary, MessageType::REPAIR_SUMMARY, clientAddrs_[clientId]);
                         }
 
-                        while (commitCounts[committedSeq_ + batchSize_] >= 2 * f_ + 1) {
+                        while (commitCounts[committedSeq_ + batchSize_] >= quorumSize_) {
                             committedSeq_ += batchSize_;
 
                             VLOG(2) << "PERF event=cleanup replica_id=" << replicaId_ << " seq=" << committedSeq_
@@ -453,7 +511,16 @@ template <typename T> void DummyReplica::sendMsgToDst(const T &msg, MessageType 
 {
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(msg, type, buffer);
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        if (useHMAC_ && type == REPLY) {
+            auto it = find(clientAddrs_.begin(), clientAddrs_.end(), dst);
+            assert(it != clientAddrs_.end());
+
+            uint32_t clientId = it - clientAddrs_.begin();
+
+            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::CLIENT, clientId});
+        } else {
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        }
         endpoint_->SendPreparedMsgTo(dst, hdr);
     });
 }

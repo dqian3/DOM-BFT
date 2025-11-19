@@ -4,6 +4,10 @@
 
 #include <glog/logging.h>
 
+#include <cryptopp/filters.h>
+#include <cryptopp/secblock.h>
+#include <cryptopp/sha.h>
+
 LogEntry::LogEntry()
     : seq(0)
     , client_id(0)
@@ -19,19 +23,18 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string 
     , request(req)
     , result("")
 {
-    byte digest_bytes[SHA256_DIGEST_LENGTH];
+    CryptoPP::SHA256 hash;
+    std::string input;
 
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
+    // Append binary representations
+    input.append(reinterpret_cast<const char *>(&seq), sizeof(seq));
+    input.append(reinterpret_cast<const char *>(&client_id), sizeof(client_id));
+    input.append(reinterpret_cast<const char *>(&client_seq), sizeof(client_seq));
+    input.append(prev_digest);
+    input.append(request);
 
-    SHA256_Update(&ctx, &seq, sizeof(seq));
-    SHA256_Update(&ctx, &client_id, sizeof(client_id));
-    SHA256_Update(&ctx, &client_seq, sizeof(client_seq));
-    SHA256_Update(&ctx, prev_digest.c_str(), prev_digest.length());
-    SHA256_Update(&ctx, request.c_str(), request.length());
-    SHA256_Final(digest_bytes, &ctx);
-
-    digest = std::string(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
+    // Note, StringSource takes ownership of these objects
+    CryptoPP::StringSource ss(input, true, new CryptoPP::HashFilter(hash, new CryptoPP::StringSink(digest)));
 }
 
 LogEntry::~LogEntry() {}

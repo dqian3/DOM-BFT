@@ -11,7 +11,7 @@
 class CertCollector {
 
 public:
-    CertCollector(int f);
+    CertCollector();
 
     // Inserts reply/signature with move semantics
     // Assumes that reply has already been verified
@@ -23,6 +23,7 @@ public:
     uint32_t numReceived() const;
 
     uint32_t f_;
+    uint32_t quorumSize_;
 
     size_t maxMatchSize_;
     uint32_t round_;
