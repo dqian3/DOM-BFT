@@ -4,6 +4,9 @@
 
 #include "config/config_manager.h"
 
+#include <cryptopp/filters.h>
+#include <cryptopp/sha.h>
+
 typedef std::pair<uint32_t, uint32_t> RequestId;
 typedef std::map<RequestId, const dombft::proto::LogEntry *> ClientReqs;
 
@@ -349,12 +352,11 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
             LOG(ERROR) << "Missing request at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq;
         }
 
-        byte digest_bytes[SHA256_DIGEST_LENGTH];
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, availableReqs[key].c_str(), availableReqs[key].length());
-        SHA256_Final(digest_bytes, &ctx);
-        std::string digestMyReq(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH);
+        CryptoPP::SHA256 hash;
+        std::string digestMyReq;
+        CryptoPP::StringSource ss(
+            availableReqs[key], true, new CryptoPP::HashFilter(hash, new CryptoPP::StringSink(digestMyReq))
+        );
 
         if (digestMyReq != entry->request_digest()) {
             LOG(ERROR) << "Digest mismatch for entry at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq

@@ -47,12 +47,10 @@ void LogEntry::toProto(dombft::proto::LogEntry &msg) const
     msg.set_digest(digest);
     // msg.set_request(request);
 
-    byte digest_bytes[SHA256_DIGEST_LENGTH];
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, request.c_str(), request.length());
-    SHA256_Final(digest_bytes, &ctx);
-    msg.set_request_digest(std::string(digest_bytes, digest_bytes + SHA256_DIGEST_LENGTH));
+    CryptoPP::SHA256 hash;
+    std::string request_digest;
+    CryptoPP::StringSource ss(request, true, new CryptoPP::HashFilter(hash, new CryptoPP::StringSink(request_digest)));
+    msg.set_request_digest(request_digest);
 }
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
