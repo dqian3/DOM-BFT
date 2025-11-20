@@ -8,7 +8,8 @@ message FlutterClientRequest {
     uint32 client_id = 1;               // Client that sent the request
     uint32 client_seq = 2;              // Client sequence number
     uint64 bet = 3;                // Client's deadline (bet)
-    bytes req_data = 4;                 // Request payload data
+    uint64 num_retries = 4;
+    bytes req_data = 5;                 // Request payload data
 }
 
 // Flutter Reply - response from replica to client indicating accept/reject
@@ -37,22 +38,27 @@ message FlutterObserve {
 // RBC Proposal message - servers propose client_id + bet pairs for consensus
 message FlutterRBCProposal {
     uint32 client_id = 1;           // Client ID being proposed
-    uint64 bet = 2;                 // Bet (timestamp) being proposed
-    bool accept = 3;                // 0/1 whether to accept this proposal
+    uint32 client_seq = 2;
+    uint64 bet = 3;                 // Bet (timestamp) being proposed
+    bool accept = 4;                // 0/1 whether to accept this proposal
 }
 
 // RBC Slow Proposal message - sent to leader when superquorum votes reached
 message FlutterRBCSlowProposal {
     uint32 client_id = 1;           // Client ID
-    uint64 bet = 2;                 // Bet (timestamp)
-    bool accept = 3;                // Majority vote (accept/reject)
+    uint32 client_seq = 2;
+
+    uint64 bet = 3;                 // Bet (timestamp)
+    bool accept = 4;                // Majority vote (accept/reject)
 }
 
 // RBC Slow Value message - leader's response to slow proposals
 message FlutterRBCSlowValue {
     uint32 client_id = 1;           // Client ID
-    uint64 bet = 2;                 // Bet (timestamp)
-    bool accept = 3;                // Leader's decision based on f+1 threshold
+    uint32 client_seq = 2;
+
+    uint64 bet = 3;                 // Bet (timestamp)
+    bool accept = 4;                // Leader's decision based on f+1 threshold
 }
 
 

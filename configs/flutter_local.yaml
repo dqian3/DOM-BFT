@@ -16,12 +16,12 @@ client:
 
   sendMode: "sendRate"
   maxInFlight: 10
-  sendRate: 50
+  sendRate: 100
   runtimeSeconds: 60
   requestSize: 512
 
   # Flutter-specific client settings
-  initialBet: 100000        # 100ms in microseconds
+  initialBet: 400        # 100ms in microseconds
   betIncrement: 100000      # Increase bet by 100ms on rejection
   useHMAC: true
 

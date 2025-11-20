@@ -78,7 +78,9 @@ struct Candidate {
 
     // Slow path tracking
     bool slowPathInitiated = false;
-    bool slowDecision = false;   // Final decision from leader
+
+    bool slowValueReceived = false;   // Did we receive final decision
+    bool slowAccepted = false;        // Whether slow value was accepted
 
     // Slow path leader state
     bool slowValueSent = false;
@@ -127,8 +129,9 @@ private:
     // RBC slow path state
     uint32_t leaderId_;   // Fixed leader (replica 0)
 
-    // Candidate pool: (timestamp, clientId) -> Candidate
-    std::map<std::pair<uint64_t, uint32_t>, Candidate> candidatePool_;
+    // Candidate pool: (bet, clientId) -> Candidate
+    std::map<std::pair<uint64_t, std::pair<uint32_t, uint32_t>>, Candidate> candidatePool_;
+    std::map<std::pair<uint32_t, uint32_t>, uint64_t> clientCurrentBets_;   // (clientId, clientSeq) -> current bet
 
     // Client state tracking - handles out-of-order commits
     std::unordered_map<uint32_t, ClientSequenceTracker> clientSeqTrackers_;   // client_id -> sequence tracker
@@ -145,21 +148,21 @@ private:
     void updateLockTime();
 
     // RBC proposal handling
-    void broadcastRBCProposal(uint32_t clientId, uint64_t bet, bool accept);
-    void processRBCProposal(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept);
+    void broadcastRBCProposal(uint32_t clientId, uint32_t clientSeq, uint64_t bet, bool accept);
+    void processRBCProposal(uint32_t senderId, uint32_t clientId, uint32_t clientSeq, uint64_t bet, bool accept);
 
     // RBC slow path handling
-    void sendRBCSlowProposal(uint32_t clientId, uint64_t bet, bool accept);
-    void processRBCSlowProposal(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept);
-    void sendRBCSlowValue(uint32_t clientId, uint64_t bet, bool accept);
-    void processRBCSlowValue(uint32_t senderId, uint32_t clientId, uint64_t bet, bool accept);
+    void sendRBCSlowProposal(uint32_t clientId, uint32_t clientSeq, uint64_t bet, bool accept);
+    void processRBCSlowProposal(uint32_t senderId, uint32_t clientId, uint32_t clientSeq, uint64_t bet, bool accept);
+    void sendRBCSlowValue(uint32_t clientId, uint32_t clientSeq, uint64_t bet, bool accept);
+    void processRBCSlowValue(uint32_t senderId, uint32_t clientId, uint32_t clientSeq, uint64_t bet, bool accept);
 
     // Observe message handling
-    void broadcastObserve(const flutter::proto::FlutterClientRequest &request, uint64_t bet);
-    void processObserve(uint32_t senderId, const flutter::proto::FlutterClientRequest &request, uint64_t bet);
+    void broadcastObserve(const flutter::proto::FlutterClientRequest &request);
+    void processObserve(uint32_t senderId, const flutter::proto::FlutterClientRequest &request);
 
     // Candidate management
-    void initializeCandidate(const flutter::proto::FlutterClientRequest &request, uint64_t bet);
+    void initializeCandidate(const flutter::proto::FlutterClientRequest &request);
     void checkCandidatesForCommit();
 
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);

@@ -197,8 +197,9 @@ void FlutterClient::submitRequestsOpenLoop()
 void FlutterClient::sendRequest(FlutterRequestState &state)
 {
     // Update bet
-    state.bet = GetMicrosecondTimestamp() + baseBetOffset_ + std::pow(2, (state.numRetries)) * betIncrement_;
+    state.bet = GetMicrosecondTimestamp() + baseBetOffset_ + state.numRetries * betIncrement_;
     state.request.set_bet(state.bet);
+    state.request.set_num_retries(state.numRetries);
 
     VLOG(1) << "PERF event=send client_id=" << clientId_ << " client_seq=" << nextSeq_ << " bet=" << state.bet
             << " inflight=" << numInFlight_ << " retries=" << state.numRetries;
@@ -281,6 +282,12 @@ void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &repl
     // Check if we already received a vote from this replica
     if (state.votedReplicas.count(replicaId) > 0) {
         VLOG(4) << "Duplicate vote from replica=" << replicaId << " seq=" << seq;
+        return;
+    }
+
+    if (state.bet > reply.bet()) {
+        VLOG(4) << "Stale vote from replica=" << replicaId << " seq=" << seq << " reply_bet=" << reply.bet()
+                << " current_bet=" << state.bet;
         return;
     }
 
