@@ -1,5 +1,5 @@
 app: counter
-transport: simple-rpc
+transport: nng
 
 # Flutter requires 5f+1 replicas
 resiliency:
@@ -17,13 +17,13 @@ client:
   keysDir: keys/client
 
   sendMode: "sendRate"
-  maxInFlight: 250
-  sendRate: 1400
+  maxInFlight: 500
+  sendRate: 500
   runtimeSeconds: 60
   requestSize: 512
 
   # Flutter-specific client settings
-  initialBet:   50000       
+  initialBet:   100000       
   betIncrement: 100000      # Increase bet by 100ms on rejection
   useHMAC: true
 
