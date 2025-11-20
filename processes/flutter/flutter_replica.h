@@ -29,11 +29,12 @@ namespace dombft {
 
 // Tracks committed client sequences, handling out-of-order commits
 struct ClientSequenceTracker {
-    uint32_t lastCommitted = 0;              // Last contiguous committed sequence
-    std::set<uint32_t> outOfOrderCommits;    // Sequences committed beyond lastCommitted
+    uint32_t lastCommitted = 0;             // Last contiguous committed sequence
+    std::set<uint32_t> outOfOrderCommits;   // Sequences committed beyond lastCommitted
 
     // Check if a sequence has been committed
-    bool isCommitted(uint32_t seq) const {
+    bool isCommitted(uint32_t seq) const
+    {
         if (seq <= lastCommitted) {
             return true;
         }
@@ -41,9 +42,10 @@ struct ClientSequenceTracker {
     }
 
     // Mark a sequence as committed
-    void commit(uint32_t seq) {
+    void commit(uint32_t seq)
+    {
         if (seq <= lastCommitted) {
-            return;  // Already committed
+            return;   // Already committed
         }
 
         if (seq == lastCommitted + 1) {
@@ -79,6 +81,7 @@ struct Candidate {
     bool slowDecision = false;   // Final decision from leader
 
     // Slow path leader state
+    bool slowValueSent = false;
     std::map<uint32_t, bool> slowProposals;   // replica_id -> accept/reject
 
     bool operator<(const Candidate &other) const { return bet < other.bet; }

@@ -683,6 +683,10 @@ void FlutterReplica::processRBCSlowProposal(uint32_t senderId, uint32_t clientId
 
     Candidate &candidate = it->second;
 
+    if (candidate.slowValueSent) {
+        return;
+    }
+
     // Record the slow proposal
     candidate.slowProposals[senderId] = accept;
 
@@ -715,6 +719,7 @@ void FlutterReplica::processRBCSlowProposal(uint32_t senderId, uint32_t clientId
     }
 
     // Broadcast slow value decision to all replicas
+    candidate.slowValueSent = true;
     sendRBCSlowValue(clientId, bet, decision);
 
     VLOG(2) << "Leader slow decision: client=" << clientId << " bet=" << bet
