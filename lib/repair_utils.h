@@ -45,6 +45,6 @@ bool getLogSuffixFromProposal(const dombft::proto::RepairProposal &repairProposa
 
 std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::shared_ptr<Log> log, uint32_t startSeq);
 
-void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availableReqs, std::shared_ptr<Log> log);
+bool applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availableReqs, std::shared_ptr<Log> log, std::vector<std::pair<uint32_t, uint32_t>> &missingRequests);
 
 #endif

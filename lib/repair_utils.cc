@@ -273,7 +273,10 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
     return ret;
 }
 
-void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availableReqs, std::shared_ptr<Log> log)
+bool applySuffix(
+    LogSuffix &logSuffix, std::map<RequestId, std::string> &availableReqs, std::shared_ptr<Log> log,
+    std::vector<std::pair<uint32_t, uint32_t>> &missingRequests
+)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "logSuffix.checkpoint.seq=" << logSuffix.checkpoint->seq()
@@ -292,7 +295,7 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
         LOG(INFO) << "Checkpoint seq=" << log->getCommittedCheckpoint().seq
                   << " is ahead of repair checkpoint seq=" << logSuffix.checkpoint->seq()
                   << " + entries size=" << logSuffix.entries.size() << " so not applying suffix";
-        return;
+        return true;
     }
 
     // First sequence to apply is right after checkpoint
@@ -330,9 +333,6 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
         const LogEntry &entry = log->getEntry(i);
         RequestId key = {entry.client_id, entry.client_seq};
         availableReqs[key] = entry.request;
-
-        LOG(INFO) << "Saving aborted request c_id=" << entry.client_id << " c_seq=" << entry.client_seq
-                  << " at seq=" << i << "request size=" << entry.request.size();
     }
 
     LOG(INFO) << "Aborting own entries from seq=" << seq;
@@ -348,13 +348,13 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
 
-        LOG(INFO) << "Applying entry seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq;
-
         // Get request and check the digest
         RequestId key = {clientId, clientSeq};
         if (!availableReqs.contains(key)) {
-            throw std::runtime_error("Missing request in repair proposal!");
-            LOG(ERROR) << "Missing request at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq;
+            LOG(INFO) << "Missing request at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq
+                      << " - will request from other replicas";
+            missingRequests.push_back({clientId, clientSeq});
+            return false;
         }
 
         CryptoPP::SHA256 hash;
@@ -383,4 +383,5 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
                 << " digest=" << digest_to_hex(log->getDigest());
         seq++;
     }
+    return true;
 }

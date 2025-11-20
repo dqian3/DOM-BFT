@@ -327,7 +327,7 @@ void Replica::enqueueReceiverRequest(int64_t recv_time, DOMRequest &request)
 {
     if (recv_time > request.deadline()) {
         request.set_late(true);
-        VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
+        VLOG(2) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
                 << recv_time - request.deadline() << "us";
     }
 
@@ -577,6 +577,32 @@ void Replica::verifyMessagesThd()
 
             processQueue_.enqueue(msg);
         }
+
+        else if (hdr->msgType == MISSING_REQUEST_FETCH) {
+            dombft::proto::MissingRequestFetch fetchRequest;
+            if (!fetchRequest.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_FETCH message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, fetchRequest.replica_id()})) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == MISSING_REQUEST_REPLY) {
+            dombft::proto::MissingRequestReply fetchReply;
+            if (!fetchReply.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_REPLY message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, fetchReply.replica_id()})) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+            processQueue_.enqueue(msg);
+        }
 #if !USE_PROXY
 
         else if (hdr->msgType == CLIENT_REQUEST) {
@@ -774,6 +800,25 @@ void Replica::processMessagesThd()
             if (repair_) {
                 VLOG(6) << "Queuing request due to repair";
                 repairQueuedReqs_.insert({{domHeader.deadline(), clientHeader.client_id()}, clientHeader});
+
+                // Check if this request matches any pending missing requests
+                if (missingRequestFetchSent_) {
+                    RequestId reqKey = {clientHeader.client_id(), clientHeader.client_seq()};
+                    auto it = std::find(pendingMissingRequests_.begin(), pendingMissingRequests_.end(), reqKey);
+                    if (it != pendingMissingRequests_.end()) {
+                        LOG(INFO) << "Received missing request from client c_id=" << clientHeader.client_id()
+                                  << " c_seq=" << clientHeader.client_seq();
+                        pendingMissingRequests_.erase(it);
+
+                        // If all missing requests are now available, retry repair
+                        if (pendingMissingRequests_.empty()) {
+                            LOG(INFO) << "All missing requests now available (via client), retrying repair";
+                            missingRequestFetchSent_ = false;
+                            tryFinishRepair();
+                        }
+                    }
+                }
+
                 continue;
             }
 
@@ -841,6 +886,24 @@ void Replica::processMessagesThd()
                 return;
             }
             processSnapshotReply(reply);
+        }
+
+        else if (hdr->msgType == MISSING_REQUEST_FETCH) {
+            dombft::proto::MissingRequestFetch fetchRequest;
+            if (!fetchRequest.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_FETCH message";
+                return;
+            }
+            processMissingRequestFetch(fetchRequest);
+        }
+
+        else if (hdr->msgType == MISSING_REQUEST_REPLY) {
+            dombft::proto::MissingRequestReply fetchReply;
+            if (!fetchReply.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_REPLY message";
+                return;
+            }
+            processMissingRequestReply(fetchReply);
         }
 
         else if (hdr->msgType == REPAIR_TIMEOUT) {
@@ -1440,7 +1503,12 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
         }
 
-        applySuffix(logSuffix, availableReqs, log_);
+        std::vector<std::pair<uint32_t, uint32_t>> missingRequests;
+        if (!applySuffix(logSuffix, availableReqs, log_, missingRequests)) {
+            LOG(INFO) << "applySuffix failed due to missing requests, requesting from other replicas";
+            sendMissingRequestFetch(missingRequests);
+            return;
+        }
         finishRepair(abortedRequests);
 
         // TODO temporary fix for issue #120, this may lead to later issues though
@@ -1495,6 +1563,126 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
     // Got the snapshot
     repairSnapshotRequested_ = false;
     checkpointSnapshotRequested_ = false;
+}
+
+void Replica::processMissingRequestFetch(const dombft::proto::MissingRequestFetch &fetchRequest)
+{
+    LOG(INFO) << "Processing MISSING_REQUEST_FETCH from replica " << fetchRequest.replica_id() << " for "
+              << fetchRequest.request_ids_size() << " requests";
+
+    // if (fetchRequest.round() < round_) {
+    //     VLOG(1) << "Missing request fetch round outdated, skipping";
+    //     return;
+    // }
+
+    dombft::proto::MissingRequestReply reply;
+    reply.set_round(round_);
+    reply.set_replica_id(replicaId_);
+
+    // Iterate through requested requests and search for them
+    for (const auto &reqId : fetchRequest.request_ids()) {
+        uint32_t clientId = reqId.client_id();
+        uint32_t clientSeq = reqId.client_seq();
+        bool found = false;
+
+        // If not found, search own log
+        if (!found) {
+            for (uint32_t seq = log_->getCommittedCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
+                const ::LogEntry &entry = log_->getEntry(seq);
+                if (entry.client_id == clientId && entry.client_seq == clientSeq) {
+                    auto *reqData = reply.add_requests();
+                    reqData->set_client_id(clientId);
+                    reqData->set_client_seq(clientSeq);
+                    reqData->set_request(entry.request);
+                    found = true;
+
+                    VLOG(2) << "Providing missing request from own log at seq=" << seq << " c_id=" << clientId
+                            << " c_seq=" << clientSeq << " to replica " << fetchRequest.replica_id();
+                    break;
+                }
+            }
+        }
+
+        if (!found) {
+            VLOG(2) << "Don't have requested request c_id=" << clientId << " c_seq=" << clientSeq;
+        }
+    }
+
+    if (reply.requests_size() > 0) {
+        LOG(INFO) << "Sending MISSING_REQUEST_REPLY to replica " << fetchRequest.replica_id() << " with "
+                  << reply.requests_size() << " requests";
+        sendMsgToDst(reply, MessageType::MISSING_REQUEST_REPLY, replicaAddrs_[fetchRequest.replica_id()]);
+    } else {
+        LOG(WARNING) << "No missing requests found to send to replica " << fetchRequest.replica_id();
+    }
+}
+
+void Replica::processMissingRequestReply(const dombft::proto::MissingRequestReply &fetchReply)
+{
+    LOG(INFO) << "Processing MISSING_REQUEST_REPLY from replica " << fetchReply.replica_id() << " with "
+              << fetchReply.requests_size() << " requests";
+
+    if (fetchReply.round() < round_) {
+        VLOG(1) << "Missing request reply round outdated, skipping";
+        return;
+    }
+
+    // Add the received requests to our repairQueuedReqs_
+    for (const auto &reqData : fetchReply.requests()) {
+        RequestId key = {reqData.client_id(), reqData.client_seq()};
+
+        // Check if this is one of our pending missing requests
+        auto it = std::find(pendingMissingRequests_.begin(), pendingMissingRequests_.end(), key);
+        if (it != pendingMissingRequests_.end()) {
+            // Add to repairQueuedReqs_
+            dombft::proto::ClientRequest clientReq;
+            clientReq.set_client_id(reqData.client_id());
+            clientReq.set_client_seq(reqData.client_seq());
+            clientReq.set_req_data(reqData.request());
+
+            repairQueuedReqs_[{reqData.client_id(), reqData.client_seq()}] = clientReq;
+
+            // Remove from pending list
+            pendingMissingRequests_.erase(it);
+
+            LOG(INFO) << "Received missing request c_id=" << reqData.client_id() << " c_seq=" << reqData.client_seq();
+        }
+    }
+
+    // If all pending requests have been received, try to finish repair again
+    if (pendingMissingRequests_.empty() && missingRequestFetchSent_) {
+        LOG(INFO) << "All missing requests received, retrying repair";
+        missingRequestFetchSent_ = false;
+        tryFinishRepair();
+    }
+}
+
+void Replica::sendMissingRequestFetch(const std::vector<std::pair<uint32_t, uint32_t>> &missingRequests)
+{
+    if (missingRequests.empty()) {
+        return;
+    }
+
+    LOG(INFO) << "Sending MISSING_REQUEST_FETCH for " << missingRequests.size() << " requests";
+
+    dombft::proto::MissingRequestFetch fetchRequest;
+    fetchRequest.set_round(round_);
+    fetchRequest.set_replica_id(replicaId_);
+
+    for (const auto &[clientId, clientSeq] : missingRequests) {
+        auto *reqId = fetchRequest.add_request_ids();
+        reqId->set_client_id(clientId);
+        reqId->set_client_seq(clientSeq);
+
+        VLOG(2) << "Requesting missing request c_id=" << clientId << " c_seq=" << clientSeq;
+    }
+
+    // Store the pending requests
+    pendingMissingRequests_ = missingRequests;
+    missingRequestFetchSent_ = true;
+
+    // Broadcast to all replicas
+    broadcastToReplicas(fetchRequest, MessageType::MISSING_REQUEST_FETCH);
 }
 
 void Replica::processRepairTimeout(const dombft::proto::RepairTimeout &msg, std::span<byte> sig)
@@ -2338,7 +2526,12 @@ void Replica::tryFinishRepair()
                 availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
             }
 
-            applySuffix(logSuffix, availableReqs, log_);
+            std::vector<std::pair<uint32_t, uint32_t>> missingRequests;
+            if (!applySuffix(logSuffix, availableReqs, log_, missingRequests)) {
+                LOG(INFO) << "applySuffix failed due to missing requests, requesting from other replicas";
+                sendMissingRequestFetch(missingRequests);
+                return;
+            }
             finishRepair(abortedRequests);
         } else {
             LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq() << " is inconsistent with my log";
@@ -2355,7 +2548,12 @@ void Replica::tryFinishRepair()
         }
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
-        applySuffix(logSuffix, availableReqs, log_);
+        std::vector<std::pair<uint32_t, uint32_t>> missingRequests;
+        if (!applySuffix(logSuffix, availableReqs, log_, missingRequests)) {
+            LOG(INFO) << "applySuffix failed due to missing requests, requesting from other replicas";
+            sendMissingRequestFetch(missingRequests);
+            return;
+        }
         finishRepair(abortedRequests);
     }
 }

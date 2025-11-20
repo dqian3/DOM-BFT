@@ -274,10 +274,34 @@ message SnapshotReply {
     uint32 replica_id = 3;
 
     LogCheckpoint checkpoint = 4;
-    repeated LogEntry log_entries = 5; 
+    repeated LogEntry log_entries = 5;
 
     optional LogCheckpoint snapshot_checkpoint = 7;
     optional bytes snapshot = 8;
+}
+
+message RequestIdPair {
+    uint32 client_id = 1;
+    uint32 client_seq = 2;
+}
+
+message MissingRequestFetch {
+    uint32 round = 1;
+    uint32 replica_id = 2;
+    repeated RequestIdPair request_ids = 3;
+}
+
+message MissingRequestReply {
+    uint32 round = 1;
+    uint32 replica_id = 2;
+
+    message RequestData {
+        uint32 client_id = 1;
+        uint32 client_seq = 2;
+        bytes request = 3;
+    }
+
+    repeated RequestData requests = 3;
 }
 
 

@@ -85,6 +85,9 @@ enum MessageType {
     SNAPSHOT_REQUEST = 24,
     SNAPSHOT_REPLY = 25,
 
+    MISSING_REQUEST_FETCH = 27,
+    MISSING_REQUEST_REPLY = 28,
+
     DUMMY_PROTO = 26
 };
 

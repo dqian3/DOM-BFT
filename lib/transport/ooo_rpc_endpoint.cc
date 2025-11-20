@@ -180,7 +180,7 @@ bool OOORPCEndpoint::RegisterMsgHandler(MessageHandlerFunc f)
 
             if (recv_time > request.deadline()) {
                 request.set_late(true);
-                VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late at RPC by "
+                VLOG(2) << "Request " << request.client_id() << ", " << request.client_seq() << " is late at RPC by "
                         << recv_time - request.deadline() << "us";
             }
         }

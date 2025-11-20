@@ -14,7 +14,6 @@ LogEntry::LogEntry()
     , client_seq(0)
     , digest("")
 {
-    LOG(INFO) << "Created empty LogEntry";
 }
 
 LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string &req, const std::string &prev_digest)
