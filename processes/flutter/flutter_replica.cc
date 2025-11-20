@@ -425,6 +425,8 @@ void FlutterReplica::broadcastClock()
     lastClockBroadcast_ = currentTime;
 
     VLOG(6) << "Broadcast clock time=" << currentTime;
+
+    VLOG(1) << "Candidate pool size: " << candidatePool_.size();
 }
 
 void FlutterReplica::processFlutterTime(uint32_t senderId, uint64_t clockTime)
