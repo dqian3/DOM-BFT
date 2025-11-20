@@ -160,9 +160,6 @@ void FlutterClient::submitRequest(const std::string &data)
 
     auto state = std::make_unique<FlutterRequestState>(request, GetMicrosecondTimestamp() + baseBetOffset_);
 
-    VLOG(1) << "PERF event=send client_id=" << clientId_ << " client_seq=" << nextSeq_ << " bet=" << state->bet
-            << " inflight=" << numInFlight_;
-
     pendingRequests_[nextSeq_] = std::move(state);
     sendRequest(*pendingRequests_[nextSeq_]);
 
@@ -202,6 +199,9 @@ void FlutterClient::sendRequest(FlutterRequestState &state)
     // Update bet
     state.bet = GetMicrosecondTimestamp() + baseBetOffset_ + std::pow(2, (state.numRetries)) * betIncrement_;
     state.request.set_bet(state.bet);
+
+    VLOG(1) << "PERF event=send client_id=" << clientId_ << " client_seq=" << nextSeq_ << " bet=" << state.bet
+            << " inflight=" << numInFlight_ << " retries=" << state.numRetries;
 
     // Send FlutterClientRequest directly to all replicas
     sendThreadpool_.enqueueTask([=, this](byte *buffer) {

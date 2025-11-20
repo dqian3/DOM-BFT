@@ -310,7 +310,7 @@ void FlutterReplica::processClientRequest(const flutter::proto::FlutterClientReq
 {
     uint64_t bet = request.bet();
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
-    bool isFirstTime = candidatePool_.find(key) == candidatePool_.end();
+    bool isFirstTime = candidatePool_.find(key) == candidatePool_.end() || !candidatePool_[key].request.has_value();
 
     if (isFirstTime) {
         initializeCandidate(request, bet);
@@ -362,24 +362,33 @@ void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequ
         VLOG(4) << "Ignoring already-committed: client=" << clientId << " seq=" << clientSeq;
         return;
     }
-
-    // Create candidate
-    Candidate candidate;
-    candidate.clientId = clientId;
-    candidate.clientSeq = clientSeq;
-    candidate.bet = bet;
-    candidate.request = request;
-
     // Compute digest of the request
     std::string reqSerialized = request.SerializeAsString();
     CryptoPP::SHA256 hash;
     byte digest[CryptoPP::SHA256::DIGESTSIZE];
     hash.CalculateDigest(digest, (const byte *) reqSerialized.c_str(), reqSerialized.size());
-    candidate.digest = std::string(reinterpret_cast<const char *>(digest), CryptoPP::SHA256::DIGESTSIZE);
+    std::string digestStr = std::string(reinterpret_cast<const char *>(digest), CryptoPP::SHA256::DIGESTSIZE);
 
-    // Add to candidate pool
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
-    candidatePool_[key] = candidate;
+
+    if (candidatePool_.contains(key)) {
+        LOG(INFO) << "FLUTTER: Warning - overwriting existing candidate for client=" << clientId << " bet=" << bet;
+
+        candidatePool_[key].request = request;
+        candidatePool_[key].digest = digestStr;
+
+    } else {
+        // Create candidate
+        Candidate candidate;
+        candidate.clientId = clientId;
+        candidate.clientSeq = clientSeq;
+        candidate.bet = bet;
+        candidate.request = request;
+        candidate.digest = digestStr;
+
+        // Add to candidate pool
+        candidatePool_[key] = candidate;
+    }
 
     VLOG(1) << "RECV_REQUEST client=" << request.client_id() << " seq=" << request.client_seq() << " bet=" << bet;
 
@@ -424,9 +433,7 @@ void FlutterReplica::broadcastClock()
 
     lastClockBroadcast_ = currentTime;
 
-    VLOG(6) << "Broadcast clock time=" << currentTime;
-
-    VLOG(1) << "Candidate pool size: " << candidatePool_.size();
+    VLOG(3) << "Broadcast clock time=" << currentTime << "Candidate pool size: " << candidatePool_.size();
 }
 
 void FlutterReplica::processFlutterTime(uint32_t senderId, uint64_t clockTime)
@@ -497,7 +504,9 @@ void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, ui
 
     if (it == candidatePool_.end()) {
         LOG(WARNING) << "FLUTTER: Received RBC proposal for unknown candidate client=" << clientId << " bet=" << bet;
-        return;
+
+        candidatePool_[key] = Candidate();   // Create a placeholder candidate to track votes
+        it = candidatePool_.find(key);
     }
 
     Candidate &candidate = it->second;
@@ -572,7 +581,7 @@ void FlutterReplica::processObserve(
 {
     // Check if this is the first time seeing this request
     std::pair<uint64_t, uint32_t> key = {bet, request.client_id()};
-    bool isFirstTime = candidatePool_.find(key) == candidatePool_.end();
+    bool isFirstTime = candidatePool_.find(key) == candidatePool_.end() || !candidatePool_[key].request.has_value();
 
     if (isFirstTime) {
         VLOG(4) << "Recv observe from replica=" << senderId << " client=" << request.client_id() << " bet=" << bet;
@@ -598,6 +607,11 @@ void FlutterReplica::checkCandidatesForCommit()
         // Early exit: since map is ordered by timestamp, if this candidate hasn't converged,
         // all subsequent candidates have higher timestamps and also won't have converged
         if (!hasConverged) {
+            break;
+        }
+
+        bool hasRequest = candidate.request.has_value();
+        if (!hasRequest) {
             break;
         }
 
@@ -683,7 +697,9 @@ void FlutterReplica::processRBCSlowProposal(uint32_t senderId, uint32_t clientId
     if (it == candidatePool_.end()) {
         LOG(WARNING) << "FLUTTER: Leader received slow proposal for unknown candidate "
                      << "client " << clientId << " bet " << bet;
-        return;
+
+        candidatePool_[key] = Candidate();   // Create a placeholder candidate
+        it = candidatePool_.find(key);
     }
 
     Candidate &candidate = it->second;
@@ -762,7 +778,9 @@ void FlutterReplica::processRBCSlowValue(uint32_t senderId, uint32_t clientId, u
     if (it == candidatePool_.end()) {
         LOG(WARNING) << "FLUTTER: Received slow value for unknown candidate "
                      << "client " << clientId << " bet " << bet;
-        return;
+
+        candidatePool_[key] = Candidate();   // Create a placeholder candidate
+        it = candidatePool_.find(key);
     }
 
     Candidate &candidate = it->second;

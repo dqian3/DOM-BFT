@@ -68,7 +68,7 @@ struct Candidate {
     uint64_t bet;
     uint32_t clientId;
     uint32_t clientSeq;
-    flutter::proto::FlutterClientRequest request;
+    std::optional<flutter::proto::FlutterClientRequest> request;
     std::string digest;
 
     // Vote tracking for RBC
