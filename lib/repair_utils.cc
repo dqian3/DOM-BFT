@@ -330,6 +330,9 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
         const LogEntry &entry = log->getEntry(i);
         RequestId key = {entry.client_id, entry.client_seq};
         availableReqs[key] = entry.request;
+
+        LOG(INFO) << "Saving aborted request c_id=" << entry.client_id << " c_seq=" << entry.client_seq
+                  << " at seq=" << i << "request size=" << entry.request.size();
     }
 
     LOG(INFO) << "Aborting own entries from seq=" << seq;
@@ -344,6 +347,8 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
         const dombft::proto::LogEntry *entry = logSuffix.entries[idx];
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
+
+        LOG(INFO) << "Applying entry seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq;
 
         // Get request and check the digest
         RequestId key = {clientId, clientSeq};
@@ -360,12 +365,13 @@ void applySuffix(LogSuffix &logSuffix, std::map<RequestId, std::string> &availab
 
         if (digestMyReq != entry->request_digest()) {
             LOG(ERROR) << "Digest mismatch for entry at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq
-                       << " digest=" << digestMyReq << " repair digest=" << entry->request_digest();
+                       << " digest=" << digest_to_hex(digestMyReq)
+                       << " repair digest=" << digest_to_hex(entry->request_digest());
             throw std::runtime_error("Request in repair proposal does not match!");
         }
 
         std::string result;
-        if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
+        if (!log->addEntry(entry->client_id(), clientSeq, availableReqs[key], result)) {
             // This should not happen!
             VLOG(2) << "Failure to add request in slow path! " << " seq=" << seq << " round=" << logSuffix.round
                     << " client_id=" << clientId << " client_seq=" << entry->client_seq();

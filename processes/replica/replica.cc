@@ -975,7 +975,7 @@ void Replica::processClientRequest(const ClientRequest &request, bool queued)
 
     VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
             << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest())
-            << " queued=" << queued;
+            << " queued=" << queued << " request_size=" << request.req_data().size();
 
     Reply reply;
     reply.set_client_id(clientId);
