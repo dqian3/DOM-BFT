@@ -612,7 +612,7 @@ void FlutterReplica::checkCandidatesForCommit()
                 // TODO: Execute the request
                 // Mark sequence as committed to prevent reprocessing
                 clientSeqTrackers_[clientId].commit(candidate.clientSeq);
-
+                
                 VLOG(1) << "COMMIT client=" << clientId << " seq=" << candidate.clientSeq << " bet=" << bet
                         << " decision=" << (accepted ? "ACCEPT" : "REJECT")
                         << " path=" << (hasFastConsensus ? "fast" : "slow") << " lock=" << lockTime_;

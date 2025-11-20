@@ -160,7 +160,7 @@ void FlutterClient::submitRequest(const std::string &data)
 
     auto state = std::make_unique<FlutterRequestState>(request, GetMicrosecondTimestamp() + baseBetOffset_);
 
-    VLOG(1) << "SEND client=" << clientId_ << " seq=" << nextSeq_ << " bet=" << state->bet
+    VLOG(1) << "PERF event=send client_id=" << clientId_ << " client_seq=" << nextSeq_ << " bet=" << state->bet
             << " inflight=" << numInFlight_;
 
     pendingRequests_[nextSeq_] = std::move(state);
@@ -200,7 +200,7 @@ void FlutterClient::submitRequestsOpenLoop()
 void FlutterClient::sendRequest(FlutterRequestState &state)
 {
     // Update bet
-    state.bet = GetMicrosecondTimestamp() + baseBetOffset_ + (state.numRetries) * betIncrement_;
+    state.bet = GetMicrosecondTimestamp() + baseBetOffset_ + std::pow(2, (state.numRetries)) * betIncrement_;
     state.request.set_bet(state.bet);
 
     // Send FlutterClientRequest directly to all replicas
@@ -294,9 +294,9 @@ void FlutterClient::processFlutterReply(const flutter::proto::FlutterReply &repl
 
         // Check if we have f+1 accept votes
         if (state.acceptVotes >= f_ + 1) {
-            LOG(INFO) << "COMMIT client=" << clientId_ << " seq=" << seq
+            LOG(INFO) << "PERF event=commit client_id=" << clientId_ << " client_seq=" << seq
                       << " latency=" << (GetMicrosecondTimestamp() - state.submitTime)
-                      << " retries=" << state.numRetries << " decision=accept";
+                      << " retries=" << state.numRetries << " decision=accept path=flutter";
 
             commitRequest(seq);
         }

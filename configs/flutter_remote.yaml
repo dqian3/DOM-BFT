@@ -17,9 +17,9 @@ client:
   keysDir: keys/client
 
   sendMode: "sendRate"
-  maxInFlight: 500
-  sendRate: 800
-  runtimeSeconds: 120
+  maxInFlight: 250
+  sendRate: 1400
+  runtimeSeconds: 60
   requestSize: 512
 
   # Flutter-specific client settings
