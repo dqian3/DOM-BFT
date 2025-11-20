@@ -521,6 +521,9 @@ void FlutterReplica::processRBCProposal(uint32_t senderId, uint32_t clientId, ui
     // Check for commits only if we just reached superquorum threshold
     if (candidate.acceptVotes == superQuorumSize_ || candidate.rejectVotes == superQuorumSize_) {
         checkCandidatesForCommit();
+        // NOTE, this return is essential to avoid a dangling reference, as checkCandidatesForCommit may erase this
+        // candidate
+        return;
     }
 
     // Check if we should initiate slow path: total votes reached superquorum but no single type has superquorum
@@ -612,7 +615,7 @@ void FlutterReplica::checkCandidatesForCommit()
                 // TODO: Execute the request
                 // Mark sequence as committed to prevent reprocessing
                 clientSeqTrackers_[clientId].commit(candidate.clientSeq);
-                
+
                 VLOG(1) << "COMMIT client=" << clientId << " seq=" << candidate.clientSeq << " bet=" << bet
                         << " decision=" << (accepted ? "ACCEPT" : "REJECT")
                         << " path=" << (hasFastConsensus ? "fast" : "slow") << " lock=" << lockTime_;

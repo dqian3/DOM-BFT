@@ -183,12 +183,16 @@ def flutter(
         )
 
     # Extract Flutter-specific config parameters
-    clock_broadcast_interval = config.get("replica", {}).get("clockBroadcastInterval", 50000)
+    clock_broadcast_interval = config.get("replica", {}).get(
+        "clockBroadcastInterval", 50000
+    )
     base_bet_offset = config.get("client", {}).get("initialBet", 100000)
     bet_increment = config.get("client", {}).get("betIncrement", 100000)
 
-    print(f"Flutter config: clockBroadcastInterval={clock_broadcast_interval}us, "
-          f"initialBet={base_bet_offset}us, betIncrement={bet_increment}us")
+    print(
+        f"Flutter config: clockBroadcastInterval={clock_broadcast_interval}us, "
+        f"initialBet={base_bet_offset}us, betIncrement={bet_increment}us"
+    )
 
     with c.cd(".."):
         c.run("rm logs/*", warn=True)
