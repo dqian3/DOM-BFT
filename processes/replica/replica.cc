@@ -327,7 +327,7 @@ void Replica::enqueueReceiverRequest(int64_t recv_time, DOMRequest &request)
 {
     if (recv_time > request.deadline()) {
         request.set_late(true);
-        VLOG(1) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
+        VLOG(2) << "Request " << request.client_id() << ", " << request.client_seq() << " is late by "
                 << recv_time - request.deadline() << "us";
     }
 
@@ -1573,7 +1573,7 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
             << "\n";
     }
 
-    LOG(INFO) << "Repair proof:\n" << oss.str();
+    LOG(INFO) << "Repair proof from " << msg.replica_id() << ":\n" << oss.str();
 
     // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
     // if we already are in fallback.
