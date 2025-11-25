@@ -215,11 +215,11 @@ void DummyReplica::verifyMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        if (hdr->msgType == CLIENT_REQUEST) {
+        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PRESERIALIZE_REQUEST) {
             ClientRequest request;
 
             if (!request.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PRESERIALIZE_REQUEST message";
                 continue;
             }
 
@@ -310,11 +310,11 @@ void DummyReplica::processMessagesThd()
 
             processClientRequest(clientHeader, std::span{clientBody + clientMsgHdr->msgLen, clientMsgHdr->sigLen});
         }
-        if (hdr->msgType == CLIENT_REQUEST) {
+        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PRESERIALIZE_REQUEST) {
             ClientRequest clientRequestMsg;
 
             if (!clientRequestMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PRESERIALIZE_REQUEST message";
                 continue;
             }
 

@@ -27,11 +27,7 @@
 #define NNG_BUFFER_SIZE  (200000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY   1
 #define SKIP_CRYPTO 0
-
-// For working with dummy protocols
-#define SEND_TO_LEADER 0
 
 typedef unsigned char byte;
 typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
@@ -87,10 +83,10 @@ enum MessageType {
 
     DUMMY_PROTO = 26,
 
-    // Preserialized request (bypasses proxy deadline assignment and priority queue)
-    PRESERIALIZED_REQUEST = 27,
+    // Preserialize request (bypasses proxy deadline assignment and priority queue)
+    PRESERIALIZE_REQUEST = 27,
 
-    // Preserialized request order (just contains client_id and client_seq for ordering)
+    // Preserialized order (just contains client_id and client_seq for ordering)
     PRESERIALIZED_ORDER = 28
 };
 

@@ -43,7 +43,11 @@ Client::Client(size_t id)
     }
 
     useProxy_ = config.useProxy;
+    sendToLeader_ = config.sendToLeader;
     LOG(INFO) << "Use proxy: " << (useProxy_ ? "true" : "false");
+    if (!useProxy_) {
+        LOG(INFO) << "Send to leader: " << (sendToLeader_ ? "true" : "false");
+    }
 
     normalPathEnabled_ = config.clientNormalPathEnabled;
 
@@ -322,8 +326,8 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
     Address targetAddr;
 
     if (preserializationEnabled_) {
-        // In preserialization mode, send PRESERIALIZED_REQUEST to replica 0
-        msgType = MessageType::PRESERIALIZED_REQUEST;
+        // In preserialization mode, send PRESERIALIZE_REQUEST to replica 0
+        msgType = MessageType::PRESERIALIZE_REQUEST;
         targetAddr = replicaAddrs_[0];
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, msgType, buffer);
@@ -334,7 +338,7 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         }
 
-        VLOG(1) << "Sending preserialized request to replica 0";
+        VLOG(1) << "Sending preserialize request to replica 0";
         endpoint_->SendPreparedMsgTo(targetAddr, hdr);
         return;
     }
@@ -352,16 +356,14 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
         // TODO how to choose proxy, perhaps by IP or config
         Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
         endpoint_->SendPreparedMsgTo(addr, hdr);
-    } else {
-#if SEND_TO_LEADER
+    } else if (sendToLeader_) {
         VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
         endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
-#else
+    } else {
         VLOG(1) << "Sending request to all replicas ";
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
-#endif
     }
 }
 

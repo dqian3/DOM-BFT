@@ -68,6 +68,7 @@ private:
 
     bool preserializationEnabled_;
     bool useProxy_;
+    bool sendToLeader_;
 
     /* Sending config */
     dombft::ClientSendMode sendMode_;

@@ -74,6 +74,7 @@ struct ProcessConfig {
 
     // Proxy configuration
     bool useProxy;
+    bool sendToLeader;  // When useProxy=false, send only to leader (replica 0) instead of all replicas
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -230,6 +231,7 @@ struct ProcessConfig {
 
         // Parse top-level proxy option
         useProxy = parseField<bool>(config, "useProxy", true);
+        sendToLeader = parseField<bool>(config, "sendToLeader", false);
 
         // Validate: if preserialization is enabled, useProxy must be false
         if (preserializationMode != "disabled" && useProxy) {

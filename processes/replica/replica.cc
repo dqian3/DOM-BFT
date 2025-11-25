@@ -262,8 +262,8 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
         return;
     }
 
-    // Handle preserialized requests (from clients, bypassing proxies)
-    if (msgHdr->msgType == MessageType::PRESERIALIZED_REQUEST) {
+    // Handle preserialize requests (from clients, bypassing proxies)
+    if (msgHdr->msgType == MessageType::PRESERIALIZE_REQUEST) {
         receivePreserializedRequest(msgHdr, msgBuffer, sender);
         return;
     }
@@ -427,20 +427,20 @@ void Replica::receivePreserializedRequest(MessageHeader *msgHdr, byte *msgBuffer
 {
     ClientRequest request;
     if (!request.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
-        LOG(ERROR) << "Unable to parse PRESERIALIZED_REQUEST message";
+        LOG(ERROR) << "Unable to parse PRESERIALIZE_REQUEST message";
         return;
     }
 
-    VLOG(3) << "RECEIVE PRESERIALIZED c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+    VLOG(3) << "RECEIVE PRESERIALIZE_REQUEST c_id=" << request.client_id() << " c_seq=" << request.client_seq()
             << " mode=" << preserializationMode_;
 
     if (preserializationMode_ == "full") {
         // Forward full request to all other replicas
-        VLOG(3) << "Forwarding full preserialized request to other replicas c_id=" << request.client_id()
+        VLOG(3) << "Forwarding full preserialize request to other replicas c_id=" << request.client_id()
                 << " c_seq=" << request.client_seq();
 
         sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-            MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(request, MessageType::PRESERIALIZED_REQUEST, buffer);
+            MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(request, MessageType::PRESERIALIZE_REQUEST, buffer);
 
             // Copy signature from original message
             byte *sigStart = msgBuffer + msgHdr->msgLen;
@@ -455,15 +455,11 @@ void Replica::receivePreserializedRequest(MessageHeader *msgHdr, byte *msgBuffer
             }
         });
 
-        // Directly enqueue to process queue, bypassing priority queue
+        // Enqueue to verify queue for signature verification
         byte *msgStart = (byte *) msgHdr;
-        std::vector<byte> msg(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
-
-        // Change message type to CLIENT_REQUEST for processing
-        MessageHeader *hdr = (MessageHeader *) msg.data();
-        hdr->msgType = MessageType::CLIENT_REQUEST;
-
-        processQueue_.enqueue(msg);
+        verifyQueue_.enqueue(
+            std::vector<byte>(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
+        );
 
     } else if (preserializationMode_ == "order") {
         // Compute digest of the request
@@ -493,7 +489,7 @@ void Replica::receivePreserializedRequest(MessageHeader *msgHdr, byte *msgBuffer
             }
         });
 
-        // Enqueue order message to process queue
+        // Enqueue order message to verify queue
         std::string serializedOrder;
         if (!order.SerializeToString(&serializedOrder)) {
             LOG(ERROR) << "Failed to serialize preserialized order";
@@ -505,7 +501,7 @@ void Replica::receivePreserializedRequest(MessageHeader *msgHdr, byte *msgBuffer
         memcpy(msg.data(), &header, sizeof(MessageHeader));
         memcpy(msg.data() + sizeof(MessageHeader), serializedOrder.data(), serializedOrder.size());
 
-        processQueue_.enqueue(msg);
+        verifyQueue_.enqueue(msg);
     }
 }
 
@@ -675,16 +671,16 @@ void Replica::verifyMessagesThd()
             processQueue_.enqueue(msg);
         }
 
-        else if (hdr->msgType == CLIENT_REQUEST) {
+        else if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PRESERIALIZE_REQUEST) {
             ClientRequest requestMsg;
 
             if (!requestMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse COMMIT message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PRESERIALIZE_REQUEST message";
                 continue;
             }
 
             if (!sigProvider_.verify(hdr, {NodeType::CLIENT, requestMsg.client_id()})) {
-                LOG(INFO) << "Failed to verify replica signature!";
+                LOG(INFO) << "Failed to verify client signature!";
                 continue;
             }
 
@@ -877,11 +873,11 @@ void Replica::processMessagesThd()
                 processClientRequest(clientHeader);
         }
 
-        else if (hdr->msgType == CLIENT_REQUEST) {
+        else if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PRESERIALIZE_REQUEST) {
             ClientRequest clientHeader;
 
             if (!clientHeader.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse COMMIT message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PRESERIALIZE_REQUEST message";
                 continue;
             }
 
