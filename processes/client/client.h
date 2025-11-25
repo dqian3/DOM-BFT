@@ -66,7 +66,8 @@ private:
     uint32_t quorumSize_;
     uint32_t superQuorumSize_;
 
-    bool preserializationEnabled_;
+    // Parameters for modifying protocol behavior
+    std::string preserializationMode_;
     bool useProxy_;
     bool sendToLeader_;
 

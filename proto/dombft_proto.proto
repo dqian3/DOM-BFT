@@ -297,21 +297,15 @@ message DummyProtocolMessage
     repeated DummyClientRequest client_reqs = 7;
 }
 
-
-
-
-
-
+message PSLeaderForward {
+    uint32 seq = 1;                        // Sequence number assigned by leader
+    ClientRequest request = 2;
+    bytes client_signature = 3;             // Client signature from original PS_CLIENT
+}
 
 message PSLeaderOrder {
     uint32 client_id = 1;
     uint32 client_seq = 2;
     uint32 seq = 3;           // Global sequence number assigned by serializer
-    bytes digest = 4;          // Digest of the client request
 }
 
-message PSLeaderForward {
-    uint32 seq = 1;                        // Sequence number assigned by leader
-    dombft.proto.ClientRequest request = 2;
-    bytes client_signature = 3;             // Client signature from original PS_CLIENT
-}

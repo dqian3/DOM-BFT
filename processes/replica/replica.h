@@ -66,14 +66,6 @@ private:
     std::string preserializationMode_;
     uint32_t nextPreserializedSeq_ = 0;
 
-    // For tracking preserialization order (handleMessage is single-threaded, processMessagesThd is single-threaded)
-    std::mutex psOrderMutex_;
-    std::map<uint64_t, uint32_t> psHandleOrderMap_;  // msg_addr (as uint64_t) -> seq (marked in handleMessage)
-    std::map<uint32_t, std::vector<byte>> psOrderedRequests_;  // seq -> serialized ClientRequest (reconstructed in processMessagesThd)
-    std::map<std::pair<uint32_t, uint32_t>, std::vector<byte>> psPendingRequests_;  // (client_id, client_seq) -> serialized PS_CLIENT (for order mode)
-    std::map<std::pair<uint32_t, uint32_t>, uint32_t> psRequestToSeq_;  // (client_id, client_seq) -> seq (for order mode)
-    uint32_t psNextProcessSeq_ = 0;  // Next sequence to process
-
     // ========== Shared Infrastructure ==========
     SignatureProvider sigProvider_;
     HMACProvider hmacProvider_;
@@ -162,6 +154,13 @@ private:
     uint32_t numForwarded_ = 0;
     uint64_t lastStatTime_ = 0;
 
+    // ========= Preserialization State  ==========
+    std::map<uint32_t, dombft::proto::ClientRequest>
+        psForwardBuffer_;   // seq -> ClientRequest (reconstructed in processMessagesThd)
+    std::map<std::pair<uint32_t, uint32_t>, dombft::proto::ClientRequest>
+        psOrderRequests_;                                             // (client_id, client_seq) -> ClientRequest
+    std::map<uint32_t, std::pair<uint32_t, uint32_t>> psOrderSeqs_;   // seq -> (client_id, client_seq)
+
     // ========== Unified Message Handling ==========
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
@@ -195,6 +194,12 @@ private:
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
     void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg, std::span<byte> sig);
+
+    // Preserialization experiment
+    void processPSClient(const dombft::proto::ClientRequest &clientRequest, std::span<byte> sig);
+    void processPSLeaderForward(const dombft::proto::PSLeaderForward &psForward);
+    void processPSLeaderOrder(const dombft::proto::PSLeaderOrder &psOrder);
+    void checkPSOrderRequests();
 
     // Verification methods
     bool verifyCert(const dombft::proto::Cert &cert);

@@ -272,37 +272,6 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
         return;
     }
 
-    // Handle preserialization leader forwards (from replica 0 to others)
-    if (msgHdr->msgType == MessageType::PS_LEADER_FORWARD) {
-        PSLeaderForward fwd;
-        if (!fwd.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
-            LOG(ERROR) << "Unable to parse PS_LEADER_FORWARD in handleMessage";
-            return;
-        }
-
-        byte *msgStart = (byte *) msgHdr;
-        std::vector<byte> msg(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
-
-        // Mark the sequence order in handleMessage (single-threaded)
-        {
-            std::lock_guard<std::mutex> lock(psOrderMutex_);
-            psHandleOrderMap_[(uint64_t) msg.data()] = fwd.seq();
-        }
-
-        VLOG(3) << "Marked PS_LEADER_FORWARD seq=" << fwd.seq() << " in handleMessage";
-
-        verifyQueue_.enqueue(msg);
-        return;
-    }
-
-    if (msgHdr->msgType == MessageType::PS_LEADER_ORDER) {
-        byte *msgStart = (byte *) msgHdr;
-        verifyQueue_.enqueue(
-            std::vector<byte>(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
-        );
-        return;
-    }
-
     byte *msgStart = (byte *) msgHdr;
 
     // Handle replica-specific messages
@@ -653,75 +622,31 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            // After verification, assign sequence number and forward
-            uint32_t seq;
-            {
-                std::lock_guard<std::mutex> lock(psOrderMutex_);
-                seq = nextPreserializedSeq_++;
-            }
+            VLOG(3) << "PS_CLIENT verified c_id=" << requestMsg.client_id() << " c_seq=" << requestMsg.client_seq();
 
-            VLOG(3) << "PS_CLIENT verified c_id=" << requestMsg.client_id() << " c_seq=" << requestMsg.client_seq()
-                    << " assigned seq=" << seq << " mode=" << preserializationMode_;
-
-            if (preserializationMode_ == "full") {
-                // Extract client signature from original message
-                byte *sigStart = body + hdr->msgLen;
-                std::string clientSig(sigStart, sigStart + hdr->sigLen);
-
-                // Forward full request to all other replicas as PS_LEADER_FORWARD
-                sendThreadpool_.enqueueTask([=, requestMsg, clientSig, this](byte *buffer) {
-                    PSLeaderForward fwd;
-                    fwd.set_seq(seq);
-                    *fwd.mutable_request() = requestMsg;
-                    fwd.set_client_signature(clientSig);
-
-                    MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(fwd, MessageType::PS_LEADER_FORWARD, buffer);
-                    fwdHdr->sigLen = 0;   // No signature needed from leader
-
-                    for (size_t i = 0; i < replicaAddrs_.size(); i++) {
-                        if (i != replicaId_) {
-                            endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
-                        }
-                    }
-                });
-
-                // Store with sequence number for local processing (replica 0)
-                std::lock_guard<std::mutex> lock(psOrderMutex_);
-                psOrderedRequests_[seq] = msg;
-
-            } else if (preserializationMode_ == "order") {
-                // Compute digest and forward order
-                CryptoPP::SHA256 hash;
-                byte digest[CryptoPP::SHA256::DIGESTSIZE];
-                hash.CalculateDigest(digest, body, hdr->msgLen);
-
-                PSLeaderOrder order;
-                order.set_client_id(requestMsg.client_id());
-                order.set_client_seq(requestMsg.client_seq());
-                order.set_seq(seq);
-                order.set_digest(digest, CryptoPP::SHA256::DIGESTSIZE);
-
-                sendThreadpool_.enqueueTask([=, this](byte *buffer) {
-                    MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(order, MessageType::PS_LEADER_ORDER, buffer);
-                    fwdHdr->sigLen = 0;
-
-                    for (size_t i = 0; i < replicaAddrs_.size(); i++) {
-                        if (i != replicaId_) {
-                            endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
-                        }
-                    }
-                });
-
-                // Store with sequence number for local processing
-                std::lock_guard<std::mutex> lock(psOrderMutex_);
-                psOrderedRequests_[seq] = msg;
-            }
+            // Just pass to processQueue - forwarding and sequencing happens in processMessagesThd
+            processQueue_.enqueue(msg);
         }
 
         else if (hdr->msgType == PS_LEADER_FORWARD) {
-            // No signature verification needed - trust replica 0
-            // Just pass through to processQueue
-            // Sequence was already marked in handleMessage
+            // Verify underlying client request
+            // Don't bother verifying leader signature for this experiment for now
+            PSLeaderForward fwd;
+            if (!fwd.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_LEADER_FORWARD message";
+                continue;
+            }
+
+            ClientRequest clientReq = fwd.request();
+            std::string clientSignature = fwd.client_signature();
+
+            if (!sigProvider_.verify(
+                    clientReq.SerializeAsString(), clientSignature, {NodeType::CLIENT, clientReq.client_id()}
+                )) {
+                LOG(INFO) << "Failed to verify client signature on PS_LEADER_FORWARD!";
+                continue;
+            }
+
             processQueue_.enqueue(msg);
         }
 
@@ -733,7 +658,8 @@ void Replica::verifyMessagesThd()
                 continue;
             }
 
-            // No signature verification needed - trust replica 0
+            // No signature verification needed - if replica 0 equivocates progress wont be made anyways
+            // and PS is not a full impementation
             processQueue_.enqueue(msg);
         }
 
@@ -934,69 +860,7 @@ void Replica::processMessagesThd()
             processClientRequest(clientHeader);
         }
 
-        else if (hdr->msgType == PS_LEADER_FORWARD) {
-            PSLeaderForward fwd;
-
-            if (!fwd.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse PS_LEADER_FORWARD message";
-                continue;
-            }
-
-            uint32_t seq;
-            {
-                std::lock_guard<std::mutex> lock(psOrderMutex_);
-                // Look up the sequence that was marked in handleMessage
-                auto it = psHandleOrderMap_.find((uint64_t) msg.data());
-                if (it == psHandleOrderMap_.end()) {
-                    LOG(ERROR) << "PS_LEADER_FORWARD sequence not found in handleMessage map!";
-                    continue;
-                }
-                seq = it->second;
-                psHandleOrderMap_.erase(it);
-
-                // Store in ordered map
-                psOrderedRequests_[seq] = msg;
-            }
-
-            VLOG(3) << "PS_LEADER_FORWARD stored at seq=" << seq << " c_id=" << fwd.request().client_id()
-                    << " c_seq=" << fwd.request().client_seq();
-
-            // Process all consecutive sequences
-            std::lock_guard<std::mutex> lock(psOrderMutex_);
-            while (true) {
-                auto it = psOrderedRequests_.find(psNextProcessSeq_);
-                if (it == psOrderedRequests_.end()) {
-                    break;
-                }
-
-                // Extract and process
-                std::vector<byte> &orderedMsg = it->second;
-                MessageHeader *orderedHdr = (MessageHeader *) orderedMsg.data();
-                byte *orderedBody = (byte *) (orderedHdr + 1);
-
-                if (orderedHdr->msgType == PS_CLIENT) {
-                    // Replica 0 processing its own PS_CLIENT
-                    ClientRequest req;
-                    if (req.ParseFromArray(orderedBody, orderedHdr->msgLen)) {
-                        VLOG(3) << "Processing ordered seq=" << psNextProcessSeq_
-                                << " (PS_CLIENT) c_id=" << req.client_id();
-                        processClientRequest(req);
-                    }
-                } else if (orderedHdr->msgType == PS_LEADER_FORWARD) {
-                    PSLeaderForward orderedFwd;
-                    if (orderedFwd.ParseFromArray(orderedBody, orderedHdr->msgLen)) {
-                        VLOG(3) << "Processing ordered seq=" << psNextProcessSeq_
-                                << " (PS_LEADER_FORWARD) c_id=" << orderedFwd.request().client_id();
-                        processClientRequest(orderedFwd.request());
-                    }
-                }
-
-                psOrderedRequests_.erase(it);
-                psNextProcessSeq_++;
-            }
-        }
-
-        if (hdr->msgType == CERT) {
+        else if (hdr->msgType == CERT) {
             Cert cert;
 
             if (!cert.ParseFromArray(body, hdr->msgLen)) {
@@ -1041,21 +905,6 @@ void Replica::processMessagesThd()
             processSnapshotReply(reply);
         }
 
-        else if (hdr->msgType == PS_LEADER_ORDER) {
-            PSLeaderOrder order;
-            if (!order.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse PS_LEADER_ORDER message";
-                continue;
-            }
-
-            VLOG(3) << "Processing PS_LEADER_ORDER c_id=" << order.client_id() << " c_seq=" << order.client_seq()
-                    << " seq=" << order.seq();
-
-            // TODO: For "order" mode, match this with locally received client request
-            // For now, just log that we received it
-            LOG(WARNING) << "PS_LEADER_ORDER processing not yet fully implemented for order mode";
-        }
-
         else if (hdr->msgType == REPAIR_TIMEOUT) {
             RepairTimeout msg;
 
@@ -1089,7 +938,7 @@ void Replica::processMessagesThd()
             processRepairTimeoutProof(msg);
         }
 
-        if (hdr->msgType == REPAIR_START) {
+        else if (hdr->msgType == REPAIR_START) {
             RepairStart msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -1099,7 +948,7 @@ void Replica::processMessagesThd()
             processRepairStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == PBFT_PREPREPARE) {
+        else if (hdr->msgType == PBFT_PREPREPARE) {
             PBFTPrePrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -1110,7 +959,7 @@ void Replica::processMessagesThd()
             processPrePrepare(msg);
         }
 
-        if (hdr->msgType == PBFT_PREPARE) {
+        else if (hdr->msgType == PBFT_PREPARE) {
             PBFTPrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -1121,7 +970,7 @@ void Replica::processMessagesThd()
             processPrepare(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == PBFT_COMMIT) {
+        else if (hdr->msgType == PBFT_COMMIT) {
             PBFTCommit msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -1132,7 +981,7 @@ void Replica::processMessagesThd()
             processPBFTCommit(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == VIEW_UPDATE) {
+        else if (hdr->msgType == VIEW_UPDATE) {
             ViewUpdate viewUpdateMsg;
 
             if (!viewUpdateMsg.ParseFromArray(body, hdr->msgLen)) {
@@ -1141,6 +990,44 @@ void Replica::processMessagesThd()
             }
 
             updateReplicaView(viewUpdateMsg.replica_id(), viewUpdateMsg.view(), viewUpdateMsg.round());
+        }
+
+        else if (hdr->msgType == PS_CLIENT) {
+            ClientRequest clientHeader;
+
+            if (!clientHeader.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_CLIENT message in processMessagesThd";
+                continue;
+            }
+
+            processPSClient(clientHeader, std::span{body + hdr->msgLen, hdr->sigLen});
+
+        }
+
+        else if (hdr->msgType == PS_LEADER_FORWARD) {
+            PSLeaderForward fwd;
+
+            if (!fwd.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_LEADER_FORWARD message";
+                continue;
+            }
+
+            processPSLeaderForward(fwd);
+        }
+
+        else if (hdr->msgType == PS_LEADER_ORDER) {
+            PSLeaderOrder order;
+
+            if (!order.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_LEADER_ORDER message";
+                continue;
+            }
+
+            processPSLeaderOrder(order);
+        }
+
+        else {
+            LOG(ERROR) << "Process thread does not handle message with unknown type " << (int) hdr->msgType;
         }
     }
 }
@@ -2971,6 +2858,136 @@ std::string Replica::getProposalDigest(const RepairProposal &proposal)
     hash.Final(digestBuf);
 
     return std::string(reinterpret_cast<const char *>(digestBuf), CryptoPP::SHA256::DIGESTSIZE);
+}
+
+// *** EXTRA LOGIC FOR PRESERIALIZATION EXPERIMENTS, not a part of the actual protocol, and not implemented fully ***
+
+void Replica::processPSClient(const dombft::proto::ClientRequest &clientRequest, std::span<byte> sig)
+{
+    // send wrapped client request to everyone, enqueue it by itself
+    if (preserializationMode_ == "full") {
+        // Extract client signature from original message
+        std::string clientSig((char *) sig.data(), sig.size());
+        PSLeaderForward fwd;
+        fwd.set_seq(log_->getNextSeq());
+        *fwd.mutable_request() = clientRequest;
+        fwd.set_client_signature(clientSig);
+
+        // Forward full request to all other replicas as PS_LEADER_FORWARD
+        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+            MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(fwd, MessageType::PS_LEADER_FORWARD, buffer);
+            fwdHdr->sigLen = 0;
+
+            for (size_t i = 0; i < replicaAddrs_.size(); i++) {
+                if (i != replicaId_) {
+                    endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
+                }
+            }
+        });
+        // Process locally
+        processClientRequest(clientRequest);
+
+    } else if (preserializationMode_ == "order") {
+
+        if (replicaId_ == 0) {
+            PSLeaderOrder order;
+            order.set_client_id(clientRequest.client_id());
+            order.set_client_seq(clientRequest.client_seq());
+            order.set_seq(log_->getNextSeq());
+
+            sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+                MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(order, MessageType::PS_LEADER_ORDER, buffer);
+                fwdHdr->sigLen = 0;
+
+                for (size_t i = 0; i < replicaAddrs_.size(); i++) {
+                    if (i != replicaId_) {
+                        endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
+                    }
+                }
+            });
+            // Process locally
+            processClientRequest(clientRequest);
+
+        } else {
+            // Non-primary replicas just buffer the request until ordered
+            // TODO emplace
+            psOrderRequests_[{clientRequest.client_id(), clientRequest.client_seq()}] = clientRequest;
+        }
+    }
+}
+
+void Replica::processPSLeaderForward(const dombft::proto::PSLeaderForward &psForward)
+{
+    // If nextSeq is seq, process the request as you would
+
+    VLOG(4) << "processPSLeaderForward: seq=" << psForward.seq() << " nextSeq=" << log_->getNextSeq()
+            << " client_id=" << psForward.request().client_id() << " client_seq=" << psForward.request().client_seq();
+
+    if (psForward.seq() == log_->getNextSeq()) {
+        processClientRequest(psForward.request());
+
+        // Then check the buffer for any subsequent requests
+        uint32_t nextSeq = log_->getNextSeq();
+        uint32_t processedFromBuffer = 0;
+        while (psForwardBuffer_.contains(nextSeq)) {
+            processClientRequest(psForwardBuffer_[nextSeq]);
+            psForwardBuffer_.erase(nextSeq);
+            nextSeq++;
+            processedFromBuffer++;
+        }
+
+        VLOG(2) << "processPSLeaderForward: processed 1 request + " << processedFromBuffer
+                << " from buffer, buffer size now: " << psForwardBuffer_.size();
+
+    } else {
+        // Otherwise buffer it until its turn comes
+        psForwardBuffer_.emplace(psForward.seq(), psForward.request());
+        VLOG(2) << "processPSLeaderForward: buffered seq=" << psForward.seq()
+                << ", buffer size now: " << psForwardBuffer_.size();
+        checkPSOrderRequests();
+    }
+}
+
+void Replica::processPSLeaderOrder(const dombft::proto::PSLeaderOrder &psOrder)
+{
+    VLOG(4) << "processPSLeaderOrder: seq=" << psOrder.seq() << " client_id=" << psOrder.client_id()
+            << " client_seq=" << psOrder.client_seq();
+
+    psOrderSeqs_[psOrder.seq()] = {psOrder.client_id(), psOrder.client_seq()};
+    checkPSOrderRequests();
+}
+
+void Replica::checkPSOrderRequests()
+{
+    uint32_t processedCount = 0;
+    while (psOrderSeqs_.contains(log_->getNextSeq())) {
+        uint32_t nextSeq = log_->getNextSeq();
+        auto [clientId, clientSeq] = psOrderSeqs_[nextSeq];
+        std::pair<uint32_t, uint32_t> key = {clientId, clientSeq};
+
+        VLOG(4) << "checkPSOrderRequests: checking seq=" << nextSeq << " client_id=" << clientId
+                << " client_seq=" << clientSeq;
+
+        if (psOrderRequests_.contains(key)) {
+            ClientRequest req = psOrderRequests_[key];
+            psOrderRequests_.erase(key);
+            psOrderSeqs_.erase(nextSeq);
+            processClientRequest(req);
+            processedCount++;
+        } else {
+            // Waiting for client request
+            VLOG(2) << "checkPSOrderRequests: waiting for client request, processed " << processedCount
+                    << " requests, psOrderSeqs size: " << psOrderSeqs_.size()
+                    << ", psOrderRequests size: " << psOrderRequests_.size();
+            return;
+        }
+    }
+
+    if (processedCount > 0) {
+        VLOG(2) << "checkPSOrderRequests: processed " << processedCount
+                << " requests, psOrderSeqs size: " << psOrderSeqs_.size()
+                << ", psOrderRequests size: " << psOrderRequests_.size();
+    }
 }
 
 }   // namespace dombft

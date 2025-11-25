@@ -37,9 +37,9 @@ Client::Client(size_t id)
     quorumSize_ = configManager.getQuorumSize();
     superQuorumSize_ = configManager.getSuperQuorumSize();
 
-    preserializationEnabled_ = (config.preserializationMode != "disabled");
-    if (preserializationEnabled_) {
-        LOG(INFO) << "Preserialization mode: " << config.preserializationMode << " - sending to replica 0";
+    preserializationMode_ = config.preserializationMode;
+    if (preserializationMode_ != "disabled") {
+        LOG(INFO) << "Preserialization mode: " << preserializationMode_;
     }
 
     useProxy_ = config.useProxy;
@@ -322,29 +322,14 @@ void Client::submitRequestsOpenLoop()
 
 void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
-    MessageType msgType;
-    Address targetAddr;
+    MessageType msgType = MessageType::CLIENT_REQUEST;
 
-    if (preserializationEnabled_) {
+    if (preserializationMode_ != "disabled") {
         // In preserialization mode, send PS_CLIENT
         msgType = MessageType::PS_CLIENT;
-
-        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, msgType, buffer);
-
-        if (useHMAC_) {
-            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
-        } else {
-            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-        }
-
-        // For "order" mode, send to all replicas; for "full" mode, send only to replica 0
-        // Config should control this, but for now always send to replica 0
-        VLOG(1) << "Sending PS_CLIENT request to replica 0";
-        endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
-        return;
     }
 
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, msgType, buffer);
 
     if (useHMAC_) {
         // TODO send multiple requests for each replica with their own hmacs
@@ -354,14 +339,18 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
     }
 
     if (useProxy_) {
+        assert(preserializationMode_ == "disabled");
         // TODO how to choose proxy, perhaps by IP or config
+        VLOG(2) << "Sending request directly to " << replicaAddrs_[0];
+
         Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
         endpoint_->SendPreparedMsgTo(addr, hdr);
-    } else if (sendToLeader_) {
-        VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
+    } else if (sendToLeader_ || preserializationMode_ == "full") {
+        VLOG(2) << "Sending request directly to " << replicaAddrs_[0];
         endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
+
     } else {
-        VLOG(1) << "Sending request to all replicas ";
+        VLOG(2) << "Sending request to all replicas ";
         for (const Address &addr : replicaAddrs_) {
             endpoint_->SendPreparedMsgTo(addr, hdr);
         }
