@@ -1767,7 +1767,7 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
             << "\n";
     }
 
-    LOG(INFO) << "Repair proof:\n" << oss.str();
+    LOG(INFO) << "Repair proof from " << msg.replica_id() << ":\n" << oss.str();
 
     // TODO skip sending to ourself, we implictly don't repeat processing this message because we ignore proofs
     // if we already are in fallback.

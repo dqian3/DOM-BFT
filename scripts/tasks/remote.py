@@ -168,7 +168,7 @@ def run(
     print("Starting replicas")
     for id, ip in enumerate(replicas):
         swap_arg = ""
-        if normal_path_freq != 0 and id < f:
+        if normal_path_freq != 0 and id < 1:
             swap_arg = f"-swapFreq {normal_path_freq}"
         if slow_path_freq != 0 and (id % 2) == 0:
             swap_arg = f"-swapFreq {slow_path_freq}"
@@ -293,7 +293,7 @@ def run_rates(
         cfg["client"]["maxInFlight"] = 2500
         nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [500, 1500, 1800, 2000]:
+        for send_rate in [1500, 1800, 2000]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
