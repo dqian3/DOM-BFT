@@ -31,7 +31,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
 
     std::map<ReplyKeyTuple, std::set<uint32_t>> matchingReplies;
 
-    uint32_t maxMatch = 0;
+    int maxMatch = 0;
     bool ret = false;
 
     // Try to generate a cert among a set of replies
@@ -44,7 +44,7 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         ReplyKeyTuple key = {reply.digest(), reply.round(), reply.seq()};
 
         matchingReplies[key].insert(replicaId);
-        maxMatch = std::max(maxMatch, static_cast<uint32_t>(matchingReplies[key].size()));
+        maxMatch = std::max(maxMatch, static_cast<int>(matchingReplies[key].size()));
 
         uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
 
@@ -61,11 +61,15 @@ bool ReplyCollector::addAndCheckReply(const Reply &reply, std::span<byte> sig)
         }
     }
 
-    uint32_t quorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
-    uint32_t n = ConfigManager::getInstance().getNumReplicas();
+    // Signed ints here to force signed comparison
+    int fastQuorumSize = ConfigManager::getInstance().getSuperQuorumSize();
+    int n = ConfigManager::getInstance().getNumReplicas();
+    int r = replies_.size();
 
-    // Remaining messages can't get maxMAtch to quorum size
-    if (n - replies_.size() < quorumSize_ - maxMatch) {
+    // Remaining messages can't get maxMatch to quorum size
+    if (n - r < fastQuorumSize - maxMatch) {
+        VLOG(3) << "n=" << n << ", replies.size()=" << replies_.size() << ", maxMatch=" << maxMatch << ", "
+                << fastQuorumSize << " " << maxMatch;
         repairReplyProof_ = RepairReplyProof();
 
         for (const auto &entry : replies_) {
@@ -94,9 +98,9 @@ bool CommitCollector::addAndCheckCommit(const Commit &commitMsg, const std::span
     sigs_[commitMsg.replica_id()] = std::string(sig.begin(), sig.end());
 
     std::map<CommitKeyTuple, std::set<uint32_t>> matchingCommits;
-    // Find a cert among a set of replies
-    for (const auto &[replicaId, commit] : commits_) {
 
+    // Find f + 1 consistent commits among a set of replies
+    for (const auto &[replicaId, commit] : commits_) {
         CommitKeyTuple key = {
             commit.round(), commit.seq(), commit.log_digest(), commit.app_digest(), commit.client_record().digest(),
         };

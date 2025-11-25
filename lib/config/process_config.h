@@ -41,6 +41,7 @@ struct ProcessConfig {
     int clientRequestSize;
     bool clientUseHMAC;
     bool clientSendProofs;
+    bool clientNormalPathEnabled;
 
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
@@ -124,8 +125,11 @@ struct ProcessConfig {
             clientSendRate = parseField<int>(clientNode, "sendRate");
             clientSendMode = parseField<std::string>(clientNode, "sendMode");
             clientRequestSize = parseField<int>(clientNode, "requestSize");
+
+            // TODO these are more global process config than client-specific
             clientUseHMAC = parseField<bool>(clientNode, "useHMAC", false);
             clientSendProofs = parseField<bool>(clientNode, "sendProofs", false);
+            clientNormalPathEnabled = parseField<bool>(clientNode, "normalPathEnabled", false);
         }
 
         catch (const ConfigParseException &e) {

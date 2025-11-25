@@ -72,6 +72,8 @@ private:
     uint32_t maxInFlight_ = 0;
     uint32_t requestSize_ = 0;
 
+    bool normalPathEnabled_;
+
     uint64_t normalPathTimeout_;
     uint64_t requestTimeout_;
 

@@ -64,15 +64,24 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
         line[3]: (line[0], line[1])
         for line in gcloud_output
     }
-
     hdls = []
-    for ip in int_ips:
-        name, zone = vm_info[ip]
-        h = c.run(
-            f"gcloud compute instances {'stop' if stop else 'start'} {name} --zone {zone}",
-            asynchronous=True,
-        )
-        hdls.append(h)
+
+    if stop:
+        for name, zone in vm_info.values():
+            h = c.run(
+                f"gcloud compute instances stop {name} --zone {zone}",
+                asynchronous=True,
+            )
+
+            hdls.append(h)
+    else:
+        for ip in int_ips:
+            name, zone = vm_info[ip]
+            h = c.run(
+                f"gcloud compute instances start' {name} --zone {zone}",
+                asynchronous=True,
+            )
+            hdls.append(h)
 
     for h in hdls:
         h.join()
@@ -196,7 +205,7 @@ def run_largen(
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
         f = 1
-        for e in [2, 3]:
+        for e in [3, 2, 1, 0]:
             # vm(
             #     c, config_file=config_file
             # )  # This should only start the vms that are needed, not all

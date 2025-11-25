@@ -180,7 +180,7 @@ def run(
     print("Starting replicas")
     for id, ip in enumerate(replicas):
         swap_arg = ""
-        if normal_path_freq != 0 and id < f:
+        if normal_path_freq != 0 and id < 1:
             swap_arg = f"-swapFreq {normal_path_freq}"
         if slow_path_freq != 0 and (id % 2) == 0:
             swap_arg = f"-swapFreq {slow_path_freq}"
@@ -427,7 +427,7 @@ def run_rates(
         cfg["client"]["maxInFlight"] = 2500
         nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [500, 1500, 1800, 2000]:
+        for send_rate in [1500, 1800, 2000]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
@@ -468,23 +468,23 @@ def run_rates(
 
         # Slow Path
         # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 1000
+        # cfg["client"]["maxInFlight"] = 5000
 
-        # for send_rate in [200, 400, 600, 700, 800 ]:
+        # for send_rate in [10, 500, 750, 1000]:
         #     cfg["client"]["sendRate"] = send_rate
         #     yaml.dump(cfg, open(config_file, "w"))
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100)
-        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_sr{send_rate}.out")
-
-        # Slow Path, crashed
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 1000
-
-        # for send_rate in [200, 400, 600, 700, 800 ]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, slow_path_freq=100, num_crashed=1)
-        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_crashed_sr{send_rate}.out")
+        #     run(
+        #         c,
+        #         config_file=config_file,
+        #         resolve=resolve,
+        #         v=v,
+        #         prot=prot,
+        #         batch_size=batch_size,
+        #         slow_path_freq=100,
+        #     )
+        #     c.run(
+        #         f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_sr{nClients * send_rate}.out"
+        #     )
 
     finally:
         with open(config_file, "w") as cfg_file:

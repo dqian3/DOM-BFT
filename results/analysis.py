@@ -74,8 +74,8 @@ if __name__ == "__main__":
     print(f"p95 latency: {np.percentile(latencies, 95):.0f} us")
     print(f"p99 latency: {np.percentile(latencies, 99):.0f} us")
 
-    fast = list(filter(lambda x: x["path"] == "fast", commits))
-    normal = list(filter(lambda x: x["path"] == "normal", commits))
+    fast = list(filter(lambda x: x["path"] == "fast" and x["queued"] == 0, commits))
+    normal = list(filter(lambda x: x["path"] == "fast" and x["queued"], commits))
     slow = list(filter(lambda x: x["path"] == "slow", commits))
 
     print("Fast path:")
@@ -85,7 +85,7 @@ if __name__ == "__main__":
             f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us"
         )
 
-    print("Normal path:")
+    print("Fast Queued path:")
     print(f"\tNum commits: {len(normal)}")
     if len(normal) > 0:
         print(
@@ -159,7 +159,7 @@ if __name__ == "__main__":
             last_fast_time = tags["time"]
             last_commit = tags["path"]
 
-        if tags["path"] == "fast":
+        if tags["path"] == "fast" and tags["queued"] == 0:
             if last_commit != "fast":
                 # TODO Instead of just summing non fast path periods, actually output them so we can get a timeline
                 # Ideally each period should also include the number of types of commits
@@ -168,6 +168,8 @@ if __name__ == "__main__":
             last_fast_time = tags["time"]
 
         last_commit = tags["path"]
+        if "queued" in tags and tags["queued"] == 1:
+            last_commit = "fast_queued"
 
     runtime = (tags["time"] - start_time).total_seconds()
     print(f"Percent time in fast path: {(runtime - non_fast_seconds) / runtime:0.3f}")

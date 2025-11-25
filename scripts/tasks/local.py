@@ -81,8 +81,6 @@ def run(
     client_handles = []
     other_handles = []
 
-    f = n_replicas // 3
-
     # TODO verbosity
     with c.cd(".."):
         c.run("rm logs/*", warn=True)
@@ -94,7 +92,7 @@ def run(
         c.run("mkdir -p logs")
         for id in range(n_replicas):
             swap_arg = ""
-            if normal_path_freq != 0 and id < f:
+            if normal_path_freq != 0 and id < 1:
                 swap_arg = f"-swapFreq {normal_path_freq}"
             if slow_path_freq != 0 and (id % 2) == 0:
                 swap_arg = f"-swapFreq {slow_path_freq}"
