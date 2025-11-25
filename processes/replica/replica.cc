@@ -98,6 +98,11 @@ Replica::Replica(
     quorumSize_ = ConfigManager::getInstance().getQuorumSize();
     superQuorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
 
+    preserializationMode_ = config.preserializationMode;
+    if (preserializationMode_ != "disabled") {
+        LOG(INFO) << "Preserialization mode: " << preserializationMode_;
+    }
+
     // Network setup for unified functionality
     if (config.transport == "nng") {
         // Use replica addressing for unified process
@@ -257,6 +262,12 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
         return;
     }
 
+    // Handle preserialized requests (from clients, bypassing proxies)
+    if (msgHdr->msgType == MessageType::PRESERIALIZED_REQUEST) {
+        receivePreserializedRequest(msgHdr, msgBuffer, sender);
+        return;
+    }
+
     byte *msgStart = (byte *) msgHdr;
 
     // Handle replica-specific messages
@@ -410,6 +421,92 @@ void Replica::forwardRequest(const DOMRequest &request)
     memcpy(msg.data() + sizeof(MessageHeader), serializedRequest.data(), serializedRequest.size());
 
     processQueue_.enqueue(msg);
+}
+
+void Replica::receivePreserializedRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender)
+{
+    ClientRequest request;
+    if (!request.ParseFromArray(msgBuffer, msgHdr->msgLen)) {
+        LOG(ERROR) << "Unable to parse PRESERIALIZED_REQUEST message";
+        return;
+    }
+
+    VLOG(3) << "RECEIVE PRESERIALIZED c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+            << " mode=" << preserializationMode_;
+
+    if (preserializationMode_ == "full") {
+        // Forward full request to all other replicas
+        VLOG(3) << "Forwarding full preserialized request to other replicas c_id=" << request.client_id()
+                << " c_seq=" << request.client_seq();
+
+        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+            MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(request, MessageType::PRESERIALIZED_REQUEST, buffer);
+
+            // Copy signature from original message
+            byte *sigStart = msgBuffer + msgHdr->msgLen;
+            memcpy((byte *) fwdHdr + sizeof(MessageHeader) + fwdHdr->msgLen, sigStart, msgHdr->sigLen);
+            fwdHdr->sigLen = msgHdr->sigLen;
+
+            // Send to all other replicas
+            for (size_t i = 0; i < replicaAddrs_.size(); i++) {
+                if (i != replicaId_) {
+                    endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
+                }
+            }
+        });
+
+        // Directly enqueue to process queue, bypassing priority queue
+        byte *msgStart = (byte *) msgHdr;
+        std::vector<byte> msg(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen);
+
+        // Change message type to CLIENT_REQUEST for processing
+        MessageHeader *hdr = (MessageHeader *) msg.data();
+        hdr->msgType = MessageType::CLIENT_REQUEST;
+
+        processQueue_.enqueue(msg);
+
+    } else if (preserializationMode_ == "order") {
+        // Compute digest of the request
+        CryptoPP::SHA256 hash;
+        byte digest[CryptoPP::SHA256::DIGESTSIZE];
+        hash.CalculateDigest(digest, msgBuffer, msgHdr->msgLen);
+
+        // Create order message with just client_id, client_seq, seq, and digest
+        PreserializedOrder order;
+        order.set_client_id(request.client_id());
+        order.set_client_seq(request.client_seq());
+        order.set_seq(nextPreserializedSeq_++);
+        order.set_digest(digest, CryptoPP::SHA256::DIGESTSIZE);
+
+        VLOG(3) << "Forwarding preserialized order to other replicas c_id=" << request.client_id()
+                << " c_seq=" << request.client_seq() << " seq=" << order.seq();
+
+        // Forward order to all other replicas
+        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+            MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(order, MessageType::PRESERIALIZED_ORDER, buffer);
+
+            // Send to all other replicas
+            for (size_t i = 0; i < replicaAddrs_.size(); i++) {
+                if (i != replicaId_) {
+                    endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
+                }
+            }
+        });
+
+        // Enqueue order message to process queue
+        std::string serializedOrder;
+        if (!order.SerializeToString(&serializedOrder)) {
+            LOG(ERROR) << "Failed to serialize preserialized order";
+            return;
+        }
+
+        MessageHeader header(PRESERIALIZED_ORDER, serializedOrder.size(), 0);
+        std::vector<byte> msg(sizeof(MessageHeader) + serializedOrder.size());
+        memcpy(msg.data(), &header, sizeof(MessageHeader));
+        memcpy(msg.data() + sizeof(MessageHeader), serializedOrder.data(), serializedOrder.size());
+
+        processQueue_.enqueue(msg);
+    }
 }
 
 void Replica::checkDeadlines()
@@ -577,7 +674,6 @@ void Replica::verifyMessagesThd()
 
             processQueue_.enqueue(msg);
         }
-#if !USE_PROXY
 
         else if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest requestMsg;
@@ -594,8 +690,6 @@ void Replica::verifyMessagesThd()
 
             processQueue_.enqueue(msg);
         }
-
-#endif
 
         else if (hdr->msgType == REPAIR_TIMEOUT) {
             RepairTimeout timeoutMsg;
@@ -783,8 +877,6 @@ void Replica::processMessagesThd()
                 processClientRequest(clientHeader);
         }
 
-#if !USE_PROXY
-
         else if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest clientHeader;
 
@@ -795,8 +887,6 @@ void Replica::processMessagesThd()
 
             processClientRequest(clientHeader);
         }
-
-#endif
 
         if (hdr->msgType == CERT) {
             Cert cert;

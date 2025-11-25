@@ -3,6 +3,7 @@ resiliency:
   f: 1
   e: 1
 app: counter 
+preserialize: true
 
 client:
   ips: 

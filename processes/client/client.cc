@@ -37,6 +37,14 @@ Client::Client(size_t id)
     quorumSize_ = configManager.getQuorumSize();
     superQuorumSize_ = configManager.getSuperQuorumSize();
 
+    preserializationEnabled_ = (config.preserializationMode != "disabled");
+    if (preserializationEnabled_) {
+        LOG(INFO) << "Preserialization mode: " << config.preserializationMode << " - sending to replica 0";
+    }
+
+    useProxy_ = config.useProxy;
+    LOG(INFO) << "Use proxy: " << (useProxy_ ? "true" : "false");
+
     normalPathEnabled_ = config.clientNormalPathEnabled;
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
@@ -310,9 +318,27 @@ void Client::submitRequestsOpenLoop()
 
 void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
-#if USE_PROXY
-    // TODO how to choose proxy, perhaps by IP or config
-    Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
+    MessageType msgType;
+    Address targetAddr;
+
+    if (preserializationEnabled_) {
+        // In preserialization mode, send PRESERIALIZED_REQUEST to replica 0
+        msgType = MessageType::PRESERIALIZED_REQUEST;
+        targetAddr = replicaAddrs_[0];
+
+        MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, msgType, buffer);
+
+        if (useHMAC_) {
+            hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
+        } else {
+            sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
+        }
+
+        VLOG(1) << "Sending preserialized request to replica 0";
+        endpoint_->SendPreparedMsgTo(targetAddr, hdr);
+        return;
+    }
+
     MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
 
     if (useHMAC_) {
@@ -322,29 +348,21 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     }
 
-    endpoint_->SendPreparedMsgTo(addr, hdr);
-#else
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // TODO check errors for all of these lol
-    // TODO do this while waiting, not in the critical path
-    if (useHMAC_) {
-        // TODO send multiple requests for each replica with their own hmacs
-        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
-    } else {
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    }
-
-#if SEND_TO_LEADER
-    VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
-
-    endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
-#else
-    VLOG(1) << "Sending request to all replicas ";
-    for (const Address &addr : replicaAddrs_) {
+    if (useProxy_) {
+        // TODO how to choose proxy, perhaps by IP or config
+        Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
         endpoint_->SendPreparedMsgTo(addr, hdr);
+    } else {
+#if SEND_TO_LEADER
+        VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
+        endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
+#else
+        VLOG(1) << "Sending request to all replicas ";
+        for (const Address &addr : replicaAddrs_) {
+            endpoint_->SendPreparedMsgTo(addr, hdr);
+        }
+#endif
     }
-#endif
-#endif
 }
 
 void Client::commitRequest(uint32_t clientSeq)

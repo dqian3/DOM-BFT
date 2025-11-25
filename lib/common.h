@@ -85,7 +85,13 @@ enum MessageType {
     SNAPSHOT_REQUEST = 24,
     SNAPSHOT_REPLY = 25,
 
-    DUMMY_PROTO = 26
+    DUMMY_PROTO = 26,
+
+    // Preserialized request (bypasses proxy deadline assignment and priority queue)
+    PRESERIALIZED_REQUEST = 27,
+
+    // Preserialized request order (just contains client_id and client_seq for ordering)
+    PRESERIALIZED_ORDER = 28
 };
 
 /**
