@@ -215,11 +215,11 @@ void DummyReplica::verifyMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PRESERIALIZE_REQUEST) {
+        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PS_CLIENT || hdr->msgType == PS_LEADER_FORWARD) {
             ClientRequest request;
 
             if (!request.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PRESERIALIZE_REQUEST message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PS_CLIENT/PS_LEADER_FORWARD message";
                 continue;
             }
 
@@ -310,11 +310,11 @@ void DummyReplica::processMessagesThd()
 
             processClientRequest(clientHeader, std::span{clientBody + clientMsgHdr->msgLen, clientMsgHdr->sigLen});
         }
-        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PRESERIALIZE_REQUEST) {
+        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PS_CLIENT || hdr->msgType == PS_LEADER_FORWARD) {
             ClientRequest clientRequestMsg;
 
             if (!clientRequestMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PRESERIALIZE_REQUEST message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PS_CLIENT/PS_LEADER_FORWARD message";
                 continue;
             }
 

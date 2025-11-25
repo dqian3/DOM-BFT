@@ -326,9 +326,8 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
     Address targetAddr;
 
     if (preserializationEnabled_) {
-        // In preserialization mode, send PRESERIALIZE_REQUEST to replica 0
-        msgType = MessageType::PRESERIALIZE_REQUEST;
-        targetAddr = replicaAddrs_[0];
+        // In preserialization mode, send PS_CLIENT
+        msgType = MessageType::PS_CLIENT;
 
         MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, msgType, buffer);
 
@@ -338,8 +337,10 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
             sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
         }
 
-        VLOG(1) << "Sending preserialize request to replica 0";
-        endpoint_->SendPreparedMsgTo(targetAddr, hdr);
+        // For "order" mode, send to all replicas; for "full" mode, send only to replica 0
+        // Config should control this, but for now always send to replica 0
+        VLOG(1) << "Sending PS_CLIENT request to replica 0";
+        endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
         return;
     }
 

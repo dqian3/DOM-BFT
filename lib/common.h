@@ -83,11 +83,10 @@ enum MessageType {
 
     DUMMY_PROTO = 26,
 
-    // Preserialize request (bypasses proxy deadline assignment and priority queue)
-    PRESERIALIZE_REQUEST = 27,
-
-    // Preserialized order (just contains client_id and client_seq for ordering)
-    PRESERIALIZED_ORDER = 28
+    // Preserialization messages
+    PS_CLIENT = 27,           // Client -> Replica 0
+    PS_LEADER_FORWARD = 28,   // Replica 0 -> Others (full mode, contains ClientRequest)
+    PS_LEADER_ORDER = 29      // Replica 0 -> Others (order mode, contains seq + digest)
 };
 
 /**

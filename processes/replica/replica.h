@@ -66,6 +66,14 @@ private:
     std::string preserializationMode_;
     uint32_t nextPreserializedSeq_ = 0;
 
+    // For tracking preserialization order (handleMessage is single-threaded, processMessagesThd is single-threaded)
+    std::mutex psOrderMutex_;
+    std::map<uint64_t, uint32_t> psHandleOrderMap_;  // msg_addr (as uint64_t) -> seq (marked in handleMessage)
+    std::map<uint32_t, std::vector<byte>> psOrderedRequests_;  // seq -> serialized ClientRequest (reconstructed in processMessagesThd)
+    std::map<std::pair<uint32_t, uint32_t>, std::vector<byte>> psPendingRequests_;  // (client_id, client_seq) -> serialized PS_CLIENT (for order mode)
+    std::map<std::pair<uint32_t, uint32_t>, uint32_t> psRequestToSeq_;  // (client_id, client_seq) -> seq (for order mode)
+    uint32_t psNextProcessSeq_ = 0;  // Next sequence to process
+
     // ========== Shared Infrastructure ==========
     SignatureProvider sigProvider_;
     HMACProvider hmacProvider_;
@@ -165,7 +173,6 @@ private:
     // Receiver message handlers
     void receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void receiveBatchedRequests(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
-    void receivePreserializedRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
     void enqueueReceiverRequest(int64_t recv_time, dombft::proto::DOMRequest &request);
     void sendMeasurementReply(const Address &dstAddr, uint64_t owd, uint64_t sendTime);
     void checkDeadlines();
