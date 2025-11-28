@@ -283,8 +283,10 @@ void Replica::receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *se
         return;
     }
     int64_t recv_time = GetMicrosecondTimestamp();
-    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
-            << recv_time - request.send_time() << " usec";
+    VLOG(2) << "PERF event=receive c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+            << " delay=" << (int64_t) recv_time - request.send_time()
+            << " deadline_offset=" << (int64_t) request.deadline() - (int64_t) request.send_time()
+            << " send_time=" << request.send_time() << " replica_id=" << replicaId_;
 
     enqueueReceiverRequest(recv_time, request);
 
@@ -1239,7 +1241,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                           << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
-            // sendSnapshotRequest(replicaId, checkpoint.seq);
+            VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
+                    << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId;
 
             // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
             // behind
@@ -1482,8 +1485,9 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
         }
 
-        VLOG(1) << "PERF event=align checkpoint_seq=" << log_->getCommittedCheckpoint().seq
-                << " log_seq=" << log_->getNextSeq() - 1 << " log_digest=" << digest_to_hex(log_->getDigest());
+        VLOG(1) << "PERF event=align replicaId=" << replicaId_
+                << " checkpoint_seq=" << log_->getCommittedCheckpoint().seq << " log_seq=" << log_->getNextSeq() - 1
+                << " log_digest=" << digest_to_hex(log_->getDigest());
     }
 
     // Got the snapshot

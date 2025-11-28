@@ -106,7 +106,7 @@ def run(
     v=5,
     dom_logs=False,
     profile=False,
-    filter_client_logs=False,
+    analyze_client_logs=False,
     # Optional args to modify the dombft experiments
     prot="dombft",
     batch_size=1,
@@ -151,9 +151,9 @@ def run(
         hide="both",
     )
 
-    # Give replicas the config file
+    # Give replicas the config file and analysis scripts
     group.put(config_file)
-    group.put("filter_logs.py")
+    group.put("../scripts/analysis/analyze_client.py")
 
     remote_config_file = os.path.basename(config_file)
 
@@ -211,13 +211,8 @@ def run(
     for id, ip in enumerate(clients):
         arun = arun_on(ip, f"client{id}.log", timeout=10 + runtime, profile=profile)
 
-        if filter_client_logs:
-            suffix = " 2>&1 | python3 -u filter_logs.py "
-        else:
-            suffix = " "
-
         hdl = arun(
-            f"{client_path} -v {v} -config {remote_config_file} -clientId {id} {suffix}"
+            f"{client_path} -v {v} -config {remote_config_file} -clientId {id}"
         )
         client_handles.append(hdl)
 
@@ -244,11 +239,32 @@ def run(
 
         c.run("rm -f ../logs/*", warn=True)
 
-        get_logs(c, replicas, "replica")
-        get_logs(c, clients, "client")
+        if analyze_client_logs:
+            print("Analyzing client logs on remote machines...")
+            # Run analyze_client.py on each client machine
+            for id, ip in enumerate(clients):
+                conn = Connection(ip)
+                print(f"Analyzing client{id}.log on {ip}")
+                conn.run(
+                    f"python3 analyze_client.py client{id}.log -o client{id}.json",
+                    warn=True
+                )
+                # Download the JSON result
+                conn.get(f"client{id}.json", "../logs/")
 
-        if dom_logs:
-            get_logs(c, proxies, "proxy")
+            # Run aggregate_results.py locally to combine all client analyses
+            print("Aggregating results locally...")
+            c.run(
+                f"python3 scripts/analysis/aggregate_results.py ../logs/aggregate.json ../logs/",
+                warn=True
+            )
+            print("Client log analysis complete. Results in ../logs/aggregate.json")
+        else:
+            get_logs(c, replicas, "replica")
+            get_logs(c, clients, "client")
+
+            if dom_logs:
+                get_logs(c, proxies, "proxy")
 
 
 # =================================================

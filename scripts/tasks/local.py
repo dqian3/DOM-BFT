@@ -59,7 +59,7 @@ def run(
     v=5,
     prot="dombft",
     batch_size=5,
-    filter_client_logs=False,
+    analyze_client_logs=False,
     num_crashed=0,
     slow_path_freq=0,
     normal_path_freq=0,
@@ -122,12 +122,7 @@ def run(
         time.sleep(3)
 
         for id in range(n_clients):
-            if filter_client_logs:
-                suffix = " 2>&1 | python3 -u scripts/filter_logs.py "
-            else:
-                suffix = " "
-
-            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} {suffix} &>logs/client{id}.log"
+            cmd = f"./bazel-bin/processes/client/dombft_client -v {v} -config {config_file} -clientId {id} &>logs/client{id}.log"
             hdl = arun(cmd)
             print(cmd)
 
@@ -148,3 +143,19 @@ def run(
         #  stop other processes and then join
         for hdl in other_handles:
             hdl.join()
+
+        if analyze_client_logs:
+            print("Analyzing client logs...")
+            # Run analyze_client.py on each client log
+            for id in range(n_clients):
+                c.run(
+                    f"python3 scripts/analysis/analyze_client.py logs/client{id}.log -o logs/client{id}.json",
+                    warn=True
+                )
+
+            # Run aggregate_results.py to combine all client analyses
+            c.run(
+                "python3 scripts/analysis/aggregate_results.py logs/aggregate.json logs/",
+                warn=True
+            )
+            print("Client log analysis complete. Results in logs/aggregate.json")
