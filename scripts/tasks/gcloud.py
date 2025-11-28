@@ -224,12 +224,12 @@ def run_largen(
             send_rate = cfg["client"]["sendRate"] * len(cfg["client"]["ips"])
 
             yaml.dump(cfg, open(config_file, "w"))
-            run(c, config_file=config_file, v=v, prot=prot)
+            run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
 
             c.run("rm ../logs/*.log ", warn=True)
 
             c.run(
-                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n}_sr{send_rate}.out"
+                f"python3 analysis.py/aggregate_results.py  {prot}_n{n}_sr{send_rate}.out ../logs"
             )
 
             # vm(c, config_file=config_file, stop=True)
@@ -269,7 +269,7 @@ def run(
     v=5,
     dom_logs=False,
     profile=False,
-    filter_client_logs=False,
+    analyze_client_logs=False,
     batch_size=0,
     slow_path_freq=0,
     normal_path_freq=0,
@@ -289,7 +289,7 @@ def run(
         dom_logs=dom_logs,
         profile=profile,
         batch_size=batch_size,
-        filter_client_logs=filter_client_logs,
+        analyze_client_logs=analyze_client_logs,
         slow_path_freq=slow_path_freq,
         normal_path_freq=normal_path_freq,
         view_change_freq=view_change_freq,

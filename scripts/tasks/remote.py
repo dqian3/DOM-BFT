@@ -228,22 +228,38 @@ def run(
         c.run("rm -f ../logs/*", warn=True)
 
         if analyze_client_logs:
-            print("Analyzing client logs on remote machines...")
-            # Run analyze_client.py on each client machine
-            for id, ip in enumerate(clients):
+            print("Analyzing client logs on remote machines in parallel...")
+
+            # Function to analyze a single client
+            def analyze_client(client_id, ip):
                 conn = Connection(ip)
-                print(f"Analyzing client{id}.log on {ip}")
+                print(f"Analyzing client{client_id}.log on {ip}")
                 conn.run(
-                    f"python3 analyze_client.py client{id}.log -o client{id}.json",
+                    f"python3 analyze_client.py client{client_id}.log -o client{client_id}.json",
                     warn=True,
+                    hide=True,
                 )
                 # Download the JSON result
-                conn.get(f"client{id}.json", "../logs/")
+                conn.get(f"client{client_id}.json", "../logs/")
+                return f"Completed client{client_id}"
+
+            # Run analysis in parallel using ThreadingGroup's execute method
+            from threading import Thread
+
+            threads = []
+            for id, ip in enumerate(clients):
+                t = Thread(target=analyze_client, args=(id, ip))
+                t.start()
+                threads.append(t)
+
+            # Wait for all threads to complete
+            for t in threads:
+                t.join()
 
             # Run aggregate_results.py locally to combine all client analyses
             print("Aggregating results locally...")
             c.run(
-                f"python3 scripts/analysis/aggregate_results.py ../logs/aggregate.json ../logs/",
+                f"python3 analysis/aggregate_results.py ../logs/aggregate.json ../logs/",
                 warn=True,
             )
             print("Client log analysis complete. Results in ../logs/aggregate.json")

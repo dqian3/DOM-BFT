@@ -2,23 +2,23 @@ app: counter
 resiliency: 
   f: 1
   e: 1
-transport: simple-rpc
+transport: nng 
 
 client:
   ips:
   - 10.138.0.12
+  - 10.182.0.6
   - 10.142.0.6
   - 10.150.0.4
-  - 10.182.0.6
   - 10.138.0.9
   - 10.182.0.7
   - 10.142.0.5
   - 10.150.0.5
 
   - 10.138.0.12
+  - 10.182.0.6
   - 10.142.0.6
   - 10.150.0.4
-  - 10.182.0.6
   - 10.138.0.9
   - 10.182.0.7
   - 10.142.0.5
@@ -29,9 +29,9 @@ client:
   port: 33000
   requestSize: 512
   requestTimeout: 2000000
-  runtimeSeconds: 120
+  runtimeSeconds: 120 
   sendMode: sendRate
-  sendRate: 1000
+  sendRate: 100
   slowPathTimeout: 100000000
   useHMAC: false
   sendProofs: false
@@ -40,12 +40,16 @@ proxy:
   forwardPort: 31000
   ips:
   - 10.138.0.12
+  - 10.182.0.6
   - 10.142.0.6
   - 10.150.0.4
-  - 10.182.0.6
+  - 10.138.0.9
+  - 10.182.0.7
+  - 10.142.0.5
+  - 10.150.0.5
   keysDir: keys/proxy
   maxOwd: 200000
-  offsetCoefficient: 1.25
+  offsetCoefficient: 1.5
   shards: 1
   proxyBatchEnabled: false
   proxyBatchMaxCount: 50
