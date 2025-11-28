@@ -78,7 +78,7 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
         for ip in int_ips:
             name, zone = vm_info[ip]
             h = c.run(
-                f"gcloud compute instances start' {name} --zone {zone}",
+                f"gcloud compute instances start {name} --zone {zone}",
                 asynchronous=True,
             )
             hdls.append(h)

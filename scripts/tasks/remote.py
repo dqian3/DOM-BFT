@@ -132,16 +132,6 @@ def run(
     proxy_path = "./dombft_proxy"
     client_path = "./dombft_client"
 
-    if cfg.get("resiliency") == "5f+1":
-        f = len(replicas) // 5
-    else:
-        # Otherwise, we assume 3f+1 resiliency
-        f = len(replicas) // 3
-
-    # Clear out ssh keys to avoid issues with authentication
-    #     -> Hao: this actually causes issues:Could not open a connection to your authentication agent. Why?
-    # c.run("ssh-add -D")
-
     group = ThreadingGroup(*get_all_ips(config_file, resolve))
 
     # Kill previous runs
@@ -211,9 +201,7 @@ def run(
     for id, ip in enumerate(clients):
         arun = arun_on(ip, f"client{id}.log", timeout=10 + runtime, profile=profile)
 
-        hdl = arun(
-            f"{client_path} -v {v} -config {remote_config_file} -clientId {id}"
-        )
+        hdl = arun(f"{client_path} -v {v} -config {remote_config_file} -clientId {id}")
         client_handles.append(hdl)
 
     try:
@@ -247,7 +235,7 @@ def run(
                 print(f"Analyzing client{id}.log on {ip}")
                 conn.run(
                     f"python3 analyze_client.py client{id}.log -o client{id}.json",
-                    warn=True
+                    warn=True,
                 )
                 # Download the JSON result
                 conn.get(f"client{id}.json", "../logs/")
@@ -256,7 +244,7 @@ def run(
             print("Aggregating results locally...")
             c.run(
                 f"python3 scripts/analysis/aggregate_results.py ../logs/aggregate.json ../logs/",
-                warn=True
+                warn=True,
             )
             print("Client log analysis complete. Results in ../logs/aggregate.json")
         else:
@@ -309,7 +297,7 @@ def run_rates(
         cfg["client"]["maxInFlight"] = 2500
         nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [1500, 1800, 2000]:
+        for send_rate in [100, 1500, 1800, 2000]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
