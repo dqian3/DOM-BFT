@@ -48,7 +48,7 @@ def get_address_resolver(context):
 
 
 @task
-def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
+def vm(c, config_file="../configs/remote-prod.yaml", stop=False, reset=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -66,7 +66,15 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
     }
     hdls = []
 
-    if stop:
+    if reset:
+        for ip in int_ips:
+            name, zone = vm_info[ip]
+            h = c.run(
+                f"gcloud compute instances reset {name} --zone {zone}",
+                asynchronous=True,
+            )
+            hdls.append(h)
+    elif stop:
         for name, zone in vm_info.values():
             h = c.run(
                 f"gcloud compute instances stop {name} --zone {zone}",
@@ -86,7 +94,10 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
     for h in hdls:
         h.join()
 
-    print(f"{'Stopped' if stop else 'Started'} all instances!")
+    if reset:
+        print("Reset all instances!")
+    else:
+        print(f"{'Stopped' if stop else 'Started'} all instances!")
 
 
 @task
@@ -226,11 +237,7 @@ def run_largen(
             yaml.dump(cfg, open(config_file, "w"))
             run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
 
-            c.run("rm ../logs/*.log ", warn=True)
-
-            c.run(
-                f"python3 analysis.py/aggregate_results.py  {prot}_n{n}_sr{send_rate}.out ../logs"
-            )
+            c.run(f"mv results.json {prot}_n{n}_sr{send_rate}.out ")
 
             # vm(c, config_file=config_file, stop=True)
 

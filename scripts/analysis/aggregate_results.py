@@ -229,14 +229,14 @@ if __name__ == "__main__":
         "-w",
         "--warmup",
         type=int,
-        default=10,
+        default=20,
         help="Seconds to exclude from start (default: 10)",
     )
     parser.add_argument(
         "-c",
         "--cooldown",
         type=int,
-        default=10,
+        default=20,
         help="Seconds to exclude from end (default: 10)",
     )
 

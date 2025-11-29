@@ -230,6 +230,8 @@ def run(
         if analyze_client_logs:
             print("Analyzing client logs on remote machines in parallel...")
 
+            group.run("rm -f *.json", warn=True)
+
             # Function to analyze a single client
             def analyze_client(client_id, ip):
                 conn = Connection(ip)
@@ -259,10 +261,10 @@ def run(
             # Run aggregate_results.py locally to combine all client analyses
             print("Aggregating results locally...")
             c.run(
-                f"python3 analysis/aggregate_results.py ../logs/aggregate.json ../logs/",
+                "python3 analysis/aggregate_results.py results.json ../logs/",
                 warn=True,
             )
-            print("Client log analysis complete. Results in ../logs/aggregate.json")
+            print("Client log analysis complete. Results in results.json")
         else:
             get_logs(c, replicas, "replica")
             get_logs(c, clients, "client")
@@ -288,32 +290,12 @@ def run_rates(
             original_contents = cfg_file.read()
             cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
-        # Fast path long (client logs are filtered)
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 300
-        # n_clients = len(cfg["client"]["ips"])
-
-        # for send_rate in [500, 750, 1000, 1100, 1200]:
-        #     cfg["client"]["sendRate"] = send_rate
-
-        #     with open(config_file, "w") as yaml_file:
-        #         yaml.dump(cfg, yaml_file)
-
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, filter_client_logs=True)
-
-        #     folder = f"../output/{prot}_long_{send_rate * n_clients}"
-        #     c.run(f"mkdir -p {folder}")
-        #     c.run(f"cp ../logs/*.log {folder}")
-
-        #     with open(os.path.join(folder, f"{send_rate}_config.yaml"), "w") as yaml_file:
-        #         yaml.dump(cfg, yaml_file)
-
         # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
         cfg["client"]["maxInFlight"] = 2500
         nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [100, 1500, 1800, 2000]:
+        for send_rate in [500, 1000, 1400, 1600, 1800, 2000]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
@@ -323,10 +305,9 @@ def run_rates(
                 v=v,
                 prot=prot,
                 batch_size=batch_size,
+                analyze_client_logs=True,
             )
-            c.run(
-                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{nClients * send_rate}.out"
-            )
+            c.run(f"mv results.json {prot}_fast_sr{nClients * send_rate}.json")
 
         # # Normal Path Swapped
         # cfg["client"]["sendMode"] = "sendRate"
