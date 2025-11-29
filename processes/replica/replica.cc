@@ -1141,7 +1141,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         return;
     } else if (coll.hasConflictProof()) {
         VLOG(1) << "PERF event=checkpoint_conflict"
-                << " seq=" << rSeq << " round=" << round_ << " self_id=" << replicaId_;
+                << " seq=" << rSeq << " round=" << round_ << " replica_id=" << replicaId_;
 
         dombft::proto::RepairReplyProof replyProof;
         coll.getConflictProof(replyProof);

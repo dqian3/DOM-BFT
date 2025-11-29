@@ -292,11 +292,12 @@ def run_rates(
 
         # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
-        cfg["client"]["maxInFlight"] = 2500
         nClients = len(cfg["client"]["ips"])
 
         for send_rate in [500, 1000, 1400, 1600, 1800, 2000]:
             cfg["client"]["sendRate"] = send_rate
+            cfg["client"]["maxInFlight"] = int(send_rate * 0.5)
+
             yaml.dump(cfg, open(config_file, "w"))
             run(
                 c,

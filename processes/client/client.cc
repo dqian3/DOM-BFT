@@ -79,15 +79,15 @@ Client::Client(size_t id)
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
-        for (size_t i = 0; i < addrPairs.size(); i++) {
-        }
-
         size_t nReplicas = configManager.getNumReplicas();
         for (size_t i = 0; i < nReplicas; i++)
             replicaAddrs_.push_back(addrPairs[i].second);
 
-        for (size_t i = nReplicas; i < addrPairs.size(); i++)
+        for (size_t i = nReplicas; i < addrPairs.size(); i++) {
             proxyAddrs_.push_back(addrPairs[i].second);
+            VLOG(1) << proxyAddrs_.back();
+        }
+
     } else if (config.transport == "simple-rpc") {
         /** Store all proxy addrs. */
 
