@@ -216,7 +216,7 @@ def run_largen(
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
         f = 1
-        for e in [3, 2, 1, 0]:
+        for e in [0, 1, 2, 3]:
             # vm(
             #     c, config_file=config_file
             # )  # This should only start the vms that are needed, not all
@@ -235,17 +235,23 @@ def run_largen(
             send_rate = cfg["client"]["sendRate"] * len(cfg["client"]["ips"])
 
             yaml.dump(cfg, open(config_file, "w"))
-            run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
+            run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=False)
+            c.run("rm ../logs/*.log ", warn=True)
+            c.run(
+                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n}_sr{send_rate}.out"
+            )
 
-            c.run(f"mv results.json {prot}_n{n}_sr{send_rate}.out ")
+            # run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
+            # c.run(f"mv results.json {prot}_n{n}_sr{send_rate}.out ")
 
             # vm(c, config_file=config_file, stop=True)
+            time.sleep(10)
 
     finally:
         with open(config_file, "w") as cfg_file:
             cfg_file.write(original_contents)
 
-        vm(c, config_file=config_file, stop=True)
+        # vm(c, config_file=config_file, stop=True)
 
 
 @task

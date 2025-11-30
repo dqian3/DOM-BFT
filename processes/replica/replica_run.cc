@@ -1,5 +1,5 @@
-#include "lib/config/process_config.h"
 #include "lib/config/config_manager.h"
+#include "lib/config/process_config.h"
 
 #include "dummy_replica.h"
 #include "replica.h"
@@ -47,8 +47,6 @@ int main(int argc, char *argv[])
         dombft::DummyReplica replica(FLAGS_replicaId, DummyProtocol::DUMMY_DOM_BFT);
         replica.run();
     } else {
-        // Use replicaId as receiverId if not specified
-
         dombft::Replica replica(
             FLAGS_replicaId, FLAGS_crashed, FLAGS_swapFreq, FLAGS_viewChangeFreq, FLAGS_commitLocalInViewChange,
             FLAGS_viewChangeNum, FLAGS_checkpointDropFreq

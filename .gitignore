@@ -9,6 +9,7 @@ keys
 
 logs
 *.log
+*.json
 
 .DS_Store
 .idea

@@ -54,7 +54,7 @@ def get_logs(c, ips, log_prefix):
         print(f"Getting {log_prefix}{id}.log.gz")
         conn.run(f"rm -f {log_prefix}{id}.log.gz", hide=True)
         conn.run(
-            f"gzip {log_prefix}{id}.log", hide=True, warn=True
+            f"gzip -k {log_prefix}{id}.log", hide=True, warn=True
         )  # original files are too large
         conn.get(f"{log_prefix}{id}.log.gz", "../logs/")
 
@@ -90,7 +90,7 @@ def logs(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x):
     replicas, proxies, clients = get_process_ips(config_file, resolve)
 
     get_logs(c, replicas, "replica")
-    get_logs(c, proxies, "proxy")
+    # get_logs(c, proxies, "proxy")
     get_logs(c, clients, "client")
 
 
@@ -243,7 +243,7 @@ def run(
                 )
                 # Download the JSON result
                 conn.get(f"client{client_id}.json", "../logs/")
-                return f"Completed client{client_id}"
+                print(f"Completed client{client_id}")
 
             # Run analysis in parallel using ThreadingGroup's execute method
             from threading import Thread
@@ -290,13 +290,13 @@ def run_rates(
             original_contents = cfg_file.read()
             cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
-        # Fast path short
+        # Fast path
         cfg["client"]["sendMode"] = "sendRate"
         nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [500, 1000, 1400, 1600, 1800, 2000]:
+        for send_rate in [1400, 1500, 1600]:
             cfg["client"]["sendRate"] = send_rate
-            cfg["client"]["maxInFlight"] = int(send_rate * 0.5)
+            cfg["client"]["maxInFlight"] = 2000
 
             yaml.dump(cfg, open(config_file, "w"))
             run(
@@ -310,49 +310,24 @@ def run_rates(
             )
             c.run(f"mv results.json {prot}_fast_sr{nClients * send_rate}.json")
 
-        # # Normal Path Swapped
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 500
-
-        # for send_rate in [800, 900, 1000]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-
-        #     # normal_swap
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, normal_path_freq=100)
-        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_swap_sr{send_rate}.out")
-
-        # Normal Path Crashed
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 500
-
-        # for send_rate in [400, 600, 800, 900, 1000]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-
-        #     # normal_crashed
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, num_crashed=1)
-        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_crashed_sr{send_rate}.out")
-
         # Slow Path
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 5000
+        cfg["client"]["sendMode"] = "sendRate"
+        cfg["client"]["maxInFlight"] = 2000
 
-        # for send_rate in [10, 500, 750, 1000]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-        #     run(
-        #         c,
-        #         config_file=config_file,
-        #         resolve=resolve,
-        #         v=v,
-        #         prot=prot,
-        #         batch_size=batch_size,
-        #         slow_path_freq=100,
-        #     )
-        #     c.run(
-        #         f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_sr{nClients * send_rate}.out"
-        #     )
+        for send_rate in [100, 250, 500, 750, 1000]:
+            cfg["client"]["sendRate"] = send_rate
+            yaml.dump(cfg, open(config_file, "w"))
+            run(
+                c,
+                config_file=config_file,
+                resolve=resolve,
+                v=v,
+                prot=prot,
+                batch_size=batch_size,
+                slow_path_freq=100,
+                analyze_client_logs=True,
+            )
+            c.run(f"mv results.json {prot}_slow_sr{nClients * send_rate}.out")
 
     finally:
         with open(config_file, "w") as cfg_file:
