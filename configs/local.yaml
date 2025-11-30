@@ -9,7 +9,7 @@ client:
   - "127.0.0.0"
   - "127.0.0.0"
   port: 33000
-  keysDir: keys/client
+  keysDir: scripts/keys/client
   normalPathTimeout: 15000    # 15ms
   slowPathTimeout:   200000   # 200 ms
   requestTimeout: 10000000    # 10 s

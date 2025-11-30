@@ -294,27 +294,29 @@ def run_rates(
         cfg["client"]["sendMode"] = "sendRate"
         nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [1400, 1500, 1600]:
-            cfg["client"]["sendRate"] = send_rate
-            cfg["client"]["maxInFlight"] = 2000
+        # for send_rate in [1400, 1500, 1600]:
+        #     cfg["client"]["sendRate"] = send_rate
+        #     cfg["client"]["maxInFlight"] = 2000
+        #     cfg["client"]["runtimeSeconds"] = 330
 
-            yaml.dump(cfg, open(config_file, "w"))
-            run(
-                c,
-                config_file=config_file,
-                resolve=resolve,
-                v=v,
-                prot=prot,
-                batch_size=batch_size,
-                analyze_client_logs=True,
-            )
-            c.run(f"mv results.json {prot}_fast_sr{nClients * send_rate}.json")
+        #     yaml.dump(cfg, open(config_file, "w"))
+        #     run(
+        #         c,
+        #         config_file=config_file,
+        #         resolve=resolve,
+        #         v=v,
+        #         prot=prot,
+        #         batch_size=batch_size,
+        #         analyze_client_logs=True,
+        #     )
+        #     c.run(f"mv results.json {prot}_fast_sr{nClients * send_rate}.json")
 
         # Slow Path
         cfg["client"]["sendMode"] = "sendRate"
         cfg["client"]["maxInFlight"] = 2000
+        cfg["client"]["runtimeSeconds"] = 80
 
-        for send_rate in [100, 250, 500, 750, 1000]:
+        for send_rate in [500, 750, 1000]:
             cfg["client"]["sendRate"] = send_rate
             yaml.dump(cfg, open(config_file, "w"))
             run(
@@ -347,8 +349,8 @@ def copy_keys(c, config_file="../configs/remote-prod.yaml", resolve=lambda x: x)
     print("Copying keys over...")
     for process in ["client", "replica", "proxy"]:
         group.run(f"mkdir -p keys/{process}")
-        for filename in os.listdir(f"../keys/{process}"):
-            group.put(os.path.join(f"../keys/{process}", filename), f"keys/{process}")
+        for filename in os.listdir(f"keys/{process}"):
+            group.put(os.path.join(f"keys/{process}", filename), f"keys/{process}")
 
 
 @task

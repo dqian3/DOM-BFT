@@ -116,6 +116,10 @@ private:
     std::map<uint32_t, std::string> repairHistorySigs_;
     std::optional<LogSuffix> repairProposalLogSuffix_;
 
+    // State for missing request fetching during repair
+    bool missingRequestFetchSent_ = false;
+    std::vector<std::pair<uint32_t, uint32_t>> pendingMissingRequests_;
+
     // State for PBFT
     uint32_t pbftView_ = 0;
     uint32_t preparedRound_ = 0;
@@ -177,6 +181,8 @@ private:
     void startCheckpoint(bool createSnapshot);
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
+    void processMissingRequestFetch(const dombft::proto::MissingRequestFetch &fetchRequest);
+    void processMissingRequestReply(const dombft::proto::MissingRequestReply &fetchReply);
     void processRepairTimeout(const dombft::proto::RepairTimeout &msg, std::span<byte> sig);
     void processRepairReplyProof(const dombft::proto::RepairReplyProof &msg);
     void processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg);
@@ -222,6 +228,7 @@ private:
 
     // Sending helpers
     void sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
+    void sendMissingRequestFetch(const std::vector<std::pair<uint32_t, uint32_t>> &missingRequests);
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 

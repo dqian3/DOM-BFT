@@ -45,11 +45,17 @@ void LogEntry::toProto(dombft::proto::LogEntry &msg) const
     msg.set_client_id(client_id);
     msg.set_client_seq(client_seq);
     msg.set_digest(digest);
-    msg.set_request(request);
+    // msg.set_request(request);
+
+    CryptoPP::SHA256 hash;
+    std::string request_digest;
+    CryptoPP::StringSource ss(request, true, new CryptoPP::HashFilter(hash, new CryptoPP::StringSink(request_digest)));
+    msg.set_request_digest(request_digest);
 }
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
 {
-    out << le.seq << ": (" << le.client_id << ", " << le.client_seq << ") " << digest_to_hex(le.digest) << " | ";
+    out << le.seq << ": (" << le.client_id << ", " << le.client_seq << ") size=" << le.request.size() << " "
+        << digest_to_hex(le.digest) << " | ";
     return out;
 }
