@@ -1,8 +1,10 @@
 transport: nng
-resiliency: 
+resiliency:
   f: 1
   e: 0
-app: counter 
+app: counter
+preserializationMode: disabled
+useProxy: false
 
 client:
   ips: 

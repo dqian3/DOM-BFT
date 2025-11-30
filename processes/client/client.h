@@ -66,6 +66,11 @@ private:
     uint32_t quorumSize_;
     uint32_t superQuorumSize_;
 
+    // Parameters for modifying protocol behavior
+    std::string preserializationMode_;
+    bool useProxy_;
+    bool sendToLeader_;
+
     /* Sending config */
     dombft::ClientSendMode sendMode_;
     uint32_t sendRate_;

@@ -27,11 +27,7 @@
 #define NNG_BUFFER_SIZE  (200000000)
 #define IPC_BUFFER_SIZE  (1024)
 
-#define USE_PROXY   1
 #define SKIP_CRYPTO 0
-
-// For working with dummy protocols
-#define SEND_TO_LEADER 0
 
 typedef unsigned char byte;
 typedef std::tuple<int, int, int, int, std::string, std::string> ReplyKey;
@@ -85,10 +81,15 @@ enum MessageType {
     SNAPSHOT_REQUEST = 24,
     SNAPSHOT_REPLY = 25,
 
-    MISSING_REQUEST_FETCH = 27,
-    MISSING_REQUEST_REPLY = 28,
+    DUMMY_PROTO = 26,
 
-    DUMMY_PROTO = 26
+    MISSING_REQUEST_FETCH = 28,
+    MISSING_REQUEST_REPLY = 29,
+
+    // Preserialization messages
+    PS_CLIENT = 30,           // Client -> Replica 0
+    PS_LEADER_FORWARD = 31,   // Replica 0 -> Others (full mode, contains ClientRequest)
+    PS_LEADER_ORDER = 32      // Replica 0 -> Others (order mode, contains seq + digest)
 };
 
 /**

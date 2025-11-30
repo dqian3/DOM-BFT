@@ -69,6 +69,13 @@ struct ProcessConfig {
     // Unified mode configuration
     bool unifiedMode;
 
+    // Preserialization mode configuration
+    std::string preserializationMode;  // "disabled", "full", or "order"
+
+    // Proxy configuration
+    bool useProxy;
+    bool sendToLeader;  // When useProxy=false, send only to leader (replica 0) instead of all replicas
+
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
         if (!parent[key]) {
@@ -215,6 +222,21 @@ struct ProcessConfig {
             parseField<std::unordered_map<std::string, u_int32_t>>(config, "resiliency", {{"f", 1}, {"e", 1}});
         f = resiliencyParams.at("f");
         e = resiliencyParams.at("e");
+
+        // Parse top-level preserialization option
+        preserializationMode = parseField<std::string>(config, "preserializationMode", "disabled");
+        if (preserializationMode != "disabled" && preserializationMode != "full" && preserializationMode != "order") {
+            throw ConfigParseException("Invalid preserializationMode '" + preserializationMode + "'. Must be 'disabled', 'full', or 'order'");
+        }
+
+        // Parse top-level proxy option
+        useProxy = parseField<bool>(config, "useProxy", true);
+        sendToLeader = parseField<bool>(config, "sendToLeader", false);
+
+        // Validate: if preserialization is enabled, useProxy must be false
+        if (preserializationMode != "disabled" && useProxy) {
+            throw ConfigParseException("When preserializationMode is enabled ('" + preserializationMode + "'), useProxy must be false");
+        }
 
         parseClientConfig(config);
         parseProxyConfig(config);

@@ -37,6 +37,18 @@ Client::Client(size_t id)
     quorumSize_ = configManager.getQuorumSize();
     superQuorumSize_ = configManager.getSuperQuorumSize();
 
+    preserializationMode_ = config.preserializationMode;
+    if (preserializationMode_ != "disabled") {
+        LOG(INFO) << "Preserialization mode: " << preserializationMode_;
+    }
+
+    useProxy_ = config.useProxy;
+    sendToLeader_ = config.sendToLeader;
+    LOG(INFO) << "Use proxy: " << (useProxy_ ? "true" : "false");
+    if (!useProxy_) {
+        LOG(INFO) << "Send to leader: " << (sendToLeader_ ? "true" : "false");
+    }
+
     normalPathEnabled_ = config.clientNormalPathEnabled;
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
@@ -310,10 +322,14 @@ void Client::submitRequestsOpenLoop()
 
 void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
-#if USE_PROXY
-    // TODO how to choose proxy, perhaps by IP or config
-    Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
+    MessageType msgType = MessageType::CLIENT_REQUEST;
+
+    if (preserializationMode_ != "disabled") {
+        // In preserialization mode, send PS_CLIENT
+        msgType = MessageType::PS_CLIENT;
+    }
+
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, msgType, buffer);
 
     if (useHMAC_) {
         // TODO send multiple requests for each replica with their own hmacs
@@ -322,29 +338,23 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     }
 
-    endpoint_->SendPreparedMsgTo(addr, hdr);
-#else
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // TODO check errors for all of these lol
-    // TODO do this while waiting, not in the critical path
-    if (useHMAC_) {
-        // TODO send multiple requests for each replica with their own hmacs
-        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
-    } else {
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    }
+    if (useProxy_) {
+        assert(preserializationMode_ == "disabled");
+        // TODO how to choose proxy, perhaps by IP or config
+        VLOG(2) << "Sending request directly to " << replicaAddrs_[0];
 
-#if SEND_TO_LEADER
-    VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
-
-    endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
-#else
-    VLOG(1) << "Sending request to all replicas ";
-    for (const Address &addr : replicaAddrs_) {
+        Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
         endpoint_->SendPreparedMsgTo(addr, hdr);
+    } else if (sendToLeader_ || preserializationMode_ == "full") {
+        VLOG(2) << "Sending request directly to " << replicaAddrs_[0];
+        endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
+
+    } else {
+        VLOG(2) << "Sending request to all replicas ";
+        for (const Address &addr : replicaAddrs_) {
+            endpoint_->SendPreparedMsgTo(addr, hdr);
+        }
     }
-#endif
-#endif
 }
 
 void Client::commitRequest(uint32_t clientSeq)
