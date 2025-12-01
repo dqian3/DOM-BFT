@@ -816,7 +816,9 @@ void Replica::processMessagesThd()
                         if (pendingMissingRequests_.empty()) {
                             LOG(INFO) << "All missing requests now available (via client), retrying repair";
                             missingRequestFetchSent_ = false;
-                            tryFinishRepair();
+
+                            if (repair_)
+                                tryFinishRepair();
                         }
                     }
                 }
@@ -1143,7 +1145,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         bool alreadyTried =
             seq != 0 && (round == round_) && ((reply.seq() / checkpointInterval_) == (seq / checkpointInterval_));
 
-        if (!alreadyStarted && !alreadyCommitted && !alreadyTried) {
+        if (!alreadyStarted && !alreadyCommitted) {
             VLOG(1) << "PERF event=checkpoint_timeout_reply" << " seq=" << reply.seq() << " round=" << round_
                     << " replica_id=" << reply.replica_id() << " self_id=" << replicaId_ << " checkpoint_seq=" << seq;
 
@@ -1468,6 +1470,12 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                           "ignoring... !";
             return;
         }
+
+        if (!repairProposal_.has_value()) {
+            LOG(ERROR) << "Received snapshot reply during repair but no repair proposal exists, ignoring... !";
+            return;
+        }
+
         LogSuffix &logSuffix = getRepairLogSuffix();
         if (snapshotReply.seq() < logSuffix.checkpoint->seq()) {
             LOG(ERROR) << "Received snapshot reply during repair that is too old, ignoring... !"
@@ -1485,10 +1493,15 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
 
+        // TODO this may be redudnant
         std::map<RequestId, std::string> availableReqs;
-        for (uint32_t seq = log_->getCommittedCheckpoint().seq + 1; seq < startSeq; seq++) {
+        for (uint32_t seq = log_->getCommittedCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
             auto &entry = log_->getEntry(seq);
             availableReqs[{entry.client_id, entry.client_seq}] = entry.request;
+        }
+
+        for (auto [_, req] : repairQueuedReqs_) {
+            availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
         }
 
         if (!log_->resetToSnapshot(snapshotReply)) {
@@ -1505,11 +1518,6 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                          << ". We requested seq=" << logSuffix.checkpoint->seq() << " round=" << round_
                          << " repair_last_seq=" << logSuffix.checkpoint->seq() + logSuffix.entries.size()
                          << ". Still applying it before finishRepair, but will likely drop lots of messages";
-        }
-
-        std::map<RequestId, std::string> availableReqs;
-        for (auto [_, req] : repairQueuedReqs_) {
-            availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
         }
 
         std::vector<std::pair<uint32_t, uint32_t>> missingRequests;
@@ -1586,7 +1594,7 @@ void Replica::processMissingRequestFetch(const dombft::proto::MissingRequestFetc
     // }
 
     dombft::proto::MissingRequestReply reply;
-    reply.set_round(round_);
+    reply.set_round(fetchRequest.round());
     reply.set_replica_id(replicaId_);
 
     // TODO this is inefficient, we should iterate once trhough the logs
@@ -2470,6 +2478,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     repairPrepares_.clear();
     repairPBFTCommits_.clear();
     repairProposalLogSuffix_.reset();
+    missingRequestFetchSent_ = false;
 
     // Reapply any requests that were aborted in previous round
     // NOTE, this is actually allow a single byzantine client to prevent a replica from ever entering fast path...
