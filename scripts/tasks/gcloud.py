@@ -25,9 +25,8 @@ def get_gcloud_ext_ips(c):
 def get_all_int_ips(config):
     int_ips = set()
     for process in config:
-        if process == "transport" or process == "app" or process == "resiliency":
-            continue
-        int_ips |= set([ip for ip in config[process]["ips"]])
+        if process == "client" or process == "proxy" or process == "replica":
+            int_ips |= set([ip for ip in config[process]["ips"]])
 
     return int_ips
 

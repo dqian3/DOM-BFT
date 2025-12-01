@@ -3,6 +3,8 @@ resiliency:
   f: 1
   e: 1
 transport: nng 
+preserializationMode: disabled
+useProxy: true
 
 client:
   ips:
@@ -25,17 +27,25 @@ client:
   - 10.150.0.5
 
   keysDir: keys/client
-  maxInFlight: 500
+  maxInFlight: 1000
   normalPathTimeout: 100000000
   port: 33000                                         
   requestSize: 512
   requestTimeout: 20000000
-  runtimeSeconds: 80
+  runtimeSeconds: 60
   sendMode: sendRate
-  sendRate: 500
+  sendRate: 250 
   slowPathTimeout: 100000000
-  useHMAC: false
+  useHMAC: true
   sendProofs: false
+
+  temporaryRateIncrease:
+    enabled: true
+    seqThreshold: 100000     
+    durationUs: 100000        
+    increasedSendRate: 2000    
+    increasedMaxInFlight: 4000  
+
 
 proxy:
   forwardPort: 31000

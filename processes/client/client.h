@@ -77,6 +77,13 @@ private:
     uint32_t maxInFlight_ = 0;
     uint32_t requestSize_ = 0;
 
+    // Temporary rate increase config
+    bool temporaryRateIncreaseEnabled_;
+    uint32_t rateIncreaseSeqThreshold_;
+    uint32_t rateIncreaseDurationUs_;
+    uint32_t increasedSendRate_;
+    uint32_t increasedMaxInFlight_;
+
     bool normalPathEnabled_;
 
     uint64_t normalPathTimeout_;
@@ -118,6 +125,10 @@ private:
 
     uint64_t startTime_ = 0;
 
+    // Temporary rate increase state
+    bool rateIncreaseActive_ = false;
+    uint64_t rateIncreaseStartTime_ = 0;
+
     /* Per request state */
     std::map<uint32_t, RequestState> requestStates_;
 
@@ -133,7 +144,7 @@ private:
     void submitRequestsOpenLoop();   // For sending in open loop.
 
     void sendRequest(const dombft::proto::ClientRequest &request, byte *sendBuffer = nullptr);
-    void commitRequest(uint32_t clientSeq);
+    void commitRequest(uint32_t clientSeq, uint64_t replicaSeq = 0);
 
     void checkTimeouts();
 
