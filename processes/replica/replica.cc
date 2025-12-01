@@ -1583,6 +1583,8 @@ void Replica::processMissingRequestFetch(const dombft::proto::MissingRequestFetc
     reply.set_round(round_);
     reply.set_replica_id(replicaId_);
 
+    // TODO this is inefficient, we should iterate once trhough the logs
+    // TODO we run into issues if the request was truncated from the log....
     // Iterate through requested requests and search for them
     for (const auto &reqId : fetchRequest.request_ids()) {
         uint32_t clientId = reqId.client_id();
@@ -1883,6 +1885,7 @@ void Replica::checkTimeouts()
         LOG(INFO) << "Starting checkpoint for round=" << round_ << " seq=" << log_->getNextSeq() - 1
                   << " due to timeout!";
 
+        // These are triggering during repair, repair should cancel this or cause it to be ignored
         VLOG(1) << "PERF event=checkpoint_timeout_self" << " seq=" << log_->getNextSeq() - 1 << " round=" << round_
                 << " replica_id=" << replicaId_;
 
