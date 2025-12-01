@@ -1136,7 +1136,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
 
     // If we receive a reply for a checkpoint for a sequence number that is not a multiple of the
-    // checkpoint interval, some replica has timed waiting to reach the checkpoint interval.
+    // checkpoint interval, some replica has timed out waiting to reach the checkpoint interval.
     if (reply.seq() % checkpointInterval_ != 0) {
         bool alreadyStarted = checkpointCollectors_.hasCollector(round_, reply.seq());
         bool alreadyCommitted = reply.seq() <= log_->getCommittedCheckpoint().seq;
@@ -1145,7 +1145,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         bool alreadyTried =
             seq != 0 && (round == round_) && ((reply.seq() / checkpointInterval_) == (seq / checkpointInterval_));
 
-        if (!alreadyStarted && !alreadyCommitted) {
+        if (!alreadyStarted && !alreadyCommitted && !alreadyTried) {
             VLOG(1) << "PERF event=checkpoint_timeout_reply" << " seq=" << reply.seq() << " round=" << round_
                     << " replica_id=" << reply.replica_id() << " self_id=" << replicaId_ << " checkpoint_seq=" << seq;
 
@@ -1757,6 +1757,13 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 
     // Proof is verified by verify thread
 
+    if (msg.round() > round_) {
+        LOG(ERROR) << "Received repair trigger proof for round " << msg.round() << " > " << round_;
+        // TODO, we need to handle this after repair finishes?
+        pendingRepair_ = true;
+        return;
+    }
+
     // Ignore repeated repair triggers
     if (repair_) {
         VLOG(6) << "Received repair trigger during a repair";
@@ -1770,11 +1777,6 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 
     if (msg.view() < pbftView_) {
         VLOG(4) << "Received repair timeout for previous pbft view " << msg.view() << " < " << pbftView_;
-        return;
-    }
-
-    if (msg.round() > round_) {
-        LOG(ERROR) << "Received repair trigger proof for round " << msg.round() << " > " << round_;
         return;
     }
 
@@ -1804,6 +1806,12 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
 {
     updateReplicaView(msg.replica_id(), msg.view(), msg.round());
 
+    if (msg.round() > round_) {
+        LOG(ERROR) << "WARNING Received repair trigger proof for future round " << msg.round() << " > " << round_;
+        pendingRepair_ = true;
+        return;
+    }
+
     // Ignore repeated repair triggers
     if (repair_) {
         VLOG(5) << "Received timeout proof after I already started repair for round " << round_;
@@ -1813,11 +1821,6 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
     // Proof is verified by verify thread
     if (msg.round() < round_) {
         LOG(INFO) << "Received repair timeout proof for previous round " << msg.round() << " < " << round_;
-        return;
-    }
-
-    if (msg.round() > round_) {
-        VLOG(6) << "Received repair trigger proof for future round " << msg.round() << " > " << round_;
         return;
     }
 
@@ -2465,7 +2468,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             } else {
                 // TODO this should be an assert, but we will fix this later.
-                LOG(ERROR) << "Reapir commit digests "
+                LOG(ERROR) << "Repair commit digests "
                            << digest_to_hex(newCheckpoint.repairCommits.begin()->second.log_digest())
                            << " does not match my log digest " << digest_to_hex(newCheckpoint.logDigest)
                            << " skipping...";
@@ -2508,6 +2511,12 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     checkpointTimeoutStart_ = GetMicrosecondTimestamp();
 
     VLOG(2) << "PERF_DUMP post repair round=" << round_ - 1 << " " << *log_;
+
+    // TODO hack if we received proof for next repair round in this round...
+    if (pendingRepair_) {
+        pendingRepair_ = false;
+        startRepair();
+    }
 }
 
 void Replica::tryFinishRepair()
