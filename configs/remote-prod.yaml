@@ -1,9 +1,4 @@
 app: counter
-resiliency: 
-  f: 1
-  e: 1
-transport: nng 
-
 client:
   ips:
   - 10.138.0.12
@@ -14,7 +9,6 @@ client:
   - 10.182.0.7
   - 10.142.0.5
   - 10.150.0.5
-
   - 10.138.0.12
   - 10.182.0.6
   - 10.142.0.6
@@ -23,20 +17,19 @@ client:
   - 10.182.0.7
   - 10.142.0.5
   - 10.150.0.5
-
   keysDir: keys/client
-  maxInFlight: 500
+  maxInFlight: 62
   normalPathTimeout: 100000000
-  port: 33000                                         
+  port: 33000
   requestSize: 512
   requestTimeout: 20000000
-  runtimeSeconds: 80
+  runtimeSeconds: 340
   sendMode: sendRate
-  sendRate: 500
+  sendProofs: false
+  sendRate: 892
   slowPathTimeout: 100000000
   useHMAC: false
-  sendProofs: false
-
+preserializationMode: disabled
 proxy:
   forwardPort: 31000
   ips:
@@ -51,12 +44,13 @@ proxy:
   keysDir: keys/proxy
   maxOwd: 100000
   offsetCoefficient: 1.25
-  shards: 1
-  proxyBatchEnabled: false
+  proxyBatchEnabled: true
   proxyBatchMaxCount: 50
   proxyBatchMaxDelay: 2000
-
+  shards: 1
 replica:
+  checkpointInterval: 5000
+  checkpointTimeout: 200000
   ips:
   - 10.138.0.6
   - 10.182.0.4
@@ -64,16 +58,15 @@ replica:
   - 10.150.0.3
   - 10.138.0.7
   - 10.182.0.5
-  # - 10.138.0.11
-  # - 10.182.0.9
-  # - 10.142.0.7
-  # - 10.150.0.6
   keysDir: keys/replica
   numSendThreads: 6
-  numVerifyThreads: 6
+  numVerifyThreads: 5
   port: 34000
-  repairTimeout:      100000
-  checkpointTimeout: 5000000 
-  repairViewTimeout: 5000000
-  checkpointInterval: 2500
-  snapshotInterval: 25000
+  repairTimeout: 100000
+  repairViewTimeout: 600000000
+  snapshotInterval: 50000
+resiliency:
+  e: 1
+  f: 1
+transport: nng
+useProxy: false

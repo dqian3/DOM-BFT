@@ -294,30 +294,10 @@ def run_rates(
         cfg["client"]["sendMode"] = "sendRate"
         nClients = len(cfg["client"]["ips"])
 
-        # for send_rate in [1400, 1500, 1600]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     cfg["client"]["maxInFlight"] = 2000
-        #     cfg["client"]["runtimeSeconds"] = 330
-
-        #     yaml.dump(cfg, open(config_file, "w"))
-        #     run(
-        #         c,
-        #         config_file=config_file,
-        #         resolve=resolve,
-        #         v=v,
-        #         prot=prot,
-        #         batch_size=batch_size,
-        #         analyze_client_logs=True,
-        #     )
-        #     c.run(f"mv results.json {prot}_fast_sr{nClients * send_rate}.json")
-
-        # Slow Path
-        cfg["client"]["sendMode"] = "sendRate"
-        cfg["client"]["maxInFlight"] = 2000
-        cfg["client"]["runtimeSeconds"] = 80
-
-        for send_rate in [500, 750, 1000]:
+        for send_rate in [500, 750, 1000, 1200, 1300, 1400, 1500, 1600]:
             cfg["client"]["sendRate"] = send_rate
+            cfg["client"]["maxInFlight"] = 2000
+
             yaml.dump(cfg, open(config_file, "w"))
             run(
                 c,
@@ -326,10 +306,29 @@ def run_rates(
                 v=v,
                 prot=prot,
                 batch_size=batch_size,
-                slow_path_freq=100,
                 analyze_client_logs=True,
             )
-            c.run(f"mv results.json {prot}_slow_sr{nClients * send_rate}.out")
+            c.run(f"mv results.json dombft_fast_n8_sr{nClients * send_rate}.json")
+
+        # Slow Path
+        # cfg["client"]["sendMode"] = "sendRate"
+        # cfg["client"]["maxInFlight"] = 2000
+        # cfg["client"]["runtimeSeconds"] = 80
+
+        # for send_rate in [500, 750, 1000]:
+        #     cfg["client"]["sendRate"] = send_rate
+        #     yaml.dump(cfg, open(config_file, "w"))
+        #     run(
+        #         c,
+        #         config_file=config_file,
+        #         resolve=resolve,
+        #         v=v,
+        #         prot=prot,
+        #         batch_size=batch_size,
+        #         slow_path_freq=100,
+        #         analyze_client_logs=True,
+        #     )
+        #     c.run(f"mv results.json {prot}_slow_sr{nClients * send_rate}.out")
 
     finally:
         with open(config_file, "w") as cfg_file:

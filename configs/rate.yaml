@@ -1,0 +1,68 @@
+transport: nng
+resiliency:
+  f: 1
+  e: 0
+app: counter
+preserializationMode: disabled
+useProxy: true
+
+client:
+  ips:
+  - "127.0.0.0"
+  - "127.0.0.0"
+  port: 33000
+  keysDir: keys/client
+  normalPathTimeout: 15000    # 15ms
+  slowPathTimeout:   200000   # 200 ms
+  requestTimeout: 10000000    # 10 s
+
+  sendMode: "sendRate"
+  maxInFlight: 10
+  sendRate: 100
+  runtimeSeconds: 300
+  requestSize: 512
+  useHMAC: false
+
+  # Temporary rate increase configuration
+  temporaryRateIncrease:
+    enabled: true
+    seqThreshold: 1000        # Trigger at replica sequence number 1000
+    durationUs: 1000000      # 10 seconds duration
+    increasedSendRate: 500    # Increase from 100 to 500
+    increasedMaxInFlight: 50  # Increase from 10 to 50
+
+
+# Proxy Info
+proxy:
+  ips:
+    - "127.0.1.0"
+    - "127.0.1.1"
+  shards: 1
+  forwardPort: 31000
+  keysDir: keys/proxy
+  maxOwd: 15000
+  proxyBatchEnabled: false
+  proxyBatchMaxCount: 2
+  proxyBatchMaxDelay: 5000 # 5 ms (should be smaller than path timeout)
+
+# Replica Info
+replica:
+  ips:
+  - "127.0.2.0"
+  - "127.0.2.1"
+  - "127.0.2.2"
+  - "127.0.2.3"
+  # - "127.0.2.4"
+  # - "127.0.2.5"
+  port: 34000
+  app: "counter"
+  keysDir: "keys/replica"
+  repairTimeout:      100000
+  checkpointTimeout: 1000000
+  repairViewTimeout: 1000000
+  numVerifyThreads: 1
+  numSendThreads: 2
+  checkpointInterval: 5000
+  snapshotInterval: 25000
+
+

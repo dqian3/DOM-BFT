@@ -43,6 +43,15 @@ struct ProcessConfig {
     bool clientSendProofs;
     bool clientNormalPathEnabled;
 
+    // Temporary rate increase configuration (optional sub-object)
+    struct {
+        bool enabled;
+        uint32_t seqThreshold;
+        uint32_t durationUs;
+        uint32_t increasedSendRate;
+        uint32_t increasedMaxInFlight;
+    } clientTemporaryRateIncrease;
+
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
     int proxyMeasurementPort;
@@ -131,6 +140,23 @@ struct ProcessConfig {
             clientUseHMAC = parseField<bool>(clientNode, "useHMAC", false);
             clientSendProofs = parseField<bool>(clientNode, "sendProofs", false);
             clientNormalPathEnabled = parseField<bool>(clientNode, "normalPathEnabled", false);
+
+            // Parse temporary rate increase configuration (optional)
+            if (clientNode["temporaryRateIncrease"]) {
+                const YAML::Node &rateIncreaseNode = clientNode["temporaryRateIncrease"];
+                clientTemporaryRateIncrease.enabled = parseField<bool>(rateIncreaseNode, "enabled", false);
+                clientTemporaryRateIncrease.seqThreshold = parseField<uint32_t>(rateIncreaseNode, "seqThreshold", 0);
+                clientTemporaryRateIncrease.durationUs = parseField<uint32_t>(rateIncreaseNode, "durationUs", 10000000); // Default 10s
+                clientTemporaryRateIncrease.increasedSendRate = parseField<uint32_t>(rateIncreaseNode, "increasedSendRate", 0);
+                clientTemporaryRateIncrease.increasedMaxInFlight = parseField<uint32_t>(rateIncreaseNode, "increasedMaxInFlight", 0);
+            } else {
+                // Default: disabled
+                clientTemporaryRateIncrease.enabled = false;
+                clientTemporaryRateIncrease.seqThreshold = 0;
+                clientTemporaryRateIncrease.durationUs = 10000000;
+                clientTemporaryRateIncrease.increasedSendRate = 0;
+                clientTemporaryRateIncrease.increasedMaxInFlight = 0;
+            }
         }
 
         catch (const ConfigParseException &e) {
