@@ -1306,7 +1306,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
             // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
             // behind
-            if (!checkpointSnapshotRequested_) {
+            if (!checkpointSnapshotRequested_ || seq >= log_->getNextSeq() + 5 * checkpointInterval_) {
                 VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
                         << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId_;
 
@@ -1484,6 +1484,12 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                   << " has_snapshot=" << snapshotReply.has_snapshot();
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
+
+        std::map<RequestId, std::string> availableReqs;
+        for (uint32_t seq = log_->getCommittedCheckpoint().seq + 1; seq < startSeq; seq++) {
+            auto &entry = log_->getEntry(seq);
+            availableReqs[{entry.client_id, entry.client_seq}] = entry.request;
+        }
 
         if (!log_->resetToSnapshot(snapshotReply)) {
             // TODO handle this case properly by retrying on another replica
