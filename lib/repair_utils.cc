@@ -339,6 +339,29 @@ bool applySuffix(
 
     log->abort(seq);
 
+    // Step2.5 Check for missing requests
+    for (int i = idx; i < logSuffix.entries.size(); i++) {
+        VLOG(2) << "Applying entry at seq=" << seq << " log next seq=" << log->getNextSeq();
+
+        assert(seq == log->getNextSeq());
+        const dombft::proto::LogEntry *entry = logSuffix.entries[i];
+        uint32_t clientId = entry->client_id();
+        uint32_t clientSeq = entry->client_seq();
+
+        // Get request and check the digest
+        RequestId key = {clientId, clientSeq};
+        if (!availableReqs.contains(key)) {
+            LOG(INFO) << "Missing request at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq
+                      << " - will request from other replicas";
+            missingRequests.push_back({clientId, clientSeq});
+        }
+    }
+
+    if (!missingRequests.empty()) {
+        LOG(INFO) << "Missing " << missingRequests.size() << " requests - will not apply suffix yet";
+        return false;
+    }
+
     // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
     for (; idx < logSuffix.entries.size(); idx++) {
         VLOG(2) << "Applying entry at seq=" << seq << " log next seq=" << log->getNextSeq();
@@ -350,13 +373,8 @@ bool applySuffix(
 
         // Get request and check the digest
         RequestId key = {clientId, clientSeq};
-        if (!availableReqs.contains(key)) {
-            LOG(INFO) << "Missing request at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq
-                      << " - will request from other replicas";
-            missingRequests.push_back({clientId, clientSeq});
-            return false;
-        }
 
+        assert(availableReqs.contains(key));
         CryptoPP::SHA256 hash;
         std::string digestMyReq;
         CryptoPP::StringSource ss(

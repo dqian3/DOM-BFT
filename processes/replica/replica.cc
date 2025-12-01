@@ -1404,12 +1404,12 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                           << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
-            VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
-                    << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId;
-
             // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
             // behind
             if (!checkpointSnapshotRequested_) {
+                VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
+                        << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId;
+
                 sendSnapshotRequest(replicaId, checkpoint.seq);
             }
             checkpointSnapshotRequested_ = true;
@@ -1683,6 +1683,8 @@ void Replica::processMissingRequestFetch(const dombft::proto::MissingRequestFetc
     reply.set_round(round_);
     reply.set_replica_id(replicaId_);
 
+    // TODO this is inefficient, we should iterate once trhough the logs
+    // TODO we run into issues if the request was truncated from the log....
     // Iterate through requested requests and search for them
     for (const auto &reqId : fetchRequest.request_ids()) {
         uint32_t clientId = reqId.client_id();
@@ -1983,6 +1985,7 @@ void Replica::checkTimeouts()
         LOG(INFO) << "Starting checkpoint for round=" << round_ << " seq=" << log_->getNextSeq() - 1
                   << " due to timeout!";
 
+        // These are triggering during repair, repair should cancel this or cause it to be ignored
         VLOG(1) << "PERF event=checkpoint_timeout_self" << " seq=" << log_->getNextSeq() - 1 << " round=" << round_
                 << " replica_id=" << replicaId_;
 
