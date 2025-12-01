@@ -391,7 +391,7 @@ def flutter(
 @task
 def run_rates(
     c,
-    config_file="../configs/remote-prod.yaml",
+    config_file="../configs/flutter-remote.yaml",
     resolve=lambda x: x,
     v=1,
     prot="dombft",
@@ -402,89 +402,24 @@ def run_rates(
             original_contents = cfg_file.read()
             cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
-        # Fast path long (client logs are filtered)
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 300
-        # n_clients = len(cfg["client"]["ips"])
-
-        # for send_rate in [500, 750, 1000, 1100, 1200]:
-        #     cfg["client"]["sendRate"] = send_rate
-
-        #     with open(config_file, "w") as yaml_file:
-        #         yaml.dump(cfg, yaml_file)
-
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, filter_client_logs=True)
-
-        #     folder = f"../output/{prot}_long_{send_rate * n_clients}"
-        #     c.run(f"mkdir -p {folder}")
-        #     c.run(f"cp ../logs/*.log {folder}")
-
-        #     with open(os.path.join(folder, f"{send_rate}_config.yaml"), "w") as yaml_file:
-        #         yaml.dump(cfg, yaml_file)
-
         # Fast path short
         cfg["client"]["sendMode"] = "sendRate"
-        cfg["client"]["maxInFlight"] = 2500
         nClients = len(cfg["client"]["ips"])
 
-        for send_rate in [1500, 1800, 2000]:
+        for send_rate in [200, 400, 500, 600, 700, 800]:
             cfg["client"]["sendRate"] = send_rate
+            cfg["client"]["maxInFlight"] = int(send_rate * 0.2)
+
             yaml.dump(cfg, open(config_file, "w"))
-            run(
+            flutter(
                 c,
                 config_file=config_file,
                 resolve=resolve,
                 v=v,
-                prot=prot,
-                batch_size=batch_size,
             )
             c.run(
-                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_fast_sr{nClients * send_rate}.out"
+                f"cat ../logs/flutter_replica*.log ../logs/flutter_client*.log | grep PERF >flutter_sr{nClients * send_rate}.out"
             )
-
-        # # Normal Path Swapped
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 500
-
-        # for send_rate in [800, 900, 1000]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-
-        #     # normal_swap
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, normal_path_freq=100)
-        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_swap_sr{send_rate}.out")
-
-        # Normal Path Crashed
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 500
-
-        # for send_rate in [400, 600, 800, 900, 1000]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-
-        #     # normal_crashed
-        #     run(c, config_file=config_file, resolve=resolve, v=v, prot=prot, batch_size=batch_size, num_crashed=1)
-        #     c.run(f"cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_crashed_sr{send_rate}.out")
-
-        # Slow Path
-        # cfg["client"]["sendMode"] = "sendRate"
-        # cfg["client"]["maxInFlight"] = 5000
-
-        # for send_rate in [10, 500, 750, 1000]:
-        #     cfg["client"]["sendRate"] = send_rate
-        #     yaml.dump(cfg, open(config_file, "w"))
-        #     run(
-        #         c,
-        #         config_file=config_file,
-        #         resolve=resolve,
-        #         v=v,
-        #         prot=prot,
-        #         batch_size=batch_size,
-        #         slow_path_freq=100,
-        #     )
-        #     c.run(
-        #         f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_slow_sr{nClients * send_rate}.out"
-        #     )
 
     finally:
         with open(config_file, "w") as cfg_file:
