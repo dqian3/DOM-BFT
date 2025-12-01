@@ -75,7 +75,7 @@ replica:
   numVerifyThreads: 6
   port: 34000
   repairTimeout:      100000
-  checkpointTimeout: 5000000 
-  repairViewTimeout: 5000000
+  checkpointTimeout: 200000 
+  repairViewTimeout: 600000000
   checkpointInterval: 1000
   snapshotInterval: 50000

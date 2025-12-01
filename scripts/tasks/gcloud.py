@@ -93,10 +93,19 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False, reset=False):
     for h in hdls:
         h.join()
 
+    if stop:
+        print("Stopped all instances!")
+
     if reset:
         print("Reset all instances!")
     else:
-        print(f"{'Stopped' if stop else 'Started'} all instances!")
+        print("Started all instances!, synching clocks")
+
+        cmd(
+            c,
+            "sudo chronyc -a 'burst 4/4' && sleep 10 && sudo chronyc -a makestep && sleep 5 && chronyc sources",
+            config_file=config_file,
+        )
 
 
 @task

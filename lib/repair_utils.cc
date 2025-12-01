@@ -351,8 +351,8 @@ bool applySuffix(
         // Get request and check the digest
         RequestId key = {clientId, clientSeq};
         if (!availableReqs.contains(key)) {
-            LOG(INFO) << "Missing request at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq
-                      << " - will request from other replicas";
+            VLOG(2) << "Missing request c_id=" << clientId << " c_seq=" << clientSeq
+                    << " - will request from other replicas";
             missingRequests.push_back({clientId, clientSeq});
         }
     }

@@ -109,6 +109,10 @@ private:
     uint64_t repairTimeoutStart_ = 0;
     uint64_t repairViewStart_ = 0;
 
+    // TODO hack for if a replica receives a repair proof during the previous repair, it stores it then starts repair
+    // again afterwards
+    bool pendingRepair_ = false;
+
     uint64_t curRoundStartSeq_ = 0;
     std::map<std::pair<uint64_t, uint32_t>, dombft::proto::ClientRequest> repairQueuedReqs_;
 
