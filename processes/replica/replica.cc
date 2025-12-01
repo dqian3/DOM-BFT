@@ -1304,12 +1304,12 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                           << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
-            VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
-                    << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId;
-
             // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
             // behind
             if (!checkpointSnapshotRequested_) {
+                VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
+                        << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId_;
+
                 sendSnapshotRequest(replicaId, checkpoint.seq);
             }
             checkpointSnapshotRequested_ = true;

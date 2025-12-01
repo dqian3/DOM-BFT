@@ -58,6 +58,10 @@ if __name__ == "__main__":
     )
 
     # Get general stats
+    event = list(
+        filter(lambda x: x["time"] > start_time and x["time"] < end_time, events)
+    )
+
     commits = list(
         filter(lambda x: x["time"] > start_time and x["time"] < end_time, commits)
     )
@@ -104,6 +108,8 @@ if __name__ == "__main__":
     max_round = max(c["round"] for c in commits if "round" in c)
     print("Number of repair rounds: ", max_round - min_round)
 
+    n_align = len(list(e for e in events if e["event"] == "align"))
+    print("Number of alignments", n_align)
     # Peak throughput window
 
     import numpy as np
