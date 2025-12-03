@@ -93,6 +93,36 @@ if __name__ == "__main__":
             f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us"
         )
 
+        # Break down fast path latency by client
+        print("\n\tFast path breakdown by client:")
+        client_counts = []
+        client_avg_latencies = []
+        client_p50_latencies = []
+        client_p95_latencies = []
+        client_p99_latencies = []
+
+        for client_id in range(n_clients):
+            client_fast = [c for c in fast if c.get("client_id") == client_id]
+            if len(client_fast) > 0:
+                client_latencies = np.array([c["latency"] for c in client_fast])
+                client_counts.append(len(client_fast))
+                client_avg_latencies.append(int(np.mean(client_latencies)))
+                client_p50_latencies.append(int(np.percentile(client_latencies, 50)))
+                client_p95_latencies.append(int(np.percentile(client_latencies, 95)))
+                client_p99_latencies.append(int(np.percentile(client_latencies, 99)))
+            else:
+                client_counts.append(0)
+                client_avg_latencies.append(0)
+                client_p50_latencies.append(0)
+                client_p95_latencies.append(0)
+                client_p99_latencies.append(0)
+
+        print(f"\t  Counts:  {client_counts}")
+        print(f"\t  Avg:     {client_avg_latencies}")
+        print(f"\t  p50:     {client_p50_latencies}")
+        print(f"\t  p95:     {client_p95_latencies}")
+        print(f"\t  p99:     {client_p99_latencies}")
+
     print("Fast Queued path:")
     print(f"\tNum commits: {len(normal)}  {len(normal) / len(commits)}")
     if len(normal) > 0:
