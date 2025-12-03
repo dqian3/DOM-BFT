@@ -93,7 +93,7 @@ DummyReplica::DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batc
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, Address(replicaIp, replicaPort));
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
     } else if (config.transport == "udp") {
         size_t nClients = configManager.getNumClients();
         const auto &clientIps = configManager.getClientIps();

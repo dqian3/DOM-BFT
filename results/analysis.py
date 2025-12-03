@@ -66,6 +66,10 @@ if __name__ == "__main__":
         filter(lambda x: x["time"] > start_time and x["time"] < end_time, commits)
     )
 
+    events = list(
+        filter(lambda x: x["time"] > start_time and x["time"] < end_time, events)
+    )
+
     runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
     print(f"Runtime: {runtime:.3f} s")
     print("number of clients: ", n_clients)
@@ -83,21 +87,21 @@ if __name__ == "__main__":
     slow = list(filter(lambda x: x["path"] == "slow", commits))
 
     print("Fast path:")
-    print(f"\tNum commits: {len(fast)}")
+    print(f"\tNum commits: {len(fast)} {len(fast) / len(commits)}")
     if len(fast) > 0:
         print(
             f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us"
         )
 
     print("Fast Queued path:")
-    print(f"\tNum commits: {len(normal)}")
+    print(f"\tNum commits: {len(normal)}  {len(normal) / len(commits)}")
     if len(normal) > 0:
         print(
             f"\tAverage latency: {sum(c['latency'] for c in normal) / len(normal):.0f} us"
         )
 
     print("Slow path:")
-    print(f"\tNum commits: {len(slow)}")
+    print(f"\tNum commits: {len(slow)}  {len(slow) / len(commits)}")
     if len(slow) > 0:
         print(
             f"\tAverage latency: {sum(c['latency'] for c in slow) / len(slow):.0f} us"
