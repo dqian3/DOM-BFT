@@ -308,7 +308,7 @@ def run_rates(
                 batch_size=batch_size,
                 analyze_client_logs=True,
             )
-            c.run(f"mv results.json dombft_fast_n8_sr{nClients * send_rate}.json")
+            c.run(f"mv results.json dombft_fast_sr{nClients * send_rate}.json")
 
         # Slow Path
         # cfg["client"]["sendMode"] = "sendRate"

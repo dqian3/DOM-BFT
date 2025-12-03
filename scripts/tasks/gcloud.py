@@ -101,6 +101,7 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False, reset=False):
     else:
         print("Started all instances!, synching clocks")
 
+        time.sleep(20)
         cmd(
             c,
             "sudo chronyc -a 'burst 4/4' && sleep 10 && sudo chronyc -a makestep && sleep 5 && chronyc sources",
@@ -291,7 +292,7 @@ def run(
     dom_logs=False,
     profile=False,
     analyze_client_logs=False,
-    batch_size=0,
+    batch_size=1,
     slow_path_freq=0,
     normal_path_freq=0,
     view_change_freq=0,

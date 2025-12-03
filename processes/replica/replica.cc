@@ -407,7 +407,7 @@ void Replica::forwardRequest(const DOMRequest &request)
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline "
+    VLOG(5) << "Forwarding request " << now - request.deadline() << "us after deadline "
             << "c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
     numForwarded_++;
@@ -1410,7 +1410,7 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             // behind
             if (!checkpointSnapshotRequested_ || seq >= log_->getNextSeq() + 5 * checkpointInterval_) {
                 VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
-                        << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId;
+                        << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId_;
 
                 sendSnapshotRequest(replicaId, checkpoint.seq);
             }
