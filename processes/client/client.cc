@@ -279,10 +279,10 @@ void Client::submitRequest()
 
 void Client::submitRequestsOpenLoop()
 {
-    // Don't start rate-based sending until first request is committed
-    if (!firstRequestCommitted_) {
-        return;
-    }
+    // // Don't start rate-based sending until first request is committed
+    // if (!firstRequestCommitted_) {
+    //     return;
+    // }
 
     uint64_t startSendTime = GetMicrosecondTimestamp();
 

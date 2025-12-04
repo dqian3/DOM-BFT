@@ -1318,6 +1318,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
             oss << reply.replica_id() << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " "
                 << reply.round() << "\n";
         }
+        VLOG(1) << "Conflict proof:\n" << oss.str();
 
         replyProof.set_replica_id(replicaId_);
         replyProof.set_round(round_);

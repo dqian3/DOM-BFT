@@ -1,0 +1,83 @@
+app: counter
+resiliency: 
+  f: 1
+  e: 0
+transport: nng 
+preserializationMode: full
+useProxy: false
+sendToLeader: true
+
+client:
+  ips:
+  - 10.142.0.6
+  - 10.150.0.4
+  - 10.138.0.12
+  - 10.182.0.6
+  - 10.128.0.2
+  - 10.202.0.3
+  - 10.180.0.2
+  - 10.206.0.2
+
+  # - 10.138.0.12
+  # - 10.182.0.6
+  # - 10.142.0.6
+  # - 10.150.0.4
+  # - 10.128.0.2
+  # - 10.202.0.3
+  # - 10.180.0.2
+  # - 10.206.0.2
+
+  keysDir: keys/client
+  maxInFlight: 1000
+  normalPathTimeout: 100000000
+  port: 33000                                         
+  requestSize: 512
+  requestTimeout: 20000000
+  runtimeSeconds: 40
+  sendMode: sendRate
+  sendRate: 625 
+  slowPathTimeout: 100000000
+  useHMAC: false
+  sendProofs: false
+
+proxy:
+  forwardPort: 31000
+  ips:
+  - 10.142.0.6
+  - 10.150.0.4
+  - 10.138.0.12
+  - 10.182.0.6
+  - 10.128.0.2
+  - 10.202.0.3
+  - 10.180.0.2
+  - 10.206.0.2
+  keysDir: keys/proxy
+  maxOwd: 100000
+  offsetCoefficient: 1.25
+  shards: 1
+  proxyBatchEnabled: false
+  proxyBatchMaxCount: 50
+  proxyBatchMaxDelay: 2000
+
+replica:
+  ips:
+  - 10.142.0.3
+  - 10.150.0.3
+  - 10.138.0.6
+  - 10.182.0.4
+
+  # - 10.138.0.7
+  # - 10.182.0.5
+  # - 10.138.0.11
+  # - 10.182.0.9
+  # - 10.142.0.7
+  # - 10.150.0.6
+  keysDir: keys/replica
+  numSendThreads: 6
+  numVerifyThreads: 5
+  port: 34000
+  repairTimeout:      100000
+  checkpointTimeout: 200000 
+  repairViewTimeout: 600000000
+  checkpointInterval: 1000
+  snapshotInterval: 50000

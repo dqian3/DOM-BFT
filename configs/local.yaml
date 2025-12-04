@@ -3,15 +3,16 @@ resiliency:
   f: 1
   e: 0
 app: counter
-preserializationMode: full
-useProxy: false
+# preserializationMode: full
+# useProxy: false
+# sendToLeader: true
 
 client:
   ips: 
   - "127.0.0.0"
   - "127.0.0.0"
   port: 33000
-  keysDir: scripts/keys/client
+  keysDir: keys/client
   normalPathTimeout: 15000    # 15ms
   slowPathTimeout:   200000   # 200 ms
   requestTimeout: 10000000    # 10 s

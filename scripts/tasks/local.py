@@ -20,7 +20,7 @@ def genkeys(c, config_file, algorithm="ED25519", keysize=2048):
     dirs = {}
 
     for p in config:
-        if "ips" not in config[p]:
+        if config[p] != "replica" and config[p] != "proxy" and config[p] != "client":
             continue
 
         pconfig = config[p]
@@ -150,12 +150,12 @@ def run(
             for id in range(n_clients):
                 c.run(
                     f"python3 scripts/analysis/analyze_client.py logs/client{id}.log -o logs/client{id}.json",
-                    warn=True
+                    warn=True,
                 )
 
             # Run aggregate_results.py to combine all client analyses
             c.run(
                 "python3 scripts/analysis/aggregate_results.py logs/aggregate.json logs/",
-                warn=True
+                warn=True,
             )
             print("Client log analysis complete. Results in logs/aggregate.json")
