@@ -79,11 +79,11 @@ struct ProcessConfig {
     bool unifiedMode;
 
     // Preserialization mode configuration
-    std::string preserializationMode;  // "disabled", "full", or "order"
+    std::string preserializationMode;   // "disabled", "full", or "order"
 
     // Proxy configuration
     bool useProxy;
-    bool sendToLeader;  // When useProxy=false, send only to leader (replica 0) instead of all replicas
+    bool sendToLeader;   // When useProxy=false, send only to leader (replica 0) instead of all replicas
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -153,9 +153,12 @@ struct ProcessConfig {
                 const YAML::Node &rateIncreaseNode = clientNode["temporaryRateIncrease"];
                 clientTemporaryRateIncrease.enabled = parseField<bool>(rateIncreaseNode, "enabled", false);
                 clientTemporaryRateIncrease.seqThreshold = parseField<uint32_t>(rateIncreaseNode, "seqThreshold", 0);
-                clientTemporaryRateIncrease.durationUs = parseField<uint32_t>(rateIncreaseNode, "durationUs", 10000000); // Default 10s
-                clientTemporaryRateIncrease.increasedSendRate = parseField<uint32_t>(rateIncreaseNode, "increasedSendRate", 0);
-                clientTemporaryRateIncrease.increasedMaxInFlight = parseField<uint32_t>(rateIncreaseNode, "increasedMaxInFlight", 0);
+                clientTemporaryRateIncrease.durationUs =
+                    parseField<uint32_t>(rateIncreaseNode, "durationUs", 10000000);   // Default 10s
+                clientTemporaryRateIncrease.increasedSendRate =
+                    parseField<uint32_t>(rateIncreaseNode, "increasedSendRate", 0);
+                clientTemporaryRateIncrease.increasedMaxInFlight =
+                    parseField<uint32_t>(rateIncreaseNode, "increasedMaxInFlight", 0);
             } else {
                 // Default: disabled
                 clientTemporaryRateIncrease.enabled = false;
@@ -252,7 +255,9 @@ struct ProcessConfig {
         // Parse top-level preserialization option
         preserializationMode = parseField<std::string>(config, "preserializationMode", "disabled");
         if (preserializationMode != "disabled" && preserializationMode != "full" && preserializationMode != "order") {
-            throw ConfigParseException("Invalid preserializationMode '" + preserializationMode + "'. Must be 'disabled', 'full', or 'order'");
+            throw ConfigParseException(
+                "Invalid preserializationMode '" + preserializationMode + "'. Must be 'disabled', 'full', or 'order'"
+            );
         }
 
         // Parse top-level proxy option
@@ -260,8 +265,26 @@ struct ProcessConfig {
         sendToLeader = parseField<bool>(config, "sendToLeader", false);
 
         // Validate: if preserialization is enabled, useProxy must be false
-        if (preserializationMode != "disabled" && useProxy) {
-            throw ConfigParseException("When preserializationMode is enabled ('" + preserializationMode + "'), useProxy must be false");
+        if (preserializationMode != "disabled") {
+            if (useProxy) {
+                throw ConfigParseException(
+                    "When preserializationMode is enabled ('" + preserializationMode + "'), useProxy must be false"
+                );
+            }
+
+            if (clientUseHMAC) {
+                throw ConfigParseException(
+                    "HMAC not supported for preserializationMode '" + preserializationMode + "'; must use signatures"
+                );
+            }
+
+            if (preserializationMode == "full" && !sendToLeader) {
+                throw ConfigParseException("When preserializationMode is 'full', sendToLeader must be true");
+            }
+
+            if (preserializationMode == "order" && sendToLeader) {
+                throw ConfigParseException("When preserializationMode is 'order', sendToLeader must be false");
+            }
         }
 
         parseClientConfig(config);
