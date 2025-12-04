@@ -1411,7 +1411,8 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
             // behind
             if (!dombft::ConfigManager::getInstance().getConfig().replicaSkipAlignment) {
                 if (!checkpointSnapshotRequested_ || seq >= log_->getNextSeq() + 5 * checkpointInterval_) {
-                    VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
+                    VLOG(1) << "PERF event=align_start seq=" << seq
+                            << " log_digest=" << digest_to_hex(checkpoint.logDigest)
                             << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId_;
 
                     sendSnapshotRequest(replicaId, checkpoint.seq);
@@ -1635,7 +1636,7 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         // TODO temporary fix for issue #120, this may lead to later issues though
         round_ = std::max(round_, snapshotReply.round());
-    } else {
+    } else if (!dombft::ConfigManager::getInstance().getConfig().replicaSkipAlignment) {
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
 
@@ -1681,6 +1682,8 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
         VLOG(1) << "PERF event=align replicaId=" << replicaId_
                 << " checkpoint_seq=" << log_->getCommittedCheckpoint().seq << " log_seq=" << log_->getNextSeq() - 1
                 << " log_digest=" << digest_to_hex(log_->getDigest());
+    } else {
+        LOG(WARNING) << "Ignoring snapshot reply due to replicaSkipAlignment=true!";
     }
 
     // Got the snapshot
