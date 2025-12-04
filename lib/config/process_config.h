@@ -75,8 +75,11 @@ struct ProcessConfig {
     uint32_t replicaCheckpointInterval;
     uint32_t replicaSnapshotInterval;
 
-    // Unified mode configuration
-    bool unifiedMode;
+    // Include full request data in repair messages instead of just digests
+    bool replicaIncludeFullRequests;
+
+    // Skip alignment snapshot requests (outside of repair)
+    bool replicaSkipAlignment;
 
     // Preserialization mode configuration
     std::string preserializationMode;   // "disabled", "full", or "order"
@@ -219,7 +222,16 @@ struct ProcessConfig {
                 throw ConfigParseException("Snapshot interval must be a multiple of checkpoint interval");
             }
 
-            unifiedMode = parseField<bool>(replicaNode, "unifiedMode", false);
+            replicaIncludeFullRequests = parseField<bool>(replicaNode, "includeFullRequests", true);
+            replicaSkipAlignment = parseField<bool>(replicaNode, "skipAlignment", false);
+
+            if (!replicaIncludeFullRequests) {
+                LOG(
+                    WARNING
+                ) << "Experimental feature enabled: replica will NOT include full requests in REPAIR messages, only "
+                     "digests and fetch requests as needed. This was pretty much fully vibe coded, so no guarantees "
+                     "this is correct";
+            }
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing replica config: " + std::string(e.what()));

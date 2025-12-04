@@ -1409,13 +1409,17 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
 
             // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
             // behind
-            if (!checkpointSnapshotRequested_ || seq >= log_->getNextSeq() + 5 * checkpointInterval_) {
-                VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
-                        << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId_;
+            if (!dombft::ConfigManager::getInstance().getConfig().replicaSkipAlignment) {
+                if (!checkpointSnapshotRequested_ || seq >= log_->getNextSeq() + 5 * checkpointInterval_) {
+                    VLOG(1) << "PERF event=align_start seq=" << seq << " log_digest=" << digest_to_hex(checkpoint.logDigest)
+                            << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId_;
 
-                sendSnapshotRequest(replicaId, checkpoint.seq);
+                    sendSnapshotRequest(replicaId, checkpoint.seq);
+                }
+                checkpointSnapshotRequested_ = true;
+            } else {
+                LOG(INFO) << "Skipping alignment snapshot request due to skipAlignment config";
             }
-            checkpointSnapshotRequested_ = true;
 
         } else if (!coll.needsSnapshot()) {
             log_->setCheckpoint(checkpoint);
@@ -2421,8 +2425,9 @@ void Replica::startRepair()
     repairStart_->set_replica_id(replicaId_);
     repairStart_->set_pbft_view(pbftView_);
 
-    // TODO rather than include actual client requests here, only include digest
-    log_->toProto(*repairStart_);
+    // Include full requests based on config
+    bool includeFullRequests = dombft::ConfigManager::getInstance().getConfig().replicaIncludeFullRequests;
+    log_->toProto(*repairStart_, includeFullRequests);
 
     uint32_t primaryId = getPrimary();
     VLOG(2) << "Sending REPAIR_START to PBFT primary replica " << primaryId;

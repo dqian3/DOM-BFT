@@ -339,18 +339,20 @@ bool applySuffix(
 
     log->abort(seq);
 
-    // Step2.5 Check for missing requests
+    // Step2.5 Check for missing requests and add full requests from proto if available
     for (int i = idx; i < logSuffix.entries.size(); i++) {
-        VLOG(2) << "Applying entry at seq=" << seq << " log next seq=" << log->getNextSeq();
-
-        assert(seq == log->getNextSeq());
         const dombft::proto::LogEntry *entry = logSuffix.entries[i];
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
-
-        // Get request and check the digest
         RequestId key = {clientId, clientSeq};
-        if (!availableReqs.contains(key)) {
+
+        // If the proto has the full request, add it to availableReqs
+        if (entry->has_request()) {
+            availableReqs[key] = entry->request();
+            VLOG(2) << "Using full request from proto for c_id=" << clientId << " c_seq=" << clientSeq;
+        }
+        // Otherwise, check if we need to request it
+        else if (!availableReqs.contains(key)) {
             VLOG(2) << "Missing request c_id=" << clientId << " c_seq=" << clientSeq
                     << " - will request from other replicas";
             missingRequests.push_back({clientId, clientSeq});

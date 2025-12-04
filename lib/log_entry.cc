@@ -39,18 +39,23 @@ LogEntry::LogEntry(uint32_t s, uint32_t c_id, uint32_t c_seq, const std::string 
 
 LogEntry::~LogEntry() {}
 
-void LogEntry::toProto(dombft::proto::LogEntry &msg) const
+void LogEntry::toProto(dombft::proto::LogEntry &msg, bool includeFullRequest) const
 {
     msg.set_seq(seq);
     msg.set_client_id(client_id);
     msg.set_client_seq(client_seq);
     msg.set_digest(digest);
-    // msg.set_request(request);
 
+    // Always include the request digest for matching
     CryptoPP::SHA256 hash;
     std::string request_digest;
     CryptoPP::StringSource ss(request, true, new CryptoPP::HashFilter(hash, new CryptoPP::StringSink(request_digest)));
     msg.set_request_digest(request_digest);
+
+    // Optionally include the full request data to avoid fetching
+    if (includeFullRequest) {
+        msg.set_request(request);
+    }
 }
 
 std::ostream &operator<<(std::ostream &out, const LogEntry &le)
