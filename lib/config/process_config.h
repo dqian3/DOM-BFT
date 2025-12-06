@@ -43,6 +43,15 @@ struct ProcessConfig {
     bool clientSendProofs;
     bool clientNormalPathEnabled;
 
+    // Temporary rate increase configuration (optional sub-object)
+    struct {
+        bool enabled;
+        uint32_t seqThreshold;
+        uint32_t durationUs;
+        uint32_t increasedSendRate;
+        uint32_t increasedMaxInFlight;
+    } clientTemporaryRateIncrease;
+
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
     int proxyMeasurementPort;
@@ -65,8 +74,18 @@ struct ProcessConfig {
     uint32_t replicaCheckpointInterval;
     uint32_t replicaSnapshotInterval;
 
-    // Unified mode configuration
-    bool unifiedMode;
+    // Include full request data in repair messages instead of just digests
+    bool replicaIncludeFullRequests;
+
+    // Skip alignment snapshot requests (outside of repair)
+    bool replicaSkipAlignment;
+
+    // Preserialization mode configuration
+    std::string preserializationMode;   // "disabled", "full", or "order"
+
+    // Proxy configuration
+    bool useProxy;
+    bool sendToLeader;   // When useProxy=false, send only to leader (replica 0) instead of all replicas
 
     template <class T> T parseField(const YAML::Node &parent, const std::string &key)
     {
@@ -130,6 +149,26 @@ struct ProcessConfig {
             clientUseHMAC = parseField<bool>(clientNode, "useHMAC", false);
             clientSendProofs = parseField<bool>(clientNode, "sendProofs", false);
             clientNormalPathEnabled = parseField<bool>(clientNode, "normalPathEnabled", false);
+
+            // Parse temporary rate increase configuration (optional)
+            if (clientNode["temporaryRateIncrease"]) {
+                const YAML::Node &rateIncreaseNode = clientNode["temporaryRateIncrease"];
+                clientTemporaryRateIncrease.enabled = parseField<bool>(rateIncreaseNode, "enabled", false);
+                clientTemporaryRateIncrease.seqThreshold = parseField<uint32_t>(rateIncreaseNode, "seqThreshold", 0);
+                clientTemporaryRateIncrease.durationUs =
+                    parseField<uint32_t>(rateIncreaseNode, "durationUs", 10000000);   // Default 10s
+                clientTemporaryRateIncrease.increasedSendRate =
+                    parseField<uint32_t>(rateIncreaseNode, "increasedSendRate", 0);
+                clientTemporaryRateIncrease.increasedMaxInFlight =
+                    parseField<uint32_t>(rateIncreaseNode, "increasedMaxInFlight", 0);
+            } else {
+                // Default: disabled
+                clientTemporaryRateIncrease.enabled = false;
+                clientTemporaryRateIncrease.seqThreshold = 0;
+                clientTemporaryRateIncrease.durationUs = 10000000;
+                clientTemporaryRateIncrease.increasedSendRate = 0;
+                clientTemporaryRateIncrease.increasedMaxInFlight = 0;
+            }
         }
 
         catch (const ConfigParseException &e) {
@@ -181,7 +220,16 @@ struct ProcessConfig {
                 throw ConfigParseException("Snapshot interval must be a multiple of checkpoint interval");
             }
 
-            unifiedMode = parseField<bool>(replicaNode, "unifiedMode", false);
+            replicaIncludeFullRequests = parseField<bool>(replicaNode, "includeFullRequests", true);
+            replicaSkipAlignment = parseField<bool>(replicaNode, "skipAlignment", false);
+
+            if (!replicaIncludeFullRequests) {
+                LOG(
+                    WARNING
+                ) << "Experimental feature enabled: replica will NOT include full requests in REPAIR messages, only "
+                     "digests and fetch requests as needed. This was pretty much fully vibe coded, so no guarantees "
+                     "this is correct";
+            }
 
         } catch (const ConfigParseException &e) {
             throw ConfigParseException("Error parsing replica config: " + std::string(e.what()));
@@ -213,6 +261,41 @@ struct ProcessConfig {
             parseField<std::unordered_map<std::string, u_int32_t>>(config, "resiliency", {{"f", 1}, {"e", 1}});
         f = resiliencyParams.at("f");
         e = resiliencyParams.at("e");
+
+        // Parse top-level preserialization option
+        preserializationMode = parseField<std::string>(config, "preserializationMode", "disabled");
+        if (preserializationMode != "disabled" && preserializationMode != "full" && preserializationMode != "order") {
+            throw ConfigParseException(
+                "Invalid preserializationMode '" + preserializationMode + "'. Must be 'disabled', 'full', or 'order'"
+            );
+        }
+
+        // Parse top-level proxy option
+        useProxy = parseField<bool>(config, "useProxy", true);
+        sendToLeader = parseField<bool>(config, "sendToLeader", false);
+
+        // Validate: if preserialization is enabled, useProxy must be false
+        if (preserializationMode != "disabled") {
+            if (useProxy) {
+                throw ConfigParseException(
+                    "When preserializationMode is enabled ('" + preserializationMode + "'), useProxy must be false"
+                );
+            }
+
+            if (clientUseHMAC) {
+                throw ConfigParseException(
+                    "HMAC not supported for preserializationMode '" + preserializationMode + "'; must use signatures"
+                );
+            }
+
+            if (preserializationMode == "full" && !sendToLeader) {
+                throw ConfigParseException("When preserializationMode is 'full', sendToLeader must be true");
+            }
+
+            if (preserializationMode == "order" && sendToLeader) {
+                throw ConfigParseException("When preserializationMode is 'order', sendToLeader must be false");
+            }
+        }
 
         parseClientConfig(config);
         parseProxyConfig(config);

@@ -37,6 +37,18 @@ Client::Client(size_t id)
     quorumSize_ = configManager.getQuorumSize();
     superQuorumSize_ = configManager.getSuperQuorumSize();
 
+    preserializationMode_ = config.preserializationMode;
+    if (preserializationMode_ != "disabled") {
+        LOG(INFO) << "Preserialization mode: " << preserializationMode_;
+    }
+
+    useProxy_ = config.useProxy;
+    sendToLeader_ = config.sendToLeader;
+    LOG(INFO) << "Use proxy: " << (useProxy_ ? "true" : "false");
+    if (!useProxy_) {
+        LOG(INFO) << "Send to leader: " << (sendToLeader_ ? "true" : "false");
+    }
+
     normalPathEnabled_ = config.clientNormalPathEnabled;
 
     normalPathTimeout_ = config.clientNormalPathTimeout;
@@ -50,6 +62,21 @@ Client::Client(size_t id)
     sendRate_ = config.clientSendRate;
     requestSize_ = config.clientRequestSize;
     useHMAC_ = config.clientUseHMAC;
+
+    // Load temporary rate increase configuration
+    temporaryRateIncreaseEnabled_ = config.clientTemporaryRateIncrease.enabled;
+    rateIncreaseSeqThreshold_ = config.clientTemporaryRateIncrease.seqThreshold;
+    rateIncreaseDurationUs_ = config.clientTemporaryRateIncrease.durationUs;
+    increasedSendRate_ = config.clientTemporaryRateIncrease.increasedSendRate;
+    increasedMaxInFlight_ = config.clientTemporaryRateIncrease.increasedMaxInFlight;
+
+    if (temporaryRateIncreaseEnabled_) {
+        LOG(INFO) << "Temporary rate increase enabled:";
+        LOG(INFO) << "  Trigger at sequence number: " << rateIncreaseSeqThreshold_;
+        LOG(INFO) << "  Duration: " << rateIncreaseDurationUs_ / 1000000.0 << " seconds";
+        LOG(INFO) << "  Increased send rate: " << increasedSendRate_;
+        LOG(INFO) << "  Increased max in flight: " << increasedMaxInFlight_;
+    }
 
     if (config.clientSendMode == "sendRate") {
         sendMode_ = dombft::RateBased;
@@ -79,15 +106,15 @@ Client::Client(size_t id)
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true);
 
-        for (size_t i = 0; i < addrPairs.size(); i++) {
-        }
-
         size_t nReplicas = configManager.getNumReplicas();
         for (size_t i = 0; i < nReplicas; i++)
             replicaAddrs_.push_back(addrPairs[i].second);
 
-        for (size_t i = nReplicas; i < addrPairs.size(); i++)
+        for (size_t i = nReplicas; i < addrPairs.size(); i++) {
             proxyAddrs_.push_back(addrPairs[i].second);
+            VLOG(1) << proxyAddrs_.back();
+        }
+
     } else if (config.transport == "simple-rpc") {
         /** Store all proxy addrs. */
 
@@ -252,15 +279,28 @@ void Client::submitRequest()
 
 void Client::submitRequestsOpenLoop()
 {
-    // Don't start rate-based sending until first request is committed
-    if (!firstRequestCommitted_) {
-        return;
-    }
+    // // Don't start rate-based sending until first request is committed
+    // if (!firstRequestCommitted_) {
+    //     return;
+    // }
 
     uint64_t startSendTime = GetMicrosecondTimestamp();
-    double sendIntervalUs = 1000000.0 / sendRate_;
 
-    uint64_t numToSend = (startSendTime - lastSendTime_) * sendRate_ / 1000000.0;
+    // Check if temporary rate increase should be deactivated
+    if (rateIncreaseActive_ && (startSendTime - rateIncreaseStartTime_) >= rateIncreaseDurationUs_) {
+        rateIncreaseActive_ = false;
+        LOG(INFO) << "Temporary rate increase period ended after " << rateIncreaseDurationUs_ / 1000000.0 << " seconds";
+        LOG(INFO) << "  Send rate: " << increasedSendRate_ << " -> " << sendRate_;
+        LOG(INFO) << "  Max in flight: " << increasedMaxInFlight_ << " -> " << maxInFlight_;
+    }
+
+    // Use increased rate/max in flight if temporary increase is active
+    uint32_t currentSendRate = rateIncreaseActive_ ? increasedSendRate_ : sendRate_;
+    uint32_t currentMaxInFlight = rateIncreaseActive_ ? increasedMaxInFlight_ : maxInFlight_;
+
+    double sendIntervalUs = 1000000.0 / currentSendRate;
+
+    uint64_t numToSend = (startSendTime - lastSendTime_) * currentSendRate / 1000000.0;
 
     // VLOG(5) << "Sending burst of " << numToSend << " requests after " << startSendTime - lastSendTime_
     //         << " us since last burst with send interval " << sendIntervalUs << "us";
@@ -278,8 +318,9 @@ void Client::submitRequestsOpenLoop()
     for (uint32_t i = 0; i < numToSend; i++) {
         now = GetMicrosecondTimestamp();
 
-        if (numInFlight_ >= maxInFlight_) {
-            // VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << maxInFlight_ << " reached";
+        if (numInFlight_ >= currentMaxInFlight) {
+            // VLOG(5) << "Only send " << i << " requests in burst because maxInFlight_=" << currentMaxInFlight << "
+            // reached";
             break;
         }
 
@@ -310,10 +351,14 @@ void Client::submitRequestsOpenLoop()
 
 void Client::sendRequest(const ClientRequest &request, byte *buffer)
 {
-#if USE_PROXY
-    // TODO how to choose proxy, perhaps by IP or config
-    Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
+    MessageType msgType = MessageType::CLIENT_REQUEST;
+
+    if (preserializationMode_ != "disabled") {
+        // In preserialization mode, send PS_CLIENT
+        msgType = MessageType::PS_CLIENT;
+    }
+
+    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, msgType, buffer);
 
     if (useHMAC_) {
         // TODO send multiple requests for each replica with their own hmacs
@@ -322,32 +367,26 @@ void Client::sendRequest(const ClientRequest &request, byte *buffer)
         sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
     }
 
-    endpoint_->SendPreparedMsgTo(addr, hdr);
-#else
-    MessageHeader *hdr = endpoint_->PrepareProtoMsg(request, MessageType::CLIENT_REQUEST, buffer);
-    // TODO check errors for all of these lol
-    // TODO do this while waiting, not in the critical path
-    if (useHMAC_) {
-        // TODO send multiple requests for each replica with their own hmacs
-        hmacProvider_.appendMAC(hdr, SEND_BUFFER_SIZE, {NodeType::REPLICA, 0});
-    } else {
-        sigProvider_.appendSignature(hdr, SEND_BUFFER_SIZE);
-    }
+    if (useProxy_) {
+        assert(preserializationMode_ == "disabled");
+        // TODO how to choose proxy, perhaps by IP or config
+        VLOG(2) << "Sending request directly to " << replicaAddrs_[0];
 
-#if SEND_TO_LEADER
-    VLOG(1) << "Sending request directly to " << replicaAddrs_[0];
-
-    endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
-#else
-    VLOG(1) << "Sending request to all replicas ";
-    for (const Address &addr : replicaAddrs_) {
+        Address &addr = proxyAddrs_[clientId_ % proxyAddrs_.size()];
         endpoint_->SendPreparedMsgTo(addr, hdr);
+    } else if (sendToLeader_ || preserializationMode_ == "full") {
+        VLOG(2) << "Sending request directly to " << replicaAddrs_[0];
+        endpoint_->SendPreparedMsgTo(replicaAddrs_[0], hdr);
+
+    } else {
+        VLOG(2) << "Sending request to all replicas ";
+        for (const Address &addr : replicaAddrs_) {
+            endpoint_->SendPreparedMsgTo(addr, hdr);
+        }
     }
-#endif
-#endif
 }
 
-void Client::commitRequest(uint32_t clientSeq)
+void Client::commitRequest(uint32_t clientSeq, uint64_t replicaSeq)
 {
     // TODO inform application of result
     if (clientSeq > lastCommitted_ + 1) {
@@ -365,6 +404,16 @@ void Client::commitRequest(uint32_t clientSeq)
         if (sendMode_ == dombft::RateBased) {
             lastSendTime_ = GetMicrosecondTimestamp();
         }
+    }
+
+    // Check if we should trigger temporary rate increase based on replica sequence number
+    if (temporaryRateIncreaseEnabled_ && !rateIncreaseActive_ && replicaSeq >= rateIncreaseSeqThreshold_ &&
+        rateIncreaseStartTime_ == 0) {
+        rateIncreaseActive_ = true;
+        rateIncreaseStartTime_ = GetMicrosecondTimestamp();
+        LOG(INFO) << "Triggering temporary rate increase at replica sequence " << replicaSeq;
+        LOG(INFO) << "  Send rate: " << sendRate_ << " -> " << increasedSendRate_;
+        LOG(INFO) << "  Max in flight: " << maxInFlight_ << " -> " << increasedMaxInFlight_;
     }
 
     VLOG(2) << "After committing, numInFlight_=" << numInFlight_;
@@ -535,7 +584,7 @@ void Client::handleReply(dombft::proto::Reply &reply, std::span<byte> sig)
                 << " seq=" << reply.seq() << " round=" << reply.round() << " latency=" << now - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reply.digest()) << " queued=" << reply.queued();
 
-        commitRequest(clientSeq);
+        commitRequest(clientSeq, reply.seq());
         return;
     }
 
@@ -608,7 +657,7 @@ void Client::handleCertReply(const CertReply &certReply, std::span<byte> sig)
                 << " seq=" << certReply.seq() << " round=" << certReply.round()
                 << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime
                 << " digest=" << digest_to_hex(reqState.collector.cert_->replies()[0].digest());
-        commitRequest(cseq);
+        commitRequest(cseq, certReply.seq());
     }
 }
 
@@ -637,7 +686,7 @@ void Client::handleCommittedReply(const dombft::proto::CommittedReply &reply, st
                     << " seq=" << reply.seq() << " latency=" << GetMicrosecondTimestamp() - reqState.firstSendTime;
         }
 
-        commitRequest(cseq);
+        commitRequest(cseq, reply.seq());
     }
 }
 

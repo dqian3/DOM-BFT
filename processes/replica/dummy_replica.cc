@@ -95,7 +95,7 @@ DummyReplica::DummyReplica(uint32_t replicaId, DummyProtocol prot, uint32_t batc
             replicaAddrs_.push_back(addrPairs[i].second);
         }
 
-        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, Address(replicaIp, replicaPort));
+        endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
     } else if (config.transport == "udp") {
         size_t nClients = configManager.getNumClients();
         const auto &clientIps = configManager.getClientIps();
@@ -217,11 +217,11 @@ void DummyReplica::verifyMessagesThd()
         MessageHeader *hdr = (MessageHeader *) msg.data();
         byte *body = (byte *) (hdr + 1);
 
-        if (hdr->msgType == CLIENT_REQUEST) {
+        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PS_CLIENT || hdr->msgType == PS_LEADER_FORWARD) {
             ClientRequest request;
 
             if (!request.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PS_CLIENT/PS_LEADER_FORWARD message";
                 continue;
             }
 
@@ -312,11 +312,11 @@ void DummyReplica::processMessagesThd()
 
             processClientRequest(clientHeader, std::span{clientBody + clientMsgHdr->msgLen, clientMsgHdr->sigLen});
         }
-        if (hdr->msgType == CLIENT_REQUEST) {
+        if (hdr->msgType == CLIENT_REQUEST || hdr->msgType == PS_CLIENT || hdr->msgType == PS_LEADER_FORWARD) {
             ClientRequest clientRequestMsg;
 
             if (!clientRequestMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST/PS_CLIENT/PS_LEADER_FORWARD message";
                 continue;
             }
 
@@ -376,7 +376,7 @@ void DummyReplica::processMessagesThd()
                         protoMsg.set_phase(2);
                         protoMsg.set_replica_id(replicaId_);
 
-                        VLOG(2) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
+                        VLOG(2) << "PERF event=repair_prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         broadcastToReplicas(protoMsg, MessageType::DUMMY_PROTO);
                     }

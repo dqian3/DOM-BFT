@@ -63,6 +63,9 @@ private:
     bool skipForwarding_;
     bool ignoreDeadlines_;
 
+    std::string preserializationMode_;
+    uint32_t nextPreserializedSeq_ = 0;
+
     // ========== Shared Infrastructure ==========
     SignatureProvider sigProvider_;
     HMACProvider hmacProvider_;
@@ -106,6 +109,10 @@ private:
     uint64_t repairTimeoutStart_ = 0;
     uint64_t repairViewStart_ = 0;
 
+    // TODO hack for if a replica receives a repair proof during the previous repair, it stores it then starts repair
+    // again afterwards
+    bool pendingRepair_ = false;
+
     uint64_t curRoundStartSeq_ = 0;
     std::map<std::pair<uint64_t, uint32_t>, dombft::proto::ClientRequest> repairQueuedReqs_;
 
@@ -115,6 +122,10 @@ private:
     std::map<uint32_t, dombft::proto::RepairStart> repairStartMsgs_;
     std::map<uint32_t, std::string> repairHistorySigs_;
     std::optional<LogSuffix> repairProposalLogSuffix_;
+
+    // State for missing request fetching during repair
+    bool missingRequestFetchSent_ = false;
+    std::vector<std::pair<uint32_t, uint32_t>> pendingMissingRequests_;
 
     // State for PBFT
     uint32_t pbftView_ = 0;
@@ -151,6 +162,13 @@ private:
     uint32_t numForwarded_ = 0;
     uint64_t lastStatTime_ = 0;
 
+    // ========= Preserialization State  ==========
+    std::map<uint32_t, dombft::proto::ClientRequest>
+        psForwardBuffer_;   // seq -> ClientRequest (reconstructed in processMessagesThd)
+    std::map<std::pair<uint32_t, uint32_t>, dombft::proto::ClientRequest>
+        psOrderRequests_;                                             // (client_id, client_seq) -> ClientRequest
+    std::map<uint32_t, std::pair<uint32_t, uint32_t>> psOrderSeqs_;   // seq -> (client_id, client_seq)
+
     // ========== Unified Message Handling ==========
     void handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sender);
 
@@ -177,6 +195,8 @@ private:
     void startCheckpoint(bool createSnapshot);
     void processSnapshotRequest(const dombft::proto::SnapshotRequest &snapshotRequest);
     void processSnapshotReply(const dombft::proto::SnapshotReply &snapshotReply);
+    void processMissingRequestFetch(const dombft::proto::MissingRequestFetch &fetchRequest);
+    void processMissingRequestReply(const dombft::proto::MissingRequestReply &fetchReply);
     void processRepairTimeout(const dombft::proto::RepairTimeout &msg, std::span<byte> sig);
     void processRepairReplyProof(const dombft::proto::RepairReplyProof &msg);
     void processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof &msg);
@@ -184,6 +204,12 @@ private:
     void processPrePrepare(const dombft::proto::PBFTPrePrepare &msg);
     void processPrepare(const dombft::proto::PBFTPrepare &msg, std::span<byte> sig);
     void processPBFTCommit(const dombft::proto::PBFTCommit &msg, std::span<byte> sig);
+
+    // Preserialization experiment
+    void processPSClient(const dombft::proto::ClientRequest &clientRequest, std::span<byte> sig);
+    void processPSLeaderForward(const dombft::proto::PSLeaderForward &psForward);
+    void processPSLeaderOrder(const dombft::proto::PSLeaderOrder &psOrder);
+    void checkPSOrderRequests();
 
     // Verification methods
     bool verifyCert(const dombft::proto::Cert &cert);
@@ -222,6 +248,7 @@ private:
 
     // Sending helpers
     void sendSnapshotRequest(uint32_t replicaId, uint32_t targetSeq);
+    void sendMissingRequestFetch(const std::vector<std::pair<uint32_t, uint32_t>> &missingRequests);
     template <typename T> void sendMsgToDst(const T &msg, MessageType type, const Address &dst);
     template <typename T> void broadcastToReplicas(const T &msg, MessageType type);
 

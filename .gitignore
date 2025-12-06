@@ -9,9 +9,11 @@ keys
 
 logs
 *.log
+*.json
 
 .DS_Store
 .idea
 
 output
 __pycache__
+results*

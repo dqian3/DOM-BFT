@@ -155,7 +155,7 @@ void Proxy::Run()
                 MessageHeader *hdr = endpoint_->PrepareProtoMsg(batchReq, MessageType::DOM_BATCH_REQUEST);
                 for (int i = 0; i < numReceivers_; i++) {
 
-                    VLOG(1) << "Forwarding batched req to " << receiverAddrs_[i].ip() << ":" << receiverAddrs_[i].port_
+                    VLOG(2) << "Forwarding batched req to " << receiverAddrs_[i].ip() << ":" << receiverAddrs_[i].port_
                             << " msgType=" << (int) hdr->msgType << " msgLen=" << hdr->msgLen;
 
                     endpoint_->SendPreparedMsgTo(receiverAddrs_[i], hdr);

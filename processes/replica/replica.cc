@@ -100,6 +100,11 @@ Replica::Replica(
     quorumSize_ = ConfigManager::getInstance().getQuorumSize();
     superQuorumSize_ = ConfigManager::getInstance().getSuperQuorumSize();
 
+    preserializationMode_ = config.preserializationMode;
+    if (preserializationMode_ != "disabled") {
+        LOG(INFO) << "Preserialization mode: " << preserializationMode_;
+    }
+
     // Network setup for unified functionality
     if (config.transport == "nng") {
         // Use replica addressing for unified process
@@ -259,6 +264,16 @@ void Replica::handleMessage(MessageHeader *msgHdr, byte *msgBuffer, Address *sen
         return;
     }
 
+    // Handle preserialization client requests (from clients to replica 0)
+    if (msgHdr->msgType == MessageType::PS_CLIENT) {
+        // Enqueue to verify queue - after verification, will be forwarded
+        byte *msgStart = (byte *) msgHdr;
+        verifyQueue_.enqueue(
+            std::vector<byte>(msgStart, msgStart + sizeof(MessageHeader) + msgHdr->msgLen + msgHdr->sigLen)
+        );
+        return;
+    }
+
     byte *msgStart = (byte *) msgHdr;
 
     // Handle replica-specific messages
@@ -285,8 +300,10 @@ void Replica::receiveRequest(MessageHeader *msgHdr, byte *msgBuffer, Address *se
         return;
     }
     int64_t recv_time = GetMicrosecondTimestamp();
-    VLOG(3) << "RECEIVE c_id=" << request.client_id() << " c_seq=" << request.client_seq() << " Measured delay "
-            << recv_time - request.send_time() << " usec";
+    VLOG(2) << "PERF event=receive c_id=" << request.client_id() << " c_seq=" << request.client_seq()
+            << " delay=" << (int64_t) recv_time - request.send_time()
+            << " deadline_offset=" << (int64_t) request.deadline() - (int64_t) request.send_time()
+            << " send_time=" << request.send_time() << " replica_id=" << replicaId_;
 
     enqueueReceiverRequest(recv_time, request);
 
@@ -392,7 +409,7 @@ void Replica::forwardRequest(const DOMRequest &request)
 {
     uint64_t now = GetMicrosecondTimestamp();
 
-    VLOG(2) << "Forwarding request " << now - request.deadline() << "us after deadline "
+    VLOG(5) << "Forwarding request " << now - request.deadline() << "us after deadline "
             << "c_id=" << request.client_id() << " c_seq=" << request.client_seq();
 
     numForwarded_++;
@@ -579,25 +596,102 @@ void Replica::verifyMessagesThd()
 
             processQueue_.enqueue(msg);
         }
-#if !USE_PROXY
+
+        else if (hdr->msgType == MISSING_REQUEST_FETCH) {
+            dombft::proto::MissingRequestFetch fetchRequest;
+            if (!fetchRequest.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_FETCH message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, fetchRequest.replica_id()})) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == MISSING_REQUEST_REPLY) {
+            dombft::proto::MissingRequestReply fetchReply;
+            if (!fetchReply.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_REPLY message";
+                continue;
+            }
+            if (!sigProvider_.verify(hdr, {NodeType::REPLICA, fetchReply.replica_id()})) {
+                LOG(INFO) << "Failed to verify replica signature!";
+                continue;
+            }
+            processQueue_.enqueue(msg);
+        }
 
         else if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest requestMsg;
 
             if (!requestMsg.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse COMMIT message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                 continue;
             }
 
             if (!sigProvider_.verify(hdr, {NodeType::CLIENT, requestMsg.client_id()})) {
-                LOG(INFO) << "Failed to verify replica signature!";
+                LOG(INFO) << "Failed to verify client signature!";
                 continue;
             }
 
             processQueue_.enqueue(msg);
         }
 
-#endif
+        else if (hdr->msgType == PS_CLIENT) {
+            ClientRequest requestMsg;
+
+            if (!requestMsg.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_CLIENT message";
+                continue;
+            }
+
+            if (!sigProvider_.verify(hdr, {NodeType::CLIENT, requestMsg.client_id()})) {
+                LOG(INFO) << "Failed to verify client signature on PS_CLIENT!";
+                continue;
+            }
+
+            VLOG(3) << "PS_CLIENT verified c_id=" << requestMsg.client_id() << " c_seq=" << requestMsg.client_seq();
+
+            // Just pass to processQueue - forwarding and sequencing happens in processMessagesThd
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == PS_LEADER_FORWARD) {
+            // Verify underlying client request
+            // Don't bother verifying leader signature for this experiment for now
+            PSLeaderForward fwd;
+            if (!fwd.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_LEADER_FORWARD message";
+                continue;
+            }
+
+            ClientRequest clientReq = fwd.request();
+            std::string clientSignature = fwd.client_signature();
+
+            if (!sigProvider_.verify(
+                    clientReq.SerializeAsString(), clientSignature, {NodeType::CLIENT, clientReq.client_id()}
+                )) {
+                LOG(INFO) << "Failed to verify client signature on PS_LEADER_FORWARD!";
+                continue;
+            }
+
+            processQueue_.enqueue(msg);
+        }
+
+        else if (hdr->msgType == PS_LEADER_ORDER) {
+            PSLeaderOrder order;
+
+            if (!order.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_LEADER_ORDER message";
+                continue;
+            }
+
+            // No signature verification needed - if replica 0 equivocates progress wont be made anyways
+            // and PS is not a full impementation
+            processQueue_.enqueue(msg);
+        }
 
         else if (hdr->msgType == REPAIR_TIMEOUT) {
             RepairTimeout timeoutMsg;
@@ -776,6 +870,27 @@ void Replica::processMessagesThd()
             if (repair_) {
                 VLOG(6) << "Queuing request due to repair";
                 repairQueuedReqs_.insert({{domHeader.deadline(), clientHeader.client_id()}, clientHeader});
+
+                // Check if this request matches any pending missing requests
+                if (missingRequestFetchSent_) {
+                    RequestId reqKey = {clientHeader.client_id(), clientHeader.client_seq()};
+                    auto it = std::find(pendingMissingRequests_.begin(), pendingMissingRequests_.end(), reqKey);
+                    if (it != pendingMissingRequests_.end()) {
+                        LOG(INFO) << "Received missing request from client c_id=" << clientHeader.client_id()
+                                  << " c_seq=" << clientHeader.client_seq();
+                        pendingMissingRequests_.erase(it);
+
+                        // If all missing requests are now available, retry repair
+                        if (pendingMissingRequests_.empty()) {
+                            LOG(INFO) << "All missing requests now available (via client), retrying repair";
+                            missingRequestFetchSent_ = false;
+
+                            if (repair_)
+                                tryFinishRepair();
+                        }
+                    }
+                }
+
                 continue;
             }
 
@@ -785,22 +900,18 @@ void Replica::processMessagesThd()
                 processClientRequest(clientHeader);
         }
 
-#if !USE_PROXY
-
         else if (hdr->msgType == CLIENT_REQUEST) {
             ClientRequest clientHeader;
 
             if (!clientHeader.ParseFromArray(body, hdr->msgLen)) {
-                LOG(ERROR) << "Unable to parse COMMIT message";
+                LOG(ERROR) << "Unable to parse CLIENT_REQUEST message";
                 continue;
             }
 
             processClientRequest(clientHeader);
         }
 
-#endif
-
-        if (hdr->msgType == CERT) {
+        else if (hdr->msgType == CERT) {
             Cert cert;
 
             if (!cert.ParseFromArray(body, hdr->msgLen)) {
@@ -845,6 +956,24 @@ void Replica::processMessagesThd()
             processSnapshotReply(reply);
         }
 
+        else if (hdr->msgType == MISSING_REQUEST_FETCH) {
+            dombft::proto::MissingRequestFetch fetchRequest;
+            if (!fetchRequest.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_FETCH message";
+                return;
+            }
+            processMissingRequestFetch(fetchRequest);
+        }
+
+        else if (hdr->msgType == MISSING_REQUEST_REPLY) {
+            dombft::proto::MissingRequestReply fetchReply;
+            if (!fetchReply.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse MISSING_REQUEST_REPLY message";
+                return;
+            }
+            processMissingRequestReply(fetchReply);
+        }
+
         else if (hdr->msgType == REPAIR_TIMEOUT) {
             RepairTimeout msg;
 
@@ -878,7 +1007,7 @@ void Replica::processMessagesThd()
             processRepairTimeoutProof(msg);
         }
 
-        if (hdr->msgType == REPAIR_START) {
+        else if (hdr->msgType == REPAIR_START) {
             RepairStart msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -888,7 +1017,7 @@ void Replica::processMessagesThd()
             processRepairStart(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == PBFT_PREPREPARE) {
+        else if (hdr->msgType == PBFT_PREPREPARE) {
             PBFTPrePrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -899,7 +1028,7 @@ void Replica::processMessagesThd()
             processPrePrepare(msg);
         }
 
-        if (hdr->msgType == PBFT_PREPARE) {
+        else if (hdr->msgType == PBFT_PREPARE) {
             PBFTPrepare msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -910,7 +1039,7 @@ void Replica::processMessagesThd()
             processPrepare(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == PBFT_COMMIT) {
+        else if (hdr->msgType == PBFT_COMMIT) {
             PBFTCommit msg;
 
             if (!msg.ParseFromArray(body, hdr->msgLen)) {
@@ -921,7 +1050,7 @@ void Replica::processMessagesThd()
             processPBFTCommit(msg, std::span{body + hdr->msgLen, hdr->sigLen});
         }
 
-        if (hdr->msgType == VIEW_UPDATE) {
+        else if (hdr->msgType == VIEW_UPDATE) {
             ViewUpdate viewUpdateMsg;
 
             if (!viewUpdateMsg.ParseFromArray(body, hdr->msgLen)) {
@@ -930,6 +1059,44 @@ void Replica::processMessagesThd()
             }
 
             updateReplicaView(viewUpdateMsg.replica_id(), viewUpdateMsg.view(), viewUpdateMsg.round());
+        }
+
+        else if (hdr->msgType == PS_CLIENT) {
+            ClientRequest clientHeader;
+
+            if (!clientHeader.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_CLIENT message in processMessagesThd";
+                continue;
+            }
+
+            processPSClient(clientHeader, std::span{body + hdr->msgLen, hdr->sigLen});
+
+        }
+
+        else if (hdr->msgType == PS_LEADER_FORWARD) {
+            PSLeaderForward fwd;
+
+            if (!fwd.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_LEADER_FORWARD message";
+                continue;
+            }
+
+            processPSLeaderForward(fwd);
+        }
+
+        else if (hdr->msgType == PS_LEADER_ORDER) {
+            PSLeaderOrder order;
+
+            if (!order.ParseFromArray(body, hdr->msgLen)) {
+                LOG(ERROR) << "Unable to parse PS_LEADER_ORDER message";
+                continue;
+            }
+
+            processPSLeaderOrder(order);
+        }
+
+        else {
+            LOG(ERROR) << "Process thread does not handle message with unknown type " << (int) hdr->msgType;
         }
     }
 }
@@ -977,7 +1144,7 @@ void Replica::processClientRequest(const ClientRequest &request, bool queued)
 
     VLOG(2) << "PERF event=spec_execute replica_id=" << replicaId_ << " seq=" << seq << " client_id=" << clientId
             << " client_seq=" << clientSeq << " round=" << round_ << " digest=" << digest_to_hex(log_->getDigest())
-            << " queued=" << queued;
+            << " queued=" << queued << " request_size=" << request.req_data().size();
 
     Reply reply;
     reply.set_client_id(clientId);
@@ -1071,7 +1238,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
     VLOG(3) << "Processing reply from replica " << reply.replica_id() << " for seq " << rSeq;
 
     // If we receive a reply for a checkpoint for a sequence number that is not a multiple of the
-    // checkpoint interval, some replica has timed waiting to reach the checkpoint interval.
+    // checkpoint interval, some replica has timed out waiting to reach the checkpoint interval.
     if (reply.seq() % checkpointInterval_ != 0) {
         bool alreadyStarted = checkpointCollectors_.hasCollector(round_, reply.seq());
         bool alreadyCommitted = reply.seq() <= log_->getCommittedCheckpoint().seq;
@@ -1141,7 +1308,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
         return;
     } else if (coll.hasConflictProof()) {
         VLOG(1) << "PERF event=checkpoint_conflict"
-                << " seq=" << rSeq << " round=" << round_ << " self_id=" << replicaId_;
+                << " seq=" << rSeq << " round=" << round_ << " replica_id=" << replicaId_;
 
         dombft::proto::RepairReplyProof replyProof;
         coll.getConflictProof(replyProof);
@@ -1153,6 +1320,7 @@ void Replica::processReply(const dombft::proto::Reply &reply, std::span<byte> si
             oss << reply.replica_id() << " " << digest_to_hex(reply.digest()) << " " << reply.seq() << " "
                 << reply.round() << "\n";
         }
+        VLOG(1) << "Conflict proof:\n" << oss.str();
 
         replyProof.set_replica_id(replicaId_);
         replyProof.set_round(round_);
@@ -1241,14 +1409,20 @@ void Replica::processCommit(const dombft::proto::Commit &commit, std::span<byte>
                           << " does not match the commit message digest " << digest_to_hex(checkpoint.logDigest);
             }
 
-            // sendSnapshotRequest(replicaId, checkpoint.seq);
-
             // This can cause replica to fall behind; by the time it gets a snapshot, it would already be too far
             // behind
-            if (!checkpointSnapshotRequested_) {
-                sendSnapshotRequest(replicaId, checkpoint.seq);
+            if (!dombft::ConfigManager::getInstance().getConfig().replicaSkipAlignment) {
+                if (!checkpointSnapshotRequested_ || seq >= log_->getNextSeq() + 5 * checkpointInterval_) {
+                    VLOG(1) << "PERF event=align_start seq=" << seq
+                            << " log_digest=" << digest_to_hex(checkpoint.logDigest)
+                            << " app_digest=" << digest_to_hex(checkpoint.appDigest) << " replica_id=" << replicaId_;
+
+                    sendSnapshotRequest(replicaId, checkpoint.seq);
+                }
+                checkpointSnapshotRequested_ = true;
+            } else {
+                LOG(INFO) << "Skipping alignment snapshot request due to skipAlignment config";
             }
-            checkpointSnapshotRequested_ = true;
 
         } else if (!coll.needsSnapshot()) {
             log_->setCheckpoint(checkpoint);
@@ -1366,6 +1540,7 @@ void Replica::processSnapshotRequest(const SnapshotRequest &request)
 
         dombft::proto::LogEntry entryProto;
         entry.toProto(entryProto);
+        entryProto.set_request(entry.request);
         (*snapshotReply.add_log_entries()) = entryProto;
     }
 
@@ -1403,6 +1578,12 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                           "ignoring... !";
             return;
         }
+
+        if (!repairProposal_.has_value()) {
+            LOG(ERROR) << "Received snapshot reply during repair but no repair proposal exists, ignoring... !";
+            return;
+        }
+
         LogSuffix &logSuffix = getRepairLogSuffix();
         if (snapshotReply.seq() < logSuffix.checkpoint->seq()) {
             LOG(ERROR) << "Received snapshot reply during repair that is too old, ignoring... !"
@@ -1420,6 +1601,17 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
 
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
 
+        // TODO this may be redudnant
+        std::map<RequestId, std::string> availableReqs;
+        for (uint32_t seq = log_->getCommittedCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
+            auto &entry = log_->getEntry(seq);
+            availableReqs[{entry.client_id, entry.client_seq}] = entry.request;
+        }
+
+        for (auto [_, req] : repairQueuedReqs_) {
+            availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
+        }
+
         if (!log_->resetToSnapshot(snapshotReply)) {
             // TODO handle this case properly by retrying on another replica
             LOG(ERROR) << "Failed to reset log to snapshot, snapshot did not match digest!";
@@ -1436,12 +1628,17 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
                          << ". Still applying it before finishRepair, but will likely drop lots of messages";
         }
 
-        applySuffix(logSuffix, log_);
+        std::vector<std::pair<uint32_t, uint32_t>> missingRequests;
+        if (!applySuffix(logSuffix, availableReqs, log_, missingRequests)) {
+            LOG(INFO) << "applySuffix failed due to missing requests, requesting from other replicas";
+            sendMissingRequestFetch(missingRequests);
+            return;
+        }
         finishRepair(abortedRequests);
 
         // TODO temporary fix for issue #120, this may lead to later issues though
         round_ = std::max(round_, snapshotReply.round());
-    } else {
+    } else if (!dombft::ConfigManager::getInstance().getConfig().replicaSkipAlignment) {
         // Apply snapshot from checkpoint and reorder my log
         // TODO make sure this isn't outdated...
 
@@ -1484,13 +1681,138 @@ void Replica::processSnapshotReply(const dombft::proto::SnapshotReply &snapshotR
             sendMsgToDst(reply, MessageType::REPLY, clientAddrs_[entry.client_id]);
         }
 
-        VLOG(1) << "PERF event=align checkpoint_seq=" << log_->getCommittedCheckpoint().seq
-                << " log_seq=" << log_->getNextSeq() - 1 << " log_digest=" << digest_to_hex(log_->getDigest());
+        VLOG(1) << "PERF event=align replicaId=" << replicaId_
+                << " checkpoint_seq=" << log_->getCommittedCheckpoint().seq << " log_seq=" << log_->getNextSeq() - 1
+                << " log_digest=" << digest_to_hex(log_->getDigest());
+    } else {
+        LOG(WARNING) << "Ignoring snapshot reply due to replicaSkipAlignment=true!";
     }
 
     // Got the snapshot
     repairSnapshotRequested_ = false;
     checkpointSnapshotRequested_ = false;
+}
+
+void Replica::processMissingRequestFetch(const dombft::proto::MissingRequestFetch &fetchRequest)
+{
+    LOG(INFO) << "Processing MISSING_REQUEST_FETCH from replica " << fetchRequest.replica_id() << " for "
+              << fetchRequest.request_ids_size() << " requests";
+
+    // if (fetchRequest.round() < round_) {
+    //     VLOG(1) << "Missing request fetch round outdated, skipping";
+    //     return;
+    // }
+
+    dombft::proto::MissingRequestReply reply;
+    reply.set_round(fetchRequest.round());
+    reply.set_replica_id(replicaId_);
+
+    // TODO this is inefficient, we should iterate once trhough the logs
+    // TODO we run into issues if the request was truncated from the log....
+    // Iterate through requested requests and search for them
+    for (const auto &reqId : fetchRequest.request_ids()) {
+        uint32_t clientId = reqId.client_id();
+        uint32_t clientSeq = reqId.client_seq();
+        bool found = false;
+
+        // If not found, search own log
+        if (!found) {
+            for (uint32_t seq = log_->getCommittedCheckpoint().seq + 1; seq < log_->getNextSeq(); seq++) {
+                const ::LogEntry &entry = log_->getEntry(seq);
+                if (entry.client_id == clientId && entry.client_seq == clientSeq) {
+                    auto *reqData = reply.add_requests();
+                    reqData->set_client_id(clientId);
+                    reqData->set_client_seq(clientSeq);
+                    reqData->set_request(entry.request);
+                    found = true;
+
+                    VLOG(2) << "Providing missing request from own log at seq=" << seq << " c_id=" << clientId
+                            << " c_seq=" << clientSeq << " to replica " << fetchRequest.replica_id();
+                    break;
+                }
+            }
+        }
+
+        if (!found) {
+            VLOG(2) << "Don't have requested request c_id=" << clientId << " c_seq=" << clientSeq;
+        }
+    }
+
+    if (reply.requests_size() > 0) {
+        LOG(INFO) << "Sending MISSING_REQUEST_REPLY to replica " << fetchRequest.replica_id() << " with "
+                  << reply.requests_size() << " requests";
+        sendMsgToDst(reply, MessageType::MISSING_REQUEST_REPLY, replicaAddrs_[fetchRequest.replica_id()]);
+    } else {
+        LOG(WARNING) << "No missing requests found to send to replica " << fetchRequest.replica_id();
+    }
+}
+
+void Replica::processMissingRequestReply(const dombft::proto::MissingRequestReply &fetchReply)
+{
+    LOG(INFO) << "Processing MISSING_REQUEST_REPLY from replica " << fetchReply.replica_id() << " with "
+              << fetchReply.requests_size() << " requests";
+
+    if (fetchReply.round() < round_) {
+        VLOG(1) << "Missing request reply round outdated, skipping";
+        return;
+    }
+
+    // Add the received requests to our repairQueuedReqs_
+    for (const auto &reqData : fetchReply.requests()) {
+        RequestId key = {reqData.client_id(), reqData.client_seq()};
+
+        // Check if this is one of our pending missing requests
+        auto it = std::find(pendingMissingRequests_.begin(), pendingMissingRequests_.end(), key);
+        if (it != pendingMissingRequests_.end()) {
+            // Add to repairQueuedReqs_
+            dombft::proto::ClientRequest clientReq;
+            clientReq.set_client_id(reqData.client_id());
+            clientReq.set_client_seq(reqData.client_seq());
+            clientReq.set_req_data(reqData.request());
+
+            repairQueuedReqs_[{reqData.client_id(), reqData.client_seq()}] = clientReq;
+
+            // Remove from pending list
+            pendingMissingRequests_.erase(it);
+
+            LOG(INFO) << "Received missing request c_id=" << reqData.client_id() << " c_seq=" << reqData.client_seq();
+        }
+    }
+
+    // If all pending requests have been received, try to finish repair again
+    if (pendingMissingRequests_.empty() && missingRequestFetchSent_) {
+        LOG(INFO) << "All missing requests received, retrying repair";
+        missingRequestFetchSent_ = false;
+        tryFinishRepair();
+    }
+}
+
+void Replica::sendMissingRequestFetch(const std::vector<std::pair<uint32_t, uint32_t>> &missingRequests)
+{
+    if (missingRequests.empty()) {
+        return;
+    }
+
+    LOG(INFO) << "Sending MISSING_REQUEST_FETCH for " << missingRequests.size() << " requests";
+
+    dombft::proto::MissingRequestFetch fetchRequest;
+    fetchRequest.set_round(round_);
+    fetchRequest.set_replica_id(replicaId_);
+
+    for (const auto &[clientId, clientSeq] : missingRequests) {
+        auto *reqId = fetchRequest.add_request_ids();
+        reqId->set_client_id(clientId);
+        reqId->set_client_seq(clientSeq);
+
+        VLOG(2) << "Requesting missing request c_id=" << clientId << " c_seq=" << clientSeq;
+    }
+
+    // Store the pending requests
+    pendingMissingRequests_ = missingRequests;
+    missingRequestFetchSent_ = true;
+
+    // Broadcast to all replicas
+    broadcastToReplicas(fetchRequest, MessageType::MISSING_REQUEST_FETCH);
 }
 
 void Replica::processRepairTimeout(const dombft::proto::RepairTimeout &msg, std::span<byte> sig)
@@ -1545,6 +1867,13 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 
     // Proof is verified by verify thread
 
+    if (msg.round() > round_) {
+        LOG(ERROR) << "Received repair trigger proof for round " << msg.round() << " > " << round_;
+        // TODO, we need to handle this after repair finishes?
+        pendingRepair_ = true;
+        return;
+    }
+
     // Ignore repeated repair triggers
     if (repair_) {
         VLOG(6) << "Received repair trigger during a repair";
@@ -1558,11 +1887,6 @@ void Replica::processRepairReplyProof(const dombft::proto::RepairReplyProof &msg
 
     if (msg.view() < pbftView_) {
         VLOG(4) << "Received repair timeout for previous pbft view " << msg.view() << " < " << pbftView_;
-        return;
-    }
-
-    if (msg.round() > round_) {
-        LOG(ERROR) << "Received repair trigger proof for round " << msg.round() << " > " << round_;
         return;
     }
 
@@ -1592,6 +1916,12 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
 {
     updateReplicaView(msg.replica_id(), msg.view(), msg.round());
 
+    if (msg.round() > round_) {
+        LOG(ERROR) << "WARNING Received repair trigger proof for future round " << msg.round() << " > " << round_;
+        pendingRepair_ = true;
+        return;
+    }
+
     // Ignore repeated repair triggers
     if (repair_) {
         VLOG(5) << "Received timeout proof after I already started repair for round " << round_;
@@ -1601,11 +1931,6 @@ void Replica::processRepairTimeoutProof(const dombft::proto::RepairTimeoutProof 
     // Proof is verified by verify thread
     if (msg.round() < round_) {
         LOG(INFO) << "Received repair timeout proof for previous round " << msg.round() << " < " << round_;
-        return;
-    }
-
-    if (msg.round() > round_) {
-        VLOG(6) << "Received repair trigger proof for future round " << msg.round() << " > " << round_;
         return;
     }
 
@@ -1687,6 +2012,7 @@ void Replica::checkTimeouts()
         LOG(INFO) << "Starting checkpoint for round=" << round_ << " seq=" << log_->getNextSeq() - 1
                   << " due to timeout!";
 
+        // These are triggering during repair, repair should cancel this or cause it to be ignored
         VLOG(1) << "PERF event=checkpoint_timeout_self" << " seq=" << log_->getNextSeq() - 1 << " round=" << round_
                 << " replica_id=" << replicaId_;
 
@@ -2104,8 +2430,9 @@ void Replica::startRepair()
     repairStart_->set_replica_id(replicaId_);
     repairStart_->set_pbft_view(pbftView_);
 
-    // TODO rather than include actual client requests here, only include digest
-    log_->toProto(*repairStart_);
+    // Include full requests based on config
+    bool includeFullRequests = dombft::ConfigManager::getInstance().getConfig().replicaIncludeFullRequests;
+    log_->toProto(*repairStart_, includeFullRequests);
 
     uint32_t primaryId = getPrimary();
     VLOG(2) << "Sending REPAIR_START to PBFT primary replica " << primaryId;
@@ -2252,7 +2579,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
 
             } else {
                 // TODO this should be an assert, but we will fix this later.
-                LOG(ERROR) << "Reapir commit digests "
+                LOG(ERROR) << "Repair commit digests "
                            << digest_to_hex(newCheckpoint.repairCommits.begin()->second.log_digest())
                            << " does not match my log digest " << digest_to_hex(newCheckpoint.logDigest)
                            << " skipping...";
@@ -2265,6 +2592,7 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     repairPrepares_.clear();
     repairPBFTCommits_.clear();
     repairProposalLogSuffix_.reset();
+    missingRequestFetchSent_ = false;
 
     // Reapply any requests that were aborted in previous round
     // NOTE, this is actually allow a single byzantine client to prevent a replica from ever entering fast path...
@@ -2294,6 +2622,12 @@ void Replica::finishRepair(const std::vector<::ClientRequest> &abortedReqs)
     checkpointTimeoutStart_ = GetMicrosecondTimestamp();
 
     VLOG(2) << "PERF_DUMP post repair round=" << round_ - 1 << " " << *log_;
+
+    // TODO hack if we received proof for next repair round in this round...
+    if (pendingRepair_) {
+        pendingRepair_ = false;
+        startRepair();
+    }
 }
 
 void Replica::tryFinishRepair()
@@ -2329,7 +2663,17 @@ void Replica::tryFinishRepair()
 
         if (checkpoint->seq() < log_->getNextSeq() && checkpoint->log_digest() == log_->getDigest(checkpoint->seq())) {
             std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
-            applySuffix(logSuffix, log_);
+            std::map<RequestId, std::string> availableReqs;
+            for (auto [_, req] : repairQueuedReqs_) {
+                availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
+            }
+
+            std::vector<std::pair<uint32_t, uint32_t>> missingRequests;
+            if (!applySuffix(logSuffix, availableReqs, log_, missingRequests)) {
+                LOG(INFO) << "applySuffix failed due to missing requests, requesting from other replicas";
+                sendMissingRequestFetch(missingRequests);
+                return;
+            }
             finishRepair(abortedRequests);
         } else {
             LOG(INFO) << "Repair checkpoint seq=" << checkpoint->seq() << " is inconsistent with my log";
@@ -2340,8 +2684,18 @@ void Replica::tryFinishRepair()
             repairSnapshotRequested_ = true;
         }
     } else {
+        std::map<RequestId, std::string> availableReqs;
+        for (auto [_, req] : repairQueuedReqs_) {
+            availableReqs[{req.client_id(), req.client_seq()}] = req.req_data();
+        }
+
         std::vector<::ClientRequest> abortedRequests = getAbortedEntries(logSuffix, log_, curRoundStartSeq_);
-        applySuffix(logSuffix, log_);
+        std::vector<std::pair<uint32_t, uint32_t>> missingRequests;
+        if (!applySuffix(logSuffix, availableReqs, log_, missingRequests)) {
+            LOG(INFO) << "applySuffix failed due to missing requests, requesting from other replicas";
+            sendMissingRequestFetch(missingRequests);
+            return;
+        }
         finishRepair(abortedRequests);
     }
 }
@@ -2760,6 +3114,136 @@ std::string Replica::getProposalDigest(const RepairProposal &proposal)
     hash.Final(digestBuf);
 
     return std::string(reinterpret_cast<const char *>(digestBuf), CryptoPP::SHA256::DIGESTSIZE);
+}
+
+// *** EXTRA LOGIC FOR PRESERIALIZATION EXPERIMENTS, not a part of the actual protocol, and not implemented fully ***
+
+void Replica::processPSClient(const dombft::proto::ClientRequest &clientRequest, std::span<byte> sig)
+{
+    // send wrapped client request to everyone, enqueue it by itself
+    if (preserializationMode_ == "full") {
+        // Extract client signature from original message
+        std::string clientSig((char *) sig.data(), sig.size());
+        PSLeaderForward fwd;
+        fwd.set_seq(log_->getNextSeq());
+        *fwd.mutable_request() = clientRequest;
+        fwd.set_client_signature(clientSig);
+
+        // Forward full request to all other replicas as PS_LEADER_FORWARD
+        sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+            MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(fwd, MessageType::PS_LEADER_FORWARD, buffer);
+            fwdHdr->sigLen = 0;
+
+            for (size_t i = 0; i < replicaAddrs_.size(); i++) {
+                if (i != replicaId_) {
+                    endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
+                }
+            }
+        });
+        // Process locally
+        processClientRequest(clientRequest);
+
+    } else if (preserializationMode_ == "order") {
+
+        if (replicaId_ == 0) {
+            PSLeaderOrder order;
+            order.set_client_id(clientRequest.client_id());
+            order.set_client_seq(clientRequest.client_seq());
+            order.set_seq(log_->getNextSeq());
+
+            sendThreadpool_.enqueueTask([=, this](byte *buffer) {
+                MessageHeader *fwdHdr = endpoint_->PrepareProtoMsg(order, MessageType::PS_LEADER_ORDER, buffer);
+                fwdHdr->sigLen = 0;
+
+                for (size_t i = 0; i < replicaAddrs_.size(); i++) {
+                    if (i != replicaId_) {
+                        endpoint_->SendPreparedMsgTo(replicaAddrs_[i], fwdHdr);
+                    }
+                }
+            });
+            // Process locally
+            processClientRequest(clientRequest);
+
+        } else {
+            // Non-primary replicas just buffer the request until ordered
+            // TODO emplace
+            psOrderRequests_[{clientRequest.client_id(), clientRequest.client_seq()}] = clientRequest;
+        }
+    }
+}
+
+void Replica::processPSLeaderForward(const dombft::proto::PSLeaderForward &psForward)
+{
+    // If nextSeq is seq, process the request as you would
+
+    VLOG(4) << "processPSLeaderForward: seq=" << psForward.seq() << " nextSeq=" << log_->getNextSeq()
+            << " client_id=" << psForward.request().client_id() << " client_seq=" << psForward.request().client_seq();
+
+    if (psForward.seq() == log_->getNextSeq()) {
+        processClientRequest(psForward.request());
+
+        // Then check the buffer for any subsequent requests
+        uint32_t nextSeq = log_->getNextSeq();
+        uint32_t processedFromBuffer = 0;
+        while (psForwardBuffer_.contains(nextSeq)) {
+            processClientRequest(psForwardBuffer_[nextSeq]);
+            psForwardBuffer_.erase(nextSeq);
+            nextSeq++;
+            processedFromBuffer++;
+        }
+
+        VLOG(2) << "processPSLeaderForward: processed 1 request + " << processedFromBuffer
+                << " from buffer, buffer size now: " << psForwardBuffer_.size();
+
+    } else {
+        // Otherwise buffer it until its turn comes
+        psForwardBuffer_.emplace(psForward.seq(), psForward.request());
+        VLOG(2) << "processPSLeaderForward: buffered seq=" << psForward.seq()
+                << ", buffer size now: " << psForwardBuffer_.size();
+        checkPSOrderRequests();
+    }
+}
+
+void Replica::processPSLeaderOrder(const dombft::proto::PSLeaderOrder &psOrder)
+{
+    VLOG(4) << "processPSLeaderOrder: seq=" << psOrder.seq() << " client_id=" << psOrder.client_id()
+            << " client_seq=" << psOrder.client_seq();
+
+    psOrderSeqs_[psOrder.seq()] = {psOrder.client_id(), psOrder.client_seq()};
+    checkPSOrderRequests();
+}
+
+void Replica::checkPSOrderRequests()
+{
+    uint32_t processedCount = 0;
+    while (psOrderSeqs_.contains(log_->getNextSeq())) {
+        uint32_t nextSeq = log_->getNextSeq();
+        auto [clientId, clientSeq] = psOrderSeqs_[nextSeq];
+        std::pair<uint32_t, uint32_t> key = {clientId, clientSeq};
+
+        VLOG(4) << "checkPSOrderRequests: checking seq=" << nextSeq << " client_id=" << clientId
+                << " client_seq=" << clientSeq;
+
+        if (psOrderRequests_.contains(key)) {
+            ClientRequest req = psOrderRequests_[key];
+            psOrderRequests_.erase(key);
+            psOrderSeqs_.erase(nextSeq);
+            processClientRequest(req);
+            processedCount++;
+        } else {
+            // Waiting for client request
+            VLOG(2) << "checkPSOrderRequests: waiting for client request, processed " << processedCount
+                    << " requests, psOrderSeqs size: " << psOrderSeqs_.size()
+                    << ", psOrderRequests size: " << psOrderRequests_.size();
+            return;
+        }
+    }
+
+    if (processedCount > 0) {
+        VLOG(2) << "checkPSOrderRequests: processed " << processedCount
+                << " requests, psOrderSeqs size: " << psOrderSeqs_.size()
+                << ", psOrderRequests size: " << psOrderRequests_.size();
+    }
 }
 
 }   // namespace dombft

@@ -4,6 +4,9 @@
 
 #include "config/config_manager.h"
 
+#include <cryptopp/filters.h>
+#include <cryptopp/sha.h>
+
 typedef std::pair<uint32_t, uint32_t> RequestId;
 typedef std::map<RequestId, const dombft::proto::LogEntry *> ClientReqs;
 
@@ -270,7 +273,10 @@ std::vector<ClientRequest> getAbortedEntries(const LogSuffix &logSuffix, std::sh
     return ret;
 }
 
-void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
+bool applySuffix(
+    LogSuffix &logSuffix, std::map<RequestId, std::string> &availableReqs, std::shared_ptr<Log> log,
+    std::vector<std::pair<uint32_t, uint32_t>> &missingRequests
+)
 {
     // This should only be called when current checkpoint is consistent with repair checkpoint
     LOG(INFO) << "logSuffix.checkpoint.seq=" << logSuffix.checkpoint->seq()
@@ -289,7 +295,7 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         LOG(INFO) << "Checkpoint seq=" << log->getCommittedCheckpoint().seq
                   << " is ahead of repair checkpoint seq=" << logSuffix.checkpoint->seq()
                   << " + entries size=" << logSuffix.entries.size() << " so not applying suffix";
-        return;
+        return true;
     }
 
     // First sequence to apply is right after checkpoint
@@ -322,9 +328,41 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         seq++;
     }
 
+    // Save any requests that will get aborted
+    for (uint32_t i = seq; i < log->getNextSeq(); i++) {
+        const LogEntry &entry = log->getEntry(i);
+        RequestId key = {entry.client_id, entry.client_seq};
+        availableReqs[key] = entry.request;
+    }
+
     LOG(INFO) << "Aborting own entries from seq=" << seq;
 
     log->abort(seq);
+
+    // Step2.5 Check for missing requests and add full requests from proto if available
+    for (int i = idx; i < logSuffix.entries.size(); i++) {
+        const dombft::proto::LogEntry *entry = logSuffix.entries[i];
+        uint32_t clientId = entry->client_id();
+        uint32_t clientSeq = entry->client_seq();
+        RequestId key = {clientId, clientSeq};
+
+        // If the proto has the full request, add it to availableReqs
+        if (entry->has_request()) {
+            availableReqs[key] = entry->request();
+            VLOG(2) << "Using full request from proto for c_id=" << clientId << " c_seq=" << clientSeq;
+        }
+        // Otherwise, check if we need to request it
+        else if (!availableReqs.contains(key)) {
+            VLOG(2) << "Missing request c_id=" << clientId << " c_seq=" << clientSeq
+                    << " - will request from other replicas";
+            missingRequests.push_back({clientId, clientSeq});
+        }
+    }
+
+    if (!missingRequests.empty()) {
+        LOG(INFO) << "Missing " << missingRequests.size() << " requests - will not apply suffix yet";
+        return false;
+    }
 
     // Step3. Apply entries after inconsistency is detected or suffix is longer than own log
     for (; idx < logSuffix.entries.size(); idx++) {
@@ -335,8 +373,25 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
         uint32_t clientId = entry->client_id();
         uint32_t clientSeq = entry->client_seq();
 
+        // Get request and check the digest
+        RequestId key = {clientId, clientSeq};
+
+        assert(availableReqs.contains(key));
+        CryptoPP::SHA256 hash;
+        std::string digestMyReq;
+        CryptoPP::StringSource ss(
+            availableReqs[key], true, new CryptoPP::HashFilter(hash, new CryptoPP::StringSink(digestMyReq))
+        );
+
+        if (digestMyReq != entry->request_digest()) {
+            LOG(ERROR) << "Digest mismatch for entry at seq=" << seq << " c_id=" << clientId << " c_seq=" << clientSeq
+                       << " digest=" << digest_to_hex(digestMyReq)
+                       << " repair digest=" << digest_to_hex(entry->request_digest());
+            throw std::runtime_error("Request in repair proposal does not match!");
+        }
+
         std::string result;
-        if (!log->addEntry(entry->client_id(), clientSeq, entry->request(), result)) {
+        if (!log->addEntry(entry->client_id(), clientSeq, availableReqs[key], result)) {
             // This should not happen!
             VLOG(2) << "Failure to add request in slow path! " << " seq=" << seq << " round=" << logSuffix.round
                     << " client_id=" << clientId << " client_seq=" << entry->client_seq();
@@ -348,4 +403,5 @@ void applySuffix(LogSuffix &logSuffix, std::shared_ptr<Log> log)
                 << " digest=" << digest_to_hex(log->getDigest());
         seq++;
     }
+    return true;
 }

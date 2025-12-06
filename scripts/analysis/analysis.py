@@ -58,16 +58,8 @@ if __name__ == "__main__":
     )
 
     # Get general stats
-    event = list(
-        filter(lambda x: x["time"] > start_time and x["time"] < end_time, events)
-    )
-
     commits = list(
         filter(lambda x: x["time"] > start_time and x["time"] < end_time, commits)
-    )
-
-    events = list(
-        filter(lambda x: x["time"] > start_time and x["time"] < end_time, events)
     )
 
     runtime = (commits[-1]["time"] - commits[0]["time"]).total_seconds()
@@ -87,51 +79,21 @@ if __name__ == "__main__":
     slow = list(filter(lambda x: x["path"] == "slow", commits))
 
     print("Fast path:")
-    print(f"\tNum commits: {len(fast)} {len(fast) / len(commits)}")
+    print(f"\tNum commits: {len(fast)}")
     if len(fast) > 0:
         print(
             f"\tAverage latency: {sum(c['latency'] for c in fast) / len(fast):.0f} us"
         )
 
-        # Break down fast path latency by client
-        print("\n\tFast path breakdown by client:")
-        client_counts = []
-        client_avg_latencies = []
-        client_p50_latencies = []
-        client_p95_latencies = []
-        client_p99_latencies = []
-
-        for client_id in range(n_clients):
-            client_fast = [c for c in fast if c.get("client_id") == client_id]
-            if len(client_fast) > 0:
-                client_latencies = np.array([c["latency"] for c in client_fast])
-                client_counts.append(len(client_fast))
-                client_avg_latencies.append(int(np.mean(client_latencies)))
-                client_p50_latencies.append(int(np.percentile(client_latencies, 50)))
-                client_p95_latencies.append(int(np.percentile(client_latencies, 95)))
-                client_p99_latencies.append(int(np.percentile(client_latencies, 99)))
-            else:
-                client_counts.append(0)
-                client_avg_latencies.append(0)
-                client_p50_latencies.append(0)
-                client_p95_latencies.append(0)
-                client_p99_latencies.append(0)
-
-        print(f"\t  Counts:  {client_counts}")
-        print(f"\t  Avg:     {client_avg_latencies}")
-        print(f"\t  p50:     {client_p50_latencies}")
-        print(f"\t  p95:     {client_p95_latencies}")
-        print(f"\t  p99:     {client_p99_latencies}")
-
     print("Fast Queued path:")
-    print(f"\tNum commits: {len(normal)}  {len(normal) / len(commits)}")
+    print(f"\tNum commits: {len(normal)}")
     if len(normal) > 0:
         print(
             f"\tAverage latency: {sum(c['latency'] for c in normal) / len(normal):.0f} us"
         )
 
     print("Slow path:")
-    print(f"\tNum commits: {len(slow)}  {len(slow) / len(commits)}")
+    print(f"\tNum commits: {len(slow)}")
     if len(slow) > 0:
         print(
             f"\tAverage latency: {sum(c['latency'] for c in slow) / len(slow):.0f} us"
@@ -142,24 +104,46 @@ if __name__ == "__main__":
     max_round = max(c["round"] for c in commits if "round" in c)
     print("Number of repair rounds: ", max_round - min_round)
 
-    n_align = len(list(e for e in events if e["event"] == "align"))
-    print("Number of alignments", n_align)
+    # Peak throughput window
 
-    # Break down alignments by replica
-    alignments = [e for e in events if e["event"] == "align"]
-    if len(alignments) > 0:
-        # Get number of replicas
-        n_replicas = max(e.get("replicaId", 0) for e in events if "replicaId" in e) + 1
+    import numpy as np
 
-        print("\n  Alignment breakdown by replica:")
-        replica_align_counts = []
-        for replica_id in range(n_replicas):
-            replica_aligns = [e for e in alignments if e.get("replicaId") == replica_id]
-            replica_align_counts.append(len(replica_aligns))
+    w_size = 10  # s
+    resolution = 1  # s
 
-        print(f"    Counts: {replica_align_counts}")
+    end = (commits[-1]["time"] - start_time).total_seconds()
+
+    for c in commits:
+        c["t"] = (c["time"] - start_time).total_seconds()
+
+    w_start = 0
+    i = 0
+    j = 0
+
+    commit_counts = []
+    max_commits = 0
+    max_window = None
+
+    while w_start + w_size < end:
+        while commits[i]["t"] < w_start:
+            i += 1
+        while commits[j]["t"] <= w_start + w_size:
+            j += 1
+
+        if j - i > max_commits:
+            max_window = (i, j)
+            max_commits = j - i
+
+        w_start += resolution
+
+    window_latencies = np.array([c["latency"] for c in commits[i:j]])
+    print(f"Finding best 30s window")
+
+    print(f"Max throughput over window of ten seconds: {max_commits / 10}")
+    print(f"Average latency in window: {np.mean(window_latencies):.0f} us")
 
     # Analyse percent of time in the fast path
+
     last_fast_time = None
     non_fast_seconds = 0
     non_fast_periods = []

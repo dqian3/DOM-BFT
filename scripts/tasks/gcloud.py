@@ -25,9 +25,8 @@ def get_gcloud_ext_ips(c):
 def get_all_int_ips(config):
     int_ips = set()
     for process in config:
-        if process == "transport" or process == "app" or process == "resiliency":
-            continue
-        int_ips |= set([ip for ip in config[process]["ips"]])
+        if process == "client" or process == "proxy" or process == "replica":
+            int_ips |= set([ip for ip in config[process]["ips"]])
 
     return int_ips
 
@@ -48,7 +47,7 @@ def get_address_resolver(context):
 
 
 @task
-def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
+def vm(c, config_file="../configs/remote-prod.yaml", stop=False, reset=False):
     config_file = os.path.abspath(config_file)
 
     with open(config_file) as cfg_file:
@@ -66,7 +65,15 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
     }
     hdls = []
 
-    if stop:
+    if reset:
+        for ip in int_ips:
+            name, zone = vm_info[ip]
+            h = c.run(
+                f"gcloud compute instances reset {name} --zone {zone}",
+                asynchronous=True,
+            )
+            hdls.append(h)
+    elif stop:
         for name, zone in vm_info.values():
             h = c.run(
                 f"gcloud compute instances stop {name} --zone {zone}",
@@ -78,7 +85,7 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
         for ip in int_ips:
             name, zone = vm_info[ip]
             h = c.run(
-                f"gcloud compute instances start' {name} --zone {zone}",
+                f"gcloud compute instances start {name} --zone {zone}",
                 asynchronous=True,
             )
             hdls.append(h)
@@ -86,7 +93,19 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False):
     for h in hdls:
         h.join()
 
-    print(f"{'Stopped' if stop else 'Started'} all instances!")
+    if stop:
+        print("Stopped all instances!")
+    elif reset:
+        print("Reset all instances!")
+    else:
+        print("Started all instances!, synching clocks")
+
+        time.sleep(20)
+        cmd(
+            c,
+            "sudo chronyc -a 'burst 4/4' && sleep 10 && sudo chronyc -a makestep && sleep 5 && chronyc sources",
+            config_file=config_file,
+        )
 
 
 @task
@@ -205,7 +224,7 @@ def run_largen(
             original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
 
         f = 1
-        for e in [3, 2, 1, 0]:
+        for e in [0, 1, 2, 3]:
             # vm(
             #     c, config_file=config_file
             # )  # This should only start the vms that are needed, not all
@@ -224,21 +243,55 @@ def run_largen(
             send_rate = cfg["client"]["sendRate"] * len(cfg["client"]["ips"])
 
             yaml.dump(cfg, open(config_file, "w"))
-            run(c, config_file=config_file, v=v, prot=prot)
-
+            run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=False)
             c.run("rm ../logs/*.log ", warn=True)
-
             c.run(
-                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n}_sr{send_rate}.out"
+                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >n{n}_sr{send_rate}.out"
             )
 
+            # run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
+            # c.run(f"mv results.json {prot}_n{n}_sr{send_rate}.out ")
+
             # vm(c, config_file=config_file, stop=True)
+            time.sleep(10)
+
+        for e in [1, 2, 3]:
+            # vm(
+            #     c, config_file=config_file
+            # )  # This should only start the vms that are needed, not all
+            # time.sleep(20)
+
+            n = 3 * f + 2 * e + 1
+
+            cfg = deepcopy(original_cfg)
+
+            assert n <= len(cfg["replica"]["ips"])
+
+            cfg["replica"]["ips"] = cfg["replica"]["ips"][:n]
+            cfg["resiliency"]["f"] = f
+            cfg["resiliency"]["e"] = e
+            cfg["replica"]["skipAlignment"] = True
+
+            send_rate = cfg["client"]["sendRate"] * len(cfg["client"]["ips"])
+
+            yaml.dump(cfg, open(config_file, "w"))
+            run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=False)
+            c.run("rm ../logs/*.log ", warn=True)
+            c.run(
+                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >skip_n{n}_sr{send_rate}.out"
+            )
+
+            # run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
+            # c.run(f"mv results.json {prot}_n{n}_sr{send_rate}.out ")
+
+            # vm(c, config_file=config_file, stop=True)
+            time.sleep(10)
 
     finally:
         with open(config_file, "w") as cfg_file:
             cfg_file.write(original_contents)
 
-        vm(c, config_file=config_file, stop=True)
+        # vm(c, config_file=config_file, stop=True)
 
 
 @task
@@ -269,8 +322,8 @@ def run(
     v=5,
     dom_logs=False,
     profile=False,
-    filter_client_logs=False,
-    batch_size=0,
+    analyze_client_logs=False,
+    batch_size=1,
     slow_path_freq=0,
     normal_path_freq=0,
     view_change_freq=0,
@@ -289,7 +342,7 @@ def run(
         dom_logs=dom_logs,
         profile=profile,
         batch_size=batch_size,
-        filter_client_logs=filter_client_logs,
+        analyze_client_logs=analyze_client_logs,
         slow_path_freq=slow_path_freq,
         normal_path_freq=normal_path_freq,
         view_change_freq=view_change_freq,

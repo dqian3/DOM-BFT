@@ -33,7 +33,7 @@ struct LogEntry {
     ~LogEntry();
 
     // Serialization
-    void toProto(dombft::proto::LogEntry &msg) const;
+    void toProto(dombft::proto::LogEntry &msg, bool includeFullRequest = false) const;
     friend std::ostream &operator<<(std::ostream &out, const LogEntry &le);
 };
 

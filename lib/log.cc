@@ -300,7 +300,7 @@ LogCheckpoint &Log::getCommittedCheckpoint() { return committedCheckpoint_; }
 
 ClientRecord &Log::getClientRecord() { return clientRecord_; }
 
-void Log::toProto(dombft::proto::RepairStart &msg)
+void Log::toProto(dombft::proto::RepairStart &msg, bool includeFullRequests)
 {
     dombft::proto::RepairLog *logProto = msg.mutable_log();
     dombft::proto::LogCheckpoint *checkpointProto = logProto->mutable_checkpoint();
@@ -313,7 +313,7 @@ void Log::toProto(dombft::proto::RepairStart &msg)
         }
 
         dombft::proto::LogEntry *entryProto = logProto->add_entries();
-        entry.toProto(*entryProto);
+        entry.toProto(*entryProto, includeFullRequests);
     }
 
     if (latestCert_.has_value()) {
