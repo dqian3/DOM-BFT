@@ -143,7 +143,7 @@ def run(
         #  stop other processes and then join
         for hdl in other_handles:
             hdl.join()
-            
+
         if analyze_client_logs:
             print("Analyzing client logs...")
             # Run analyze_client.py on each client log
@@ -159,7 +159,7 @@ def run(
                 warn=True,
             )
             print("Client log analysis complete. Results in logs/aggregate.json")
->
+
 
 @task
 def flutter(
