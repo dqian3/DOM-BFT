@@ -364,7 +364,7 @@ void FlutterReplica::initializeCandidate(const flutter::proto::FlutterClientRequ
             return;
         } else {
 
-            VLOG(4) << "Overwriting old request state: client=" << clientId << " seq=" << clientSeq << " bet=" << bet
+            VLOG(1) << "Overwriting old request state: client=" << clientId << " seq=" << clientSeq << " bet=" << bet
                     << " currentBet=" << currentBet;
 
             candidatePool_.erase({currentBet, {clientId, clientSeq}});
@@ -589,8 +589,9 @@ void FlutterReplica::processRBCProposal(
         reply.set_accepted(false);
         sendMsgToDst(reply, MessageType::FLUTTER_REPLY, clientAddrs_[clientId]);
 
-        // Note, we keep candidate in clientCurrentBets_ to prevent reprocessing messages from this rejected req
         candidatePool_.erase(key);
+        clientCurrentBets_[{clientId, clientSeq}]++;   // Increment to mark more message  as stale, otherwise would be
+                                                       // reprocessed
 
         return;
     }
@@ -890,6 +891,8 @@ void FlutterReplica::processRBCSlowValue(
 
         // Note, we keep candidate in clientCurrentBets_ to prevent reprocessing messages from this rejected req
         candidatePool_.erase(key);
+        clientCurrentBets_[{clientId, clientSeq}]++;   // Increment to mark more message  as stale, otherwise would be
+                                                       // reprocessed
     }
 }
 

@@ -384,7 +384,11 @@ def flutter(
 
 
 @task
-def copy_flutter_bin(c, config_file="../configs/flutter_remote.yaml", upload_once=False):
+def copy_flutter_bin(
+    c, config_file="../configs/flutter_remote.yaml", upload_once=False
+):
     """Copy Flutter binaries to GCloud instances"""
     resolve = get_address_resolver(c)
-    remote.copy_flutter_bin(c, config_file=config_file, upload_once=upload_once, resolve=resolve)
+    remote.copy_flutter_bin(
+        c, config_file=config_file, upload_once=upload_once, resolve=resolve
+    )
