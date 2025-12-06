@@ -336,7 +336,6 @@ def flutter(
 
     # Give machines the config file
     group.put(config_file)
-    group.put("filter_logs.py")
 
     remote_config_file = os.path.basename(config_file)
 
