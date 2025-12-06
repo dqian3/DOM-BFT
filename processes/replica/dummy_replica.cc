@@ -374,7 +374,7 @@ void DummyReplica::processMessagesThd()
                         protoMsg.set_phase(2);
                         protoMsg.set_replica_id(replicaId_);
 
-                        VLOG(2) << "PERF event=prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
+                        VLOG(2) << "PERF event=repair_prepared replica_id=" << replicaId_ << " seq=" << protoMsg.seq();
 
                         broadcastToReplicas(protoMsg, MessageType::DUMMY_PROTO);
                     }

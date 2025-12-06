@@ -55,6 +55,8 @@ void LogEntry::toProto(dombft::proto::LogEntry &msg, bool includeFullRequest) co
     // Optionally include the full request data to avoid fetching
     if (includeFullRequest) {
         msg.set_request(request);
+    } else {
+        msg.clear_request();
     }
 }
 

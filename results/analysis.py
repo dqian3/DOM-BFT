@@ -144,46 +144,22 @@ if __name__ == "__main__":
 
     n_align = len(list(e for e in events if e["event"] == "align"))
     print("Number of alignments", n_align)
-    # Peak throughput window
 
-    import numpy as np
+    # Break down alignments by replica
+    alignments = [e for e in events if e["event"] == "align"]
+    if len(alignments) > 0:
+        # Get number of replicas
+        n_replicas = max(e.get("replicaId", 0) for e in events if "replicaId" in e) + 1
 
-    w_size = 10  # s
-    resolution = 1  # s
+        print("\n  Alignment breakdown by replica:")
+        replica_align_counts = []
+        for replica_id in range(n_replicas):
+            replica_aligns = [e for e in alignments if e.get("replicaId") == replica_id]
+            replica_align_counts.append(len(replica_aligns))
 
-    end = (commits[-1]["time"] - start_time).total_seconds()
-
-    for c in commits:
-        c["t"] = (c["time"] - start_time).total_seconds()
-
-    w_start = 0
-    i = 0
-    j = 0
-
-    commit_counts = []
-    max_commits = 0
-    max_window = None
-
-    while w_start + w_size < end:
-        while commits[i]["t"] < w_start:
-            i += 1
-        while commits[j]["t"] <= w_start + w_size:
-            j += 1
-
-        if j - i > max_commits:
-            max_window = (i, j)
-            max_commits = j - i
-
-        w_start += resolution
-
-    window_latencies = np.array([c["latency"] for c in commits[i:j]])
-    print(f"Finding best 30s window")
-
-    print(f"Max throughput over window of ten seconds: {max_commits / 10}")
-    print(f"Average latency in window: {np.mean(window_latencies):.0f} us")
+        print(f"    Counts: {replica_align_counts}")
 
     # Analyse percent of time in the fast path
-
     last_fast_time = None
     non_fast_seconds = 0
     non_fast_periods = []

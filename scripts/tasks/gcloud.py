@@ -95,8 +95,7 @@ def vm(c, config_file="../configs/remote-prod.yaml", stop=False, reset=False):
 
     if stop:
         print("Stopped all instances!")
-
-    if reset:
+    elif reset:
         print("Reset all instances!")
     else:
         print("Started all instances!, synching clocks")
@@ -247,7 +246,39 @@ def run_largen(
             run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=False)
             c.run("rm ../logs/*.log ", warn=True)
             c.run(
-                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >{prot}_n{n}_sr{send_rate}.out"
+                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >n{n}_sr{send_rate}.out"
+            )
+
+            # run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
+            # c.run(f"mv results.json {prot}_n{n}_sr{send_rate}.out ")
+
+            # vm(c, config_file=config_file, stop=True)
+            time.sleep(10)
+
+        for e in [1, 2, 3]:
+            # vm(
+            #     c, config_file=config_file
+            # )  # This should only start the vms that are needed, not all
+            # time.sleep(20)
+
+            n = 3 * f + 2 * e + 1
+
+            cfg = deepcopy(original_cfg)
+
+            assert n <= len(cfg["replica"]["ips"])
+
+            cfg["replica"]["ips"] = cfg["replica"]["ips"][:n]
+            cfg["resiliency"]["f"] = f
+            cfg["resiliency"]["e"] = e
+            cfg["replica"]["skipAlignment"] = True
+
+            send_rate = cfg["client"]["sendRate"] * len(cfg["client"]["ips"])
+
+            yaml.dump(cfg, open(config_file, "w"))
+            run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=False)
+            c.run("rm ../logs/*.log ", warn=True)
+            c.run(
+                f"gzip -d -f ../logs/*.log.gz && cat ../logs/replica*.log ../logs/client*.log | grep PERF >skip_n{n}_sr{send_rate}.out"
             )
 
             # run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)

@@ -16,4 +16,4 @@ logs
 
 output
 __pycache__
-results_final
+results*
