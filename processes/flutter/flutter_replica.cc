@@ -875,9 +875,12 @@ void FlutterReplica::processRBCSlowValue(
     candidate.slowAccepted = accept;
     candidate.slowValueReceived = true;
 
-    if (accept && it == candidatePool_.begin()) {
+    if (accept) {
 
-        checkCandidatesForCommit();
+        if (it == candidatePool_.begin()) {
+
+            checkCandidatesForCommit();
+        }
     } else {
         VLOG(1) << "REJECT slow client=" << clientId << " seq=" << clientSeq << " bet=" << bet;
         // Send reply to client
@@ -891,8 +894,8 @@ void FlutterReplica::processRBCSlowValue(
 
         // Note, we keep candidate in clientCurrentBets_ to prevent reprocessing messages from this rejected req
         candidatePool_.erase(key);
-        clientCurrentBets_[{clientId, clientSeq}]++;   // Increment to mark more message  as stale, otherwise would be
-                                                       // reprocessed
+        clientCurrentBets_[{clientId, clientSeq}]++;   // Increment to mark more message  as stale, otherwise would
+                                                       // be reprocessed
     }
 }
 
