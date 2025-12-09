@@ -429,8 +429,8 @@ void FlutterReplica::broadcastClock()
         return;
     }
 
-    // Update our own clock
-    replicaClocks_[replicaId_] = currentTime;
+    // // Update our own clock
+    // replicaClocks_[replicaId_] = currentTime;
 
     // Create FlutterTime message
     flutter::proto::FlutterTime timeMsg;
@@ -446,8 +446,7 @@ void FlutterReplica::broadcastClock()
 
     lastClockBroadcast_ = currentTime;
 
-    VLOG(3) << "Broadcast clock time=" << currentTime << " Candidate pool size: " << candidatePool_.size()
-            << " currentBetsSize: " << clientCurrentBets_.size();
+    VLOG(3) << "Broadcast clock time=" << currentTime;
 }
 
 void FlutterReplica::processFlutterTime(uint32_t senderId, uint64_t clockTime)

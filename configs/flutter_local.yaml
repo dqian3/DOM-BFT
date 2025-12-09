@@ -15,8 +15,8 @@ client:
   keysDir: keys/client
 
   sendMode: "sendRate"
-  maxInFlight: 10
-  sendRate: 100
+  maxInFlight: 100
+  sendRate: 500
   runtimeSeconds: 60
   requestSize: 512
 
