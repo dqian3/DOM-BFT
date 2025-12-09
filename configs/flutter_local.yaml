@@ -1,0 +1,50 @@
+app: counter
+transport: nng
+
+# Pass checks for 5f + 1
+resiliency:
+  f: 1
+  e: 1
+
+# Client Info
+client:
+  ips:
+  - "127.0.0.0"
+  - "127.0.0.1"
+  port: 33000
+  keysDir: keys/client
+
+  sendMode: "sendRate"
+  maxInFlight: 100
+  sendRate: 500
+  runtimeSeconds: 60
+  requestSize: 512
+
+  # Flutter-specific client settings
+  initialBet: 400        # 100ms in microseconds
+  betIncrement: 100000      # Increase bet by 100ms on rejection
+  useHMAC: true
+
+# Replica Info - Flutter requires 5f+1 replicas
+replica:
+  ips:
+  - "127.0.2.0"
+  - "127.0.2.1"
+  - "127.0.2.2"
+  - "127.0.2.3"
+  - "127.0.2.4"
+  - "127.0.2.5"
+  port: 34000
+  keysDir: "keys/replica"
+  numVerifyThreads: 2
+  numSendThreads: 2
+
+  # Flutter-specific settings
+  clockBroadcastInterval: 50000  # Broadcast clock every 50ms
+
+
+# EMpty proxy config, not used
+proxy:
+  ips: []
+  forwardPort: 0
+  keysDir: ""

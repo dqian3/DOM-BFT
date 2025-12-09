@@ -71,6 +71,18 @@ def get_process_ips(config_file, resolve):
     return replicas, proxies, clients
 
 
+def get_flutter_process_ips(config_file, resolve):
+    """Get process IPs for Flutter (no proxies)"""
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as cfg_file:
+        config = yaml.load(cfg_file, Loader=yaml.Loader)
+
+    replicas = [resolve(ip) for ip in config["replica"]["ips"]]
+    clients = [resolve(ip) for ip in config["client"]["ips"]]
+    return replicas, clients
+
+
 def get_all_ips(config_file, resolve):
     return set(
         ip for ip_list in get_process_ips(config_file, resolve) for ip in ip_list
@@ -273,6 +285,127 @@ def run(
                 get_logs(c, proxies, "proxy")
 
 
+@task
+def flutter(
+    c,
+    config_file="../configs/flutter_remote.yaml",
+    resolve=lambda x: x,
+    v=5,
+    profile=False,
+    filter_client_logs=False,
+):
+    """Run Flutter protocol experiments"""
+    config_file = os.path.abspath(config_file)
+
+    with open(config_file) as f:
+        cfg = yaml.load(f, Loader=yaml.Loader)
+
+    runtime = cfg["client"]["runtimeSeconds"]
+    print(f"Running Flutter for {runtime} seconds")
+
+    replicas, clients = get_flutter_process_ips(config_file, resolve)
+
+    replica_path = "./flutter_replica"
+    client_path = "./flutter_client"
+
+    # Flutter requires 5f+1 replicas
+    f = len(replicas) // 5
+
+    # Extract Flutter-specific config parameters
+    clock_broadcast_interval = cfg.get("replica", {}).get(
+        "clockBroadcastInterval", 50000
+    )
+    base_bet_offset = cfg.get("client", {}).get("initialBet", 100000)
+    bet_increment = cfg.get("client", {}).get("betIncrement", 100000)
+
+    print(
+        f"Flutter config: clockBroadcastInterval={clock_broadcast_interval}us, "
+        f"initialBet={base_bet_offset}us, betIncrement={bet_increment}us"
+    )
+
+    # Get all unique IPs for Flutter (replicas + clients)
+    all_ips = set(replicas) | set(clients)
+    group = ThreadingGroup(*all_ips)
+
+    # Kill previous runs
+    group.run(
+        "killall flutter_replica flutter_client",
+        warn=True,
+        hide="both",
+    )
+
+    # Give machines the config file
+    group.put(config_file)
+
+    remote_config_file = os.path.basename(config_file)
+
+    client_handles = []
+    replica_handles = []
+
+    c.run("mkdir -p ../logs")
+
+    # Run a dummy command with pty to log a session so that the machine doesn't shutdown from being inactive
+    group.run("echo ''", pty=True)
+
+    print("Starting Flutter replicas")
+    for id, ip in enumerate(replicas):
+        arun = arun_on(
+            ip, f"flutter_replica{id}.log", timeout=10 + runtime, profile=profile
+        )
+        hdl = arun(
+            f"{replica_path} -v {v} -config {remote_config_file} -replicaId {id} "
+            f"-clockBroadcastInterval {clock_broadcast_interval}"
+        )
+        replica_handles.append(hdl)
+
+    time.sleep(3)
+
+    print("Starting Flutter clients")
+    for id, ip in enumerate(clients):
+        arun = arun_on(
+            ip, f"flutter_client{id}.log", timeout=10 + runtime, profile=profile
+        )
+
+        if filter_client_logs:
+            suffix = " 2>&1 | python3 -u filter_logs.py "
+        else:
+            suffix = " "
+
+        hdl = arun(
+            f"{client_path} -v {v} -config {remote_config_file} -clientId {id} "
+            f"-baseBetOffset {base_bet_offset} -betIncrement {bet_increment}{suffix}"
+        )
+        client_handles.append(hdl)
+
+    try:
+        # Join on the client processes, which should end
+        for hdl in client_handles:
+            hdl.join()
+
+    finally:
+        print("Clients done, waiting for replicas to finish...")
+
+        # Kill replicas and then join
+        group.run(
+            "killall -SIGINT flutter_replica flutter_client",
+            warn=True,
+            hide="both",
+        )
+
+        for hdl in replica_handles:
+            try:
+                hdl.join()
+            except invoke.exceptions.CommandTimedOut as e:
+                print(f"{e}")
+
+        c.run("rm -f ../logs/*", warn=True)
+
+        get_logs(c, replicas, "flutter_replica")
+        get_logs(c, clients, "flutter_client")
+
+        c.run("gzip -d ../logs/*", warn=True)
+
+
 # =================================================
 #             Multiple experiment tasks
 # =================================================
@@ -338,6 +471,76 @@ def run_rates(
 # =================================================
 #             Other tasks
 # =================================================
+
+
+@task
+def copy_flutter_bin(
+    c,
+    config_file="../configs/flutter_remote.yaml",
+    upload_once=False,
+    resolve=lambda x: x,
+):
+    """Copy Flutter binaries to remote machines"""
+    replicas, clients = get_flutter_process_ips(config_file, resolve)
+    all_ips = set(replicas) | set(clients)
+    group = ThreadingGroup(*all_ips)
+
+    group.run(
+        "killall flutter_replica flutter_client",
+        warn=True,
+        hide="both",
+    )
+
+    if upload_once:
+        # Upload to one machine, then use scp to distribute to others
+        print(f"Copying binaries over to one machine {clients[0]}")
+        start_time = time.time()
+        conn = Connection(clients[0])
+
+        conn.run("chmod +w flutter_*", warn=True)
+        conn.put("../bazel-bin/processes/flutter/flutter_replica")
+        conn.put("../bazel-bin/processes/flutter/flutter_client")
+        conn.run("chmod +x flutter_*", warn=True)
+
+        print(f"Copying took {time.time() - start_time:.0f}s")
+
+        print("Copying to other machines")
+        start_time = time.time()
+
+        # Get internal IPs for scp
+        replicas_internal, clients_internal = get_flutter_process_ips(
+            config_file, lambda x: x
+        )
+
+        for ip in replicas_internal:
+            print(f"Copying flutter_replica to {ip}")
+            conn.run(
+                f"scp -o StrictHostKeyChecking=no flutter_replica {ip}:", warn=True
+            )
+
+        for ip in set(clients_internal[1:]):  # Skip own
+            print(f"Copying flutter_client to {ip}")
+            conn.run(f"scp -o StrictHostKeyChecking=no flutter_client {ip}:", warn=True)
+
+        print(f"Copying to other machines took {time.time() - start_time:.0f}s")
+
+    else:
+        # Use SerialGroup to copy to all machines individually
+        replicas_group = SerialGroup(*replicas)
+        clients_group = SerialGroup(*clients)
+
+        group.run("rm -f flutter_*", warn=True)
+        group.run("chmod +w flutter_*", warn=True)
+
+        print("Copying Flutter binaries...")
+
+        replicas_group.put("../bazel-bin/processes/flutter/flutter_replica")
+        print("Copied flutter_replica")
+
+        clients_group.put("../bazel-bin/processes/flutter/flutter_client")
+        print("Copied flutter_client")
+
+        group.run("chmod +x flutter_*", warn=True)
 
 
 @task

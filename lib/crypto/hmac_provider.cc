@@ -25,13 +25,19 @@ bool HMACProvider::loadClientKeysDev(NodeID self, uint32_t nReplicas)
     return true;
 }
 
-bool HMACProvider::loadReplicaKeysDev(NodeID self, uint32_t nClients)
+bool HMACProvider::loadReplicaKeysDev(NodeID self, uint32_t nClients, uint32_t nReplicas)
 {
     assert(self.first == NodeType::REPLICA);
 
     for (uint32_t i = 0; i < nClients; i++) {
         keys_[{NodeType::CLIENT, i}] = "client" + std::to_string(i) + "_replica";   //+ std::to_string(self.second);
     }
+
+    for (uint32_t i = 0; i < nReplicas; i++) {
+        keys_[{NodeType::REPLICA, i}] =
+            "replica_replica";   // TODO real implementation should have different keys for different replicas
+    }
+
     return true;
 }
 

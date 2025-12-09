@@ -55,7 +55,6 @@ struct ProcessConfig {
     std::vector<std::string> proxyIps;
     int proxyForwardPort;
     int proxyMeasurementPort;
-    int proxyShards;
     float proxyOffsetCoefficient;
     std::string proxyKeysDir;
     uint32_t proxyMaxOwd;
@@ -139,8 +138,8 @@ struct ProcessConfig {
             clientPort = parseField<int>(clientNode, "port");
             clientKeysDir = parseField<std::string>(clientNode, "keysDir", "keys/client");
             clientRuntimeSeconds = parseField<int>(clientNode, "runtimeSeconds");
-            clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout");
-            clientRequestTimeout = parseField<int>(clientNode, "requestTimeout");
+            clientNormalPathTimeout = parseField<int>(clientNode, "normalPathTimeout", 100000);
+            clientRequestTimeout = parseField<int>(clientNode, "requestTimeout", 1000000);
             clientMaxInFlight = parseField<int>(clientNode, "maxInFlight");
             clientSendRate = parseField<int>(clientNode, "sendRate");
             clientSendMode = parseField<std::string>(clientNode, "sendMode");
@@ -184,10 +183,9 @@ struct ProcessConfig {
 
         try {
             parseStringVector(proxyIps, proxyNode, "ips");
-            proxyShards = parseField<int>(proxyNode, "shards");
             proxyForwardPort = parseField<int>(proxyNode, "forwardPort");
             proxyKeysDir = parseField<std::string>(proxyNode, "keysDir");
-            proxyMaxOwd = parseField<int>(proxyNode, "maxOwd");
+            proxyMaxOwd = parseField<int>(proxyNode, "maxOwd", 100000);
             proxyOffsetCoefficient = parseField<float>(proxyNode, "offsetCoefficient", 1.5);
             proxyBatchEnabled = parseField<bool>(proxyNode, "proxyBatchEnabled", false);
             proxyBatchMaxCount = parseField<uint32_t>(proxyNode, "proxyBatchMaxCount", 50);
@@ -208,14 +206,14 @@ struct ProcessConfig {
             replicaPort = parseField<int>(replicaNode, "port");
             replicaKeysDir = parseField<std::string>(replicaNode, "keysDir");
 
-            replicaRepairTimeout = parseField<int>(replicaNode, "repairTimeout");
-            replicaCheckpointTimeout = parseField<int>(replicaNode, "checkpointTimeout");
-            replicaRepairViewTimeout = parseField<int>(replicaNode, "repairViewTimeout");
+            replicaRepairTimeout = parseField<int>(replicaNode, "repairTimeout", 500000);
+            replicaCheckpointTimeout = parseField<int>(replicaNode, "checkpointTimeout", 100000);
+            replicaRepairViewTimeout = parseField<int>(replicaNode, "repairViewTimeout", 1000000);
 
-            replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads");
-            replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads");
+            replicaNumVerifyThreads = parseField<int>(replicaNode, "numVerifyThreads", 2);
+            replicaNumSendThreads = parseField<int>(replicaNode, "numSendThreads", 2);
 
-            replicaCheckpointInterval = parseField<int>(replicaNode, "checkpointInterval");
+            replicaCheckpointInterval = parseField<int>(replicaNode, "checkpointInterval", 1000);
             replicaSnapshotInterval = parseField<int>(replicaNode, "snapshotInterval", replicaCheckpointInterval);
 
             if (replicaSnapshotInterval % replicaCheckpointInterval != 0) {

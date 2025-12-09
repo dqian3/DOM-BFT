@@ -89,7 +89,12 @@ enum MessageType {
     // Preserialization messages
     PS_CLIENT = 30,           // Client -> Replica 0
     PS_LEADER_FORWARD = 31,   // Replica 0 -> Others (full mode, contains ClientRequest)
-    PS_LEADER_ORDER = 32      // Replica 0 -> Others (order mode, contains seq + digest)
+    PS_LEADER_ORDER = 32,     // Replica 0 -> Others (order mode, contains seq + digest)
+
+    FLUTTER_REPLICA_MSG = 100,
+    FLUTTER_CLIENT_REQUEST = 101,
+    FLUTTER_REPLY = 102,
+
 };
 
 /**

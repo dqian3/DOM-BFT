@@ -25,3 +25,15 @@ cc_proto_library(
     deps = [":dombft_apps"],
     visibility = ["//visibility:public"],
 )
+
+proto_library(
+    name = "flutter_proto",
+    srcs = ["flutter_proto.proto"],
+    visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "flutter_proto_cc",
+    deps = [":flutter_proto"],
+    visibility = ["//visibility:public"],
+)

@@ -27,7 +27,7 @@ public:
 
     // Load some predetermined keys for development
     bool loadClientKeysDev(NodeID self, uint32_t nReplicas);
-    bool loadReplicaKeysDev(NodeID self, uint32_t nClients);
+    bool loadReplicaKeysDev(NodeID self, uint32_t nClients, uint32_t nReplicas);
 
     // TODO implement key exchange or predistributed keys
 };

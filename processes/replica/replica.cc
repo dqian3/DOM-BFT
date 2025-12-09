@@ -79,7 +79,9 @@ Replica::Replica(
         exit(1);
     }
 
-    hmacProvider_.loadReplicaKeysDev({NodeType::REPLICA, replicaId_}, config.clientIps.size());
+    hmacProvider_.loadReplicaKeysDev(
+        {NodeType::REPLICA, replicaId_}, config.clientIps.size(), config.replicaIps.size()
+    );
 
     LOG(INFO) << "Instantiating log and application";
 

@@ -36,13 +36,12 @@ cc_library(
     ],
 )
 
-
 cc_binary(
     name = "dombft_replica",
     srcs = ["replica_run.cc"],
     deps = [
         ":replica_class",
-        ":dummy_replica_class"
+        ":dummy_replica_class",
     ],
 )
 
