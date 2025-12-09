@@ -20,7 +20,7 @@ def genkeys(c, config_file, algorithm="ED25519", keysize=2048):
     dirs = {}
 
     for p in config:
-        if config[p] != "replica" and config[p] != "proxy" and config[p] != "client":
+        if p != "replica" and p != "proxy" and p != "client":
             continue
 
         pconfig = config[p]

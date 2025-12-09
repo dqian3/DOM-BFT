@@ -114,6 +114,7 @@ private:
     ThreadPool sendThreadpool_;
 
     bool running_;
+    uint64_t lastLogTime = 0;
     std::vector<std::thread> verifyThreads_;
     std::thread processThread_;
 

@@ -201,7 +201,7 @@ void FlutterClient::sendRequest(FlutterRequestState &state)
     state.request.set_bet(state.bet);
     state.request.set_num_retries(state.numRetries);
 
-    VLOG(1) << "PERF event=send client_id=" << clientId_ << " client_seq=" << nextSeq_ << " bet=" << state.bet
+    VLOG(1) << "PERF event=send client_id=" << clientId_ << " client_seq=" << state.request.client_seq() << " bet=" << state.bet
             << " inflight=" << numInFlight_ << " retries=" << state.numRetries;
 
     // Send FlutterClientRequest directly to all replicas
