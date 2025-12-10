@@ -295,6 +295,45 @@ def run_largen(
 
 
 @task
+def run_gamma(
+    c,
+    config_file="../configs/remote-prod.yaml",
+    v=1,
+    prot="dombft",
+):
+    # Leaving this as gcloud only, because we can't really do this on a static set of ips
+    # Could obv be ported to other platforms if needed
+    try:
+        with open(config_file, "r") as cfg_file:
+            original_contents = cfg_file.read()
+            original_cfg = yaml.load(original_contents, Loader=yaml.Loader)
+
+        for gamma in [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2]:
+            cfg = deepcopy(original_cfg)
+            cfg["proxy"]["offsetCoefficient"] = gamma
+
+            send_rate = cfg["client"]["sendRate"] * len(cfg["client"]["ips"])
+
+            yaml.dump(cfg, open(config_file, "w"))
+            run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
+            c.run(
+                f"mv results.json gamma{str(gamma).replace('.', '_')}_sr{send_rate}.out"
+            )
+
+            # run(c, config_file=config_file, v=v, prot=prot, analyze_client_logs=True)
+            # c.run(f"mv results.json {prot}_n{n}_sr{send_rate}.out ")
+
+            # vm(c, config_file=config_file, stop=True)
+            time.sleep(10)
+
+    finally:
+        with open(config_file, "w") as cfg_file:
+            cfg_file.write(original_contents)
+
+        # vm(c, config_file=config_file, stop=True)
+
+
+@task
 def run_rates(
     c,
     config_file="../configs/remote-prod.yaml",
