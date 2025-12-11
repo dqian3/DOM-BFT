@@ -476,7 +476,7 @@ void FlutterReplica::updateLockTime()
 
     if (clockTimes.size() >= superQuorumSize_) {
         uint64_t oldLockTime = lockTime_;
-        lockTime_ = clockTimes[superQuorumSize_ - 1];   // 4f+1th lowest (0-indexed)
+        lockTime_ = clockTimes[numReplicas_ - superQuorumSize_];   // 4f+1th lowest (0-indexed)
 
         if (lockTime_ != oldLockTime) {
             VLOG(4) << "Lock time updated: " << oldLockTime << " -> " << lockTime_;
