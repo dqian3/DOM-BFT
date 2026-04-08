@@ -1,0 +1,31 @@
+platform: gcloud
+
+replica:
+  vms: [replica0, replica1, replica2, replica3, replica4, replica5]
+  port: 34000
+
+client:
+  vms: [client0, client1, client2, client3, client4, client5, client6, client7]
+  port: 33000
+
+proxy:
+  vms: [client0, client1, client2, client3, client4, client5, client6, client7]
+  port: 31000
+
+bench:
+  transport: tcp
+  f: 1
+  e: 1
+  send_rate: 625
+  max_in_flight: 1000
+  runtime_secs: 40
+  request_size: 512
+  batch_size: 5
+  use_hmac: true
+  use_proxy: true
+  num_send_threads: 6
+  num_verify_threads: 5
+  offset_coefficient: 1.1
+  proxy_batch_enabled: true
+  proxy_batch_max_count: 50
+  proxy_batch_max_delay: 2000

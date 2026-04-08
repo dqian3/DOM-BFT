@@ -1,0 +1,24 @@
+platform: local
+
+replica:
+  vms: []
+  port: 34000
+
+client:
+  vms: []
+  port: 33000
+
+bench:
+  transport: tcp
+  f: 1
+  e: 0
+  send_rate: 500
+  max_in_flight: 1000
+  runtime_secs: 40
+  request_size: 512
+  batch_size: 5
+  use_hmac: true
+  use_proxy: true
+  num_send_threads: 4
+  num_verify_threads: 4
+  offset_coefficient: 1.1

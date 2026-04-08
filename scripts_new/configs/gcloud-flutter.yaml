@@ -1,0 +1,24 @@
+platform: gcloud
+
+replica:
+  vms: [replica0, replica1, replica2, replica3, replica4, replica5]
+  port: 34000
+
+client:
+  vms: [client0, client1, client2, client3, client4, client5, client6, client7]
+  port: 33000
+
+bench:
+  transport: tcp
+  f: 1
+  e: 0
+  send_rate: 500
+  max_in_flight: 1000
+  runtime_secs: 80
+  request_size: 512
+  use_hmac: true
+  num_send_threads: 6
+  num_verify_threads: 6
+  clock_broadcast_interval: 5000
+  initial_bet: 50000
+  bet_increment: 50000
