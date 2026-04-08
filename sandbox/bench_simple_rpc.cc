@@ -3,6 +3,7 @@
 #include "lib/transport/endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
 #include <glog/logging.h>
@@ -101,6 +102,8 @@ int main(int argc, char *argv[])
         endpoint = new OOORPCEndpoint("0.0.0.0", listen_port, {peer_addr}, num_senders);
     } else if (endpoint_type == "nng") {
         endpoint = new NngEndpointThreaded({{Address("0.0.0.0", listen_port), peer_addr}});
+    } else if (endpoint_type == "tcp") {
+        endpoint = new TcpEndpointThreaded({{Address("0.0.0.0", listen_port), peer_addr}});
     } else if (endpoint_type == "udp") {
         endpoint = new UDPEndpoint("0.0.0.0", listen_port);
     } else {

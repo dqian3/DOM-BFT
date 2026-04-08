@@ -4,6 +4,7 @@
 #include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 #include "proto/flutter_proto.pb.h"
 
@@ -92,6 +93,23 @@ FlutterReplica::FlutterReplica(uint32_t replicaId, uint64_t clockBroadcastInterv
         }
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
+    } else if (config.transport == "tcp") {
+        auto addrPairs = getReplicaAddrs(config, replicaId_);
+
+        size_t nClients = configManager.getNumClients();
+        size_t nProxies = configManager.getNumProxies();
+
+        for (size_t i = 0; i < nClients; i++) {
+            clientAddrs_.push_back(addrPairs[i].second);
+        }
+        for (size_t i = nClients; i < nClients + nProxies; i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
+        }
+        for (size_t i = nClients + nProxies; i < addrPairs.size(); i++) {
+            replicaAddrs_.push_back(addrPairs[i].second);
+        }
+
+        endpoint_ = std::make_unique<TcpEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
     } else if (config.transport == "udp") {
         size_t nClients = configManager.getNumClients();
         const auto &clientIps = configManager.getClientIps();

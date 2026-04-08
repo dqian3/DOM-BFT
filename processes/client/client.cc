@@ -4,6 +4,7 @@
 #include "lib/transport/nng_endpoint.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
 #include "lib/application.h"
@@ -113,6 +114,19 @@ Client::Client(size_t id)
         for (size_t i = nReplicas; i < addrPairs.size(); i++) {
             proxyAddrs_.push_back(addrPairs[i].second);
             VLOG(1) << proxyAddrs_.back();
+        }
+
+    } else if (config.transport == "tcp") {
+        auto addrPairs = getClientAddrs(config, clientId_);
+
+        endpoint_ = std::make_unique<TcpEndpointThreaded>(addrPairs, true);
+
+        size_t nReplicas = configManager.getNumReplicas();
+        for (size_t i = 0; i < nReplicas; i++)
+            replicaAddrs_.push_back(addrPairs[i].second);
+
+        for (size_t i = nReplicas; i < addrPairs.size(); i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
         }
 
     } else if (config.transport == "simple-rpc") {

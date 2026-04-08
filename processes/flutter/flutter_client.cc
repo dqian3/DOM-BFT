@@ -3,6 +3,7 @@
 #include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
 #include <chrono>
@@ -75,6 +76,15 @@ FlutterClient::FlutterClient(uint32_t clientId, uint64_t baseBetOffset, uint64_t
         }
 
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, false, Address(clientIp, clientPort));
+    } else if (config.transport == "tcp") {
+        auto addrPairs = getClientAddrs(config, clientId_);
+        size_t numReplicas = configManager.getNumReplicas();
+
+        for (size_t i = 0; i < numReplicas; i++) {
+            replicaAddrs_.push_back(addrPairs[i].second);
+        }
+
+        endpoint_ = std::make_unique<TcpEndpointThreaded>(addrPairs, false, Address(clientIp, clientPort));
     } else if (config.transport == "simple-rpc") {
         std::vector<Address> allAddrs;
 

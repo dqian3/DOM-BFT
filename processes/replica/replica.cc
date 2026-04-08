@@ -6,6 +6,7 @@
 #include "lib/common.h"
 #include "lib/config/config_util.h"
 #include "lib/transport/nng_endpoint_threaded.h"
+#include "lib/transport/tcp_endpoint.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
 #include "lib/transport/udp_endpoint.h"
 
@@ -130,6 +131,25 @@ Replica::Replica(
 
         replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
+
+    } else if (config.transport == "tcp") {
+        auto addrPairs = getReplicaAddrs(config, replicaId_);
+
+        size_t nClients = config.clientIps.size();
+        size_t nProxies = config.proxyIps.size();
+
+        for (size_t i = 0; i < nClients; i++) {
+            clientAddrs_.push_back(addrPairs[i].second);
+        }
+        for (size_t i = nClients; i < nClients + nProxies; i++) {
+            proxyAddrs_.push_back(addrPairs[i].second);
+        }
+        for (size_t i = nClients + nProxies; i < addrPairs.size(); i++) {
+            replicaAddrs_.push_back(addrPairs[i].second);
+        }
+
+        replicaAddr_ = Address(config.replicaIps[replicaId_], config.replicaPort);
+        endpoint_ = std::make_unique<TcpEndpointThreaded>(addrPairs, true, replicaAddrs_[replicaId_]);
 
     } else if (config.transport == "simple-rpc") {
         std::vector<Address> addrs;
