@@ -179,7 +179,6 @@ void TcpEndpoint::Connect()
 
     size_t numPeers = sendConns_.size();
     size_t numAccepted = 0;
-    size_t numConnected = 0;
 
     // Accept incoming connections in a thread
     std::thread acceptThread([&]() {
@@ -246,53 +245,59 @@ void TcpEndpoint::Connect()
         }
     });
 
-    // Connect outgoing to all peers
+    // Connect outgoing to all peers in parallel
+    std::vector<std::thread> connectThreads;
+    std::atomic<size_t> numConnected{0};
+
     for (size_t i = 0; i < numPeers; i++) {
-        auto &conn = sendConns_[i];
-        const Address &dst = conn->addr;
+        connectThreads.emplace_back([this, i, &numConnected]() {
+            auto &conn = sendConns_[i];
+            const Address &dst = conn->addr;
 
-        while (true) {
-            int fd = createSocket();
-            struct sockaddr_in dstAddr{};
-            dstAddr.sin_family = AF_INET;
-            dstAddr.sin_port = htons(dst.port());
-            inet_pton(AF_INET, dst.ip().c_str(), &dstAddr.sin_addr);
+            while (true) {
+                int fd = createSocket();
+                struct sockaddr_in dstAddr{};
+                dstAddr.sin_family = AF_INET;
+                dstAddr.sin_port = htons(dst.port());
+                inet_pton(AF_INET, dst.ip().c_str(), &dstAddr.sin_addr);
 
-            // Blocking connect (temporarily make blocking)
-            int flags = fcntl(fd, F_GETFL, 0);
-            fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+                // Blocking connect (temporarily make blocking)
+                int flags = fcntl(fd, F_GETFL, 0);
+                fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
 
-            int ret = connect(fd, (struct sockaddr *)&dstAddr, sizeof(dstAddr));
-            if (ret < 0) {
-                close(fd);
-                LOG(INFO) << "TCP connect to " << dst << " failed (" << strerror(errno) << "), retrying...";
-                usleep(500000);   // 500ms
-                continue;
+                int ret = connect(fd, (struct sockaddr *)&dstAddr, sizeof(dstAddr));
+                if (ret < 0) {
+                    close(fd);
+                    VLOG(1) << "TCP connect to " << dst << " failed (" << strerror(errno) << "), retrying...";
+                    usleep(500000);   // 500ms
+                    continue;
+                }
+
+                // Restore non-blocking
+                fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+                conn->fd = fd;
+
+                // Send our listen port so the receiver can identify us
+                byte portBuf[2];
+                uint16_t myPort = htons(bindAddr_.port());
+                memcpy(portBuf, &myPort, 2);
+
+                size_t sent = 0;
+                while (sent < 2) {
+                    ssize_t n = ::send(fd, portBuf + sent, 2 - sent, MSG_NOSIGNAL);
+                    if (n > 0) sent += n;
+                    else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
+                    else break;
+                }
+
+                numConnected.fetch_add(1);
+                LOG(INFO) << "TCP connected to " << dst << " (fd=" << fd << ")";
+                break;
             }
-
-            // Restore non-blocking
-            fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-            conn->fd = fd;
-
-            // Send our listen port so the receiver can identify us
-            byte portBuf[2];
-            uint16_t myPort = htons(bindAddr_.port());
-            memcpy(portBuf, &myPort, 2);
-
-            size_t sent = 0;
-            while (sent < 2) {
-                ssize_t n = ::send(fd, portBuf + sent, 2 - sent, MSG_NOSIGNAL);
-                if (n > 0) sent += n;
-                else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
-                else break;
-            }
-
-            numConnected++;
-            LOG(INFO) << "TCP connected to " << dst << " (fd=" << fd << ")";
-            break;
-        }
+        });
     }
 
+    for (auto &t : connectThreads) t.join();
     acceptThread.join();
 
     connected_ = true;

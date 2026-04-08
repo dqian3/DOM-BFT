@@ -314,9 +314,61 @@ def remote_targets(config: ClusterConfig) -> list[str]:
     return seen
 
 
-def generate_oobft_yaml(resolved: ResolvedCluster, protocol: str) -> str:
-    """Generate an OooBFT YAML config string from a resolved cluster."""
+def generate_config(resolved: ResolvedCluster, protocol: str, out_dir: str, remote_keys_prefix: str | None = None) -> str:
+    """Generate OooBFT YAML config + keys in out_dir. Returns path to config file.
+
+    Like aspen-bft's 'generate' command: one call produces everything needed
+    to run the cluster. Keys are generated if they don't already exist in out_dir.
+    All paths in the config are absolute (local) or relative (remote_keys_prefix).
+
+    Args:
+        remote_keys_prefix: If set, use this prefix for keysDir in config instead of
+            absolute local paths (e.g. "keys" for remote VMs where keys are at ~/keys/).
+    """
+    import os
+    import subprocess
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Generate keys into out_dir/keys/{role}/
+    roles = [
+        ("replica", len(resolved.replicas)),
+        ("client", len(resolved.clients)),
+        ("proxy", len(resolved.proxies)),
+    ]
+    for role, count in roles:
+        if count == 0:
+            continue
+        keys_dir = os.path.join(out_dir, "keys", role)
+        # Skip if keys already exist
+        if os.path.exists(os.path.join(keys_dir, f"{role}0.der")):
+            continue
+        os.makedirs(keys_dir, exist_ok=True)
+        for i in range(count):
+            key_path = os.path.join(keys_dir, f"{role}{i}")
+            subprocess.run(
+                ["openssl", "genpkey", "-outform", "der", "-algorithm", "ed25519",
+                 "-out", f"{key_path}.der"],
+                check=True, capture_output=True,
+            )
+            subprocess.run(
+                ["openssl", "pkey", "-outform", "der", "-in", f"{key_path}.der",
+                 "-pubout", "-out", f"{key_path}.pub"],
+                check=True, capture_output=True,
+            )
+        print(f"  Generated {count} {role} keys in {keys_dir}")
+
+    # Build config with key paths
     b = resolved.bench
+    if remote_keys_prefix:
+        client_keys = f"{remote_keys_prefix}/client"
+        replica_keys = f"{remote_keys_prefix}/replica"
+        proxy_keys = f"{remote_keys_prefix}/proxy"
+    else:
+        client_keys = os.path.abspath(os.path.join(out_dir, "keys", "client"))
+        replica_keys = os.path.abspath(os.path.join(out_dir, "keys", "replica"))
+        proxy_keys = os.path.abspath(os.path.join(out_dir, "keys", "proxy"))
+
     config = {
         "app": "counter",
         "transport": b.transport,
@@ -326,7 +378,7 @@ def generate_oobft_yaml(resolved: ResolvedCluster, protocol: str) -> str:
         "client": {
             "ips": [c.host for c in resolved.clients],
             "port": resolved.clients[0].port if resolved.clients else 33000,
-            "keysDir": "keys/client",
+            "keysDir": client_keys,
             "sendMode": "sendRate",
             "sendRate": b.send_rate,
             "maxInFlight": b.max_in_flight,
@@ -337,14 +389,14 @@ def generate_oobft_yaml(resolved: ResolvedCluster, protocol: str) -> str:
         "replica": {
             "ips": [r.host for r in resolved.replicas],
             "port": resolved.replicas[0].port if resolved.replicas else 34000,
-            "keysDir": "keys/replica",
+            "keysDir": replica_keys,
             "numSendThreads": b.num_send_threads,
             "numVerifyThreads": b.num_verify_threads,
         },
         "proxy": {
             "ips": [p.host for p in resolved.proxies] if resolved.proxies else [],
             "forwardPort": resolved.proxies[0].port if resolved.proxies else 0,
-            "keysDir": "keys/proxy" if resolved.proxies else "",
+            "keysDir": proxy_keys if resolved.proxies else "",
             "offsetCoefficient": b.offset_coefficient,
             "proxyBatchEnabled": b.proxy_batch_enabled,
             "proxyBatchMaxCount": b.proxy_batch_max_count,
@@ -357,4 +409,8 @@ def generate_oobft_yaml(resolved: ResolvedCluster, protocol: str) -> str:
         config["client"]["betIncrement"] = b.bet_increment
         config["replica"]["clockBroadcastInterval"] = b.clock_broadcast_interval
 
-    return yaml.dump(config, default_flow_style=False)
+    config_path = os.path.join(out_dir, "config.yaml")
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
+
+    return config_path

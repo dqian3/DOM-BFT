@@ -28,7 +28,7 @@ from remote import load_remote, GCloudRemote
 from config_model import (
     ConfigError,
     apply_bench_overrides,
-    generate_oobft_yaml,
+    generate_config,
     load_cluster_config,
     remote_targets,
     resolve_local_cluster,
@@ -61,47 +61,9 @@ def binary_path(binary_name):
     return os.path.join(PROJECT_ROOT, "bazel-bin", rel)
 
 
-# --- Key generation ---
-
-def cmd_genkeys(args):
-    """Generate ED25519 keys for all processes in the resolved cluster."""
-    config = load_cluster_config(args.config)
-    protocol = getattr(args, "protocol", "dombft")
-    resolved = resolve_local_cluster(config, protocol)
-
-    for role, nodes, dirname in [
-        ("replica", resolved.replicas, "keys/replica"),
-        ("client", resolved.clients, "keys/client"),
-        ("proxy", resolved.proxies, "keys/proxy"),
-    ]:
-        if not nodes:
-            continue
-        keys_dir = os.path.join(PROJECT_ROOT, dirname)
-        os.makedirs(keys_dir, exist_ok=True)
-        print(f"Generating {len(nodes)} {role} keys in {keys_dir}")
-        for node in nodes:
-            key_path = os.path.join(keys_dir, f"{role}{node.id}")
-            subprocess.run(
-                ["openssl", "genpkey", "-outform", "der", "-algorithm", "ed25519",
-                 "-out", f"{key_path}.der"],
-                check=True, capture_output=True,
-            )
-            subprocess.run(
-                ["openssl", "pkey", "-outform", "der", "-in", f"{key_path}.der",
-                 "-pubout", "-out", f"{key_path}.pub"],
-                check=True, capture_output=True,
-            )
-
-
 def ensure_keys(resolved):
-    """Check if keys exist; prompt if not."""
-    for role, nodes in [("replica", resolved.replicas), ("client", resolved.clients)]:
-        if not nodes:
-            continue
-        key_path = os.path.join(PROJECT_ROOT, f"keys/{role}/{role}0.der")
-        if not os.path.exists(key_path):
-            print(f"Keys not found. Run: python bench.py genkeys --config <config>")
-            sys.exit(1)
+    """No-op kept for sweep.py compatibility — generate_config handles keys."""
+    pass
 
 
 # --- Output parsing ---
@@ -165,16 +127,11 @@ def cmd_local(args):
     )
     protocol = args.protocol
     resolved = resolve_local_cluster(config, protocol)
-    ensure_keys(resolved)
 
     log_dir = args.log_dir or os.path.join(PROJECT_ROOT, "logs")
-    os.makedirs(log_dir, exist_ok=True)
 
-    # Generate OooBFT YAML config
-    yaml_str = generate_oobft_yaml(resolved, protocol)
-    config_path = os.path.join(log_dir, "config.yaml")
-    with open(config_path, "w") as f:
-        f.write(yaml_str)
+    # Generate config + keys in one step (like aspen-bft's generate command)
+    config_path = generate_config(resolved, protocol, log_dir)
 
     if protocol == "dombft":
         _local_dombft(resolved, config_path, log_dir)
@@ -229,7 +186,7 @@ def _local_dombft(resolved, config_path, log_dir):
         all_log_files.append(lf)
         p = subprocess.Popen([
             binary_path("dombft_client"),
-            "-config", config_path, "-clientId", str(i),
+            "-config", config_path, "-clientId", str(i), "-v", "1",
         ], stdout=lf, stderr=lf)
         client_procs.append(p)
         print(f"  Started client {i}")
@@ -369,34 +326,6 @@ def cmd_upload(args):
     print("Upload complete.")
 
 
-def cmd_upload_keys(args):
-    """Upload keys to remote VMs."""
-    config = load_cluster_config(args.config)
-    remote = load_remote({"platform": config.platform, "zone": config.zone, "project": config.project,
-                          "user": config.user, "key_file": config.key_file})
-    vms = remote_targets(config)
-
-    def upload_keys_to_vm(vm):
-        remote.ssh(vm, "rm -rf keys; mkdir -p keys/replica keys/client keys/proxy")
-        for role in ["replica", "client", "proxy"]:
-            keys_dir = os.path.join(PROJECT_ROOT, "keys", role)
-            if not os.path.isdir(keys_dir):
-                continue
-            for fname in os.listdir(keys_dir):
-                remote.scp_upload(os.path.join(keys_dir, fname), vm, f"keys/{role}/{fname}")
-
-    print("=== Uploading keys ===")
-    with ThreadPoolExecutor(max_workers=len(vms)) as pool:
-        futures = {pool.submit(upload_keys_to_vm, vm): vm for vm in vms}
-        for f in as_completed(futures):
-            vm = futures[f]
-            try:
-                f.result()
-                print(f"  {vm} done")
-            except Exception as e:
-                print(f"  {vm} failed: {e}")
-
-
 def cmd_remote(args):
     """Run benchmark on remote VMs."""
     config = load_cluster_config(args.config)
@@ -438,19 +367,30 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries):
     all_vms = remote_targets(config)
     runtime = resolved.bench.runtime_secs
 
-    # Generate and upload config
-    yaml_str = generate_oobft_yaml(resolved, protocol)
+    # Generate config + keys locally, then upload
+    # Config uses relative "keys/" paths since that's where we upload on remote VMs
+    config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys")
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tf:
-        tf.write(yaml_str)
-        tmp_config = tf.name
-
-    print("Uploading config...")
+    print("Uploading config and keys...")
     with ThreadPoolExecutor(max_workers=len(all_vms)) as pool:
-        futures = [pool.submit(remote.scp_upload, tmp_config, vm, "~/config.yaml") for vm in all_vms]
+        futures = []
+        # Upload config
+        for vm in all_vms:
+            futures.append(pool.submit(remote.scp_upload, config_path, vm, "~/config.yaml"))
+        # Upload keys
+        keys_base = os.path.join(log_dir, "keys")
+        for vm in all_vms:
+            def _upload_keys(vm=vm):
+                remote.ssh(vm, "rm -rf keys; mkdir -p keys/replica keys/client keys/proxy")
+                for role in ["replica", "client", "proxy"]:
+                    role_dir = os.path.join(keys_base, role)
+                    if not os.path.isdir(role_dir):
+                        continue
+                    for fname in os.listdir(role_dir):
+                        remote.scp_upload(os.path.join(role_dir, fname), vm, f"keys/{role}/{fname}")
+            futures.append(pool.submit(_upload_keys))
         for f in as_completed(futures):
             f.result()
-    os.unlink(tmp_config)
 
     # Kill existing
     for bn in binaries:
@@ -643,11 +583,6 @@ def main():
     parser = argparse.ArgumentParser(description="OooBFT Benchmark Automation")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # genkeys
-    gk = subparsers.add_parser("genkeys", help="Generate ED25519 keys")
-    gk.add_argument("--config", required=True)
-    gk.add_argument("--protocol", default="dombft", choices=["dombft", "flutter"])
-
     # local
     lp = subparsers.add_parser("local", help="Run benchmark locally")
     lp.add_argument("--protocol", default="dombft", choices=["dombft", "flutter"])
@@ -670,10 +605,6 @@ def main():
     up = subparsers.add_parser("upload", help="Build and upload binaries")
     up.add_argument("--config", required=True)
 
-    # upload-keys
-    uk = subparsers.add_parser("upload-keys", help="Upload keys to remote VMs")
-    uk.add_argument("--config", required=True)
-
     # VM management
     for cmd_name in ["vm-start", "vm-stop", "vm-status", "vm-keep-alive", "sync-clocks"]:
         sp = subparsers.add_parser(cmd_name)
@@ -682,11 +613,9 @@ def main():
     args = parser.parse_args()
 
     commands = {
-        "genkeys": cmd_genkeys,
         "local": cmd_local,
         "remote": cmd_remote,
         "upload": cmd_upload,
-        "upload-keys": cmd_upload_keys,
         "vm-start": cmd_vm_start,
         "vm-stop": cmd_vm_stop,
         "vm-status": cmd_vm_status,

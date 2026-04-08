@@ -23,7 +23,6 @@ from bench import (
     resolve_remote_cluster,
     resolve_local_cluster,
     remote_targets,
-    generate_oobft_yaml,
     parse_client_output,
     print_aggregate_results,
     _remote_run,
@@ -32,8 +31,8 @@ from bench import (
     DOMBFT_BINARIES,
     FLUTTER_BINARIES,
     PROJECT_ROOT,
-    ensure_keys,
 )
+from config_model import generate_config
 from config_model import load_cluster_config
 from remote import load_remote
 
@@ -42,13 +41,8 @@ def run_one_local(config, protocol, rate, transport, log_dir):
     """Run a single local benchmark at the given send rate."""
     config = apply_bench_overrides(config, send_rate=rate, transport=transport)
     resolved = resolve_local_cluster(config, protocol)
-    ensure_keys(resolved)
 
-    yaml_str = generate_oobft_yaml(resolved, protocol)
-    config_path = os.path.join(log_dir, "config.yaml")
-    os.makedirs(log_dir, exist_ok=True)
-    with open(config_path, "w") as f:
-        f.write(yaml_str)
+    config_path = generate_config(resolved, protocol, log_dir)
 
     if protocol == "flutter":
         _local_flutter(resolved, config_path, log_dir)
