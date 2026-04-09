@@ -91,6 +91,7 @@ def _aggregate(rate, transport, parsed):
         "rate": rate,
         "num_clients": len(parsed),
         "total_committed": sum(p.get("committed", 0) for p in parsed),
+        "throughput": sum(p.get("throughput", 0) for p in parsed),
     }
     lat_clients = [p for p in parsed if "latency_p50" in p]
     if lat_clients:
@@ -108,7 +109,7 @@ def print_summary(all_results, sweep_dir):
     print(f"  SWEEP SUMMARY")
     print(f"{'=' * 90}")
 
-    header = f"{'Transport':>10} {'Rate':>8} {'Clients':>8} {'Committed':>10} {'p50(ms)':>10} {'p95(ms)':>10} {'p99(ms)':>10} {'max(ms)':>10}"
+    header = f"{'Transport':>10} {'Rate':>8} {'Clients':>8} {'Committed':>10} {'Tput/s':>10} {'p50(ms)':>10} {'p95(ms)':>10} {'p99(ms)':>10} {'max(ms)':>10}"
     print(header)
     print("-" * len(header))
 
@@ -118,6 +119,7 @@ def print_summary(all_results, sweep_dir):
             f"{r.get('rate', 0):>8} "
             f"{r.get('num_clients', 0):>8} "
             f"{r.get('total_committed', 0):>10} "
+            f"{r.get('throughput', 0):>10.0f} "
             f"{r.get('latency_p50', 0):>10.2f} "
             f"{r.get('latency_p95', 0):>10.2f} "
             f"{r.get('latency_p99', 0):>10.2f} "

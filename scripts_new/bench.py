@@ -69,15 +69,31 @@ def ensure_keys(resolved):
 
 # --- Output parsing ---
 
+def _parse_glog_timestamp(line):
+    """Extract seconds since midnight from a glog line like 'I0409 06:01:16.749658 ...'"""
+    m = re.search(r"(\d{2}):(\d{2}):(\d{2})\.(\d+)", line)
+    if not m:
+        return None
+    h, mi, s, us = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    return h * 3600 + mi * 60 + s + us / 1e6
+
+
 def parse_client_output(output):
     """Parse PERF lines from client log output into metrics dict."""
     result = {}
     latencies = []
+    first_commit_time = None
+    last_commit_time = None
 
     for line in output.splitlines():
         m = re.search(r"PERF event=commit.*latency=(\d+)", line)
         if m:
             latencies.append(int(m.group(1)))
+            t = _parse_glog_timestamp(line)
+            if t is not None:
+                if first_commit_time is None:
+                    first_commit_time = t
+                last_commit_time = t
 
     if latencies:
         latencies.sort()
@@ -87,6 +103,12 @@ def parse_client_output(output):
         result["latency_p95"] = latencies[n * 95 // 100] / 1000.0
         result["latency_p99"] = latencies[n * 99 // 100] / 1000.0
         result["latency_max"] = latencies[-1] / 1000.0
+
+        if first_commit_time is not None and last_commit_time is not None:
+            duration = last_commit_time - first_commit_time
+            if duration > 0:
+                result["throughput"] = n / duration
+                result["duration"] = duration
 
     return result
 
@@ -101,14 +123,16 @@ def print_aggregate_results(client_outputs):
         return
 
     total_committed = sum(p.get("committed", 0) for p in parsed)
+    total_throughput = sum(p.get("throughput", 0) for p in parsed)
 
     print("\n" + "=" * 50)
     print(f"=== System Aggregate ({len(parsed)} clients) ===")
     print("=" * 50)
     print(f"Total committed: {total_committed}")
+    if total_throughput > 0:
+        print(f"Total throughput: {total_throughput:.0f} commits/sec")
 
     if all("latency_p50" in p for p in parsed):
-        # Merge all latencies would be better, but avg of percentiles is a rough approximation
         avg_p50 = sum(p["latency_p50"] for p in parsed) / len(parsed)
         avg_p95 = sum(p["latency_p95"] for p in parsed) / len(parsed)
         avg_p99 = sum(p["latency_p99"] for p in parsed) / len(parsed)
