@@ -608,6 +608,53 @@ def cmd_scp(args):
                 print(f"  {vm} failed: {e}")
 
 
+# --- Setup and remote build ---
+
+def cmd_setup(args):
+    """Run setup.sh on all VMs (install deps, bazel, etc)."""
+    config = load_cluster_config(args.config)
+    remote = load_remote({"platform": config.platform, "zone": config.zone, "project": config.project,
+                          "user": config.user, "key_file": config.key_file})
+    vms = remote_targets(config)
+
+    setup_sh = os.path.join(PROJECT_ROOT, "scripts", "setup.sh")
+    if os.path.exists(setup_sh):
+        print("=== Uploading and running setup.sh ===")
+        for vm in vms:
+            remote.scp_upload(setup_sh, vm, "~/setup.sh")
+        remote.run_on_all(vms, "chmod +x ~/setup.sh && sudo ~/setup.sh")
+
+    print("Setup complete.")
+
+
+def cmd_build(args):
+    """Clone repo and build on all VMs."""
+    config = load_cluster_config(args.config)
+    remote = load_remote({"platform": config.platform, "zone": config.zone, "project": config.project,
+                          "user": config.user, "key_file": config.key_file})
+    vms = remote_targets(config)
+    branch = getattr(args, "branch", "main")
+
+    if getattr(args, "setup", False):
+        cmd_setup(args)
+
+    print(f"=== Building on {len(vms)} VMs (branch={branch}) ===")
+    remote.run_on_all(vms, "git clone https://github.com/dqian3/DOM-BFT 2>/dev/null; true")
+    remote.run_on_all(vms, f"cd DOM-BFT && git fetch && git checkout {branch} && git pull origin {branch}")
+    print("Building (this takes a while)...")
+    remote.run_on_all(vms, "cd DOM-BFT && bazel build //processes/...")
+
+    print("Copying binaries to home dir...")
+    remote.run_on_all(vms, "rm -f ~/dombft_* ~/flutter_*")
+    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
+    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
+    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/client/dombft_client ~")
+    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/flutter/flutter_replica ~ 2>/dev/null; true")
+    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/flutter/flutter_client ~ 2>/dev/null; true")
+
+    print("Build complete.")
+
+
 # --- VM management ---
 
 def cmd_vm_start(args):
@@ -728,6 +775,16 @@ def main():
     cp.add_argument("--config", required=True)
     cp.add_argument("cmd", help="Shell command to run")
 
+    # Setup (install deps + boost on VMs)
+    sp_setup = subparsers.add_parser("setup", help="Run setup.sh + install_boost.sh on all VMs")
+    sp_setup.add_argument("--config", required=True)
+
+    # Build on VMs
+    sp_build = subparsers.add_parser("build", help="Clone repo and build on all VMs")
+    sp_build.add_argument("--config", required=True)
+    sp_build.add_argument("--branch", default="main", help="Git branch to build (default: main)")
+    sp_build.add_argument("--setup", action="store_true", help="Run setup first")
+
     # Copy file to all VMs
     sp_scp = subparsers.add_parser("scp", help="Copy a local file to all VMs")
     sp_scp.add_argument("--config", required=True)
@@ -748,6 +805,8 @@ def main():
         "upload": cmd_upload,
         "cmd": cmd_run_cmd,
         "scp": cmd_scp,
+        "setup": cmd_setup,
+        "build": cmd_build,
         "vm-start": cmd_vm_start,
         "vm-stop": cmd_vm_stop,
         "vm-status": cmd_vm_status,
