@@ -17,8 +17,8 @@ bench:
   runtime_secs: 40
   request_size: 512
   batch_size: 5
-  use_hmac: true
-  use_proxy: true
+  use_hmac: false
+  use_proxy: false
   num_send_threads: 4
   num_verify_threads: 4
   offset_coefficient: 1.1
