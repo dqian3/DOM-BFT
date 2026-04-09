@@ -297,7 +297,11 @@ def _local_flutter(resolved, config_path, log_dir):
 # --- Remote execution ---
 
 def cmd_upload(args):
-    """Build and upload binaries to remote VMs."""
+    """Build and upload binaries to remote VMs.
+
+    With --upload-once: upload to first VM, then distribute via internal scp.
+    Otherwise: upload from local machine to all VMs in parallel.
+    """
     config = load_cluster_config(args.config)
     remote = load_remote({"platform": config.platform, "zone": config.zone, "project": config.project,
                           "user": config.user, "key_file": config.key_file})
@@ -310,20 +314,65 @@ def cmd_upload(args):
     print("=== Building ===")
     bazel_build()
 
-    def upload_one(bn, vm):
+    # Collect binaries that exist
+    binaries = []
+    for bn in ALL_BINARIES:
         bp = binary_path(bn)
-        if not os.path.exists(bp):
-            return
-        print(f"  {bn} -> {vm}...")
-        remote.scp_upload(bp, vm, f"~/{bn}")
-        remote.ssh(vm, f"chmod +x ~/{bn}")
+        if os.path.exists(bp):
+            binaries.append((bn, bp))
 
-    with ThreadPoolExecutor(max_workers=len(vms) * len(ALL_BINARIES)) as pool:
-        futures = [pool.submit(upload_one, bn, vm) for bn in ALL_BINARIES for vm in vms]
-        for f in as_completed(futures):
-            f.result()
+    upload_once = getattr(args, "upload_once", False)
+    total = len(binaries) * len(vms)
+    done = [0]
+    lock = __import__("threading").Lock()
 
-    print("Upload complete.")
+    def progress(bn, vm):
+        with lock:
+            done[0] += 1
+            print(f"  [{done[0]}/{total}] {bn} -> {vm}")
+
+    if upload_once and len(vms) > 1:
+        # Upload to first VM, then distribute internally
+        pivot = vms[0]
+
+        # Resolve internal IPs for scp between VMs
+        if hasattr(remote, "get_all_ips"):
+            all_ips = remote.get_all_ips(vms)
+        else:
+            all_ips = {vm: remote.get_ip(vm) for vm in vms}
+
+        print(f"=== Uploading to {pivot}, then distributing ===")
+        for bn, bp in binaries:
+            remote.scp_upload(bp, pivot, f"~/{bn}")
+            remote.ssh(pivot, f"chmod +x ~/{bn}")
+            progress(bn, pivot)
+
+        # Distribute from pivot to others via internal network
+        other_vms = [vm for vm in vms if vm != pivot]
+        def distribute(bn, vm):
+            ip = all_ips[vm]
+            remote.ssh(pivot, f"scp -o StrictHostKeyChecking=no ~/{bn} {ip}:~/{bn}")
+            remote.ssh(vm, f"chmod +x ~/{bn}")
+            progress(bn, vm)
+
+        with ThreadPoolExecutor(max_workers=len(other_vms)) as pool:
+            futures = [pool.submit(distribute, bn, vm) for bn, _ in binaries for vm in other_vms]
+            for f in as_completed(futures):
+                f.result()
+    else:
+        # Upload from local to all VMs in parallel
+        print(f"=== Uploading to {len(vms)} VMs ===")
+        def upload_one(bn, bp, vm):
+            remote.scp_upload(bp, vm, f"~/{bn}")
+            remote.ssh(vm, f"chmod +x ~/{bn}")
+            progress(bn, vm)
+
+        with ThreadPoolExecutor(max_workers=min(8, len(vms) * len(binaries))) as pool:
+            futures = [pool.submit(upload_one, bn, bp, vm) for bn, bp in binaries for vm in vms]
+            for f in as_completed(futures):
+                f.result()
+
+    print(f"Upload complete. {total} binaries deployed.")
 
 
 def cmd_remote(args):
@@ -604,6 +653,8 @@ def main():
     # upload
     up = subparsers.add_parser("upload", help="Build and upload binaries")
     up.add_argument("--config", required=True)
+    up.add_argument("--upload-once", action="store_true", default=False,
+                    help="Upload to one VM then distribute internally (faster for large binaries)")
 
     # VM management
     for cmd_name in ["vm-start", "vm-stop", "vm-status", "vm-keep-alive", "sync-clocks"]:
