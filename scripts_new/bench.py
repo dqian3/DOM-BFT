@@ -475,9 +475,9 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys
     for i, vm in enumerate(replica_vms):
         print(f"Starting replica {i} on {vm}...")
         if protocol == "flutter":
-            cmd = f"~/flutter_replica -config ~/config.yaml -replicaId {i} -clockBroadcastInterval {resolved.bench.clock_broadcast_interval}"
+            cmd = f"~/flutter_replica -v 1 -config ~/config.yaml -replicaId {i} -clockBroadcastInterval {resolved.bench.clock_broadcast_interval}"
         else:
-            cmd = f"~/dombft_replica -config ~/config.yaml -replicaId {i} --batchSize {resolved.bench.batch_size}"
+            cmd = f"~/dombft_replica -v 1 -config ~/config.yaml -replicaId {i} --batchSize {resolved.bench.batch_size}"
         p = remote.ssh(vm, f"{cmd} >~/replica_{i}.stdout 2>~/replica_{i}.log", bg=True)
         replica_procs.append((vm, p))
 
@@ -486,7 +486,7 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys
     if protocol == "dombft" and proxy_vms:
         for i, vm in enumerate(proxy_vms):
             print(f"Starting proxy {i} on {vm}...")
-            p = remote.ssh(vm, f"~/dombft_proxy -config ~/config.yaml -proxyId {i} >~/proxy_{i}.stdout 2>~/proxy_{i}.log", bg=True)
+            p = remote.ssh(vm, f"~/dombft_proxy -v 1 -config ~/config.yaml -proxyId {i} >~/proxy_{i}.stdout 2>~/proxy_{i}.log", bg=True)
             proxy_procs.append((vm, p))
 
     time.sleep(2)
@@ -496,9 +496,9 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys
     for i, vm in enumerate(client_vms):
         print(f"Starting client {i} on {vm}...")
         if protocol == "flutter":
-            cmd = f"~/flutter_client -config ~/config.yaml -clientId {i} -baseBetOffset {resolved.bench.initial_bet} -betIncrement {resolved.bench.bet_increment}"
+            cmd = f"~/flutter_client -v 1 -config ~/config.yaml -clientId {i} -baseBetOffset {resolved.bench.initial_bet} -betIncrement {resolved.bench.bet_increment}"
         else:
-            cmd = f"~/dombft_client -config ~/config.yaml -clientId {i}"
+            cmd = f"~/dombft_client -v 1 -config ~/config.yaml -clientId {i}"
         p = remote.ssh(vm, f"{cmd} >~/client_{i}.stdout 2>~/client_{i}.log", bg=True)
         client_procs.append((vm, p))
 
