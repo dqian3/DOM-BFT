@@ -420,26 +420,28 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries):
     # Config uses relative "keys/" paths since that's where we upload on remote VMs
     config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys")
 
-    print("Uploading config and keys...")
+    # Tar keys locally (one file instead of dozens of individual scp calls)
+    keys_base = os.path.join(log_dir, "keys")
+    keys_tar = os.path.join(log_dir, "keys.tar.gz")
+    subprocess.run(["tar", "czf", keys_tar, "-C", log_dir, "keys"], check=True)
+
+    print(f"Uploading config + keys to {len(all_vms)} VMs...")
+    def _upload_config_and_keys(vm):
+        remote.scp_upload(config_path, vm, "~/config.yaml")
+        remote.scp_upload(keys_tar, vm, "~/keys.tar.gz")
+        remote.ssh(vm, "rm -rf keys && tar xzf keys.tar.gz && rm keys.tar.gz")
+
     with ThreadPoolExecutor(max_workers=len(all_vms)) as pool:
-        futures = []
-        # Upload config
-        for vm in all_vms:
-            futures.append(pool.submit(remote.scp_upload, config_path, vm, "~/config.yaml"))
-        # Upload keys
-        keys_base = os.path.join(log_dir, "keys")
-        for vm in all_vms:
-            def _upload_keys(vm=vm):
-                remote.ssh(vm, "rm -rf keys; mkdir -p keys/replica keys/client keys/proxy")
-                for role in ["replica", "client", "proxy"]:
-                    role_dir = os.path.join(keys_base, role)
-                    if not os.path.isdir(role_dir):
-                        continue
-                    for fname in os.listdir(role_dir):
-                        remote.scp_upload(os.path.join(role_dir, fname), vm, f"keys/{role}/{fname}")
-            futures.append(pool.submit(_upload_keys))
+        futures = {pool.submit(_upload_config_and_keys, vm): vm for vm in all_vms}
         for f in as_completed(futures):
-            f.result()
+            vm = futures[f]
+            try:
+                f.result()
+                print(f"  {vm} done")
+            except Exception as e:
+                print(f"  {vm} failed: {e}")
+
+    os.unlink(keys_tar)
 
     # Kill existing
     for bn in binaries:

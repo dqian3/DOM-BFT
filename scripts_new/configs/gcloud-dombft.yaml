@@ -19,7 +19,7 @@ bench:
   e: 1
   send_rate: 625
   max_in_flight: 1000
-  runtime_secs: 40
+  runtime_secs: 60
   request_size: 512
   batch_size: 5
   use_hmac: true
