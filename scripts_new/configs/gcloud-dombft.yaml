@@ -8,6 +8,7 @@ client:
   vms: [client0, client1, client2, client3, client4, client5, client6, client7]
   port: 33000
 
+# Proxies colocated on client VMs
 proxy:
   vms: [client0, client1, client2, client3, client4, client5, client6, client7]
   port: 31000
@@ -26,6 +27,6 @@ bench:
   num_send_threads: 6
   num_verify_threads: 5
   offset_coefficient: 1.1
-  proxy_batch_enabled: true
+  proxy_batch_enabled: false
   proxy_batch_max_count: 50
   proxy_batch_max_delay: 2000

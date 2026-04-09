@@ -2,6 +2,7 @@
 
 #include "lib/transport/nng_endpoint_threaded.h"
 #include "lib/transport/ooo_rpc_endpoint.h"
+#include "lib/transport/tcp_endpoint.h"
 
 namespace dombft {
 using namespace dombft::proto;
@@ -42,6 +43,16 @@ Proxy::Proxy(uint32_t proxyId)
         endpoint_ = std::make_unique<NngEndpointThreaded>(addrPairs, false);
 
         // First nClients addresses are for client connections, rest are for replica connections
+        size_t nClients = configManager.getNumClients();
+        for (size_t i = nClients; i < addrPairs.size(); i++) {
+            receiverAddrs_.push_back(addrPairs[i].second);
+        }
+
+    } else if (config.transport == "tcp") {
+        auto addrPairs = getProxyAddrs(config, proxyId);
+
+        endpoint_ = std::make_unique<TcpEndpointThreaded>(addrPairs, false);
+
         size_t nClients = configManager.getNumClients();
         for (size_t i = nClients; i < addrPairs.size(); i++) {
             receiverAddrs_.push_back(addrPairs[i].second);
