@@ -580,6 +580,30 @@ def cmd_run_cmd(args):
             print(f"  {vm}: {r.stdout.strip()}")
 
 
+def cmd_scp(args):
+    """Copy a local file to all VMs."""
+    config = load_cluster_config(args.config)
+    remote = load_remote({"platform": config.platform, "zone": config.zone, "project": config.project,
+                          "user": config.user, "key_file": config.key_file})
+    vms = remote_targets(config)
+    local_path = args.local_path
+    remote_path = args.remote_path or f"~/{os.path.basename(local_path)}"
+
+    print(f"Copying {local_path} -> {remote_path} on {len(vms)} VMs...")
+    def _upload(vm):
+        remote.scp_upload(local_path, vm, remote_path)
+
+    with ThreadPoolExecutor(max_workers=len(vms)) as pool:
+        futures = {pool.submit(_upload, vm): vm for vm in vms}
+        for f in as_completed(futures):
+            vm = futures[f]
+            try:
+                f.result()
+                print(f"  {vm} done")
+            except Exception as e:
+                print(f"  {vm} failed: {e}")
+
+
 # --- VM management ---
 
 def cmd_vm_start(args):
@@ -700,6 +724,13 @@ def main():
     cp.add_argument("--config", required=True)
     cp.add_argument("cmd", help="Shell command to run")
 
+    # Copy file to all VMs
+    sp_scp = subparsers.add_parser("scp", help="Copy a local file to all VMs")
+    sp_scp.add_argument("--config", required=True)
+    sp_scp.add_argument("local_path", help="Local file to upload")
+    sp_scp.add_argument("--remote-path", dest="remote_path", default=None,
+                        help="Remote destination (default: ~/filename)")
+
     # VM management
     for cmd_name in ["vm-start", "vm-stop", "vm-status", "vm-keep-alive", "sync-clocks"]:
         sp = subparsers.add_parser(cmd_name)
@@ -712,6 +743,7 @@ def main():
         "remote": cmd_remote,
         "upload": cmd_upload,
         "cmd": cmd_run_cmd,
+        "scp": cmd_scp,
         "vm-start": cmd_vm_start,
         "vm-stop": cmd_vm_stop,
         "vm-status": cmd_vm_status,
