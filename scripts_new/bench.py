@@ -639,7 +639,7 @@ def cmd_build(args):
         cmd_setup(args)
 
     print(f"=== Building on {len(vms)} VMs (branch={branch}) ===")
-    remote.run_on_all(vms, "git clone git@github.com:dqian3/OooBFT.git 2>/dev/null; true")
+    remote.run_on_all(vms, "git clone https://github.com/dqian3/OooBFT.git 2>/dev/null; true")
     remote.run_on_all(vms, f"cd OooBFT && git fetch && git checkout {branch} && git pull origin {branch}")
     print("Building (this takes a while)...")
     remote.run_on_all(vms, "cd OooBFT && bazel build //processes/...")
