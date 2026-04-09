@@ -639,18 +639,18 @@ def cmd_build(args):
         cmd_setup(args)
 
     print(f"=== Building on {len(vms)} VMs (branch={branch}) ===")
-    remote.run_on_all(vms, "git clone https://github.com/dqian3/DOM-BFT 2>/dev/null; true")
-    remote.run_on_all(vms, f"cd DOM-BFT && git fetch && git checkout {branch} && git pull origin {branch}")
+    remote.run_on_all(vms, "git clone git@github.com:dqian3/OooBFT.git 2>/dev/null; true")
+    remote.run_on_all(vms, f"cd OooBFT && git fetch && git checkout {branch} && git pull origin {branch}")
     print("Building (this takes a while)...")
-    remote.run_on_all(vms, "cd DOM-BFT && bazel build //processes/...")
+    remote.run_on_all(vms, "cd OooBFT && bazel build //processes/...")
 
     print("Copying binaries to home dir...")
     remote.run_on_all(vms, "rm -f ~/dombft_* ~/flutter_*")
-    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/replica/dombft_replica ~")
-    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/proxy/dombft_proxy ~")
-    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/client/dombft_client ~")
-    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/flutter/flutter_replica ~ 2>/dev/null; true")
-    remote.run_on_all(vms, "cp DOM-BFT/bazel-bin/processes/flutter/flutter_client ~ 2>/dev/null; true")
+    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/replica/dombft_replica ~")
+    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/proxy/dombft_proxy ~")
+    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/client/dombft_client ~")
+    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/flutter/flutter_replica ~ 2>/dev/null; true")
+    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/flutter/flutter_client ~ 2>/dev/null; true")
 
     print("Build complete.")
 
