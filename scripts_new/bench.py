@@ -408,7 +408,46 @@ def cmd_remote(args):
         sys.exit(1)
 
 
-def _remote_run(resolved, config, remote, protocol, log_dir, binaries):
+def _remote_upload_keys(resolved, config, remote, protocol, log_dir):
+    """Generate and upload keys to all VMs. Only needs to run once per cluster."""
+    all_vms = remote_targets(config)
+
+    config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys")
+
+    keys_tar = os.path.join(log_dir, "keys.tar.gz")
+    subprocess.run(["tar", "czf", keys_tar, "-C", log_dir, "keys"], check=True)
+
+    print(f"Uploading keys to {len(all_vms)} VMs...")
+    def _upload(vm):
+        remote.scp_upload(keys_tar, vm, "~/keys.tar.gz")
+        remote.ssh(vm, "rm -rf keys && tar xzf keys.tar.gz && rm keys.tar.gz")
+
+    with ThreadPoolExecutor(max_workers=len(all_vms)) as pool:
+        futures = {pool.submit(_upload, vm): vm for vm in all_vms}
+        for f in as_completed(futures):
+            vm = futures[f]
+            try:
+                f.result()
+                print(f"  {vm} keys uploaded")
+            except Exception as e:
+                print(f"  {vm} failed: {e}")
+
+    os.unlink(keys_tar)
+
+
+def _remote_upload_config(resolved, config, remote, protocol, log_dir):
+    """Generate and upload just the config (keys already on VMs)."""
+    all_vms = remote_targets(config)
+    config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys")
+
+    print(f"Uploading config to {len(all_vms)} VMs...")
+    with ThreadPoolExecutor(max_workers=len(all_vms)) as pool:
+        futures = [pool.submit(remote.scp_upload, config_path, vm, "~/config.yaml") for vm in all_vms]
+        for f in as_completed(futures):
+            f.result()
+
+
+def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys=False):
     """Generic remote run for any protocol."""
     replica_vms = config.replica.vms
     client_vms = config.client.vms
@@ -416,32 +455,11 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries):
     all_vms = remote_targets(config)
     runtime = resolved.bench.runtime_secs
 
-    # Generate config + keys locally, then upload
-    # Config uses relative "keys/" paths since that's where we upload on remote VMs
-    config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys")
-
-    # Tar keys locally (one file instead of dozens of individual scp calls)
-    keys_base = os.path.join(log_dir, "keys")
-    keys_tar = os.path.join(log_dir, "keys.tar.gz")
-    subprocess.run(["tar", "czf", keys_tar, "-C", log_dir, "keys"], check=True)
-
-    print(f"Uploading config + keys to {len(all_vms)} VMs...")
-    def _upload_config_and_keys(vm):
-        remote.scp_upload(config_path, vm, "~/config.yaml")
-        remote.scp_upload(keys_tar, vm, "~/keys.tar.gz")
-        remote.ssh(vm, "rm -rf keys && tar xzf keys.tar.gz && rm keys.tar.gz")
-
-    with ThreadPoolExecutor(max_workers=len(all_vms)) as pool:
-        futures = {pool.submit(_upload_config_and_keys, vm): vm for vm in all_vms}
-        for f in as_completed(futures):
-            vm = futures[f]
-            try:
-                f.result()
-                print(f"  {vm} done")
-            except Exception as e:
-                print(f"  {vm} failed: {e}")
-
-    os.unlink(keys_tar)
+    if skip_keys:
+        _remote_upload_config(resolved, config, remote, protocol, log_dir)
+    else:
+        _remote_upload_keys(resolved, config, remote, protocol, log_dir)
+        _remote_upload_config(resolved, config, remote, protocol, log_dir)
 
     # Kill existing
     for bn in binaries:
@@ -541,6 +559,25 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries):
                 pass
 
     print_aggregate_results(client_outputs)
+
+
+# --- Run arbitrary command on all VMs ---
+
+def cmd_run_cmd(args):
+    """Run an arbitrary shell command on all VMs."""
+    config = load_cluster_config(args.config)
+    remote = load_remote({"platform": config.platform, "zone": config.zone, "project": config.project,
+                          "user": config.user, "key_file": config.key_file})
+    vms = remote_targets(config)
+    command = args.cmd
+    print(f"Running on {len(vms)} VMs: {command}")
+    results = remote.run_on_all(vms, command)
+    for vm in vms:
+        r = results.get(vm)
+        if isinstance(r, Exception):
+            print(f"  {vm}: ERROR: {r}")
+        elif r is not None and r.stdout.strip():
+            print(f"  {vm}: {r.stdout.strip()}")
 
 
 # --- VM management ---
@@ -658,6 +695,11 @@ def main():
     up.add_argument("--upload-once", action="store_true", default=False,
                     help="Upload to one VM then distribute internally (faster for large binaries)")
 
+    # Run arbitrary command on all VMs
+    cp = subparsers.add_parser("cmd", help="Run a shell command on all VMs")
+    cp.add_argument("--config", required=True)
+    cp.add_argument("cmd", help="Shell command to run")
+
     # VM management
     for cmd_name in ["vm-start", "vm-stop", "vm-status", "vm-keep-alive", "sync-clocks"]:
         sp = subparsers.add_parser(cmd_name)
@@ -669,6 +711,7 @@ def main():
         "local": cmd_local,
         "remote": cmd_remote,
         "upload": cmd_upload,
+        "cmd": cmd_run_cmd,
         "vm-start": cmd_vm_start,
         "vm-stop": cmd_vm_stop,
         "vm-status": cmd_vm_status,

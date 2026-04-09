@@ -26,6 +26,7 @@ from bench import (
     parse_client_output,
     print_aggregate_results,
     _remote_run,
+    _remote_upload_keys,
     _local_dombft,
     _local_flutter,
     DOMBFT_BINARIES,
@@ -52,13 +53,13 @@ def run_one_local(config, protocol, rate, transport, log_dir):
     return _collect_client_outputs(log_dir, resolved, protocol)
 
 
-def run_one_remote(config, protocol, rate, transport, remote_obj, log_dir):
+def run_one_remote(config, protocol, rate, transport, remote_obj, log_dir, skip_keys=False):
     """Run a single remote benchmark at the given send rate."""
     config = apply_bench_overrides(config, send_rate=rate, transport=transport)
     resolved = resolve_remote_cluster(config, protocol, remote_obj)
 
     binaries = FLUTTER_BINARIES if protocol == "flutter" else DOMBFT_BINARIES
-    _remote_run(resolved, config, remote_obj, protocol, log_dir, binaries)
+    _remote_run(resolved, config, remote_obj, protocol, log_dir, binaries, skip_keys=skip_keys)
 
     return _collect_client_outputs(log_dir, resolved, protocol)
 
@@ -198,6 +199,16 @@ def main():
 
     all_results = []
 
+    # For remote sweeps, upload keys once before the first run
+    keys_uploaded = False
+    if is_remote:
+        first_resolved = resolve_remote_cluster(
+            apply_bench_overrides(config, send_rate=rates[0], transport=transport),
+            protocol, remote_obj)
+        first_log = os.path.join(sweep_dir, f"{transport}_rate_{rates[0]}")
+        _remote_upload_keys(first_resolved, config, remote_obj, protocol, first_log)
+        keys_uploaded = True
+
     for rate in rates:
         print(f"\n{'#' * 60}")
         print(f"  send_rate={rate} transport={transport}")
@@ -206,7 +217,7 @@ def main():
         log_dir = os.path.join(sweep_dir, f"{transport}_rate_{rate}")
 
         if is_remote:
-            _, parsed = run_one_remote(config, protocol, rate, transport, remote_obj, log_dir)
+            _, parsed = run_one_remote(config, protocol, rate, transport, remote_obj, log_dir, skip_keys=True)
         else:
             _, parsed = run_one_local(config, protocol, rate, transport, log_dir)
 
