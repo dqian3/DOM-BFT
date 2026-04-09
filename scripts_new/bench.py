@@ -158,16 +158,14 @@ def cmd_local(args):
     # Generate config + keys in one step (like aspen-bft's generate command)
     config_path = generate_config(resolved, protocol, log_dir)
 
-    if protocol == "dombft":
-        _local_dombft(resolved, config_path, log_dir)
-    elif protocol == "flutter":
+    if protocol == "flutter":
         _local_flutter(resolved, config_path, log_dir)
     else:
-        print(f"Unknown protocol: {protocol}", file=sys.stderr)
-        sys.exit(1)
+        # dombft, PBFT, ZYZ, DUMMY_DOMBFT all use _local_dombft
+        _local_dombft(resolved, config_path, log_dir, prot=protocol)
 
 
-def _local_dombft(resolved, config_path, log_dir):
+def _local_dombft(resolved, config_path, log_dir, prot="dombft"):
     n_replicas = len(resolved.replicas)
     n_proxies = len(resolved.proxies)
     n_clients = len(resolved.clients)
@@ -187,7 +185,7 @@ def _local_dombft(resolved, config_path, log_dir):
         all_log_files.append(lf)
         p = subprocess.Popen([
             binary_path("dombft_replica"),
-            "-config", config_path, "-replicaId", str(i), "--batchSize", str(batch_size),
+            "-config", config_path, "-replicaId", str(i), "-prot", prot, "--batchSize", str(batch_size),
         ], stdout=lf, stderr=lf)
         replicas.append(p)
         print(f"  Started replica {i}")
@@ -424,13 +422,11 @@ def cmd_remote(args):
     log_dir = args.log_dir or os.path.join(PROJECT_ROOT, "logs")
     os.makedirs(log_dir, exist_ok=True)
 
-    if protocol == "dombft":
-        _remote_run(resolved, config, remote, protocol, log_dir, DOMBFT_BINARIES)
-    elif protocol == "flutter":
+    if protocol == "flutter":
         _remote_run(resolved, config, remote, protocol, log_dir, FLUTTER_BINARIES)
     else:
-        print(f"Unknown protocol: {protocol}", file=sys.stderr)
-        sys.exit(1)
+        # dombft, PBFT, ZYZ, DUMMY_DOMBFT all use the same binaries
+        _remote_run(resolved, config, remote, protocol, log_dir, DOMBFT_BINARIES)
 
 
 def _remote_upload_keys(resolved, config, remote, protocol, log_dir, keys_dir=None):
@@ -500,6 +496,8 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys
         print(f"Starting replica {i} on {vm}...")
         if protocol == "flutter":
             cmd = f"~/flutter_replica -v 1 -config ~/config.yaml -replicaId {i} -clockBroadcastInterval {resolved.bench.clock_broadcast_interval}"
+        elif protocol in ("PBFT", "ZYZ", "DUMMY_DOMBFT"):
+            cmd = f"~/dombft_replica -v 1 -config ~/config.yaml -replicaId {i} -prot {protocol} --batchSize {resolved.bench.batch_size}"
         else:
             cmd = f"~/dombft_replica -v 1 -config ~/config.yaml -replicaId {i} --batchSize {resolved.bench.batch_size}"
         p = remote.ssh(vm, f"{cmd} >~/replica_{i}.stdout 2>~/replica_{i}.log", bg=True)
@@ -507,7 +505,7 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys
 
     # Start proxies (dombft only)
     proxy_procs = []
-    if protocol == "dombft" and proxy_vms:
+    if protocol not in ("flutter", "PBFT", "ZYZ", "DUMMY_DOMBFT") and proxy_vms:
         for i, vm in enumerate(proxy_vms):
             print(f"Starting proxy {i} on {vm}...")
             p = remote.ssh(vm, f"~/dombft_proxy -v 1 -config ~/config.yaml -proxyId {i} >~/proxy_{i}.stdout 2>~/proxy_{i}.log", bg=True)
@@ -804,7 +802,7 @@ def main():
 
     # local
     lp = subparsers.add_parser("local", help="Run benchmark locally")
-    lp.add_argument("--protocol", default="dombft", choices=["dombft", "flutter"])
+    lp.add_argument("--protocol", default="dombft", choices=["dombft", "flutter", "PBFT", "ZYZ", "DUMMY_DOMBFT"])
     lp.add_argument("--config", required=True)
     lp.add_argument("--log-dir", default=None)
     lp.add_argument("--send-rate", type=int, default=None)
@@ -814,7 +812,7 @@ def main():
     # remote
     rp = subparsers.add_parser("remote", help="Run benchmark on remote VMs")
     rp.add_argument("--config", required=True)
-    rp.add_argument("--protocol", default="dombft", choices=["dombft", "flutter"])
+    rp.add_argument("--protocol", default="dombft", choices=["dombft", "flutter", "PBFT", "ZYZ", "DUMMY_DOMBFT"])
     rp.add_argument("--log-dir", default=None)
     rp.add_argument("--send-rate", type=int, default=None)
     rp.add_argument("--duration-secs", type=int, default=None)

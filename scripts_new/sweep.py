@@ -179,7 +179,7 @@ def main():
     for mode in ["local", "remote"]:
         p = sub.add_parser(mode)
         p.add_argument("--config", required=True)
-        p.add_argument("--protocol", default="dombft", choices=["dombft", "flutter"])
+        p.add_argument("--protocol", default="dombft", choices=["dombft", "flutter", "PBFT", "ZYZ", "DUMMY_DOMBFT"])
         p.add_argument("--rates", type=int, nargs="+", required=True)
         p.add_argument("--transport", default="tcp")
         p.add_argument("--output-dir", default=None)

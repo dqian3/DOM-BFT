@@ -22,11 +22,11 @@ bench:
   runtime_secs: 60
   request_size: 512
   batch_size: 5
-  use_hmac: true
+  use_hmac: false
   use_proxy: true
   num_send_threads: 6
   num_verify_threads: 5
   offset_coefficient: 1.1
-  proxy_batch_enabled: false
+  proxy_batch_enabled: true
   proxy_batch_max_count: 50
   proxy_batch_max_delay: 2000
