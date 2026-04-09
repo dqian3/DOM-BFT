@@ -33,17 +33,17 @@ from bench import (
     FLUTTER_BINARIES,
     PROJECT_ROOT,
 )
-from config_model import generate_config
+from config_model import generate_config, generate_keys
 from config_model import load_cluster_config
 from remote import load_remote
 
 
-def run_one_local(config, protocol, rate, transport, log_dir):
+def run_one_local(config, protocol, rate, transport, log_dir, keys_dir=None):
     """Run a single local benchmark at the given send rate."""
     config = apply_bench_overrides(config, send_rate=rate, transport=transport)
     resolved = resolve_local_cluster(config, protocol)
 
-    config_path = generate_config(resolved, protocol, log_dir)
+    config_path = generate_config(resolved, protocol, log_dir, keys_dir=keys_dir)
 
     if protocol == "flutter":
         _local_flutter(resolved, config_path, log_dir)
@@ -53,13 +53,13 @@ def run_one_local(config, protocol, rate, transport, log_dir):
     return _collect_client_outputs(log_dir, resolved, protocol)
 
 
-def run_one_remote(config, protocol, rate, transport, remote_obj, log_dir, skip_keys=False):
+def run_one_remote(config, protocol, rate, transport, remote_obj, log_dir, skip_keys=False, keys_dir=None):
     """Run a single remote benchmark at the given send rate."""
     config = apply_bench_overrides(config, send_rate=rate, transport=transport)
     resolved = resolve_remote_cluster(config, protocol, remote_obj)
 
     binaries = FLUTTER_BINARIES if protocol == "flutter" else DOMBFT_BINARIES
-    _remote_run(resolved, config, remote_obj, protocol, log_dir, binaries, skip_keys=skip_keys)
+    _remote_run(resolved, config, remote_obj, protocol, log_dir, binaries, skip_keys=skip_keys, keys_dir=keys_dir)
 
     return _collect_client_outputs(log_dir, resolved, protocol)
 
@@ -199,15 +199,15 @@ def main():
 
     all_results = []
 
-    # For remote sweeps, upload keys once before the first run
-    keys_uploaded = False
+    # Generate keys once in sweep_dir/keys/ and reuse for all rates
+    shared_keys_dir = os.path.join(sweep_dir, "keys")
+    first_resolved = resolve_local_cluster(config, protocol) if not is_remote else \
+        resolve_remote_cluster(apply_bench_overrides(config, send_rate=rates[0], transport=transport), protocol, remote_obj)
+    generate_keys(first_resolved, shared_keys_dir)
+
+    # For remote sweeps, upload keys once
     if is_remote:
-        first_resolved = resolve_remote_cluster(
-            apply_bench_overrides(config, send_rate=rates[0], transport=transport),
-            protocol, remote_obj)
-        first_log = os.path.join(sweep_dir, f"{transport}_rate_{rates[0]}")
-        _remote_upload_keys(first_resolved, config, remote_obj, protocol, first_log)
-        keys_uploaded = True
+        _remote_upload_keys(first_resolved, config, remote_obj, protocol, sweep_dir)
 
     for rate in rates:
         print(f"\n{'#' * 60}")
@@ -217,9 +217,10 @@ def main():
         log_dir = os.path.join(sweep_dir, f"{transport}_rate_{rate}")
 
         if is_remote:
-            _, parsed = run_one_remote(config, protocol, rate, transport, remote_obj, log_dir, skip_keys=True)
+            _, parsed = run_one_remote(config, protocol, rate, transport, remote_obj, log_dir,
+                                       skip_keys=True, keys_dir=shared_keys_dir)
         else:
-            _, parsed = run_one_local(config, protocol, rate, transport, log_dir)
+            _, parsed = run_one_local(config, protocol, rate, transport, log_dir, keys_dir=shared_keys_dir)
 
         entry = _aggregate(rate, transport, parsed)
         all_results.append(entry)

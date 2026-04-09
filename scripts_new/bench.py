@@ -29,6 +29,7 @@ from config_model import (
     ConfigError,
     apply_bench_overrides,
     generate_config,
+    generate_keys,
     load_cluster_config,
     remote_targets,
     resolve_local_cluster,
@@ -408,14 +409,17 @@ def cmd_remote(args):
         sys.exit(1)
 
 
-def _remote_upload_keys(resolved, config, remote, protocol, log_dir):
+def _remote_upload_keys(resolved, config, remote, protocol, log_dir, keys_dir=None):
     """Generate and upload keys to all VMs. Only needs to run once per cluster."""
     all_vms = remote_targets(config)
 
-    config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys")
+    if keys_dir is None:
+        keys_dir = os.path.join(log_dir, "keys")
+    generate_keys(resolved, keys_dir)
 
     keys_tar = os.path.join(log_dir, "keys.tar.gz")
-    subprocess.run(["tar", "czf", keys_tar, "-C", log_dir, "keys"], check=True)
+    # tar expects keys/ to be relative inside the archive
+    subprocess.run(["tar", "czf", keys_tar, "-C", os.path.dirname(keys_dir), os.path.basename(keys_dir)], check=True)
 
     print(f"Uploading keys to {len(all_vms)} VMs...")
     def _upload(vm):
@@ -435,10 +439,10 @@ def _remote_upload_keys(resolved, config, remote, protocol, log_dir):
     os.unlink(keys_tar)
 
 
-def _remote_upload_config(resolved, config, remote, protocol, log_dir):
+def _remote_upload_config(resolved, config, remote, protocol, log_dir, keys_dir=None):
     """Generate and upload just the config (keys already on VMs)."""
     all_vms = remote_targets(config)
-    config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys")
+    config_path = generate_config(resolved, protocol, log_dir, remote_keys_prefix="keys", keys_dir=keys_dir)
 
     print(f"Uploading config to {len(all_vms)} VMs...")
     with ThreadPoolExecutor(max_workers=len(all_vms)) as pool:
@@ -447,7 +451,7 @@ def _remote_upload_config(resolved, config, remote, protocol, log_dir):
             f.result()
 
 
-def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys=False):
+def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys=False, keys_dir=None):
     """Generic remote run for any protocol."""
     replica_vms = config.replica.vms
     client_vms = config.client.vms
@@ -456,10 +460,10 @@ def _remote_run(resolved, config, remote, protocol, log_dir, binaries, skip_keys
     runtime = resolved.bench.runtime_secs
 
     if skip_keys:
-        _remote_upload_config(resolved, config, remote, protocol, log_dir)
+        _remote_upload_config(resolved, config, remote, protocol, log_dir, keys_dir=keys_dir)
     else:
-        _remote_upload_keys(resolved, config, remote, protocol, log_dir)
-        _remote_upload_config(resolved, config, remote, protocol, log_dir)
+        _remote_upload_keys(resolved, config, remote, protocol, log_dir, keys_dir=keys_dir)
+        _remote_upload_config(resolved, config, remote, protocol, log_dir, keys_dir=keys_dir)
 
     # Kill existing
     for bn in binaries:

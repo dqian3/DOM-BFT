@@ -314,23 +314,11 @@ def remote_targets(config: ClusterConfig) -> list[str]:
     return seen
 
 
-def generate_config(resolved: ResolvedCluster, protocol: str, out_dir: str, remote_keys_prefix: str | None = None) -> str:
-    """Generate OooBFT YAML config + keys in out_dir. Returns path to config file.
-
-    Like aspen-bft's 'generate' command: one call produces everything needed
-    to run the cluster. Keys are generated if they don't already exist in out_dir.
-    All paths in the config are absolute (local) or relative (remote_keys_prefix).
-
-    Args:
-        remote_keys_prefix: If set, use this prefix for keysDir in config instead of
-            absolute local paths (e.g. "keys" for remote VMs where keys are at ~/keys/).
-    """
+def generate_keys(resolved: ResolvedCluster, keys_dir: str):
+    """Generate keys into keys_dir/{role}/. Skips if they already exist."""
     import os
     import subprocess
 
-    os.makedirs(out_dir, exist_ok=True)
-
-    # Generate keys into out_dir/keys/{role}/
     roles = [
         ("replica", len(resolved.replicas)),
         ("client", len(resolved.clients)),
@@ -339,13 +327,12 @@ def generate_config(resolved: ResolvedCluster, protocol: str, out_dir: str, remo
     for role, count in roles:
         if count == 0:
             continue
-        keys_dir = os.path.join(out_dir, "keys", role)
-        # Skip if keys already exist
-        if os.path.exists(os.path.join(keys_dir, f"{role}0.der")):
+        role_dir = os.path.join(keys_dir, role)
+        if os.path.exists(os.path.join(role_dir, f"{role}0.der")):
             continue
-        os.makedirs(keys_dir, exist_ok=True)
+        os.makedirs(role_dir, exist_ok=True)
         for i in range(count):
-            key_path = os.path.join(keys_dir, f"{role}{i}")
+            key_path = os.path.join(role_dir, f"{role}{i}")
             subprocess.run(
                 ["openssl", "genpkey", "-outform", "der", "-algorithm", "ed25519",
                  "-out", f"{key_path}.der"],
@@ -356,7 +343,24 @@ def generate_config(resolved: ResolvedCluster, protocol: str, out_dir: str, remo
                  "-pubout", "-out", f"{key_path}.pub"],
                 check=True, capture_output=True,
             )
-        print(f"  Generated {count} {role} keys in {keys_dir}")
+        print(f"  Generated {count} {role} keys in {role_dir}")
+
+
+def generate_config(resolved: ResolvedCluster, protocol: str, out_dir: str,
+                    remote_keys_prefix: str | None = None, keys_dir: str | None = None) -> str:
+    """Generate OooBFT YAML config in out_dir. Returns path to config file.
+
+    Args:
+        remote_keys_prefix: If set, use this prefix for keysDir in config (for remote VMs).
+        keys_dir: Directory containing keys/{role}/ subdirs. If None, generates keys in out_dir/keys/.
+    """
+    import os
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    if keys_dir is None:
+        keys_dir = os.path.join(out_dir, "keys")
+        generate_keys(resolved, keys_dir)
 
     # Build config with key paths
     b = resolved.bench
@@ -365,9 +369,9 @@ def generate_config(resolved: ResolvedCluster, protocol: str, out_dir: str, remo
         replica_keys = f"{remote_keys_prefix}/replica"
         proxy_keys = f"{remote_keys_prefix}/proxy"
     else:
-        client_keys = os.path.abspath(os.path.join(out_dir, "keys", "client"))
-        replica_keys = os.path.abspath(os.path.join(out_dir, "keys", "replica"))
-        proxy_keys = os.path.abspath(os.path.join(out_dir, "keys", "proxy"))
+        client_keys = os.path.abspath(os.path.join(keys_dir, "client"))
+        replica_keys = os.path.abspath(os.path.join(keys_dir, "replica"))
+        proxy_keys = os.path.abspath(os.path.join(keys_dir, "proxy"))
 
     config = {
         "app": "counter",
