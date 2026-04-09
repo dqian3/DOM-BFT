@@ -641,16 +641,45 @@ def cmd_build(args):
     print(f"=== Building on {len(vms)} VMs (branch={branch}) ===")
     remote.run_on_all(vms, "git clone https://github.com/dqian3/OooBFT.git 2>/dev/null; true")
     remote.run_on_all(vms, f"cd OooBFT && git fetch && git checkout {branch} && git pull origin {branch}")
-    print("Building (this takes a while)...")
-    remote.run_on_all(vms, "cd OooBFT && bazel build //processes/...")
 
-    print("Copying binaries to home dir...")
-    remote.run_on_all(vms, "rm -f ~/dombft_* ~/flutter_*")
-    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/replica/dombft_replica ~")
-    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/proxy/dombft_proxy ~")
-    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/client/dombft_client ~")
-    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/flutter/flutter_replica ~ 2>/dev/null; true")
-    remote.run_on_all(vms, "cp OooBFT/bazel-bin/processes/flutter/flutter_client ~ 2>/dev/null; true")
+    # Build: stream output from first VM, run rest in background
+    build_cmd = "cd OooBFT && bazel build //processes/..."
+    copy_cmd = (
+        "rm -f ~/dombft_* ~/flutter_* && "
+        "cp OooBFT/bazel-bin/processes/replica/dombft_replica ~ && "
+        "cp OooBFT/bazel-bin/processes/proxy/dombft_proxy ~ && "
+        "cp OooBFT/bazel-bin/processes/client/dombft_client ~ && "
+        "cp OooBFT/bazel-bin/processes/flutter/flutter_replica ~ 2>/dev/null; "
+        "cp OooBFT/bazel-bin/processes/flutter/flutter_client ~ 2>/dev/null; true"
+    )
+    full_cmd = f"{build_cmd} && {copy_cmd}"
+
+    print(f"Building... (streaming {vms[0]}, {len(vms)-1} others in background)")
+
+    # Run all other VMs in background (no output)
+    bg_procs = []
+    for vm in vms[1:]:
+        p = remote.ssh(vm, full_cmd, bg=True)
+        bg_procs.append((vm, p))
+
+    # Stream first VM's output
+    try:
+        result = remote.ssh(vms[0], full_cmd)
+        if result.stdout:
+            for line in result.stdout.strip().split("\n")[-20:]:
+                print(f"  [{vms[0]}] {line}")
+        print(f"  {vms[0]} done")
+    except Exception as e:
+        print(f"  {vms[0]} failed: {e}")
+
+    # Wait for background VMs
+    for vm, p in bg_procs:
+        try:
+            p.wait(timeout=600)
+            print(f"  {vm} done")
+        except subprocess.TimeoutExpired:
+            print(f"  {vm} timed out")
+            p.kill()
 
     print("Build complete.")
 
