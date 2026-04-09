@@ -662,15 +662,17 @@ def cmd_build(args):
         p = remote.ssh(vm, full_cmd, bg=True)
         bg_procs.append((vm, p))
 
-    # Stream first VM's output
-    try:
-        result = remote.ssh(vms[0], full_cmd)
-        if result.stdout:
-            for line in result.stdout.strip().split("\n")[-20:]:
-                print(f"  [{vms[0]}] {line}")
-        print(f"  {vms[0]} done")
-    except Exception as e:
-        print(f"  {vms[0]} failed: {e}")
+    # Stream first VM's output line by line
+    stream_vm = vms[0]
+    stream_cmd = remote._build_ssh_cmd(stream_vm, full_cmd)
+    p = subprocess.Popen(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    for line in p.stdout:
+        print(f"  [{stream_vm}] {line}", end="")
+    p.wait()
+    if p.returncode == 0:
+        print(f"  {stream_vm} done")
+    else:
+        print(f"  {stream_vm} failed (exit {p.returncode})")
 
     # Wait for background VMs
     for vm, p in bg_procs:

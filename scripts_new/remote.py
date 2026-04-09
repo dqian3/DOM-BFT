@@ -150,12 +150,15 @@ class GCloudRemote(Remote):
             print("\nStart them with: python bench.py vm-start --config <config>", file=sys.stderr)
             sys.exit(1)
 
-    def ssh(self, vm_name, command, bg=False):
-        cmd = [
+    def _build_ssh_cmd(self, vm_name, command):
+        return [
             "gcloud", "compute", "ssh", vm_name,
             *self._base_args(vm_name),
             "--command", command,
         ]
+
+    def ssh(self, vm_name, command, bg=False):
+        cmd = self._build_ssh_cmd(vm_name, command)
         if bg:
             return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -307,8 +310,11 @@ class SSHRemote(Remote):
     def _target(self, host):
         return f"{self.user}@{host}"
 
+    def _build_ssh_cmd(self, host, command):
+        return ["ssh", *self._ssh_opts(), self._target(host), command]
+
     def ssh(self, host, command, bg=False):
-        cmd = ["ssh", *self._ssh_opts(), self._target(host), command]
+        cmd = self._build_ssh_cmd(host, command)
         if bg:
             return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return subprocess.run(cmd, check=True, capture_output=True, text=True)
