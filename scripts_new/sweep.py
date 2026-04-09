@@ -131,24 +131,43 @@ def print_summary(all_results, sweep_dir):
 
 
 def analyze(sweep_dir):
-    results_path = os.path.join(sweep_dir, "sweep_results.json")
-    if os.path.exists(results_path):
-        with open(results_path) as f:
-            all_results = json.load(f)
-        print_summary(all_results, sweep_dir)
-        return
-
+    """Re-parse client logs from an existing sweep directory."""
     rate_dirs = sorted(globmod.glob(os.path.join(sweep_dir, "*_rate_*")), key=os.path.getmtime)
     if not rate_dirs:
-        print(f"No results found in {sweep_dir}")
+        print(f"No rate_* directories found in {sweep_dir}")
         sys.exit(1)
 
     all_results = []
     for rate_dir in rate_dirs:
-        summary_path = os.path.join(rate_dir, "summary.json")
-        if os.path.exists(summary_path):
-            with open(summary_path) as f:
-                all_results.append(json.load(f))
+        # Extract transport and rate from dir name like "tcp_rate_1000"
+        dirname = os.path.basename(rate_dir)
+        parts = dirname.split("_rate_")
+        transport = parts[0] if len(parts) == 2 else "?"
+        try:
+            rate = int(parts[1]) if len(parts) == 2 else 0
+        except ValueError:
+            rate = 0
+
+        # Find and parse all client log files
+        client_files = sorted(
+            globmod.glob(os.path.join(rate_dir, "client_*.log")) +
+            globmod.glob(os.path.join(rate_dir, "client*.log"))
+        )
+        # Deduplicate
+        client_files = list(dict.fromkeys(client_files))
+
+        parsed = []
+        for cf in client_files:
+            try:
+                with open(cf) as f:
+                    p = parse_client_output(f.read())
+                    if p:
+                        parsed.append(p)
+            except FileNotFoundError:
+                pass
+
+        entry = _aggregate(rate, transport, parsed)
+        all_results.append(entry)
 
     print_summary(all_results, sweep_dir)
 
