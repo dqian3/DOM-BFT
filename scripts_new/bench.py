@@ -646,13 +646,13 @@ def cmd_build(args):
     build_cmd = "cd OooBFT && bazel build //processes/..."
     copy_cmd = (
         "rm -f ~/dombft_* ~/flutter_* && "
-        "cd OooBFT && "
         "cp bazel-bin/processes/replica/dombft_replica ~ && "
         "cp bazel-bin/processes/proxy/dombft_proxy ~ && "
         "cp bazel-bin/processes/client/dombft_client ~ && "
         "cp bazel-bin/processes/flutter/flutter_replica ~ 2>/dev/null; "
         "cp bazel-bin/processes/flutter/flutter_client ~ 2>/dev/null; true"
     )
+    # build_cmd already cd's into OooBFT, so copy_cmd runs from there
     full_cmd = f"{build_cmd} && {copy_cmd}"
 
     print(f"Building... (streaming {vms[0]}, {len(vms)-1} others in background)")
